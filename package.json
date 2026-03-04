@@ -1,5 +1,5 @@
 {
-  "name": "@sseocho/claude-deep-work",
+  "name": "@sseocho-plugins/claude-deep-work",
   "version": "1.0.0",
   "description": "Deep Work plugin for Claude Code - 3-phase workflow (Research → Plan → Implement)",
   "author": "sungmin",
