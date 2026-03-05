@@ -1,12 +1,7 @@
 {
   "name": "deep-work",
-  "version": "1.0.0",
   "description": "3-phase workflow (Research → Plan → Implement) enforcing strict separation of planning and coding",
   "author": {
     "name": "sungmin"
-  },
-  "repository": "https://github.com/Sungmin-Cho/sseocho-plugins",
-  "license": "MIT",
-  "keywords": ["workflow", "deep-work", "research", "planning", "agent-team"],
-  "category": "productivity"
+  }
 }
