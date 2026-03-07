@@ -33,7 +33,7 @@ Run applicable checks:
 - Related tests
 
 #### 5. Mark Complete
-Update the checklist in `deep-work/plan.md`:
+Update the checklist in `$WORK_DIR/plan.md`:
 ```diff
 - - [ ] Task 3: `path/to/file.ts` — Add UserService class
 + - [x] Task 3: `path/to/file.ts` — Add UserService class
@@ -50,7 +50,7 @@ Brief status update:
 ### When Something Doesn't Work as Planned
 
 1. **Stop immediately** — don't try to hack around it
-2. **Document the issue** in `deep-work/plan.md`:
+2. **Document the issue** in `$WORK_DIR/plan.md`:
    ```markdown
    ## Issues Encountered
 
@@ -110,7 +110,8 @@ When all tasks are done:
    - Files modified/created
    - Verification results
    - Any issues encountered
-4. Recommend next steps (review, test, commit)
+4. **Generate session report** at `$WORK_DIR/report.md` — this happens automatically
+5. Recommend next steps (review, test, commit)
 
 ## Quality Criteria
 
@@ -120,3 +121,4 @@ A good implementation:
 - Issues are documented, not silently worked around
 - The user is kept informed throughout
 - The final result matches what was approved in the plan
+- A comprehensive session report is generated upon completion

@@ -12,15 +12,20 @@ You are in the **Research** phase of a Deep Work session.
 🚫 **DO NOT write any code.**
 🚫 **DO NOT create any implementation files.**
 🚫 **DO NOT modify any existing source code.**
-✅ **ONLY research, analyze, and document findings in `deep-work/` directory.**
+✅ **ONLY research, analyze, and document findings in the session's work directory.**
 
 ## Instructions
 
 ### 1. Read the state file
 
-Read `.claude/deep-work.local.md` to get the task description and `team_mode`. If the file doesn't exist or phase is not "research", inform the user they need to run `/deep-work <task>` first.
+Read `.claude/deep-work.local.md` to get the task description, `team_mode`, and `work_dir`.
+
+If the file doesn't exist or phase is not "research", inform the user they need to run `/deep-work <task>` first.
 
 If `team_mode` is missing, treat it as `solo` (backward compatibility).
+If `work_dir` is missing, treat it as `deep-work` (backward compatibility).
+
+Set `WORK_DIR` to the value of `work_dir` from the state file.
 
 ### 2. Branch by mode
 
@@ -74,7 +79,7 @@ Analyze the codebase **deeply** and **exhaustively**, covering **every detail** 
 
 ### 3-SOLO. Write research.md
 
-Write all findings to `deep-work/research.md` in a structured format. Be thorough — this document is the foundation for the planning phase. Include:
+Write all findings to `$WORK_DIR/research.md` in a structured format. Be thorough — this document is the foundation for the planning phase. Include:
 
 - **Executive Summary**: One-paragraph overview of the codebase as it relates to the task
 - **Architecture Analysis**: Detailed breakdown with file paths and code references
@@ -102,9 +107,9 @@ Create three analysis tasks:
 
 | Task | Agent | Analysis Area | Output File |
 |:-----|:------|:-------------|:-----------|
-| A | arch-analyst | Architecture, structure, data layer, API | `deep-work/research-architecture.md` |
-| B | pattern-analyst | Patterns, conventions, shared infrastructure, testing | `deep-work/research-patterns.md` |
-| C | risk-analyst | Dependencies, risks, external integrations, security | `deep-work/research-dependencies.md` |
+| A | arch-analyst | Architecture, structure, data layer, API | `$WORK_DIR/research-architecture.md` |
+| B | pattern-analyst | Patterns, conventions, shared infrastructure, testing | `$WORK_DIR/research-patterns.md` |
+| C | risk-analyst | Dependencies, risks, external integrations, security | `$WORK_DIR/research-dependencies.md` |
 
 Each task description MUST include:
 - The task_description from the state file (what we're analyzing for)
@@ -126,7 +131,7 @@ Spawn 3 `general-purpose` agents using the Agent tool:
 
 ### 2-TEAM-5. Synthesize results
 
-Read all 3 partial result files and synthesize into a single `deep-work/research.md`:
+Read all 3 partial result files and synthesize into a single `$WORK_DIR/research.md`:
 
 - **Executive Summary**: Synthesized overview combining all three perspectives
 - **Architecture Analysis**: From arch-analyst results
@@ -161,7 +166,7 @@ Display:
 ```
 ✅ Research 단계가 완료되었습니다!
 
-📄 연구 결과: deep-work/research.md
+📄 연구 결과: $WORK_DIR/research.md
 
 📊 분석 요약:
   - [분석한 주요 내용 요약 3-5줄]
@@ -170,7 +175,7 @@ Display:
    - 여전히 코드 파일 수정이 차단됩니다
 
 👉 다음 단계:
-  1. deep-work/research.md 를 검토하세요
+  1. $WORK_DIR/research.md 를 검토하세요
   2. 피드백이 있으면 알려주세요
   3. 준비되면 /deep-plan 을 실행하세요
 ```
@@ -178,10 +183,10 @@ Display:
 If Team mode was used, also display:
 ```
 🤝 팀 리서치 결과:
-  - arch-analyst: deep-work/research-architecture.md
-  - pattern-analyst: deep-work/research-patterns.md
-  - risk-analyst: deep-work/research-dependencies.md
-  - 통합 결과: deep-work/research.md
+  - arch-analyst: $WORK_DIR/research-architecture.md
+  - pattern-analyst: $WORK_DIR/research-patterns.md
+  - risk-analyst: $WORK_DIR/research-dependencies.md
+  - 통합 결과: $WORK_DIR/research.md
 ```
 
 ## Research Quality Checklist

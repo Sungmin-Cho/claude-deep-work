@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Research phase builds a comprehensive understanding of the codebase before any decisions are made. The output (`deep-work/research.md`) serves as the foundation for the planning phase.
+The Research phase builds a comprehensive understanding of the codebase before any decisions are made. The output (`$WORK_DIR/research.md`) serves as the foundation for the planning phase.
 
 ## Research Methodology
 

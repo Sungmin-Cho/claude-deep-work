@@ -25,9 +25,12 @@ Read `.claude/deep-work.local.md` and verify:
 
 If not, inform the user which prerequisite step is missing.
 
+Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
+Set `WORK_DIR` to this value.
+
 ### 2. Load the plan and check mode
 
-Read `deep-work/plan.md` and identify the **Task Checklist** section. Each item should be in the format:
+Read `$WORK_DIR/plan.md` and identify the **Task Checklist** section. Each item should be in the format:
 ```
 - [ ] Task N: [File path] — [What to do] — [Why]
 ```
@@ -49,7 +52,7 @@ For each unchecked task (`- [ ]`):
 2. **Read** the target file(s) first
 3. **Implement** the change exactly as described in the plan
 4. **Verify** the change (type check, lint, or basic sanity check if applicable)
-5. **Mark complete** by updating `- [ ]` to `- [x]` in `deep-work/plan.md`
+5. **Mark complete** by updating `- [ ]` to `- [x]` in `$WORK_DIR/plan.md`
 6. **Report** the result briefly
 
 ### 4-SOLO. Handle errors
@@ -58,7 +61,7 @@ If you encounter a problem during implementation:
 
 **DO:**
 - Stop the current task
-- Document the issue in `deep-work/plan.md` under a new `## Issues Encountered` section
+- Document the issue in `$WORK_DIR/plan.md` under a new `## Issues Encountered` section
 - Inform the user with specifics
 - Wait for user guidance
 
@@ -92,7 +95,7 @@ Continue to [Final: Update state and summarize](#final-update-state-and-summariz
 
 ### 3-TEAM-1. Cluster tasks by file ownership
 
-1. Parse the checklist items from `deep-work/plan.md` in the format `- [ ] Task N: [file path] — ...`
+1. Parse the checklist items from `$WORK_DIR/plan.md` in the format `- [ ] Task N: [file path] — ...`
 2. Group tasks by file path
 3. Merge clusters where files import each other (to avoid conflicts)
 4. Target 2–4 clusters. If total tasks are few (≤3), display a message and fall back to Solo:
@@ -118,7 +121,7 @@ For each cluster, create a task with `TaskCreate`. Each task description MUST in
 - [ ] Task N: [file] — [description]
 - [ ] Task M: [file] — [description]
 
-각 태스크 완료 후 deep-work/plan.md에서 해당 항목을 [x]로 변경하세요.
+각 태스크 완료 후 $WORK_DIR/plan.md에서 해당 항목을 [x]로 변경하세요.
 문제 발생 시 ## Issues Encountered에 기록하고 리더에게 메시지를 보내세요.
 
 ⚠️ 계획서를 정확히 따르세요. 이탈/추가 개선 금지.
@@ -153,7 +156,7 @@ Each cross-review task description:
 ```
 🔍 크로스체크 리뷰
 
-다음 파일들이 계획서(deep-work/plan.md)에 맞게 올바르게 구현되었는지 검증하세요:
+다음 파일들이 계획서($WORK_DIR/plan.md)에 맞게 올바르게 구현되었는지 검증하세요:
 - [file1] (구현자: impl-X)
 - [file2] (구현자: impl-X)
 
@@ -164,7 +167,7 @@ Each cross-review task description:
 4. 다른 클러스터의 코드와 호환되는지 (import, 인터페이스 등)
 5. 누락된 사항이 없는지
 
-결과를 deep-work/plan.md의 ## Cross-Review Results 섹션에 다음 형식으로 작성:
+결과를 $WORK_DIR/plan.md의 ## Cross-Review Results 섹션에 다음 형식으로 작성:
 - ✅ [file]: 이상 없음
 - ❌ [file]: [문제 설명] — [수정 필요 사항]
 
@@ -173,7 +176,7 @@ Each cross-review task description:
 
 #### 6-2. Collect cross-review results
 
-After all cross-review tasks complete, read the `## Cross-Review Results` section from `deep-work/plan.md`:
+After all cross-review tasks complete, read the `## Cross-Review Results` section from `$WORK_DIR/plan.md`:
 
 - **All items ✅**: → Proceed to [3-TEAM-7 (Final Verification)](#3-team-7-final-verification)
 - **Any ❌ items**: → Proceed to [6-3 (Fix Redistribution)](#6-3-fix-redistribution)
@@ -190,7 +193,7 @@ After all cross-review tasks complete, read the `## Cross-Review Results` sectio
 
 #### 6-4. Track iteration state
 
-Record each round in `deep-work/plan.md`:
+Record each round in `$WORK_DIR/plan.md`:
 
 ```
 ## Cross-Review Round 1
@@ -240,13 +243,7 @@ Display:
   - 린트: ✅/❌
   - 테스트: ✅/❌
 
-📄 상세 내용: deep-work/plan.md (체크리스트 확인)
-
-👉 권장 다음 단계:
-  1. 변경 사항을 검토하세요
-  2. 테스트를 실행하세요
-  3. 문제가 없으면 커밋하세요
-  4. /deep-status 로 세션 요약을 확인할 수 있습니다
+📄 상세 내용: $WORK_DIR/plan.md (체크리스트 확인)
 ```
 
 If Team mode was used, also display:
@@ -255,6 +252,85 @@ If Team mode was used, also display:
   - 에이전트 수: N명
   - 크로스체크 라운드: N회
   - 발견/수정된 이슈: N건
+```
+
+## Generate Session Report
+
+After displaying the implementation summary, automatically generate the session report.
+
+### Report generation steps
+
+1. Read all session artifacts:
+   - `.claude/deep-work.local.md` (session state and metadata)
+   - `$WORK_DIR/research.md` (research findings)
+   - `$WORK_DIR/plan.md` (plan and implementation results)
+
+2. Write `$WORK_DIR/report.md` with the following structure:
+
+```markdown
+# Deep Work Session Report
+
+## Session Overview
+| Field | Value |
+|-------|-------|
+| Task | [task_description] |
+| Work Directory | [work_dir] |
+| Mode | Solo / Team |
+| Started | [started_at] |
+| Completed | [current timestamp] |
+| Plan Iterations | [iteration_count] |
+
+## Research Summary
+[3-5 bullet points summarizing the key findings from research.md]
+
+## Plan Summary
+[Approach chosen, key architectural decisions, alternatives considered]
+
+## Implementation Results
+| # | Task | File | Status | Notes |
+|---|------|------|--------|-------|
+| 1 | [description] | [path] | ✅/❌ | [notes] |
+
+## Files Changed
+### Created
+- [list of new files]
+
+### Modified
+- [list of modified files]
+
+### Deleted
+- [list of deleted files, if any]
+
+## Verification Results
+| Check | Result |
+|-------|--------|
+| Type Check | ✅ Pass / ❌ Fail / ⬜ N/A |
+| Lint | ✅ Pass / ❌ Fail / ⬜ N/A |
+| Tests | ✅ Pass / ❌ Fail / ⬜ N/A |
+| Build | ✅ Pass / ❌ Fail / ⬜ N/A |
+
+## Issues & Notes
+[From plan.md ## Issues Encountered section, if any. "None" if no issues.]
+
+## Team Mode Details (if applicable)
+| Item | Value |
+|------|-------|
+| Agents | N |
+| Cross-review Rounds | N |
+| Issues Found/Fixed | N |
+```
+
+3. Display report confirmation:
+
+```
+📄 세션 리포트가 생성되었습니다: $WORK_DIR/report.md
+
+👉 권장 다음 단계:
+  1. 변경 사항을 검토하세요
+  2. 테스트를 실행하세요
+  3. 문제가 없으면 커밋하세요
+  4. /deep-status 로 세션 요약을 확인할 수 있습니다
+  5. /deep-report 로 리포트를 재생성할 수 있습니다
 ```
 
 ## Implementation Quality Rules

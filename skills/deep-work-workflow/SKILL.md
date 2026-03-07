@@ -50,7 +50,7 @@ The Deep Work workflow prevents these by **strictly separating analysis, plannin
 **What happens**:
 - Exhaustive analysis of architecture, patterns, and conventions
 - Identification of all relevant files, dependencies, and risk areas
-- Documentation of everything in `deep-work/research.md`
+- Documentation of everything in `$WORK_DIR/research.md`
 
 **What's blocked**: All code file modifications (enforced by hook)
 
@@ -68,7 +68,7 @@ For detailed guidance, see [Research Guide](references/research-guide.md).
 - Transform research findings into a concrete action plan
 - Define exact files to modify, code snippets, execution order
 - Document trade-offs, risks, and rollback strategies
-- Create a checklist-style task list in `deep-work/plan.md`
+- Create a checklist-style task list in `$WORK_DIR/plan.md`
 
 **What's blocked**: All code file modifications (enforced by hook)
 
@@ -77,6 +77,8 @@ For detailed guidance, see [Research Guide](references/research-guide.md).
 **Feedback loop**: The user reviews the plan, adds notes, and the plan is refined until explicitly approved.
 
 **Self-review**: Before presenting the plan to the user, review the plan against the research findings for internal consistency — verify all referenced files exist, all patterns are respected, and no contradictions exist between tasks. Document any inconsistencies found and resolved.
+
+**Auto-implementation**: When the user approves the plan ("승인"), implementation starts automatically — no need to run `/deep-implement` manually.
 
 **Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
 
@@ -91,6 +93,7 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 - Implement one task at a time, marking each complete
 - Run verification (type checks, lints, tests) as applicable
 - Document any issues encountered — never improvise
+- **Automatically generate a session report** upon completion
 
 **What's allowed**: All tools — code modification is now permitted
 
@@ -100,11 +103,24 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 
 For detailed guidance, see [Implementation Guide](references/implementation-guide.md).
 
+### Session Report (`/deep-report`)
+
+**Goal**: Generate or view a comprehensive report of the entire session.
+
+**What happens**:
+- Summarizes research findings, planning decisions, and implementation results
+- Documents files changed, verification results, and issues encountered
+- Saved as `$WORK_DIR/report.md`
+
+**When it runs**:
+- Automatically after implementation completes
+- Manually via `/deep-report` at any time (can regenerate with current state)
+
 ## Phase Enforcement
 
 A PreToolUse hook (`phase-guard.sh`) enforces phase boundaries:
 
-- During **Research** and **Plan** phases: Write/Edit tools are blocked for all files except `deep-work/` documents and the state file
+- During **Research** and **Plan** phases: Write/Edit tools are blocked for all files except `$WORK_DIR/` documents and the state file
 - During **Implement** phase: All tools are available
 - When no session is active: No restrictions
 
@@ -113,29 +129,49 @@ This is not a suggestion — it's a hard gate. The AI literally cannot modify co
 ## Quick Start
 
 ```
-/deep-work "Add user authentication with JWT tokens"   # Initialize session (Solo/Team 선택)
+/deep-work "Add user authentication with JWT tokens"   # Initialize session (Solo/Team select, task folder created)
 /deep-research                                          # Phase 1: Analyze codebase
-# Review deep-work/research.md
+# Review $WORK_DIR/research.md
 /deep-plan                                              # Phase 2: Create plan
-# Review deep-work/plan.md, add notes, iterate
-# Type "승인" when satisfied
-/deep-implement                                         # Phase 3: Execute plan
+# Review $WORK_DIR/plan.md, add notes, iterate
+# Type "승인" when satisfied → Implementation starts automatically
+# → Phase 3 runs automatically, report generated
+/deep-report                                            # View or regenerate session report
+/deep-status                                            # Check status and session history
 ```
 
 When initializing with `/deep-work`, you'll be asked to choose between **Solo** and **Team** mode. Team mode requires Agent Teams to be enabled in your environment.
+
+## Session History
+
+Each session creates a unique task folder under `deep-work/`:
+```
+deep-work/
+├── 20260307-143022-jwt-기반-인증/
+│   ├── research.md
+│   ├── plan.md
+│   └── report.md
+├── 20260306-091500-api-리팩토링/
+│   ├── research.md
+│   ├── plan.md
+│   └── report.md
+```
+
+Previous sessions are preserved when starting new ones. Use `/deep-status` to view session history.
 
 ## State Management
 
 Session state is stored in `.claude/deep-work.local.md` with YAML frontmatter tracking:
 - Current phase
 - Task description
+- **Work directory** (`work_dir` — path to the task-specific folder)
 - Research completion status
 - Plan approval status
 - Iteration count
 - **Team mode** (`solo` or `team`)
 - Timestamps
 
-Use `/deep-status` at any time to see the current state, work mode, and next recommended action.
+Use `/deep-status` at any time to see the current state, work mode, session history, and next recommended action.
 
 ## When to Use Deep Work
 

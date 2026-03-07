@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Grep, Glob, Agent, Write, Bash
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 description: "Phase 2: Deep planning - create a detailed implementation plan"
 ---
 
@@ -12,7 +12,7 @@ You are in the **Planning** phase of a Deep Work session.
 🚫 **DO NOT implement anything.**
 🚫 **DO NOT modify any source code files.**
 🚫 **DO NOT create implementation files.**
-✅ **ONLY plan and document the plan in `deep-work/plan.md`.**
+✅ **ONLY plan and document the plan in the session's work directory.**
 
 ## Instructions
 
@@ -24,11 +24,14 @@ Read `.claude/deep-work.local.md` and verify:
 
 If not, inform the user which prerequisite step is missing.
 
-Also read `deep-work/research.md` to load the research findings.
+Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
+Set `WORK_DIR` to this value.
+
+Also read `$WORK_DIR/research.md` to load the research findings.
 
 ### 2. Check for user feedback
 
-Read `deep-work/plan.md` if it already exists — the user may have added feedback notes in the form of:
+Read `$WORK_DIR/plan.md` if it already exists — the user may have added feedback notes in the form of:
 - `> [!NOTE]` callouts
 - `<!-- HUMAN: ... -->` comments
 - Inline comments or strikethroughs
@@ -37,7 +40,7 @@ If feedback exists, incorporate it into the updated plan.
 
 ### 3. Create the implementation plan
 
-Write `deep-work/plan.md` with the following structure:
+Write `$WORK_DIR/plan.md` with the following structure:
 
 ```markdown
 # Implementation Plan: [Task Title]
@@ -101,7 +104,7 @@ Display:
 ```
 📋 구현 계획이 작성되었습니다!
 
-📄 계획서: deep-work/plan.md
+📄 계획서: $WORK_DIR/plan.md
 
 📊 계획 요약:
   - 변경 파일 수: N개
@@ -113,17 +116,20 @@ Display:
 ⚠️  아직 구현을 시작하지 않습니다!
 
 👉 다음 단계:
-  1. deep-work/plan.md 를 꼼꼼히 검토하세요
+  1. $WORK_DIR/plan.md 를 꼼꼼히 검토하세요
   2. 수정이 필요하면:
      - 파일에 직접 메모를 추가하거나 (> [!NOTE], <!-- HUMAN: -->)
      - 채팅으로 피드백을 주세요
   3. /deep-plan 을 다시 실행하면 피드백을 반영합니다
   4. 계획이 만족스러우면 "승인" 이라고 입력하세요
+     → 구현이 자동으로 시작됩니다
 ```
 
 ### 5. Handle approval
 
 When the user says "승인", "approve", "approved", "LGTM", or similar approval words:
+
+#### 5a. Update state
 
 Update `.claude/deep-work.local.md`:
 - Set `plan_approved: true`
@@ -134,14 +140,24 @@ Update `.claude/deep-work.local.md`:
 Display:
 
 ```
-✅ 계획이 승인되었습니다!
-
-⚡ 현재 상태: Implement 단계로 전환됨
-   - 코드 파일 수정이 허용됩니다
-   - plan.md의 체크리스트에 따라 구현합니다
-
-👉 /deep-implement 를 실행하여 구현을 시작하세요
+✅ 계획이 승인되었습니다! 구현을 자동으로 시작합니다...
 ```
+
+#### 5b. Auto-execute implementation
+
+After updating the state file, **immediately proceed to execute the implementation**.
+
+Read the implementation instructions from the `/deep-implement` command file (located at the same directory level as this command) and follow all its steps exactly:
+
+1. Load the plan checklist from `$WORK_DIR/plan.md`
+2. Check `team_mode` from state file
+3. Execute all tasks following Solo or Team mode implementation process
+4. Run verification (type checks, lints, tests)
+5. Update state to `idle`
+6. Display implementation summary
+7. Generate session report at `$WORK_DIR/report.md`
+
+**IMPORTANT**: Do NOT ask the user to run `/deep-implement` manually. The implementation must start automatically after approval.
 
 ### 6. Handle iteration
 

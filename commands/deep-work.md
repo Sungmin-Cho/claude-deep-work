@@ -16,21 +16,52 @@ The user wants to work on: **$ARGUMENTS**
 
 Follow these steps exactly:
 
-### 1. Create the deep-work output directory
+### 1. Check for existing active session
 
-Create a `deep-work/` directory in the project root if it doesn't already exist.
+Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle` and NOT empty, warn the user:
+
+```
+⚠️ 진행 중인 세션이 있습니다:
+   작업: [task_description]
+   현재 단계: [current_phase]
+   작업 폴더: [work_dir]
+
+계속하면 이전 세션 상태가 덮어쓰기됩니다.
+(산출물 파일은 보존됩니다)
+```
+
+Ask the user to confirm using AskUserQuestion before proceeding. If the user declines, stop.
+
+### 2. Create the task-specific output directory
+
+Generate a folder name from the task description:
+
+1. Get a timestamp: `YYYYMMDD-HHMMSS` format (e.g., `20260307-143022`)
+2. Generate a slug from `$ARGUMENTS`:
+   - Convert to lowercase
+   - Replace non-alphanumeric and non-Korean characters with hyphens
+   - Collapse consecutive hyphens
+   - Remove leading/trailing hyphens
+   - Truncate to 30 characters (avoid cutting mid-character)
+3. Combine: `TIMESTAMP-SLUG` (e.g., `20260307-143022-jwt-기반-사용자-인증`)
 
 ```bash
 mkdir -p deep-work
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+# Generate SLUG from task description
+TASK_FOLDER="${TIMESTAMP}-${SLUG}"
+mkdir -p "deep-work/${TASK_FOLDER}"
 ```
 
-### 2. Create placeholder files
+Set `WORK_DIR` to `deep-work/${TASK_FOLDER}`.
 
-Create these empty files if they don't exist:
-- `deep-work/research.md` — will be filled during Phase 1
-- `deep-work/plan.md` — will be filled during Phase 2
+### 3. Create placeholder files
 
-### 3. Select work mode
+Create these empty files:
+- `$WORK_DIR/research.md` — will be filled during Phase 1
+- `$WORK_DIR/plan.md` — will be filled during Phase 2
+
+### 4. Select work mode
 
 Ask the user to choose the work mode using AskUserQuestion:
 
@@ -68,7 +99,7 @@ Ask the user to choose the work mode using AskUserQuestion:
 
 **If the user selects Solo or default:** Set `team_mode` to `solo`.
 
-### 4. Create the state file
+### 5. Create the state file
 
 Create or overwrite `.claude/deep-work.local.md` with the following content. Use the current timestamp and the determined `team_mode` value.
 
@@ -76,6 +107,7 @@ Create or overwrite `.claude/deep-work.local.md` with the following content. Use
 ---
 current_phase: research
 task_description: "$ARGUMENTS"
+work_dir: "$WORK_DIR"
 iteration_count: 0
 research_complete: false
 plan_approved: false
@@ -92,7 +124,7 @@ $ARGUMENTS
 - [$(date)] Phase 1 (Research) started
 ```
 
-### 5. Confirm and guide
+### 6. Confirm and guide
 
 Display the following to the user:
 
@@ -100,16 +132,17 @@ Display the following to the user:
 ✅ Deep Work 세션이 시작되었습니다!
 
 📋 작업: $ARGUMENTS
+📂 작업 폴더: $WORK_DIR
 🤝 작업 모드: Solo / Team (Agent Team)
 
 🔄 워크플로우:
   Phase 1: /deep-research  ← 현재 단계
   Phase 2: /deep-plan
-  Phase 3: /deep-implement
+  Phase 3: /deep-implement (계획 승인 시 자동 실행)
 
 ⚡ 현재 상태: Research 단계
    - 코드 파일 수정이 차단됩니다
-   - deep-work/ 내 문서만 작성 가능합니다
+   - $WORK_DIR/ 내 문서만 작성 가능합니다
 
 👉 다음 단계: /deep-research 를 실행하여 코드베이스 분석을 시작하세요.
 ```

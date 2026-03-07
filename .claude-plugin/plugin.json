@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "1.1.0",
-  "description": "3-phase workflow (Research → Plan → Implement) enforcing strict separation of planning and coding",
+  "version": "2.0.0",
+  "description": "3-phase workflow (Research → Plan → Implement) with session history, auto-implementation, and session reports",
   "author": {
     "name": "sungmin"
   },

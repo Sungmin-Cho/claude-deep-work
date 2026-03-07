@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Planning phase transforms research findings into a concrete, reviewable, approvable implementation plan. The output (`deep-work/plan.md`) is a contract between the human and AI about exactly what will be implemented.
+The Planning phase transforms research findings into a concrete, reviewable, approvable implementation plan. The output (`$WORK_DIR/plan.md`) is a contract between the human and AI about exactly what will be implemented.
 
 ## Planning Methodology
 
@@ -61,7 +61,7 @@ The planning phase supports iterative refinement:
 
 ### How the User Provides Feedback
 
-1. **In-file notes**: User edits `deep-work/plan.md` directly
+1. **In-file notes**: User edits `$WORK_DIR/plan.md` directly
    - `> [!NOTE] Your note here` — Callout blocks
    - `<!-- HUMAN: Your comment here -->` — HTML comments
    - Strikethrough: ~~Remove this task~~
@@ -85,6 +85,8 @@ The plan is approved when the user says any of:
 - "승인", "approve", "approved", "LGTM"
 - "좋아", "진행해", "go ahead", "looks good"
 - Any clear affirmative about the plan
+
+**After approval, implementation starts automatically** — the user does not need to run `/deep-implement` separately.
 
 ## Output Format: plan.md
 
