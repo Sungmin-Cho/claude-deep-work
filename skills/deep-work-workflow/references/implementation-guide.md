@@ -103,15 +103,15 @@ Always prefer `git stash` over destructive operations to preserve work.
 
 When all tasks are done:
 
-1. Run a final verification pass (type check, lint, test)
-2. Update `.claude/deep-work.local.md` to `current_phase: idle`
-3. Present a summary showing:
+1. Update `.claude/deep-work.local.md` to `current_phase: test`
+2. Present a summary showing:
    - Tasks completed vs total
    - Files modified/created
-   - Verification results
    - Any issues encountered
-4. **Generate session report** at `$WORK_DIR/report.md` — this happens automatically
-5. Recommend next steps (review, test, commit)
+3. **Automatically transition to Test phase** — the Test phase runs comprehensive verification (type check, lint, test) and handles the implement-test retry loop
+4. Session report is generated after all tests pass
+
+For testing phase details, see [Testing Guide](testing-guide.md).
 
 ## Quality Criteria
 

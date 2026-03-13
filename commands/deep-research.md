@@ -18,19 +18,143 @@ You are in the **Research** phase of a Deep Work session.
 
 ### 1. Read the state file
 
-Read `.claude/deep-work.local.md` to get the task description, `team_mode`, and `work_dir`.
+Read `.claude/deep-work.local.md` to get the task description, `team_mode`, `work_dir`, and `project_type`.
 
 If the file doesn't exist or phase is not "research", inform the user they need to run `/deep-work <task>` first.
 
 If `team_mode` is missing, treat it as `solo` (backward compatibility).
 If `work_dir` is missing, treat it as `deep-work` (backward compatibility).
+If `project_type` is missing, treat it as `existing` (backward compatibility).
 
 Set `WORK_DIR` to the value of `work_dir` from the state file.
 
-### 2. Branch by mode
+**Record start time**: Update `research_started_at` in the state file with the current ISO timestamp.
 
+### 0. Check for partial re-run
+
+Check if `$ARGUMENTS` contains a `--scope=` option.
+
+Example: `/deep-research --scope=api,data`
+
+If scope option is present:
+1. Read the existing `$WORK_DIR/research.md`
+2. Re-analyze only the specified areas
+3. Overwrite the corresponding sections in research.md with the new analysis
+4. Update the Executive Summary and Key Findings to reflect the re-analysis
+5. Skip to [Step 4: Update state file](#4-update-state-file)
+
+Valid scope values: `architecture`, `patterns`, `data`, `api`, `infrastructure`, `dependencies`
+
+### 0-1. Check for previous Research cache
+
+Search the `deep-work/` directory for the most recent `research.md` from a previous session (not the current session).
+
+If a previous research.md exists:
+
+```
+📚 이전 리서치 발견:
+   경로: deep-work/[이전 세션]/research.md
+   작성일: [timestamp]
+
+이전 리서치를 베이스라인으로 활용할까요?
+1. ✅ 네 — 변경된 부분만 업데이트 (빠름)
+2. ❌ 아니오 — 처음부터 분석 (정확함)
+```
+
+If the user selects option 1:
+- Run `git diff --stat [previous session start time]..HEAD` to identify changed files (if git is available)
+- Identify which analysis areas are affected by the changes
+- Re-analyze only the changed areas
+- Copy unchanged areas from the previous research.md
+- Add note to Executive Summary: "[베이스라인: 이전 세션] + [변경 영역 재분석]"
+
+If the user selects option 2 or git is not available:
+- Proceed with full analysis as normal
+
+### 2. Branch by mode and project type
+
+- **`project_type: zero-base`** → Continue with [Zero-Base Research](#zero-base-research)
 - **`team_mode: solo`** → Continue with [Solo Mode Research](#solo-mode-research)
 - **`team_mode: team`** → Continue with [Team Mode Research](#team-mode-research)
+
+---
+
+## Zero-Base Research
+
+For new projects without an existing codebase, investigate these 6 areas instead of analyzing existing code:
+
+### 1. Technology Stack & Architecture Pattern Selection
+- Compare languages/frameworks suitable for the requirements
+- Select architecture pattern (MVC, Clean Architecture, Hexagonal, etc.)
+- Analyze similar open-source projects for reference
+
+### 2. Coding Conventions & Project Standards
+- Naming rules, directory structure standards
+- Linter/formatter setup (ESLint, Prettier, Ruff, etc.)
+- Error handling patterns, logging strategy
+
+### 3. Data Model & Storage Design
+- Database selection (RDB, NoSQL, file-based)
+- Core entity/schema draft
+- Caching strategy (if needed)
+
+### 4. API Design & External Service Selection
+- API style (REST, GraphQL, gRPC)
+- Authentication/authorization method
+- External services to integrate
+
+### 5. Project Scaffolding & Build/CI Design
+- Directory structure design
+- Build tool selection (Webpack, Vite, setuptools, etc.)
+- CI/CD pipeline draft
+
+### 6. Dependency Selection & Technical Risk Assessment
+- Core dependency list with selection rationale
+- License compatibility check
+- Technical risks (learning curve, community activity, maintenance outlook)
+
+### Write research.md (Zero-Base)
+
+Write all findings to `$WORK_DIR/research.md` with the following structure:
+
+```markdown
+# Research: [Task Title] (Zero-Base)
+
+## Executive Summary
+<!-- 3-5줄로 핵심 결론 요약. 이 프로젝트를 구현하기 위해
+     알아야 할 가장 중요한 사항을 먼저 기술한다. -->
+
+## Key Findings
+<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 한 줄로. -->
+- [발견 1]: [한 줄 요약]
+- [발견 2]: [한 줄 요약]
+- [발견 3]: [한 줄 요약]
+
+## Risk & Blockers
+<!-- 구현을 가로막을 수 있는 위험 요소. 없으면 "없음"으로 기재. -->
+
+---
+
+## 1. Technology Stack & Architecture
+[Detailed analysis]
+
+## 2. Coding Conventions & Standards
+[Detailed analysis]
+
+## 3. Data Model & Storage
+[Detailed analysis]
+
+## 4. API Design & External Services
+[Detailed analysis]
+
+## 5. Project Scaffolding & Build/CI
+[Detailed analysis]
+
+## 6. Dependencies & Technical Risks
+[Detailed analysis]
+```
+
+Then continue to [Step 4: Update state file](#4-update-state-file).
 
 ---
 
@@ -79,15 +203,55 @@ Analyze the codebase **deeply** and **exhaustively**, covering **every detail** 
 
 ### 3-SOLO. Write research.md
 
-Write all findings to `$WORK_DIR/research.md` in a structured format. Be thorough — this document is the foundation for the planning phase. Include:
+Write all findings to `$WORK_DIR/research.md` in a structured format. The document MUST begin with summary sections, followed by detailed analysis (pyramid principle: conclusions first, then evidence, then details).
 
-- **Executive Summary**: One-paragraph overview of the codebase as it relates to the task
-- **Architecture Analysis**: Detailed breakdown with file paths and code references
-- **Relevant Patterns**: Every pattern the implementation must follow
-- **Risk Assessment**: Potential issues, conflicts, and edge cases
-- **Key Files**: List of files that will likely need modification
-- **Dependencies Map**: What depends on what
-- **Constraints**: Technical limitations or requirements discovered
+```markdown
+# Research: [Task Title]
+
+## Executive Summary
+<!-- 3-5줄로 핵심 결론 요약. 이 프로젝트에서 [task]를 구현하기 위해
+     알아야 할 가장 중요한 사항을 먼저 기술한다. -->
+
+## Key Findings
+<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 한 줄로. -->
+- [발견 1]: [한 줄 요약]
+- [발견 2]: [한 줄 요약]
+- [발견 3]: [한 줄 요약]
+
+## Risk & Blockers
+<!-- 구현을 가로막을 수 있는 위험 요소. 없으면 "없음"으로 기재. -->
+
+---
+
+## 1. Architecture & Structure
+[Detailed breakdown with file paths and code references]
+
+## 2. Relevant Patterns
+[Every pattern the implementation must follow]
+
+## 3. Data Layer
+[Data models, migrations, validation]
+
+## 4. API & Integration
+[API structure, auth, external services]
+
+## 5. Shared Infrastructure
+[Utilities, config, build setup]
+
+## 6. Dependencies & Risk Assessment
+[Potential issues, conflicts, and edge cases]
+
+## Key Files
+| File | Purpose | Relevance |
+|------|---------|-----------|
+
+## Dependencies Map
+[What depends on what]
+
+## Constraints
+- [Technical limitation 1]
+- [Convention requirement 2]
+```
 
 Then continue to [Step 4: Update state file](#4-update-state-file).
 
@@ -124,16 +288,39 @@ Spawn 3 `general-purpose` agents using the Agent tool:
 - Each agent joins team `deep-research`
 - Use `TaskUpdate` to assign each task to the corresponding agent
 
-### 2-TEAM-4. Monitor
+### 2-TEAM-4. Monitor with progress notifications
 
 - Use `TaskList` to check progress periodically
+- **Display progress as each agent completes**:
+  ```
+  [1/3] arch-analyst 완료 ✅ (pattern-analyst, risk-analyst 대기 중...)
+  [2/3] pattern-analyst 완료 ✅ (risk-analyst 대기 중...)
+  [3/3] risk-analyst 완료 ✅
+  ```
 - Wait until all 3 tasks are completed
 
 ### 2-TEAM-5. Synthesize results
 
-Read all 3 partial result files and synthesize into a single `$WORK_DIR/research.md`:
+Read all 3 partial result files and synthesize into a single `$WORK_DIR/research.md`. The synthesized document MUST begin with summary sections:
 
-- **Executive Summary**: Synthesized overview combining all three perspectives
+```markdown
+# Research: [Task Title]
+
+## Executive Summary
+<!-- 3-5줄. 세 분석가의 결과를 종합한 핵심 결론. -->
+
+## Key Findings
+- [발견 1]: [한 줄 요약]
+- [발견 2]: [한 줄 요약]
+- [발견 3]: [한 줄 요약]
+
+## Risk & Blockers
+<!-- 종합된 위험 요소. -->
+
+---
+```
+
+Then include detailed sections:
 - **Architecture Analysis**: From arch-analyst results
 - **Relevant Patterns**: From pattern-analyst results
 - **Risk Assessment**: From risk-analyst results
@@ -157,6 +344,7 @@ Continue to [Step 4: Update state file](#4-update-state-file) below, with additi
 When research is complete, update `.claude/deep-work.local.md`:
 - Set `research_complete: true`
 - Set `current_phase: plan`
+- Set `research_completed_at` to the current ISO timestamp
 - Add a progress log entry for research completion
 
 ## 5. Guide the user
@@ -176,7 +364,7 @@ Display:
 
 👉 다음 단계:
   1. $WORK_DIR/research.md 를 검토하세요
-  2. 피드백이 있으면 알려주세요
+  2. 특정 영역만 재분석하려면: /deep-research --scope=api,data
   3. 준비되면 /deep-plan 을 실행하세요
 ```
 
@@ -196,3 +384,4 @@ Before marking research as complete, verify:
 - [ ] Key patterns are documented with specific file references
 - [ ] Potential conflicts and risks are identified
 - [ ] The document is detailed enough for someone unfamiliar with the codebase to understand the relevant parts
+- [ ] Executive Summary and Key Findings are at the top of the document

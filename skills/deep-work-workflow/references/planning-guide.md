@@ -90,10 +90,20 @@ The plan is approved when the user says any of:
 
 ## Output Format: plan.md
 
-The plan document should be comprehensive but scannable. Follow this structure:
+The plan document MUST begin with Plan Summary (pyramid principle: conclusions first). Follow this structure:
 
 ```markdown
 # Implementation Plan: [Task Title]
+
+## Plan Summary
+<!-- 3-5줄 핵심 요약: 어떤 접근법을 선택했고, 몇 개 파일을 수정하며,
+     예상 리스크 수준은 어떤지. -->
+- **접근법**: [선택한 아키텍처/접근법 한 줄 설명]
+- **변경 범위**: [N]개 파일 수정, [M]개 파일 생성
+- **리스크 수준**: Low / Medium / High
+- **핵심 결정**: [가장 중요한 아키텍처 결정 한 줄]
+
+---
 
 ## Overview
 [Approach description]
@@ -124,6 +134,8 @@ The plan document should be comprehensive but scannable. Follow this structure:
 ## Open Questions
 [Unresolved decisions]
 ```
+
+For plan templates by task type, see [Plan Templates](plan-templates.md).
 
 ## Quality Criteria
 

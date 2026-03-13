@@ -1,5 +1,5 @@
 {
-  "description": "Blocks code file edits during research and plan phases",
+  "description": "Blocks code file edits during research, plan, and test phases",
   "hooks": {
     "PreToolUse": [
       {

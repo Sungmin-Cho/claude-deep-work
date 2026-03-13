@@ -1,12 +1,12 @@
 ---
 allowed-tools: Bash, Read, Write, Glob
-description: "Start a deep work session with 3-phase workflow (Research → Plan → Implement)"
+description: "Start a deep work session with 4-phase workflow (Research → Plan → Implement → Test)"
 argument-hint: task description
 ---
 
 # Deep Work Session Initialization
 
-You are initializing a **Deep Work** session — a structured 3-phase workflow that enforces strict separation between planning and coding.
+You are initializing a **Deep Work** session — a structured 4-phase workflow that enforces strict separation between planning and coding.
 
 ## Your Task
 
@@ -55,6 +55,32 @@ mkdir -p "deep-work/${TASK_FOLDER}"
 
 Set `WORK_DIR` to `deep-work/${TASK_FOLDER}`.
 
+### 2-1. Git branch suggestion (git repository only)
+
+Check if the project is a git repository:
+
+```bash
+git rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+If the project is a git repository:
+
+```
+🌿 Git 브랜치를 생성할까요?
+   브랜치명: deep-work/[SLUG]
+   (현재 브랜치: [current branch])
+
+1. ✅ 네 — 새 브랜치 생성
+2. ❌ 아니오 — 현재 브랜치 유지
+```
+
+If the user agrees:
+- Run `git checkout -b deep-work/[SLUG]`
+- Set `git_branch` to `deep-work/[SLUG]` in the state file
+
+If the user declines or not a git repo:
+- Set `git_branch` to empty string
+
 ### 3. Create placeholder files
 
 Create these empty files:
@@ -99,20 +125,69 @@ Ask the user to choose the work mode using AskUserQuestion:
 
 **If the user selects Solo or default:** Set `team_mode` to `solo`.
 
-### 5. Create the state file
+### 5. Select project type
 
-Create or overwrite `.claude/deep-work.local.md` with the following content. Use the current timestamp and the determined `team_mode` value.
+Ask the user using AskUserQuestion:
+
+```
+프로젝트 타입을 선택하세요:
+1. 🔧 기존 코드베이스 개선 (기본) — 이미 코드가 있는 프로젝트
+2. 🆕 제로베이스 — 새 프로젝트를 처음부터 시작
+```
+
+If the user chooses option 2:
+- Set `project_type` to `zero-base`
+
+If the user chooses option 1 (default):
+- Set `project_type` to `existing`
+
+### 6. Select starting phase
+
+Ask the user using AskUserQuestion:
+
+```
+시작 단계를 선택하세요:
+1. 🔍 Research부터 (기본) — 코드베이스 분석부터 시작
+2. 📋 Plan부터 — 이미 코드베이스를 잘 아는 경우
+```
+
+If the user chooses option 2:
+- Set `current_phase` to `plan`
+- Set `research_complete` to `true`
+- Skip research.md placeholder creation
+- The starting phase guidance will tell the user to run `/deep-plan`
+
+If the user chooses option 1 (default):
+- Set `current_phase` to `research`
+- Proceed as normal
+
+### 7. Create the state file
+
+Create or overwrite `.claude/deep-work.local.md` with the following content. Use the current timestamp and the determined values.
 
 ```markdown
 ---
-current_phase: research
+current_phase: <research or plan>
 task_description: "$ARGUMENTS"
 work_dir: "$WORK_DIR"
 iteration_count: 0
-research_complete: false
+research_complete: <false or true>
 plan_approved: false
 team_mode: <solo or team>
+project_type: <existing or zero-base>
 started_at: "<current ISO timestamp>"
+git_branch: "<branch name or empty>"
+test_retry_count: 0
+max_test_retries: 3
+test_passed: false
+research_started_at: ""
+research_completed_at: ""
+plan_started_at: ""
+plan_completed_at: ""
+implement_started_at: ""
+implement_completed_at: ""
+test_started_at: ""
+test_completed_at: ""
 ---
 
 # Deep Work Session
@@ -121,12 +196,15 @@ started_at: "<current ISO timestamp>"
 $ARGUMENTS
 
 ## Progress Log
+- [$(date)] Session initialized
 - [$(date)] Phase 1 (Research) started
 ```
 
-### 6. Confirm and guide
+### 8. Confirm and guide
 
-Display the following to the user:
+Determine the starting phase and display accordingly:
+
+**If starting from Research:**
 
 ```
 ✅ Deep Work 세션이 시작되었습니다!
@@ -134,11 +212,14 @@ Display the following to the user:
 📋 작업: $ARGUMENTS
 📂 작업 폴더: $WORK_DIR
 🤝 작업 모드: Solo / Team (Agent Team)
+🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
+🌿 Git 브랜치: [branch name or "없음"]
 
 🔄 워크플로우:
   Phase 1: /deep-research  ← 현재 단계
   Phase 2: /deep-plan
   Phase 3: /deep-implement (계획 승인 시 자동 실행)
+  Phase 4: /deep-test (구현 완료 시 자동 실행)
 
 ⚡ 현재 상태: Research 단계
    - 코드 파일 수정이 차단됩니다
@@ -147,10 +228,33 @@ Display the following to the user:
 👉 다음 단계: /deep-research 를 실행하여 코드베이스 분석을 시작하세요.
 ```
 
+**If starting from Plan (skip research):**
+
+```
+✅ Deep Work 세션이 시작되었습니다! (Research 단계 생략)
+
+📋 작업: $ARGUMENTS
+📂 작업 폴더: $WORK_DIR
+🤝 작업 모드: Solo / Team (Agent Team)
+🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
+🌿 Git 브랜치: [branch name or "없음"]
+
+🔄 워크플로우:
+  Phase 1: /deep-research  ✅ 건너뜀
+  Phase 2: /deep-plan      ← 현재 단계
+  Phase 3: /deep-implement (계획 승인 시 자동 실행)
+  Phase 4: /deep-test (구현 완료 시 자동 실행)
+
+⚡ 현재 상태: Plan 단계
+   - 코드 파일 수정이 차단됩니다
+
+👉 다음 단계: /deep-plan 을 실행하여 구현 계획을 작성하세요.
+```
+
 If `team_mode` is `team`, add the following after the mode line:
 ```
    - /deep-research: 3명의 분석 에이전트가 병렬로 코드베이스 분석
    - /deep-implement: 파일 소유권 기반으로 작업을 에이전트에게 분배
 ```
 
-**IMPORTANT**: Do NOT start researching or writing code automatically. Wait for the user to explicitly run `/deep-research`.
+**IMPORTANT**: Do NOT start researching or writing code automatically. Wait for the user to explicitly run the next command.

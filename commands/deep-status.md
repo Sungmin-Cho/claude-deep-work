@@ -9,6 +9,36 @@ Display the current state of the Deep Work session and session history.
 
 ## Instructions
 
+### 0. Check for compare mode
+
+If `$ARGUMENTS` contains `--compare`:
+
+1. List all session folders in `deep-work/` directory
+2. If fewer than 2 sessions exist, inform the user:
+   ```
+   ℹ️ 비교할 세션이 부족합니다. 최소 2개의 세션이 필요합니다.
+   ```
+3. Present the session list and ask the user to select 2 sessions to compare
+4. Read research.md, plan.md, and report.md from both sessions
+5. Display a comparison summary:
+   ```
+   📊 세션 비교
+
+   | 항목 | 세션 A | 세션 B |
+   |------|--------|--------|
+   | 작업 | [task A] | [task B] |
+   | 접근법 | [approach A] | [approach B] |
+   | 수정 파일 수 | [N] | [M] |
+   | 검증 결과 | ✅/❌ | ✅/❌ |
+   | 소요 시간 | [duration A] | [duration B] |
+
+   ### 주요 차이점
+   - **접근법 변화**: [description]
+   - **수정 파일 차이**: [files only in A], [files only in B]
+   - **검증 결과 차이**: [description]
+   ```
+6. Stop here (do not proceed to regular status display).
+
 ### 1. Check if a session exists
 
 Look for `.claude/deep-work.local.md`. If it doesn't exist, display:
@@ -32,6 +62,7 @@ Read the following files if they exist:
 - `$WORK_DIR/research.md` — check if it has content
 - `$WORK_DIR/plan.md` — count checklist progress
 - `$WORK_DIR/report.md` — check if it exists
+- `$WORK_DIR/test-results.md` — check if it exists
 
 ### 3. Calculate progress
 
@@ -53,18 +84,28 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 🕐 시작: [started_at]
 🔄 반복 횟수: [iteration_count]
 🤝 작업 모드: [Solo / Team]
+🏗️ 프로젝트 타입: [Existing / Zero-Base]
+🌿 Git 브랜치: [git_branch or "없음"]
 
 📍 현재 단계: [Phase name with emoji]
-   🔬 Phase 1 (Research): [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
-   📐 Phase 2 (Plan):     [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
-   🔨 Phase 3 (Implement):[✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   🔬 Phase 1 (Research):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   📐 Phase 2 (Plan):      [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
+   🔨 Phase 3 (Implement): [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   🧪 Phase 4 (Test):      [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
 
 📈 구현 진행률: [N/M 완료 (XX%)]
    ████████░░ XX%
 
+⏱️ Phase별 소요 시간:
+   Research: [duration or "N/A"]
+   Plan: [duration or "N/A"]
+   Implement: [duration or "N/A"]
+   Test: [duration or "N/A"]
+
 📁 산출물:
    - $WORK_DIR/research.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/plan.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/test-results.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/report.md: [존재함 ✅ / 없음 ⬜]
 
 👉 다음 행동: [안내 메시지]
@@ -74,6 +115,7 @@ Adjust the "다음 행동" based on the current phase:
 - **research**: `/deep-research 를 실행하세요`
 - **plan**: `/deep-plan 을 실행하세요` (or "plan.md를 검토하고 승인하세요" if plan exists)
 - **implement**: `/deep-implement 를 실행하세요`
+- **test**: `/deep-test 를 실행하세요` (or "코드를 수정한 후 /deep-test를 다시 실행하세요" if test_retry_count > 0)
 - **idle**: `세션이 완료되었습니다. /deep-report 로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
 
 ### 5. Show session history
@@ -91,6 +133,8 @@ If subdirectories exist, display:
    - deep-work/20260307-143022-jwt-기반-인증/ [report.md 존재 여부]
    - deep-work/20260306-091500-api-리팩토링/ [report.md 존재 여부]
    ...
+
+💡 TIP: /deep-status --compare 로 두 세션을 비교할 수 있습니다.
 ```
 
 For each folder, check if `report.md` exists and show:

@@ -57,11 +57,25 @@ Identify potential issues for the planned task:
 
 ## Output Format: research.md
 
+The document MUST begin with summary sections (pyramid principle: conclusions first, then evidence, then details):
+
 ```markdown
 # Research: [Task Title]
 
 ## Executive Summary
-One paragraph summarizing the codebase landscape as it relates to the task.
+<!-- 3-5줄로 핵심 결론 요약. 이 프로젝트에서 [task]를 구현하기 위해
+     알아야 할 가장 중요한 사항을 먼저 기술한다. -->
+
+## Key Findings
+<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 한 줄로. -->
+- [발견 1]: [한 줄 요약]
+- [발견 2]: [한 줄 요약]
+- [발견 3]: [한 줄 요약]
+
+## Risk & Blockers
+<!-- 구현을 가로막을 수 있는 위험 요소. 없으면 "없음"으로 기재. -->
+
+---
 
 ## Project Structure
 [Directory tree with descriptions]
@@ -94,6 +108,8 @@ One paragraph summarizing the codebase landscape as it relates to the task.
 - [Convention requirement 2]
 - [Performance requirement 3]
 ```
+
+For zero-base projects, see [Zero-Base Guide](zero-base-guide.md).
 
 ## Quality Criteria
 

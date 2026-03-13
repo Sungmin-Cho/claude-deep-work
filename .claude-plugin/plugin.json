@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "2.0.0",
-  "description": "3-phase workflow (Research → Plan → Implement) with session history, auto-implementation, and session reports",
+  "version": "3.0.0",
+  "description": "4-phase workflow (Research → Plan → Implement → Test) with session history, auto-implementation, zero-base mode, and session reports",
   "author": {
     "name": "sungmin"
   },

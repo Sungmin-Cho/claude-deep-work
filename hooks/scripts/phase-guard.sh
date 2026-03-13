@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# phase-guard.sh - Blocks code file edits during research and plan phases
+# phase-guard.sh - Blocks code file edits during research, plan, and test phases
 # Exit codes:
 #   0 = allow the tool use
 #   2 = block the tool use (with JSON reason on stdout)
@@ -43,8 +43,9 @@ if [[ ! -f "$STATE_FILE" ]]; then
   exit 0
 fi
 
-# Read current_phase from YAML frontmatter
+# Read current_phase and work_dir from YAML frontmatter
 CURRENT_PHASE=""
+WORK_DIR=""
 IN_FRONTMATTER=false
 while IFS= read -r line; do
   if [[ "$line" == "---" ]]; then
@@ -58,11 +59,17 @@ while IFS= read -r line; do
   if $IN_FRONTMATTER; then
     if [[ "$line" =~ ^current_phase:[[:space:]]*(.+)$ ]]; then
       CURRENT_PHASE="${BASH_REMATCH[1]}"
-      # Remove surrounding quotes if present
       CURRENT_PHASE="${CURRENT_PHASE%\"}"
       CURRENT_PHASE="${CURRENT_PHASE#\"}"
       CURRENT_PHASE="${CURRENT_PHASE%\'}"
       CURRENT_PHASE="${CURRENT_PHASE#\'}"
+    fi
+    if [[ "$line" =~ ^work_dir:[[:space:]]*(.+)$ ]]; then
+      WORK_DIR="${BASH_REMATCH[1]}"
+      WORK_DIR="${WORK_DIR%\"}"
+      WORK_DIR="${WORK_DIR#\"}"
+      WORK_DIR="${WORK_DIR%\'}"
+      WORK_DIR="${WORK_DIR#\'}"
     fi
   fi
 done < "$STATE_FILE"
@@ -72,7 +79,7 @@ if [[ -z "$CURRENT_PHASE" || "$CURRENT_PHASE" == "implement" || "$CURRENT_PHASE"
   exit 0
 fi
 
-# For research and plan phases, check what file is being edited
+# For research, plan, and test phases, check what file is being edited
 # Read tool input from stdin
 TOOL_INPUT="$(cat)"
 
@@ -108,13 +115,30 @@ if [[ "$RESOLVED_PATH_NORM" == "$STATE_FILE_NORM" ]] || [[ "$RESOLVED_PATH_NORM"
   exit 0
 fi
 
-# Block all other edits during research and plan phases
-PHASE_LABEL="리서치(Research)"
-if [[ "$CURRENT_PHASE" == "plan" ]]; then
-  PHASE_LABEL="기획(Plan)"
-fi
+# Build phase-specific block message with next-step guidance
+PHASE_LABEL=""
+NEXT_STEP=""
+
+case "$CURRENT_PHASE" in
+  research)
+    PHASE_LABEL="리서치(Research)"
+    NEXT_STEP="👉 다음 단계: 리서치가 완료되면 /deep-plan을 실행하세요.\n   리서치가 아직 진행 중이라면 /deep-research를 실행하세요."
+    ;;
+  plan)
+    PHASE_LABEL="기획(Plan)"
+    NEXT_STEP="👉 다음 단계: 계획을 승인하면 자동으로 구현이 시작됩니다.\n   계획을 수정하려면 /deep-plan을 다시 실행하세요."
+    ;;
+  test)
+    PHASE_LABEL="테스트(Test)"
+    NEXT_STEP="👉 다음 단계:\n   - 테스트가 통과하면 세션이 자동 완료됩니다.\n   - 테스트 실패 시 implement 단계로 자동 복귀하여 수정할 수 있습니다.\n   - 현재 테스트 결과를 확인하려면 ${WORK_DIR}/test-results.md를 읽으세요."
+    ;;
+  *)
+    PHASE_LABEL="$CURRENT_PHASE"
+    NEXT_STEP="👉 /deep-status로 현재 상태를 확인하세요."
+    ;;
+esac
 
 cat <<JSON
-{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${PHASE_LABEL} 단계입니다. 코드 파일 수정이 차단되었습니다.\n\n수정 시도된 파일: ${FILE_PATH}\n\n${PHASE_LABEL} 단계에서는 deep-work/ 디렉토리 내 문서만 수정할 수 있습니다.\n구현을 시작하려면 먼저 /deep-plan으로 계획을 승인받은 후 /deep-implement를 실행하세요."}
+{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${PHASE_LABEL} 단계입니다. 코드 파일 수정이 차단되었습니다.\n\n수정 시도된 파일: ${FILE_PATH}\n\n${PHASE_LABEL} 단계에서는 deep-work/ 디렉토리 내 문서만 수정할 수 있습니다.\n\n${NEXT_STEP}"}
 JSON
 exit 2

@@ -24,10 +24,32 @@ Read `.claude/deep-work.local.md` and verify:
 
 If not, inform the user which prerequisite step is missing.
 
-Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
+Extract `work_dir`, `project_type`, and `team_mode` from the state file. If missing, default to `deep-work`, `existing`, and `solo` respectively (backward compatibility).
 Set `WORK_DIR` to this value.
 
-Also read `$WORK_DIR/research.md` to load the research findings.
+**Record start time**: Update `plan_started_at` in the state file with the current ISO timestamp.
+
+Also read `$WORK_DIR/research.md` to load the research findings (if it exists — it may not exist if research was skipped via A-1 phase skip).
+
+### 1-1. Backup previous plan (if iteration_count > 0)
+
+If a previous `$WORK_DIR/plan.md` exists and `iteration_count` > 0:
+1. Copy the existing plan.md to `$WORK_DIR/plan.v{iteration_count}.md` (e.g., plan.v1.md, plan.v2.md)
+2. Proceed to create the new plan.md
+
+### 1-2. Template suggestion (optional)
+
+Read `references/plan-templates.md` from the skill directory to check for matching templates.
+
+Analyze the task description and research.md to identify the most appropriate template:
+
+```
+📋 적합한 Plan 템플릿이 있습니다: [Template Name]
+   템플릿을 활용할까요? (y/n)
+```
+
+If the user agrees, use the template structure as the skeleton for plan.md.
+If declined, proceed with the standard structure.
 
 ### 2. Check for user feedback
 
@@ -40,10 +62,22 @@ If feedback exists, incorporate it into the updated plan.
 
 ### 3. Create the implementation plan
 
-Write `$WORK_DIR/plan.md` with the following structure:
+Write `$WORK_DIR/plan.md` with the following structure. The document MUST begin with Plan Summary (pyramid principle: conclusions first).
+
+**For existing codebases (`project_type: existing`):**
 
 ```markdown
 # Implementation Plan: [Task Title]
+
+## Plan Summary
+<!-- 3-5줄 핵심 요약: 어떤 접근법을 선택했고, 몇 개 파일을 수정하며,
+     예상 리스크 수준은 어떤지. -->
+- **접근법**: [선택한 아키텍처/접근법 한 줄 설명]
+- **변경 범위**: [N]개 파일 수정, [M]개 파일 생성
+- **리스크 수준**: Low / Medium / High
+- **핵심 결정**: [가장 중요한 아키텍처 결정 한 줄]
+
+---
 
 ## Overview
 Brief description of what will be implemented and the approach chosen.
@@ -97,7 +131,65 @@ If something goes wrong:
 - Any unresolved decisions for the user to weigh in on
 ```
 
-### 4. Present for review
+**For zero-base projects (`project_type: zero-base`):**
+
+```markdown
+# Implementation Plan: [Task Title] (Zero-Base)
+
+## Plan Summary
+- **접근법**: [선택한 기술 스택과 아키텍처 한 줄 설명]
+- **생성 범위**: [N]개 파일 생성
+- **리스크 수준**: Low / Medium / High
+- **핵심 결정**: [가장 중요한 기술 스택 결정 한 줄]
+
+---
+
+## Overview
+[Approach description]
+
+## Architecture Decision
+[Why this stack and architecture]
+
+## Project Structure
+[전체 디렉토리 구조 트리]
+
+## Files to Create
+
+### [File path]
+- **Action**: Create
+- **Purpose**: [이 파일의 역할]
+- **Code sketch**: [코드 스니펫]
+- **Dependencies**: [이 파일이 의존하는 다른 파일]
+
+## Setup Instructions
+[프로젝트 초기화 명령어 목록]
+- `mkdir -p ...`
+- `npm init ...` / `python -m venv ...`
+- 의존성 설치 명령어
+
+## Task Checklist
+- [ ] Task 1: [File path] — [What to do] — [Why]
+...
+
+## Open Questions
+- [Unresolved items]
+```
+
+**If previous versions exist, add a Change Log:**
+
+```markdown
+---
+## Change Log
+
+### v{N} → v{N+1} (현재)
+- **변경 사유**: [사용자 피드백 요약]
+- **주요 변경**:
+  - [변경 1]
+  - [변경 2]
+- **이전 버전**: plan.v{N}.md
+```
+
+### 4. Present for interactive review
 
 Display:
 
@@ -115,25 +207,94 @@ Display:
 
 ⚠️  아직 구현을 시작하지 않습니다!
 
-👉 다음 단계:
-  1. $WORK_DIR/plan.md 를 꼼꼼히 검토하세요
-  2. 수정이 필요하면:
-     - 파일에 직접 메모를 추가하거나 (> [!NOTE], <!-- HUMAN: -->)
-     - 채팅으로 피드백을 주세요
-  3. /deep-plan 을 다시 실행하면 피드백을 반영합니다
-  4. 계획이 만족스러우면 "승인" 이라고 입력하세요
-     → 구현이 자동으로 시작됩니다
+📋 계획이 준비되었습니다. 리뷰해주세요.
+
+피드백 방법:
+  • 채팅으로 수정 요청 (예: "3번 항목을 B 접근법으로 변경해줘")
+  • plan.md 파일 직접 편집 (> [!NOTE] 또는 <!-- HUMAN: --> 사용)
+  • "승인" / "approve" / "LGTM" 입력으로 다음 단계 진행
 ```
+
+### 4-1. Interactive feedback loop
+
+When the user provides chat-based feedback instead of approval:
+
+1. Read the current `$WORK_DIR/plan.md`
+2. Apply the user's feedback to modify plan.md
+3. Highlight what was changed:
+   ```
+   📝 plan.md가 수정되었습니다:
+     - [변경된 부분 요약 1]
+     - [변경된 부분 요약 2]
+
+   계속 피드백을 주시거나, "승인"으로 다음 단계로 진행하세요.
+   ```
+4. Wait for the next feedback or approval
+
+Repeat this loop until the user approves.
 
 ### 5. Handle approval
 
 When the user says "승인", "approve", "approved", "LGTM", or similar approval words:
 
-#### 5a. Update state
+#### 5a. Mode re-evaluation (Team → Solo)
+
+**If `team_mode` is "team"**: Analyze the plan.md Task Checklist:
+- Count the number of tasks
+- Count the number of unique file paths
+- Check if all tasks target the same file
+
+If any of these conditions are met, suggest switching to Solo:
+- Task count ≤ 3
+- Unique files ≤ 2
+- All tasks target the same file
+
+```
+💡 모드 전환 제안
+
+계획을 분석한 결과, 이 작업은 Solo 모드가 더 효율적일 수 있습니다:
+- 태스크 수: [N]개 (≤3)
+- 수정 파일: [M]개
+
+Team 모드의 병렬 실행과 Cross-review 대신,
+Solo 모드의 순차 실행이 오버헤드 없이 빠를 수 있습니다.
+
+Solo 모드로 전환할까요? (y/n)
+```
+
+If user approves: update `team_mode: solo` in state file.
+If user declines: keep Team mode.
+
+#### 5a-2. Mode re-evaluation (Solo → Team)
+
+**If `team_mode` is "solo"**: Analyze the plan.md Task Checklist:
+
+If ALL of these conditions are met, suggest switching to Team:
+- Task count ≥ 6
+- Unique files ≥ 4
+- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set
+
+```
+💡 모드 전환 제안
+
+계획을 분석한 결과, 이 작업은 Team 모드가 더 효율적일 수 있습니다:
+- 태스크 수: [N]개 (≥6)
+- 수정 파일: [M]개 (≥4)
+
+Team 모드의 병렬 실행과 Cross-review가 도움이 될 수 있습니다.
+
+Team 모드로 전환할까요? (y/n)
+```
+
+If user approves: update `team_mode: team` in state file.
+If user declines: keep Solo mode.
+
+#### 5b. Update state
 
 Update `.claude/deep-work.local.md`:
 - Set `plan_approved: true`
 - Set `current_phase: implement`
+- Set `plan_completed_at` to the current ISO timestamp
 - Increment `iteration_count`
 - Add a progress log entry
 
@@ -143,7 +304,7 @@ Display:
 ✅ 계획이 승인되었습니다! 구현을 자동으로 시작합니다...
 ```
 
-#### 5b. Auto-execute implementation
+#### 5c. Auto-execute implementation
 
 After updating the state file, **immediately proceed to execute the implementation**.
 
@@ -152,10 +313,10 @@ Read the implementation instructions from the `/deep-implement` command file (lo
 1. Load the plan checklist from `$WORK_DIR/plan.md`
 2. Check `team_mode` from state file
 3. Execute all tasks following Solo or Team mode implementation process
-4. Run verification (type checks, lints, tests)
-5. Update state to `idle`
-6. Display implementation summary
-7. Generate session report at `$WORK_DIR/report.md`
+4. After all tasks complete, transition to Test phase
+5. Run comprehensive tests
+6. Update state based on test results
+7. Generate session report if all tests pass
 
 **IMPORTANT**: Do NOT ask the user to run `/deep-implement` manually. The implementation must start automatically after approval.
 

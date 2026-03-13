@@ -28,6 +28,8 @@ If not, inform the user which prerequisite step is missing.
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
 
+**Record start time**: Update `implement_started_at` in the state file with the current ISO timestamp.
+
 ### 2. Load the plan and check mode
 
 Read `$WORK_DIR/plan.md` and identify the **Task Checklist** section. Each item should be in the format:
@@ -43,6 +45,25 @@ Read `team_mode` from `.claude/deep-work.local.md`. If missing, treat as `solo`.
 ---
 
 ## Solo Mode Implementation
+
+### 0. Resume detection (checkpoint support)
+
+Before starting implementation, read plan.md's Task Checklist and check for already completed tasks:
+- `- [x]` items: Already completed tasks
+- `- [ ]` items: Incomplete tasks
+
+If completed tasks exist (1 or more):
+
+```
+🔄 이전 구현 진행 상황 감지:
+   완료: [N]개 / 전체: [M]개
+
+   마지막 완료 태스크: Task [K]: [description]
+
+   미완료 태스크부터 이어서 진행합니다.
+```
+
+Start sequential execution from the first incomplete task.
 
 ### 3-SOLO. Execute tasks sequentially
 
@@ -77,17 +98,11 @@ git stash  # or
 git checkout -- <file>  # for specific files
 ```
 
-### 5-SOLO. Run verification
+### 5-SOLO. Transition to Test phase
 
-After all tasks are complete, run any applicable verification:
-- Type checking (tsc, mypy, etc.)
-- Linting (eslint, ruff, etc.)
-- Tests related to the changed code
-- Build verification
+After all tasks are marked complete:
 
-### 6-SOLO. Update state and summarize
-
-Continue to [Final: Update state and summarize](#final-update-state-and-summarize).
+Continue to [Final: Transition to Test](#final-transition-to-test).
 
 ---
 
@@ -133,9 +148,15 @@ For each cluster, create a task with `TaskCreate`. Each task description MUST in
 - Each agent joins team `deep-implement`
 - Use `TaskUpdate` to assign each task to the corresponding agent
 
-### 3-TEAM-5. Monitor and coordinate
+### 3-TEAM-5. Monitor and coordinate with progress notifications
 
 - Use `TaskList` to check progress periodically
+- **Display progress as each agent completes**:
+  ```
+  [1/N] impl-1 완료 ✅ (impl-2, impl-3 대기 중...)
+  [2/N] impl-2 완료 ✅ (impl-3 대기 중...)
+  [N/N] impl-3 완료 ✅
+  ```
 - If an agent reports an issue via message, evaluate and provide guidance or escalate to the user
 - If file dependency conflicts arise, coordinate execution order between agents
 
@@ -211,127 +232,44 @@ Record each round in `$WORK_DIR/plan.md`:
 
 After cross-review passes:
 - Verify all checklist items in `plan.md` are `[x]` and all cross-review items are ✅
-- Run type checks, linting, tests, and build verification
-- If all pass, declare **completion**
 
-### 3-TEAM-8. Clean up and complete
+### 3-TEAM-8. Clean up and transition to Test
 
 - Send `shutdown_request` to all team members via `SendMessage`
 - Wait for confirmations, then `TeamDelete`
-- Continue to [Final: Update state and summarize](#final-update-state-and-summarize) with team info included
+- Continue to [Final: Transition to Test](#final-transition-to-test)
 
 ---
 
-## Final: Update state and summarize
+## Final: Transition to Test
 
-Update `.claude/deep-work.local.md`:
-- Set `current_phase: idle`
-- Add completion timestamp to progress log
+After all implementation tasks are complete:
 
-Display:
+1. **Record completion time**: Update `implement_completed_at` in the state file with the current ISO timestamp
 
-```
-✅ Deep Work 구현이 완료되었습니다!
+2. **Update state file**:
+   - Set `current_phase: test`
+   - Add completion timestamp to progress log
 
-📊 구현 결과:
-  - 완료된 태스크: N/N
-  - 수정된 파일: [list]
-  - 신규 파일: [list]
+3. **Display transition message**:
+   ```
+   ✅ 구현이 완료되었습니다. 테스트 단계로 진입합니다.
 
-🔍 검증 결과:
-  - 타입 체크: ✅/❌
-  - 린트: ✅/❌
-  - 테스트: ✅/❌
+   📊 구현 결과:
+     - 완료된 태스크: N/N
+     - 수정된 파일: [list]
+     - 신규 파일: [list]
+   ```
 
-📄 상세 내용: $WORK_DIR/plan.md (체크리스트 확인)
-```
+   If Team mode was used, also display:
+   ```
+   🤝 팀 구현 결과:
+     - 에이전트 수: N명
+     - 크로스체크 라운드: N회
+     - 발견/수정된 이슈: N건
+   ```
 
-If Team mode was used, also display:
-```
-🤝 팀 구현 결과:
-  - 에이전트 수: N명
-  - 크로스체크 라운드: N회
-  - 발견/수정된 이슈: N건
-```
-
-## Generate Session Report
-
-After displaying the implementation summary, automatically generate the session report.
-
-### Report generation steps
-
-1. Read all session artifacts:
-   - `.claude/deep-work.local.md` (session state and metadata)
-   - `$WORK_DIR/research.md` (research findings)
-   - `$WORK_DIR/plan.md` (plan and implementation results)
-
-2. Write `$WORK_DIR/report.md` with the following structure:
-
-```markdown
-# Deep Work Session Report
-
-## Session Overview
-| Field | Value |
-|-------|-------|
-| Task | [task_description] |
-| Work Directory | [work_dir] |
-| Mode | Solo / Team |
-| Started | [started_at] |
-| Completed | [current timestamp] |
-| Plan Iterations | [iteration_count] |
-
-## Research Summary
-[3-5 bullet points summarizing the key findings from research.md]
-
-## Plan Summary
-[Approach chosen, key architectural decisions, alternatives considered]
-
-## Implementation Results
-| # | Task | File | Status | Notes |
-|---|------|------|--------|-------|
-| 1 | [description] | [path] | ✅/❌ | [notes] |
-
-## Files Changed
-### Created
-- [list of new files]
-
-### Modified
-- [list of modified files]
-
-### Deleted
-- [list of deleted files, if any]
-
-## Verification Results
-| Check | Result |
-|-------|--------|
-| Type Check | ✅ Pass / ❌ Fail / ⬜ N/A |
-| Lint | ✅ Pass / ❌ Fail / ⬜ N/A |
-| Tests | ✅ Pass / ❌ Fail / ⬜ N/A |
-| Build | ✅ Pass / ❌ Fail / ⬜ N/A |
-
-## Issues & Notes
-[From plan.md ## Issues Encountered section, if any. "None" if no issues.]
-
-## Team Mode Details (if applicable)
-| Item | Value |
-|------|-------|
-| Agents | N |
-| Cross-review Rounds | N |
-| Issues Found/Fixed | N |
-```
-
-3. Display report confirmation:
-
-```
-📄 세션 리포트가 생성되었습니다: $WORK_DIR/report.md
-
-👉 권장 다음 단계:
-  1. 변경 사항을 검토하세요
-  2. 테스트를 실행하세요
-  3. 문제가 없으면 커밋하세요
-  4. /deep-status 로 세션 요약을 확인할 수 있습니다
-  5. /deep-report 로 리포트를 재생성할 수 있습니다
-```
+4. **Automatically execute Test phase**: Read the `/deep-test` command file and follow all its steps exactly. Do NOT ask the user to run `/deep-test` manually.
 
 ## Implementation Quality Rules
 
