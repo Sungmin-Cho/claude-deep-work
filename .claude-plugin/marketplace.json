@@ -1,16 +1,16 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "sseocho",
-  "description": "Deep Work 플러그인 마켓플레이스",
+  "description": "sseocho 플러그인 마켓플레이스 — Deep Work 워크플로우 외",
   "owner": {
     "name": "sungmin"
   },
   "plugins": [
     {
       "name": "deep-work",
-      "description": "3-phase workflow (Research → Plan → Implement) enforcing strict separation of planning and coding",
-      "version": "1.1.0",
-      "source": "./"
+      "description": "4-phase workflow (Research → Plan → Implement → Test) with model routing, multi-channel notifications, quality gates, and more",
+      "version": "3.1.0",
+      "source": "./plugins/deep-work"
     }
   ]
 }
