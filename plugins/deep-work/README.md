@@ -291,13 +291,13 @@ Enabling Team mode:
 
 ```bash
 # Install from marketplace
-claude plugin add sseocho --from github.com/Sungmin-Cho/sseocho-plugins
+claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-work
 ```
 
 ### Option 2: npm
 
 ```bash
-npm install @sseocho/claude-deep-work
+npm install @claude-deep-work/deep-work
 ```
 
 ### Option 3: Local (development)

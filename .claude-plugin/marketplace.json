@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "sseocho",
-  "description": "sseocho 플러그인 마켓플레이스 — Deep Work 워크플로우 외",
+  "name": "claude-deep-work",
+  "description": "Claude Code plugin marketplace — Deep Work structured workflow",
   "owner": {
     "name": "sungmin"
   },

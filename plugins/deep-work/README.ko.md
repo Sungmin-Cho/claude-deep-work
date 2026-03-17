@@ -290,13 +290,13 @@ Team 모드 활성화:
 
 ```bash
 # 마켓플레이스에서 설치
-claude plugin add sseocho --from github.com/Sungmin-Cho/sseocho-plugins
+claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-work
 ```
 
 ### 방법 2: npm
 
 ```bash
-npm install @sseocho/claude-deep-work
+npm install @claude-deep-work/deep-work
 ```
 
 ### 방법 3: 로컬 (개발용)

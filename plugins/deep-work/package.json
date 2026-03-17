@@ -1,12 +1,12 @@
 {
-  "name": "@sseocho-plugins/claude-deep-work",
+  "name": "@claude-deep-work/deep-work",
   "version": "3.1.0",
   "description": "Deep Work plugin for Claude Code - 4-phase workflow (Research → Plan → Implement → Test)",
   "author": "sungmin",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Sungmin-Cho/sseocho-plugins.git"
+    "url": "https://github.com/Sungmin-Cho/claude-deep-work.git"
   },
   "keywords": [
     "claude-code",
