@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "3.0.0",
-  "description": "4-phase workflow (Research → Plan → Implement → Test) with session history, auto-implementation, zero-base mode, and session reports",
+  "version": "3.1.0",
+  "description": "4-phase workflow (Research → Plan → Implement → Test) with model routing, multi-channel notifications, incremental research, quality gates, and plan diff",
   "author": {
     "name": "sungmin"
   },

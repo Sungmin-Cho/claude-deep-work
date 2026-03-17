@@ -46,6 +46,8 @@ Read all available session artifacts:
 - `$WORK_DIR/research.md` — research findings (if exists)
 - `$WORK_DIR/plan.md` — plan and implementation checklist (if exists)
 - `$WORK_DIR/test-results.md` — test results (if exists)
+- `$WORK_DIR/quality-gates.md` — quality gate results (if exists)
+- `$WORK_DIR/plan-diff.md` — plan diff visualization (if exists)
 
 ### 4. Calculate phase durations
 
@@ -77,6 +79,7 @@ Write `$WORK_DIR/report.md` with the following structure:
 | Completed | [current timestamp or "In Progress"] |
 | Current Phase | [current_phase] |
 | Plan Iterations | [iteration_count] |
+| Model Routing | Research: [model], Plan: 현재 세션, Implement: [model], Test: [model] |
 
 ## Phase Duration
 | Phase | Started | Completed | Duration |
@@ -94,6 +97,14 @@ Write `$WORK_DIR/report.md` with the following structure:
 ## Plan Summary
 [Approach chosen, key architectural decisions, alternatives considered]
 [If plan.md doesn't exist: "Planning phase not yet completed."]
+
+## Plan Iterations
+[If plan-diff.md exists in $WORK_DIR:
+| Version | 주요 변경 | 리스크 변경 |
+|---------|----------|------------|
+[Parse from plan-diff.md]
+]
+[If plan-diff.md does not exist: "단일 반복 (재작성 없음)"]
 
 ## Implementation Results
 | # | Task | File | Status | Notes |
@@ -119,6 +130,10 @@ Write `$WORK_DIR/report.md` with the following structure:
 | Tests | ✅ Pass / ❌ Fail / ⬜ N/A |
 | Build | ✅ Pass / ❌ Fail / ⬜ N/A |
 [If test-results.md exists, use its data. Otherwise show ⬜ N/A for all]
+
+## Quality Gate Results
+[If $WORK_DIR/quality-gates.md exists, read and include its latest attempt table here]
+[If quality-gates.md does not exist: "Quality Gates 미정의 — 기본 auto-detection 사용"]
 
 ## Test Retry History
 [If test_retry_count > 0, summarize each attempt from test-results.md]

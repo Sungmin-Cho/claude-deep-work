@@ -5,6 +5,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-03-17
+
+### Breaking Changes
+- **저장소 구조 개편**: 루트 플러그인에서 `plugins/deep-work/` 서브디렉토리 패턴으로 전환. 기존 사용자는 재설치 필요.
+
+### Added
+- **모델 라우팅 (F1)**: Phase별 최적 모델 배정 (Research=sonnet, Plan=main, Implement=sonnet, Test=haiku). Agent 위임 패턴으로 토큰 30~40% 절감.
+- **멀티채널 알림 (F2)**: Phase 완료 시 OS 네이티브 + Slack/Discord/Telegram/커스텀 Webhook 알림. Fire-and-forget 패턴.
+- **증분 리서치 (F3)**: `/deep-research --incremental` — git diff 기반 변경 영역만 재분석. 시간 60~80% 절감.
+- **Quality Gate 시스템 (F4)**: plan.md에 Quality Gates 정의 → required/advisory 게이트 실행. `quality-gates.md` 산출물.
+- **Plan Diff 시각화 (F5)**: Plan 재작성 시 구조적 변경 사항 자동 시각화. `plan-diff.md` 산출물.
+- **model-routing-guide.md**: 모델 라우팅 설정 가이드
+- **notification-guide.md**: 알림 채널 설정 가이드
+
+### Changed
+- `/deep-work` 초기화에 모델 라우팅/알림 설정 옵션 추가
+- `/deep-status`에 모델 라우팅, 알림, Quality Gate 상태 표시
+- `/deep-report`에 Quality Gate 결과, Plan Diff 요약 섹션 추가
+- State 스키마에 `model_routing`, `notifications`, `last_research_commit`, `quality_gates_passed` 필드 추가
+- marketplace.json source 경로 `"./"` → `"./plugins/deep-work"` 변경
+
 ## [3.0.0] - 2026-03-13
 
 ### Added

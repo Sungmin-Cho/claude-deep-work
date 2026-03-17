@@ -89,3 +89,23 @@ A good test phase:
 - Provides clear, actionable failure messages
 - Records each attempt for debugging
 - Respects the retry limit to prevent infinite loops
+
+## Quality Gates (v3.1.0)
+
+plan.md에 `## Quality Gates` 마크다운 테이블을 정의하면, Test Phase에서 자동 실행된다.
+
+### 게이트 유형
+- **✅ 필수(required)**: 실패 시 implement 복귀
+- **⚠️ 권고(advisory)**: 실패 시 경고만 기록
+
+### 정의 형식
+```markdown
+| Gate | 명령어 | 필수 | 임계값 |
+|------|--------|------|--------|
+| Type Check | `npx tsc --noEmit` | ✅ | — |
+| Coverage | `npm test -- --coverage` | ⚠️ | ≥80% |
+```
+
+### 결과 파일
+`$WORK_DIR/quality-gates.md`에 상세 결과가 기록된다.
+Quality Gates 미정의 시 기존 auto-detection 로직이 유지된다.

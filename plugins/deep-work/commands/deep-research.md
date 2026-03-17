@@ -71,6 +71,34 @@ If the user selects option 1:
 If the user selects option 2 or git is not available:
 - Proceed with full analysis as normal
 
+### 0-2. Check for incremental mode
+
+If `$ARGUMENTS` contains `--incremental`:
+
+1. Read `last_research_commit` from the state file
+2. If empty or missing, inform the user and fall back to full research:
+   ```
+   ℹ️ 이전 리서치 커밋 기록이 없습니다. 전체 리서치를 진행합니다.
+   ```
+   Proceed to Section 2.
+
+3. Run `git diff --name-only $last_research_commit..HEAD` to get changed files
+4. Map changed files to research areas using this heuristic:
+   - `**/models/**`, `**/schema/**`, `**/entities/**`, `**/migrations/**` → data
+   - `**/api/**`, `**/routes/**`, `**/controllers/**`, `**/handlers/**` → api
+   - `**/middleware/**`, `**/core/**`, `**/config/**` → architecture
+   - `**/test/**`, `**/spec/**`, `**/utils/**`, `**/helpers/**` → patterns
+   - `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod` → dependencies
+   - Other files → architecture (default)
+5. Read the most recent previous `research.md` from a prior session
+6. Copy unchanged sections verbatim from the previous research
+7. Re-analyze only the affected areas
+8. Update Executive Summary with note: `> 📚 증분 리서치: [영역 목록] 재분석, 기준 커밋: [last_research_commit]`
+9. After completion, update `last_research_commit` in state file to current HEAD (`git rev-parse HEAD`)
+10. Skip to [Step 4: Update state file](#4-update-state-file)
+
+**Note**: `--scope` takes priority over `--incremental`. If both are provided, `--scope` wins.
+
 ### 2. Branch by mode and project type
 
 - **`project_type: zero-base`** → Continue with [Zero-Base Research](#zero-base-research)
@@ -159,6 +187,21 @@ Then continue to [Step 4: Update state file](#4-update-state-file).
 ---
 
 ## Solo Mode Research
+
+### 1-1. Model Routing Check (Solo Mode)
+
+Read `model_routing` from the state file. Default: `{research: "sonnet", plan: "main", implement: "sonnet", test: "haiku"}`.
+
+If `model_routing.research` is NOT "main":
+  - Use the Agent tool to spawn a research agent:
+    - `model`: value of `model_routing.research` (e.g., "sonnet")
+    - `prompt`: Include ALL the Solo Mode Research instructions below (Sections 2-SOLO and 3-SOLO), plus the task_description, WORK_DIR path, and project_type
+    - `description`: "Deep research analysis"
+  - Wait for the Agent to complete (it will write `$WORK_DIR/research.md`)
+  - Skip to [Step 4: Update state file](#4-update-state-file)
+
+If `model_routing.research` is "main":
+  - Execute Solo Mode Research in the current session (existing behavior below)
 
 ### 2-SOLO. Conduct exhaustive research
 
@@ -284,6 +327,8 @@ Each task description MUST include:
 ### 2-TEAM-3. Spawn agents and assign
 
 Spawn 3 `general-purpose` agents using the Agent tool:
+- Read `model_routing.research` from the state file (default: "sonnet")
+- Pass the `model` parameter to each Agent spawn call (e.g., `model: "sonnet"`)
 - Names: `arch-analyst`, `pattern-analyst`, `risk-analyst`
 - Each agent joins team `deep-research`
 - Use `TaskUpdate` to assign each task to the corresponding agent
@@ -345,6 +390,7 @@ When research is complete, update `.claude/deep-work.local.md`:
 - Set `research_complete: true`
 - Set `current_phase: plan`
 - Set `research_completed_at` to the current ISO timestamp
+- Update `last_research_commit` to the current git HEAD: run `git rev-parse HEAD 2>/dev/null` and store the result
 - Add a progress log entry for research completion
 
 ## 5. Guide the user
@@ -375,6 +421,13 @@ If Team mode was used, also display:
   - pattern-analyst: $WORK_DIR/research-patterns.md
   - risk-analyst: $WORK_DIR/research-dependencies.md
   - 통합 결과: $WORK_DIR/research.md
+```
+
+### 6. Send notification
+
+Run the following command to notify phase completion. If it fails, ignore and continue:
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "research" "completed" "✅ Research 완료 — Plan 준비됨" 2>/dev/null || true
 ```
 
 ## Research Quality Checklist

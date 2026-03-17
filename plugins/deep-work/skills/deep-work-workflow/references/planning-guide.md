@@ -145,3 +145,15 @@ A good plan:
 - Respects the architecture and patterns found during research
 - Includes rollback instructions
 - Has been reviewed and approved by the user
+
+## Plan Diff (v3.1.0)
+
+Plan 재작성(iteration_count > 0) 시 자동으로 `plan-diff.md`가 생성된다.
+
+비교 항목:
+- 태스크 추가/수정/삭제 (파일 경로 기준 매칭)
+- 파일 영향 범위 변경
+- 아키텍처 결정 변경
+- 리스크 수준 변경
+
+사용자에게 diff 요약이 인라인으로 표시된다.

@@ -81,6 +81,12 @@ If the user agrees:
 If the user declines or not a git repo:
 - Set `git_branch` to empty string
 
+**Capture last research commit**: If the project is a git repository, run:
+```bash
+git rev-parse HEAD 2>/dev/null
+```
+Store the result as `last_research_commit` in the state file. This will be used by incremental research (`--incremental`) to detect changes since the last research.
+
 ### 3. Create placeholder files
 
 Create these empty files:
@@ -124,6 +130,48 @@ Ask the user to choose the work mode using AskUserQuestion:
 3. If the variable is set (any non-empty value), set `team_mode` to `team`.
 
 **If the user selects Solo or default:** Set `team_mode` to `solo`.
+
+### 4-1. Configure model routing
+
+Ask the user using AskUserQuestion:
+
+```
+🧠 모델 라우팅 설정:
+  기본값: Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku
+
+  1. ✅ 기본값 사용 (권장)
+  2. ⚙️ 커스텀 설정
+```
+
+If the user chooses option 1 (default):
+- Use default model_routing values (already set in state template)
+
+If the user chooses option 2:
+- For each non-interactive phase (Research, Implement, Test), ask the user to choose: sonnet, haiku, or opus
+- Plan phase always uses main session model (interactive feedback required)
+- Store selections in the state file's `model_routing` block
+
+### 4-2. Configure notifications
+
+Check if a previous session's `.claude/deep-work.local.md` has a `notifications:` block with configured channels.
+
+If previous notification settings exist:
+```
+📋 이전 알림 설정을 유지합니다: [channel types list]
+   변경하려면 "변경"을 입력하세요. (유지: Enter)
+```
+Copy the previous notification settings to the new state file.
+
+If no previous settings exist or user wants to change:
+```
+🔔 알림을 설정할까요?
+  1. ❌ 알림 없음 (기본)
+  2. 🖥️ 로컬 알림만 (OS 네이티브)
+  3. 📱 외부 채널 추가 (Slack / Discord / Telegram / Webhook)
+```
+
+If option 2: Set `notifications.enabled: true`, `channels: [{type: "local"}]`
+If option 3: Ask for channel type and configuration (webhook URL, bot token, etc.), then set accordingly. Multiple channels can be added.
 
 ### 5. Select project type
 
@@ -188,6 +236,16 @@ implement_started_at: ""
 implement_completed_at: ""
 test_started_at: ""
 test_completed_at: ""
+model_routing:
+  research: "sonnet"
+  plan: "main"
+  implement: "sonnet"
+  test: "haiku"
+last_research_commit: ""
+quality_gates_passed: null
+notifications:
+  enabled: false
+  channels: []
 ---
 
 # Deep Work Session
@@ -214,6 +272,8 @@ Determine the starting phase and display accordingly:
 🤝 작업 모드: Solo / Team (Agent Team)
 🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
 🌿 Git 브랜치: [branch name or "없음"]
+🧠 모델 라우팅: Research=[model], Plan=현재 세션, Implement=[model], Test=[model]
+🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 🔄 워크플로우:
   Phase 1: /deep-research  ← 현재 단계
@@ -238,6 +298,8 @@ Determine the starting phase and display accordingly:
 🤝 작업 모드: Solo / Team (Agent Team)
 🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
 🌿 Git 브랜치: [branch name or "없음"]
+🧠 모델 라우팅: Research=[model], Plan=현재 세션, Implement=[model], Test=[model]
+🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 🔄 워크플로우:
   Phase 1: /deep-research  ✅ 건너뜀

@@ -122,3 +122,15 @@ A good implementation:
 - The user is kept informed throughout
 - The final result matches what was approved in the plan
 - A comprehensive session report is generated upon completion
+
+## Agent Delegation Pattern (v3.1.0)
+
+모델 라우팅 활성화 시, Solo 모드의 비대화형 Phase는 Agent를 스폰하여 실행된다.
+
+### 동작 방식
+1. state 파일에서 `model_routing.implement` 읽기 (기본값: sonnet)
+2. Agent 스폰: 지정 모델로 전체 구현 지시를 위임
+3. Agent 완료 후 메인 세션에서 상태 업데이트
+
+### Team 모드
+기존 Agent에 `model` 파라미터만 추가. 아키텍처 변경 없음.

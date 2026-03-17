@@ -58,11 +58,15 @@ Read `.claude/deep-work.local.md` to get session state.
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
 
+Read `model_routing` and `notifications` from the state file. If missing, show defaults (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku for model routing; "설정 없음" for notifications).
+
 Read the following files if they exist:
 - `$WORK_DIR/research.md` — check if it has content
 - `$WORK_DIR/plan.md` — count checklist progress
 - `$WORK_DIR/report.md` — check if it exists
 - `$WORK_DIR/test-results.md` — check if it exists
+- `$WORK_DIR/quality-gates.md` — check if it exists
+- `$WORK_DIR/plan-diff.md` — check if it exists
 
 ### 3. Calculate progress
 
@@ -86,6 +90,8 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 🤝 작업 모드: [Solo / Team]
 🏗️ 프로젝트 타입: [Existing / Zero-Base]
 🌿 Git 브랜치: [git_branch or "없음"]
+🧠 모델 라우팅: Research=[model], Plan=현재 세션, Implement=[model], Test=[model]
+🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 📍 현재 단계: [Phase name with emoji]
    🔬 Phase 1 (Research):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
@@ -101,12 +107,15 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
    Plan: [duration or "N/A"]
    Implement: [duration or "N/A"]
    Test: [duration or "N/A"]
+📊 Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
 
 📁 산출물:
    - $WORK_DIR/research.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/plan.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/test-results.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/report.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/quality-gates.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/plan-diff.md: [존재함 ✅ / 없음 ⬜]
 
 👉 다음 행동: [안내 메시지]
 ```

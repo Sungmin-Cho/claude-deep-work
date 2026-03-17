@@ -15,7 +15,11 @@ description: |
   let's plan first", "analyze the codebase before we start", "I want to understand the
   code before making changes", or any request involving architectural changes, cross-module
   refactoring, or unfamiliar codebase exploration where jumping straight to implementation
-  would risk mistakes. This skill covers the full Research -> Plan -> Implement -> Test
+  would risk mistakes. Also triggers on: "model routing", "모델 라우팅", "토큰 절약",
+  "모델 설정", "incremental research", "증분 리서치", "변경분만 분석", "--incremental",
+  "quality gate", "품질 게이트", "coverage 임계값", "advisory gate", "plan diff",
+  "계획 비교", "플랜 변경", "notification", "알림 설정", "slack 알림", "discord 알림",
+  "telegram 알림". This skill covers the full Research -> Plan -> Implement -> Test
   lifecycle including phase enforcement, state management, iterative plan review, and
   automated testing loops. Even if the user does not explicitly mention "deep work" or
   "workflow", consider triggering this skill for complex feature requests touching multiple
@@ -267,3 +271,22 @@ Deep Work and Claude's built-in plan mode serve different purposes and can work 
 - **Deep Work**: Heavyweight, enforces strict phase gates with documentation artifacts, automated testing, and session persistence
 
 **Combined usage pattern**: Use built-in plan mode for initial task decomposition, then Deep Work for complex subtasks that need thorough research and planning before implementation.
+
+## v3.1.0 Features
+
+### Model Routing
+Phase별 최적 모델 배정. 비대화형 Phase는 Agent를 스폰하여 지정 모델로 실행.
+- Research/Implement: sonnet (기본), Test: haiku (기본)
+- Plan: 대화형이므로 메인 세션 유지
+
+### Multi-Channel Notifications
+Phase 완료 시 알림 전송. 로컬(OS 네이티브), Slack, Discord, Telegram, 커스텀 Webhook 지원.
+
+### Incremental Research
+`/deep-research --incremental` — git diff 기반으로 변경 영역만 재분석.
+
+### Quality Gates
+plan.md에 Quality Gates 테이블 정의 시, required/advisory 게이트 실행.
+
+### Plan Diff
+Plan 재작성 시 구조적 변경 사항을 자동 시각화하여 plan-diff.md 생성.

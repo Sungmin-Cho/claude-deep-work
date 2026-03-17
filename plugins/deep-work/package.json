@@ -1,6 +1,6 @@
 {
   "name": "@sseocho-plugins/claude-deep-work",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Deep Work plugin for Claude Code - 4-phase workflow (Research → Plan → Implement → Test)",
   "author": "sungmin",
   "license": "MIT",

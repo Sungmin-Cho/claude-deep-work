@@ -46,6 +46,24 @@ Read `team_mode` from `.claude/deep-work.local.md`. If missing, treat as `solo`.
 
 ## Solo Mode Implementation
 
+### 0-pre. Model Routing Check (Solo Mode)
+
+Read `model_routing` from the state file. Default: `{research: "sonnet", plan: "main", implement: "sonnet", test: "haiku"}`.
+
+If `model_routing.implement` is NOT "main" and `team_mode` is "solo":
+  - Read `$WORK_DIR/plan.md` Task Checklist
+  - Use the Agent tool to spawn an implementation agent:
+    - `model`: value of `model_routing.implement` (e.g., "sonnet")
+    - `prompt`: Include the plan.md content, all Solo Mode Implementation instructions (Sections 0, 3-SOLO, 4-SOLO, 5-SOLO), task_description, WORK_DIR path, and checkpoint info
+    - `description`: "Deep implement execution"
+    - `mode`: "bypassPermissions"
+  - Wait for Agent completion
+  - After completion, verify all tasks are marked `[x]` in plan.md
+  - Skip to [Final: Transition to Test](#final-transition-to-test)
+
+If `model_routing.implement` is "main" or `team_mode` is "team":
+  - Proceed with existing behavior below
+
 ### 0. Resume detection (checkpoint support)
 
 Before starting implementation, read plan.md's Task Checklist and check for already completed tasks:
@@ -144,6 +162,8 @@ For each cluster, create a task with `TaskCreate`. Each task description MUST in
 
 ### 3-TEAM-4. Spawn agents and assign
 
+- Read `model_routing.implement` from the state file (default: "sonnet")
+- Pass the `model` parameter to each Agent spawn call
 - Spawn `general-purpose` agents with names `impl-1`, `impl-2`, etc. (one per cluster)
 - Each agent joins team `deep-implement`
 - Use `TaskUpdate` to assign each task to the corresponding agent
@@ -269,7 +289,12 @@ After all implementation tasks are complete:
      - 발견/수정된 이슈: N건
    ```
 
-4. **Automatically execute Test phase**: Read the `/deep-test` command file and follow all its steps exactly. Do NOT ask the user to run `/deep-test` manually.
+4. **Send notification**:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "implement" "completed" "✅ Implement 완료 — Test 시작" 2>/dev/null || true
+   ```
+
+5. **Automatically execute Test phase**: Read the `/deep-test` command file and follow all its steps exactly. Do NOT ask the user to run `/deep-test` manually.
 
 ## Implementation Quality Rules
 

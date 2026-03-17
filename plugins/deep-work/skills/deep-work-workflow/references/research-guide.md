@@ -118,3 +118,14 @@ A good research document:
 - Shows concrete code examples, not abstract patterns
 - Identifies non-obvious constraints
 - Is detailed enough for the planning phase to be purely synthetic (no new research needed)
+
+## Incremental Research (v3.1.0)
+
+`/deep-research --incremental` 플래그로 변경 영역만 재분석할 수 있다.
+
+1. state 파일의 `last_research_commit`을 기준으로 `git diff` 실행
+2. 변경 파일을 분석 영역에 매핑 (models→data, api→api 등)
+3. 변경 안 된 영역은 이전 research.md에서 복사
+4. Executive Summary에 증분 리서치 사실 표기
+
+`--scope`와 동시 사용 시 `--scope`가 우선한다.

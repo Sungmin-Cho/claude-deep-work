@@ -37,6 +37,66 @@ If a previous `$WORK_DIR/plan.md` exists and `iteration_count` > 0:
 1. Copy the existing plan.md to `$WORK_DIR/plan.v{iteration_count}.md` (e.g., plan.v1.md, plan.v2.md)
 2. Proceed to create the new plan.md
 
+### 1-3. Plan Diff visualization (if iteration_count > 0)
+
+**This section executes AFTER the new plan.md is written (Section 3) but BEFORE the review presentation (Section 4).**
+
+If `iteration_count` > 0 and a previous `$WORK_DIR/plan.v{iteration_count}.md` exists:
+
+1. Read the previous plan version (`plan.v{iteration_count}.md`)
+2. Read the new plan.md
+3. Compare structurally:
+   - **Task Checklist**: Match tasks by file path to detect added/modified/deleted
+   - **Files to Modify**: Compare file lists (new files added, files removed)
+   - **Architecture Decision**: Text comparison for key changes
+   - **Risk Level**: Compare Plan Summary risk levels
+
+4. Write `$WORK_DIR/plan-diff.md`:
+
+```markdown
+# Plan Diff: v{N} → v{N+1}
+
+## 변경 사유
+[Summarize user's feedback that led to the re-write]
+
+## 태스크 변경
+
+### ➕ 추가된 태스크
+- Task [N]: [file path] — [description]
+  - 사유: [reason]
+
+### ✏️ 수정된 태스크
+- Task [N]: [file path]
+  - 변경: [old approach] → [new approach]
+  - 사유: [reason]
+
+### ➖ 삭제된 태스크
+- ~~Task [N]: [file path] — [description]~~
+  - 사유: [reason]
+
+## 파일 영향 변경
+| 파일 | v{N} | v{N+1} | 변경 |
+|------|------|--------|------|
+| [path] | [action] | [action] | [change description] |
+
+## 아키텍처 결정 변경
+- [Key architecture decision changes]
+
+## 리스크 수준 변경
+- v{N}: [level] → v{N+1}: [level] ([reason])
+```
+
+5. Display summary during the review presentation (add to Section 4 display):
+```
+📊 Plan Diff (v{N} → v{N+1}):
+  ➕ 추가: [N]개 태스크
+  ✏️ 수정: [N]개 태스크
+  ➖ 삭제: [N]개 태스크
+  📄 상세: $WORK_DIR/plan-diff.md
+```
+
+If `iteration_count` is 0, skip this section entirely.
+
 ### 1-2. Template suggestion (optional)
 
 Read `references/plan-templates.md` from the skill directory to check for matching templates.
@@ -297,6 +357,11 @@ Update `.claude/deep-work.local.md`:
 - Set `plan_completed_at` to the current ISO timestamp
 - Increment `iteration_count`
 - Add a progress log entry
+
+**Send notification**:
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "plan" "approved" "✅ Plan 승인됨 — Implement 시작" 2>/dev/null || true
+```
 
 Display:
 

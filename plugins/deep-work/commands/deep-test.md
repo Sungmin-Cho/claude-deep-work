@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Glob, Grep, Edit
+allowed-tools: Bash, Read, Write, Glob, Grep, Edit, Agent
 description: "Phase 4: Run comprehensive tests and verify implementation"
 ---
 
@@ -29,6 +29,22 @@ Set `WORK_DIR` to the value of `work_dir`.
 
 **Record start time**: Update `test_started_at` in the state file with the current ISO timestamp.
 
+### 1-1. Model Routing Check
+
+Read `model_routing` from the state file. Default: `{research: "sonnet", plan: "main", implement: "sonnet", test: "haiku"}`.
+
+If `model_routing.test` is NOT "main":
+  - Use the Agent tool to spawn a test agent:
+    - `model`: value of `model_routing.test` (e.g., "haiku")
+    - `prompt`: Include ALL test instructions (Sections 2, 3, 4), the WORK_DIR path, and test_retry_count info
+    - `description`: "Deep test verification"
+  - Wait for Agent to complete (it will write test results)
+  - Read Agent's output to determine pass/fail
+  - Skip to [Section 5: Determine outcome](#5-determine-outcome)
+
+If `model_routing.test` is "main":
+  - Proceed with existing behavior below
+
 ### 2. Auto-detect verification commands
 
 Read project root configuration files to identify available verification commands:
@@ -53,6 +69,33 @@ Present detected commands to the user for confirmation:
 ```
 
 If no commands are detected, ask the user to provide verification commands manually.
+
+### 2-1. Parse Quality Gates from plan.md
+
+Read `$WORK_DIR/plan.md` and look for a `## Quality Gates` section containing a markdown table:
+
+```markdown
+## Quality Gates
+
+| Gate | 명령어 | 필수 | 임계값 |
+|------|--------|------|--------|
+| Type Check | `npx tsc --noEmit` | ✅ | — |
+| Lint | `npm run lint` | ✅ | — |
+| Unit Test | `npm test` | ✅ | — |
+| Coverage | `npm test -- --coverage` | ⚠️ | ≥80% |
+| Bundle Size | `npm run build && stat -f%z dist/main.js` | ⚠️ | ≤512000 |
+```
+
+If a Quality Gates section exists:
+- Parse the table into a list of gates
+- Each gate has: name, command, type (✅=required, ⚠️=advisory), threshold
+- **Use these gates instead of auto-detected commands** (Section 2 results are overridden)
+- Execute gates in the order listed in the table
+- For required (✅) gates: failure triggers implement rollback (same as current test failure)
+- For advisory (⚠️) gates: failure records a warning only, does NOT trigger rollback
+
+If no Quality Gates section exists:
+- Use the auto-detected commands from Section 2 (existing behavior, backward compatible)
 
 ### 3. Run verification
 
@@ -87,11 +130,50 @@ Write results to `$WORK_DIR/test-results.md`. Append to existing content if the 
 ---
 ```
 
+### 4-1. Record Quality Gate results
+
+If Quality Gates were defined in plan.md, write `$WORK_DIR/quality-gates.md`:
+
+```markdown
+# Quality Gate Results
+
+## Attempt [N] — [timestamp]
+
+### Required Gates
+| Gate | 명령어 | 결과 | 소요 시간 | 세부 사항 |
+|------|--------|------|----------|----------|
+| [name] | `[command]` | ✅ PASS / ❌ FAIL | [duration] | [details] |
+
+### Advisory Gates
+| Gate | 명령어 | 결과 | 소요 시간 | 측정값 | 임계값 | 세부 사항 |
+|------|--------|------|----------|--------|--------|----------|
+| [name] | `[command]` | ✅ PASS / ⚠️ WARN | [duration] | [actual] | [threshold] | [details] |
+
+### 판정: ✅ PASS / ⚠️ PASS with warnings / ❌ FAIL
+- Required: N/N 통과
+- Advisory: N/N 통과
+```
+
+Update `quality_gates_passed` in the state file:
+- `true` if all required gates passed
+- `false` if any required gate failed
+
+Display inline:
+```
+📊 Quality Gate 결과:
+  ✅ [Gate 1]: PASS
+  ✅ [Gate 2]: PASS
+  ⚠️ [Gate 3]: 72% (≥80% advisory) — 경고만, 차단 없음
+```
+
 ### 5. Determine outcome
 
 #### All tests pass
 
 If every verification command passes:
+
+Also check `quality_gates_passed` if Quality Gates were defined:
+- If `quality_gates_passed` is false (required gate failed), treat as test failure even if auto-detected tests passed
 
 1. Update state file:
    - Set `current_phase: idle`
@@ -109,9 +191,14 @@ If every verification command passes:
    📄 상세 결과: $WORK_DIR/test-results.md
    ```
 
-3. **Automatically generate session report**: Read the `/deep-report` command file and generate `$WORK_DIR/report.md` following its structure. Include test results in the Verification Results section.
+3. **Send notification**:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "passed" "✅ 모든 테스트 통과 — 세션 완료" 2>/dev/null || true
+   ```
 
-4. **Git commit suggestion** (if `git_branch` is set in state file):
+4. **Automatically generate session report**: Read the `/deep-report` command file and generate `$WORK_DIR/report.md` following its structure. Include test results in the Verification Results section.
+
+5. **Git commit suggestion** (if `git_branch` is set in state file):
    ```
    📝 변경사항을 커밋할까요?
       브랜치: [git_branch]
@@ -139,7 +226,12 @@ If any verification fails and `test_retry_count` < `max_test_retries`:
    implement 단계로 복귀합니다. 위 이슈를 수정한 후 /deep-test를 실행하세요.
    ```
 
-4. The user can now modify code (Phase Guard allows edits in implement phase) and then run `/deep-test` when ready.
+4. **Send notification**:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "failed" "❌ 테스트 실패 — Implement 복귀 (시도 $test_retry_count/$max_test_retries)" 2>/dev/null || true
+   ```
+
+5. The user can now modify code (Phase Guard allows edits in implement phase) and then run `/deep-test` when ready.
 
 #### Some tests fail (retry exhausted)
 
@@ -155,4 +247,9 @@ If `test_retry_count` >= `max_test_retries`:
    /deep-report로 현재까지의 결과를 정리할 수 있습니다.
    ```
 
-2. Keep `current_phase: implement` so the user can continue fixing manually.
+2. **Send notification**:
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "failed_final" "⛔ 테스트 재시도 횟수 초과" 2>/dev/null || true
+   ```
+
+3. Keep `current_phase: implement` so the user can continue fixing manually.
