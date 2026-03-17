@@ -1,272 +1,273 @@
-[English](./README.en.md) | **한국어**
+**English** | [한국어](./README.ko.md)
 
 # Deep Work Plugin
 
-AI 코딩 도구 사용 시 **기획과 코딩의 철저한 분리**를 강제하는 4단계 워크플로우 플러그인.
+A Claude Code plugin that enforces **strict separation of planning and coding** through a 4-phase workflow.
 
-## 문제
+## The Problem
 
-AI 코딩 도구가 복잡한 작업을 수행할 때 흔히 발생하는 문제:
-- 기존 아키텍처를 무시하고 새로운 패턴을 도입
-- 이미 존재하는 유틸리티를 중복 구현
-- 코드베이스를 충분히 이해하기 전에 구현 시작
-- 요청하지 않은 "개선"을 추가하여 버그 유발
-- 구현 후 검증 없이 완료 처리
+Common pitfalls when AI coding tools tackle complex tasks:
+- Introducing new patterns while ignoring the existing architecture
+- Reimplementing utilities that already exist
+- Jumping into implementation before understanding the codebase
+- Adding unrequested "improvements" that cause bugs
+- Marking work as done without verification
 
-## 해결책
+## The Solution
 
-**Research → Plan → Implement → Test** 4단계 워크플로우로 분석, 계획, 구현, 검증을 엄격히 분리합니다.
+The **Research → Plan → Implement → Test** workflow enforces strict separation of analysis, planning, implementation, and verification.
 
-- **Phase 1 (Research)**: 코드베이스를 깊이 분석하여 문서화
-- **Phase 2 (Plan)**: 분석 결과를 바탕으로 상세 구현 계획 작성, 사용자 승인
-- **Phase 3 (Implement)**: 승인된 계획을 기계적으로 실행 (승인 시 자동 시작)
-- **Phase 4 (Test)**: 자동 테스트/린트/타입체크 실행, 실패 시 구현으로 복귀
+- **Phase 1 (Research)**: Deep analysis and documentation of the codebase
+- **Phase 2 (Plan)**: Detailed implementation plan based on research, requiring user approval
+- **Phase 3 (Implement)**: Mechanical execution of the approved plan (starts automatically on approval)
+- **Phase 4 (Test)**: Automated tests, linting, and type-checking; falls back to implementation on failure
 
-Phase 1, 2, 4에서는 **코드 파일 수정이 물리적으로 차단**됩니다 (PreToolUse 훅).
+Code file modifications are **physically blocked** during Phases 1, 2, and 4 (via PreToolUse hook).
 
-## 사용법
+## Usage
 
 ```bash
-# 1. 세션 시작 (Solo/Team, 기존/제로베이스, Research/Plan 시작점 선택)
-/deep-work "JWT 기반 사용자 인증 구현"
+# 1. Start a session (Solo/Team, existing/greenfield, Research/Plan starting point)
+/deep-work "Implement JWT-based user authentication"
 
-# 2. 코드베이스 분석
+# 2. Analyze the codebase
 /deep-research
 
-# 3. 연구 결과 검토 후 계획 작성
+# 3. Review research results and create a plan
 /deep-plan
 
-# 4. 계획서 리뷰 → 채팅으로 피드백 → plan.md 자동 수정 → 반복
-#    만족스러우면 "승인" → 구현 자동 시작 → 테스트 자동 실행 → 리포트 자동 생성
+# 4. Review the plan → give feedback via chat → plan.md auto-updates → repeat
+#    When satisfied, type "approve" → implementation starts automatically
+#    → tests run automatically → report is generated
 
-# 부분 리서치 재실행 (특정 영역만)
+# Partial research re-run (specific areas only)
 /deep-research --scope=api,data
 
-# 증분 리서치 (변경된 부분만 재분석)
+# Incremental research (re-analyze only changed parts)
 /deep-research --incremental
 
-# 리포트 조회/재생성
+# View or regenerate the report
 /deep-report
 
-# 상태 및 세션 히스토리 확인
+# Check status and session history
 /deep-status
 
-# 두 세션 비교
+# Compare two sessions
 /deep-status --compare
 ```
 
-## 커맨드
+## Commands
 
-| 커맨드 | 설명 |
-|--------|------|
-| `/deep-work <task>` | 세션 초기화, 작업별 폴더 생성, 옵션 선택 |
-| `/deep-research` | Phase 1: 코드베이스 분석 → `research.md` |
-| `/deep-plan` | Phase 2: 구현 계획 작성 → `plan.md`, 승인 시 자동 구현 |
-| `/deep-implement` | Phase 3: 계획 실행 (수동 실행도 가능) |
-| `/deep-test` | Phase 4: 통합 테스트 실행, 실패 시 implement 복귀 |
-| `/deep-report` | 세션 리포트 생성 또는 조회 |
-| `/deep-status` | 현재 상태, 진행률, Phase별 소요 시간, 세션 히스토리 |
+| Command | Description |
+|---------|-------------|
+| `/deep-work <task>` | Initialize session, create task folder, select options |
+| `/deep-research` | Phase 1: Codebase analysis → `research.md` |
+| `/deep-plan` | Phase 2: Implementation plan → `plan.md`, auto-implement on approval |
+| `/deep-implement` | Phase 3: Execute the plan (can also be run manually) |
+| `/deep-test` | Phase 4: Run integration tests, return to implement on failure |
+| `/deep-report` | Generate or view session report |
+| `/deep-status` | Current status, progress, phase durations, session history |
 
-## 산출물
+## Output Files
 
-각 세션의 산출물은 `deep-work/<작업폴더>/`에 저장됩니다:
+All session artifacts are stored in `deep-work/<task-folder>/`:
 
-| 파일 | 생성 시점 | 설명 |
-|------|----------|------|
-| `research.md` | Phase 1 완료 | 코드베이스 분석 결과 (Executive Summary 먼저) |
-| `plan.md` | Phase 2 완료 | 상세 구현 계획 (Plan Summary 먼저) |
-| `plan.v{N}.md` | Plan 재작성 시 | 이전 Plan 버전 백업 |
-| `test-results.md` | Phase 4 완료 | 검증 결과 (시도별 누적) |
-| `report.md` | 세션 완료 | 전체 세션 리포트 (Phase별 소요 시간 포함) |
-| `quality-gates.md` | Phase 4 완료 | Quality Gate 결과 상세 (required/advisory) |
-| `plan-diff.md` | Plan 재작성 시 | Plan 버전 간 구조적 변경 비교 |
+| File | Created | Description |
+|------|---------|-------------|
+| `research.md` | Phase 1 complete | Codebase analysis results (Executive Summary first) |
+| `plan.md` | Phase 2 complete | Detailed implementation plan (Plan Summary first) |
+| `plan.v{N}.md` | Plan rewrite | Previous plan version backup |
+| `test-results.md` | Phase 4 complete | Verification results (cumulative per attempt) |
+| `report.md` | Session complete | Full session report (includes phase durations) |
+| `quality-gates.md` | Phase 4 complete | Quality Gate results detail (required/advisory) |
+| `plan-diff.md` | Plan rewrite | Structural change comparison between plan versions |
 
-## 세션 상태
+## Session State
 
-`.claude/deep-work.local.md`에 YAML frontmatter로 저장:
+Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 
-| 필드 | 설명 |
-|------|------|
-| `current_phase` | 현재 단계 (research / plan / implement / test / idle) |
-| `work_dir` | 작업 폴더 경로 |
-| `task_description` | 작업 설명 |
-| `team_mode` | 작업 모드 (solo / team) |
-| `project_type` | 프로젝트 타입 (existing / zero-base) |
-| `git_branch` | 생성된 Git 브랜치명 |
-| `test_retry_count` | 테스트 재시도 횟수 |
-| `test_passed` | 최종 테스트 통과 여부 |
-| `*_started_at`, `*_completed_at` | Phase별 시작/완료 타임스탬프 |
-| `model_routing` | Phase별 모델 설정 (research/plan/implement/test) |
-| `notifications` | 알림 설정 (채널 목록, 활성화 여부) |
-| `last_research_commit` | 마지막 리서치 시점의 git commit hash |
-| `quality_gates_passed` | Quality Gate 전체 통과 여부 |
+| Field | Description |
+|-------|-------------|
+| `current_phase` | Current phase (research / plan / implement / test / idle) |
+| `work_dir` | Task folder path |
+| `task_description` | Task description |
+| `team_mode` | Work mode (solo / team) |
+| `project_type` | Project type (existing / zero-base) |
+| `git_branch` | Created Git branch name |
+| `test_retry_count` | Test retry count |
+| `test_passed` | Final test pass status |
+| `*_started_at`, `*_completed_at` | Per-phase start/completion timestamps |
+| `model_routing` | Per-phase model configuration (research/plan/implement/test) |
+| `notifications` | Notification settings (channel list, enabled status) |
+| `last_research_commit` | Git commit hash at the time of last research |
+| `quality_gates_passed` | Whether all Quality Gates passed |
 
-## 워크플로우 상세
+## Workflow Details
 
 ### Phase 1: Research
 
-코드베이스를 6개 영역으로 체계적으로 분석합니다:
+Systematically analyzes the codebase across 6 areas:
 
-1. **Architecture & Structure** — 프로젝트 구조, 아키텍처 패턴, 모듈 경계
-2. **Code Patterns & Conventions** — 네이밍 컨벤션, 에러 처리, 테스팅 패턴
-3. **Data Layer** — ORM/DB 스키마, 마이그레이션, 캐싱 전략
-4. **API & Integration** — API 구조, 인증/인가, 외부 서비스 연동
-5. **Shared Infrastructure** — 공통 유틸리티, 설정 관리, 빌드 시스템
-6. **Dependencies & Risks** — 의존성 충돌, 호환성, 보안 리스크
+1. **Architecture & Structure** — Project structure, architecture patterns, module boundaries
+2. **Code Patterns & Conventions** — Naming conventions, error handling, testing patterns
+3. **Data Layer** — ORM/DB schema, migrations, caching strategies
+4. **API & Integration** — API structure, authentication/authorization, external service integration
+5. **Shared Infrastructure** — Common utilities, configuration management, build system
+6. **Dependencies & Risks** — Dependency conflicts, compatibility, security risks
 
-**v3.0 신규 기능:**
-- **Executive Summary 먼저 제시** — 피라미드 원칙: 결론 → 근거 → 세부사항
-- **제로베이스 모드** — 기술 스택 선정, 스캐폴딩 설계 등 새 프로젝트용 Research
-- **부분 재실행** — `/deep-research --scope=api,data`로 특정 영역만 재분석
-- **Research 캐싱** — 이전 세션 Research를 베이스라인으로 활용, 변경 영역만 재분석
-- **Team 모드 진행 알림** — 에이전트 완료 시 `[2/3] pattern-analyst 완료 ✅` 표시
+**v3.0 features:**
+- **Executive Summary first** — Pyramid principle: conclusion → evidence → details
+- **Greenfield mode** — Tech stack selection, scaffolding design for new projects
+- **Partial re-run** — Re-analyze specific areas with `/deep-research --scope=api,data`
+- **Research caching** — Use previous session's research as baseline, re-analyze only changed areas
+- **Team mode progress** — Agent completion notifications: `[2/3] pattern-analyst done ✅`
 
-**v3.1 신규 기능:**
-- **증분 리서치** — `/deep-research --incremental`로 git diff 기반 변경 영역만 재분석 (시간 60~80% 절감)
-- **모델 라우팅** — Research Phase를 sonnet 모델 Agent에 위임하여 토큰 절감
+**v3.1 features:**
+- **Incremental research** — Re-analyze only changed areas based on git diff with `/deep-research --incremental` (60-80% time savings)
+- **Model routing** — Delegate Research Phase to a sonnet model Agent for token savings
 
 ### Phase 2: Plan
 
-연구 결과를 바탕으로 구체적인 구현 계획을 작성합니다:
+Creates a concrete implementation plan based on research results:
 
-- Plan Summary (접근법, 변경 범위, 리스크, 핵심 결정) 먼저 제시
-- 변경할 파일 목록과 각 파일의 구체적 변경 내용
-- 코드 스케치, 실행 순서, 트레이드오프 분석, 롤백 전략
-- 태스크 체크리스트
+- Plan Summary (approach, scope of changes, risks, key decisions) presented first
+- List of files to change with specific modifications for each
+- Code sketches, execution order, trade-off analysis, rollback strategy
+- Task checklist
 
-**v3.0 신규 기능:**
-- **대화형 Plan 리뷰** — 채팅으로 "3번 항목 변경해줘" → plan.md 자동 수정
-- **Plan 템플릿** — API 엔드포인트, UI 컴포넌트, DB 마이그레이션 등 6종
-- **Plan 변경 이력** — 재작성 시 `plan.v{N}.md`로 백업, Change Log 추가
-- **모드 전환 제안** — Plan 분석 결과에 따라 Team↔Solo 전환 추천
-- **"승인" 입력 시 구현이 자동으로 시작됩니다.**
+**v3.0 features:**
+- **Interactive plan review** — Chat "change item 3" → plan.md auto-updates
+- **Plan templates** — 6 types including API endpoint, UI component, DB migration
+- **Plan version history** — Backed up as `plan.v{N}.md` on rewrite, Change Log added
+- **Mode switch suggestions** — Team/Solo switch recommended based on plan analysis
+- **Typing "approve" automatically starts implementation.**
 
-**v3.1 신규 기능:**
-- **Plan Diff 시각화** — Plan 재작성 시 태스크/파일/아키텍처/리스크 변경을 `plan-diff.md`로 자동 비교
+**v3.1 features:**
+- **Plan Diff visualization** — Automatically compares task/file/architecture/risk changes in `plan-diff.md` when a plan is rewritten
 
 ### Phase 3: Implement
 
-승인된 계획을 기계적으로 실행합니다:
+Mechanically executes the approved plan:
 
-- 체크리스트의 태스크를 순서대로 하나씩 실행
-- 각 태스크 완료 후 체크 표시 (`- [x]`)
-- 문제 발생 시 즉시 중단하고 문서화 (임의 해결 금지)
-- **구현 완료 후 자동으로 Test 단계 진입**
+- Executes checklist tasks one by one in order
+- Marks each task complete (`- [x]`) after execution
+- Stops immediately on issues and documents them (no ad-hoc fixes)
+- **Automatically enters Test phase after implementation completes**
 
-**v3.0 신규 기능:**
-- **체크포인트 (재개 지원)** — 중단 후 재실행 시 완료된 태스크 스킵
-- **Team 모드 진행 알림** — 에이전트별 완료 상태 실시간 표시
+**v3.0 features:**
+- **Checkpoints (resume support)** — Skips completed tasks when restarted after interruption
+- **Team mode progress** — Real-time per-agent completion status
 
 ### Phase 4: Test
 
-구현 결과를 자동으로 검증합니다:
+Automatically verifies implementation results:
 
-- 프로젝트 설정 파일에서 테스트/린트/타입체크 명령어 자동 감지
-- 순차 실행 후 결과 기록 (`test-results.md`)
-- **모두 통과**: 세션 완료 → 리포트 자동 생성
-- **실패 시**: implement 단계로 복귀 → 수정 → 재테스트 (최대 3회)
-- 재시도 횟수 초과 시 루프 중단, 수동 개입 요청
+- Auto-detects test/lint/type-check commands from project configuration files
+- Runs sequentially and records results (`test-results.md`)
+- **All pass**: Session complete → report auto-generated
+- **On failure**: Returns to implement phase → fix → re-test (up to 3 times)
+- Breaks out of the loop after max retries, requesting manual intervention
 
 ```
-implement → test → (통과) → idle + report
-                 → (실패) → implement → test → ...
+implement → test → (pass) → idle + report
+                 → (fail) → implement → test → ...
 ```
 
-**v3.1 신규 기능:**
-- **Quality Gate 시스템** — plan.md에 게이트 정의 (required ✅ / advisory ⚠️), `quality-gates.md` 산출물
-- **모델 라우팅** — Test Phase를 haiku 모델 Agent에 위임하여 비용 최소화
+**v3.1 features:**
+- **Quality Gate system** — Define gates in plan.md (required ✅ / advisory ⚠️), outputs `quality-gates.md`
+- **Model routing** — Delegate Test Phase to a haiku model Agent for minimum cost
 
 ### Session Report
 
-세션 완료 후 자동 생성되는 리포트:
+Automatically generated report after session completion:
 
-- **Session Overview** — 작업명, 모드, 프로젝트 타입, Git 브랜치
-- **Phase Duration** — 각 Phase별 소요 시간
-- **Research/Plan Summary** — 핵심 분석 결과, 접근법
-- **Implementation Results** — 태스크별 실행 결과
-- **Verification Results** — 테스트/린트/타입체크 결과
-- **Test Retry History** — 시도별 결과 이력
+- **Session Overview** — Task name, mode, project type, Git branch
+- **Phase Duration** — Time spent per phase
+- **Research/Plan Summary** — Key analysis results, approach
+- **Implementation Results** — Per-task execution results
+- **Verification Results** — Test/lint/type-check results
+- **Test Retry History** — Results history per attempt
 
 ### Model Routing (v3.1)
 
-Phase별 최적 모델을 배정하여 토큰 비용을 30~40% 절감합니다:
+Assigns the optimal model per phase, reducing token costs by 30-40%:
 
-| Phase | 기본 모델 | 방식 | 근거 |
-|-------|----------|------|------|
-| Research | sonnet | Agent 위임 | 탐색/분석에 충분 |
-| Plan | 메인 세션 | 직접 실행 | 대화형 피드백 필요 |
-| Implement | sonnet | Agent 위임 | 코드 작성에 충분 |
-| Test | haiku | Agent 위임 | 테스트 실행만 수행 |
+| Phase | Default Model | Method | Rationale |
+|-------|--------------|--------|-----------|
+| Research | sonnet | Agent delegation | Sufficient for exploration/analysis |
+| Plan | Main session | Direct execution | Requires interactive feedback |
+| Implement | sonnet | Agent delegation | Sufficient for code writing |
+| Test | haiku | Agent delegation | Only runs tests |
 
-`/deep-work` 초기화 시 커스터마이징 가능 (sonnet, haiku, opus 선택).
+Customizable during `/deep-work` initialization (choose from sonnet, haiku, opus).
 
 ### Multi-Channel Notifications (v3.1)
 
-Phase 완료 시 알림을 전송합니다:
+Sends notifications on phase completion:
 
-| 채널 | 방식 | 설정 |
-|------|------|------|
-| Local | OS 네이티브 (macOS/Linux/Windows) | 기본 |
-| Slack | Incoming Webhook | URL 입력 |
-| Discord | Webhook | URL 입력 |
+| Channel | Method | Configuration |
+|---------|--------|---------------|
+| Local | OS native (macOS/Linux/Windows) | Default |
+| Slack | Incoming Webhook | URL input |
+| Discord | Webhook | URL input |
 | Telegram | Bot API | Token + Chat ID |
 | Custom Webhook | HTTP POST/GET/PUT | URL + Headers + Body Template |
 
-커스텀 Webhook의 `body_template`은 `{{phase}}`, `{{status}}`, `{{message}}`, `{{timestamp}}`, `{{task}}` 변수 치환을 지원합니다.
+The custom Webhook `body_template` supports variable substitution: `{{phase}}`, `{{status}}`, `{{message}}`, `{{timestamp}}`, `{{task}}`.
 
 ### Quality Gates (v3.1)
 
-plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다:
+Define Quality Gates in plan.md and they will be automatically executed during the Test Phase:
 
 ```markdown
 ## Quality Gates
 
-| Gate | 명령어 | 필수 | 임계값 |
-|------|--------|------|--------|
+| Gate | Command | Required | Threshold |
+|------|---------|----------|-----------|
 | Type Check | `npx tsc --noEmit` | ✅ | — |
 | Coverage | `npm test -- --coverage` | ⚠️ | ≥80% |
 ```
 
-- **✅ 필수(required)**: 실패 시 implement 복귀
-- **⚠️ 권고(advisory)**: 경고만 기록, 차단 없음
-- 미정의 시 기존 auto-detection 유지
+- **✅ Required**: Returns to implement on failure
+- **⚠️ Advisory**: Warning logged only, does not block
+- Falls back to existing auto-detection when not defined
 
 ## Phase Guard
 
-`hooks/scripts/phase-guard.sh`가 Write/Edit 도구 호출을 감시합니다:
+`hooks/scripts/phase-guard.sh` monitors Write/Edit tool calls:
 
-| 단계 | 코드 수정 | 문서 수정 | 차단 시 안내 |
-|------|----------|----------|------------|
-| Research | ❌ 차단 | ✅ 허용 | "→ /deep-plan 또는 /deep-research 실행" |
-| Plan | ❌ 차단 | ✅ 허용 | "→ 계획 승인 또는 /deep-plan 재실행" |
-| Implement | ✅ 허용 | ✅ 허용 | — |
-| Test | ❌ 차단 | ✅ 허용 | "→ 테스트 통과/실패 시 자동 처리" |
-| Idle | ✅ 허용 | ✅ 허용 | — |
+| Phase | Code Changes | Doc Changes | Blocked Message |
+|-------|-------------|-------------|-----------------|
+| Research | ❌ Blocked | ✅ Allowed | "→ Run /deep-plan or /deep-research" |
+| Plan | ❌ Blocked | ✅ Allowed | "→ Approve plan or re-run /deep-plan" |
+| Implement | ✅ Allowed | ✅ Allowed | — |
+| Test | ❌ Blocked | ✅ Allowed | "→ Handled automatically on pass/fail" |
+| Idle | ✅ Allowed | ✅ Allowed | — |
 
-## 세션 초기화 옵션
+## Session Options
 
-`/deep-work` 실행 시 다음 옵션을 선택합니다:
+Options selected when running `/deep-work`:
 
-| 옵션 | 선택지 | 설명 |
-|------|--------|------|
-| 작업 모드 | Solo / Team | 에이전트 병렬 실행 여부 |
-| 프로젝트 타입 | 기존 코드 / 제로베이스 | 새 프로젝트 여부 |
-| 시작 단계 | Research / Plan | 익숙한 코드면 Research 생략 가능 |
-| Git 브랜치 | 생성 / 건너뜀 | 세션용 브랜치 자동 생성 |
-| 모델 라우팅 | 기본값 / 커스텀 | Phase별 모델 배정 |
-| 알림 | 없음 / 로컬 / 외부 | Phase 완료 시 알림 |
+| Option | Choices | Description |
+|--------|---------|-------------|
+| Work mode | Solo / Team | Whether to run agents in parallel |
+| Project type | Existing / Greenfield | Whether this is a new project |
+| Starting phase | Research / Plan | Skip Research if you know the code well |
+| Git branch | Create / Skip | Auto-create a session branch |
+| Model routing | Default / Custom | Per-phase model assignment |
+| Notifications | None / Local / External | Notify on phase completion |
 
-## Solo vs Team 모드
+## Solo vs Team Mode
 
-| 항목 | Solo | Team |
-|------|------|------|
-| Research | 단일 에이전트 분석 | 3명 병렬 분석 (arch/pattern/risk) |
-| Plan | 단일 에이전트 작성 | 단일 에이전트 작성 (동일) |
-| Implement | 순차 실행 | 파일 소유권 기반 병렬 실행 + 크로스 리뷰 |
-| Test | 동일 | 동일 |
-| 요구사항 | 없음 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+| Aspect | Solo | Team |
+|--------|------|------|
+| Research | Single agent analysis | 3 parallel agents (arch/pattern/risk) |
+| Plan | Single agent | Single agent (same) |
+| Implement | Sequential execution | File-ownership-based parallel execution + cross-review |
+| Test | Same | Same |
+| Requirement | None | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
 
-Team 모드 활성화:
+Enabling Team mode:
 ```json
 // ~/.claude/settings.json
 {
@@ -276,34 +277,34 @@ Team 모드 활성화:
 }
 ```
 
-## 복잡도별 사용 가이드
+## Complexity Guide
 
-| 복잡도 | 권장 워크플로우 | 기준 |
-|--------|---------------|------|
-| 높음 | Research → Plan → Implement → Test | 5+ 파일, 아키텍처 변경, 낯선 코드베이스 |
-| 중간 | Plan → Implement → Test (Research 생략) | 2-4 파일, 익숙한 영역의 확장 |
-| 낮음 | 워크플로우 불필요 | 단일 파일 수정, 설정 변경 |
+| Complexity | Recommended Workflow | Criteria |
+|------------|---------------------|----------|
+| High | Research → Plan → Implement → Test | 5+ files, architecture changes, unfamiliar codebase |
+| Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
+| Low | No workflow needed | Single file edit, config changes |
 
-## 설치
+## Installation
 
-### 방법 1: GitHub Marketplace (권장)
+### Option 1: GitHub Marketplace (recommended)
 
 ```bash
-# 마켓플레이스에서 설치
+# Install from marketplace
 claude plugin add sseocho --from github.com/Sungmin-Cho/sseocho-plugins
 ```
 
-### 방법 2: npm
+### Option 2: npm
 
 ```bash
 npm install @sseocho/claude-deep-work
 ```
 
-### 방법 3: 로컬 (개발용)
+### Option 3: Local (development)
 
-이 저장소를 `~/.claude/plugins/deep-work/`에 클론합니다.
-Claude Code가 자동으로 플러그인을 감지합니다.
+Clone this repository to `~/.claude/plugins/deep-work/`.
+Claude Code will automatically detect the plugin.
 
-## 라이선스
+## License
 
 MIT

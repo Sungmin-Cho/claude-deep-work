@@ -1,4 +1,4 @@
-[English](./CHANGELOG.en.md) | **한국어**
+**English** | [한국어](./CHANGELOG.ko.md)
 
 # Changelog
 
@@ -10,145 +10,145 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.1.0] - 2026-03-17
 
 ### Breaking Changes
-- **저장소 구조 개편**: 루트 플러그인에서 `plugins/deep-work/` 서브디렉토리 패턴으로 전환. 기존 사용자는 재설치 필요.
+- **Repository structure overhaul**: Migrated from root-level plugin to `plugins/deep-work/` subdirectory pattern. Existing users must reinstall.
 
 ### Added
-- **모델 라우팅 (F1)**: Phase별 최적 모델 배정 (Research=sonnet, Plan=main, Implement=sonnet, Test=haiku). Agent 위임 패턴으로 토큰 30~40% 절감.
-- **멀티채널 알림 (F2)**: Phase 완료 시 OS 네이티브 + Slack/Discord/Telegram/커스텀 Webhook 알림. Fire-and-forget 패턴.
-- **증분 리서치 (F3)**: `/deep-research --incremental` — git diff 기반 변경 영역만 재분석. 시간 60~80% 절감.
-- **Quality Gate 시스템 (F4)**: plan.md에 Quality Gates 정의 → required/advisory 게이트 실행. `quality-gates.md` 산출물.
-- **Plan Diff 시각화 (F5)**: Plan 재작성 시 구조적 변경 사항 자동 시각화. `plan-diff.md` 산출물.
-- **model-routing-guide.md**: 모델 라우팅 설정 가이드
-- **notification-guide.md**: 알림 채널 설정 가이드
+- **Model Routing (F1)**: Optimal model assignment per phase (Research=sonnet, Plan=main, Implement=sonnet, Test=haiku). Agent delegation pattern reduces tokens by 30-40%.
+- **Multi-channel Notifications (F2)**: OS native + Slack/Discord/Telegram/custom Webhook notifications on phase completion. Fire-and-forget pattern.
+- **Incremental Research (F3)**: `/deep-research --incremental` — re-analyzes only changed areas based on git diff. Saves 60-80% of research time.
+- **Quality Gate System (F4)**: Define Quality Gates in plan.md, then execute required/advisory gates. Produces `quality-gates.md` artifact.
+- **Plan Diff Visualization (F5)**: Automatically visualizes structural changes when a plan is rewritten. Produces `plan-diff.md` artifact.
+- **model-routing-guide.md**: Model routing configuration guide
+- **notification-guide.md**: Notification channel setup guide
 
 ### Changed
-- `/deep-work` 초기화에 모델 라우팅/알림 설정 옵션 추가
-- `/deep-status`에 모델 라우팅, 알림, Quality Gate 상태 표시
-- `/deep-report`에 Quality Gate 결과, Plan Diff 요약 섹션 추가
-- State 스키마에 `model_routing`, `notifications`, `last_research_commit`, `quality_gates_passed` 필드 추가
-- marketplace.json source 경로 `"./"` → `"./plugins/deep-work"` 변경
+- Added model routing/notification configuration options to `/deep-work` initialization
+- Added model routing, notification, and Quality Gate status display to `/deep-status`
+- Added Quality Gate results and Plan Diff summary sections to `/deep-report`
+- Added `model_routing`, `notifications`, `last_research_commit`, `quality_gates_passed` fields to state schema
+- Changed marketplace.json source path from `"./"` to `"./plugins/deep-work"`
 
 ## [3.0.0] - 2026-03-13
 
 ### Added
 
 #### Phase 4: Test (`/deep-test`)
-- **P-1**: 새로운 Test phase 추가 (`implement → test → idle`)
-- 프로젝트 설정 파일에서 테스트/린트/타입체크 명령어 자동 감지 (package.json, pyproject.toml, Makefile, Cargo.toml, go.mod)
-- 테스트 실패 시 implement 단계로 자동 복귀, 수정 후 재테스트 루프 (최대 3회)
-- `test-results.md`에 시도별 검증 결과 누적 기록
-- Test phase에서 코드 수정 차단 (Phase Guard)
+- **P-1**: New Test phase added (`implement → test → idle`)
+- Auto-detects test/lint/type-check commands from project config files (package.json, pyproject.toml, Makefile, Cargo.toml, go.mod)
+- On test failure, automatically returns to implement phase; fix-and-retest loop (up to 3 retries)
+- Cumulative per-attempt verification results recorded in `test-results.md`
+- Code modifications blocked during Test phase (Phase Guard)
 
-#### 제로베이스 모드
-- **P-3**: 새 프로젝트를 처음부터 설계하는 Zero-Base 모드 추가
-- 기술 스택 선정, 코딩 컨벤션, 데이터 모델, API 설계, 스캐폴딩, 의존성 평가 6개 영역 Research
-- Plan에서 "Files to Create" + "Project Structure" + "Setup Instructions" 제공
-- `references/zero-base-guide.md` 신규 가이드 추가
+#### Zero-Base Mode
+- **P-3**: Zero-Base mode for designing new projects from scratch
+- Research covers 6 areas: tech stack selection, coding conventions, data models, API design, scaffolding, dependency evaluation
+- Plan provides "Files to Create" + "Project Structure" + "Setup Instructions"
+- New `references/zero-base-guide.md` guide added
 
-#### 대화형 Plan 리뷰
-- **A-7**: 채팅으로 피드백하면 plan.md 자동 수정 (파일 직접 편집 불필요)
-- 수정 내용 하이라이트 표시 후 재리뷰 대기
+#### Interactive Plan Review
+- **A-7**: Provide feedback via chat and plan.md is automatically updated (no need to edit the file directly)
+- Changes are highlighted, then awaits re-review
 
-#### Plan 기능 강화
-- **A-6**: Plan 재작성 시 이전 버전을 `plan.v{N}.md`로 백업, Change Log 섹션 추가
-- **A-11**: 작업 유형별 Plan 템플릿 6종 (API 엔드포인트, UI 컴포넌트, DB 마이그레이션, 리팩토링, 버그 수정, Full Stack 기능)
-- **P-2**: Plan 승인 시 Team↔Solo 모드 전환 자동 제안 (태스크 수, 파일 수 기반)
+#### Plan Enhancements
+- **A-6**: Previous plan versions backed up as `plan.v{N}.md` on rewrite, with Change Log section added
+- **A-11**: 6 plan templates by task type (API endpoint, UI component, DB migration, refactoring, bug fix, Full Stack feature)
+- **P-2**: Automatic Team/Solo mode switch suggestion on plan approval (based on task count and file count)
 
-#### Research 기능 강화
-- **A-8**: 부분 리서치 재실행 — `/deep-research --scope=api,data`로 특정 영역만 재분석
-- **A-9**: Research 캐싱 — 이전 세션의 research.md를 베이스라인으로 활용, git diff 기반 변경 영역만 재분석
+#### Research Enhancements
+- **A-8**: Partial research re-run — `/deep-research --scope=api,data` to re-analyze specific areas only
+- **A-9**: Research caching — uses previous session's research.md as baseline, re-analyzes only changed areas based on git diff
 
-#### Git 통합
-- **A-10**: 세션 시작 시 `deep-work/[slug]` 브랜치 생성 제안
-- 세션 완료(테스트 통과) 시 커밋 메시지 자동 생성 및 커밋 제안
+#### Git Integration
+- **A-10**: Suggests creating a `deep-work/[slug]` branch at session start
+- Auto-generates commit message and suggests commit on session completion (tests passed)
 
-#### Phase 스킵
-- **A-1**: 세션 초기화 시 Research를 건너뛰고 Plan부터 시작 가능
-- 익숙한 코드베이스에서 불필요한 Research 생략
+#### Phase Skip
+- **A-1**: Option to skip Research and start from Plan during session initialization
+- Eliminates unnecessary Research for familiar codebases
 
-#### Implement 체크포인트
-- **A-4**: 구현 중 중단 후 재실행 시 완료된 태스크 자동 스킵, 미완료 태스크부터 재개
+#### Implement Checkpoints
+- **A-4**: On resume after interruption during implementation, automatically skips completed tasks and resumes from unfinished ones
 
-#### 시간 추적
-- **A-12**: 모든 Phase의 시작/완료 타임스탬프 기록
-- 세션 리포트에 Phase별 소요 시간 테이블 추가
+#### Time Tracking
+- **A-12**: Records start/completion timestamps for all phases
+- Adds per-phase elapsed time table to session report
 
-#### Team 모드 진행 알림
-- **A-13**: Team 모드에서 에이전트 태스크 완료 시 `[2/3] pattern-analyst 완료 ✅` 형식 진행 알림
+#### Team Mode Progress Notifications
+- **A-13**: In Team mode, progress notifications on agent task completion in the format `[2/3] pattern-analyst completed`
 
-#### 세션 비교
-- **A-14**: `/deep-status --compare`로 두 세션의 접근법, 수정 파일, 검증 결과 비교
+#### Session Comparison
+- **A-14**: `/deep-status --compare` to compare approaches, modified files, and verification results between two sessions
 
-#### 신규 파일
-- `commands/deep-test.md` — Test Phase 커맨드
-- `references/testing-guide.md` — Test Phase 상세 가이드
-- `references/plan-templates.md` — Plan 템플릿 모음
-- `references/zero-base-guide.md` — 제로베이스 Research 가이드
-- `CHANGELOG.md` — 변경 이력 파일
+#### New Files
+- `commands/deep-test.md` — Test Phase command
+- `references/testing-guide.md` — Test Phase detailed guide
+- `references/plan-templates.md` — Plan template collection
+- `references/zero-base-guide.md` — Zero-Base Research guide
+- `CHANGELOG.md` — Changelog file
 
 ### Changed
 
-#### 출력 형식 개선
-- **P-5**: research.md에 Executive Summary, Key Findings, Risk & Blockers를 최상단에 배치 (피라미드 원칙)
-- **P-5**: plan.md에 Plan Summary (접근법, 변경 범위, 리스크, 핵심 결정)를 최상단에 배치
+#### Output Format Improvements
+- **P-5**: Placed Executive Summary, Key Findings, and Risk & Blockers at the top of research.md (pyramid principle)
+- **P-5**: Placed Plan Summary (approach, scope of changes, risks, key decisions) at the top of plan.md
 
-#### Phase Guard 메시지 개선
-- **A-2**: 차단 메시지에 Phase별 "다음 단계" 구체적 안내 추가
-- Research: "→ /deep-plan 또는 /deep-research 실행"
-- Plan: "→ 계획 승인 또는 /deep-plan 재실행"
-- Test: "→ 테스트 통과/실패 시 자동 처리, test-results.md 참조"
+#### Phase Guard Message Improvements
+- **A-2**: Added phase-specific "next step" guidance to block messages
+- Research: "→ Run /deep-plan or /deep-research"
+- Plan: "→ Approve the plan or re-run /deep-plan"
+- Test: "→ Handled automatically on test pass/fail, see test-results.md"
 
-#### Phase 흐름 변경
+#### Phase Flow Changes
 - `research → plan → implement → idle` → `research → plan → implement → test ⟲ → idle`
-- Implement 완료 후 idle 대신 test phase로 자동 전환
-- Test 실패 시 implement로 복귀하는 재시도 루프
+- Auto-transitions to test phase after implement completion instead of idle
+- Retry loop returning to implement on test failure
 
-#### 상태 파일 스키마 확장
-- 신규 필드: `project_type`, `git_branch`, `test_retry_count`, `max_test_retries`, `test_passed`
-- 신규 타임스탬프: `research_started_at/completed_at`, `plan_started_at/completed_at`, `implement_started_at/completed_at`, `test_started_at/completed_at`
+#### State File Schema Extensions
+- New fields: `project_type`, `git_branch`, `test_retry_count`, `max_test_retries`, `test_passed`
+- New timestamps: `research_started_at/completed_at`, `plan_started_at/completed_at`, `implement_started_at/completed_at`, `test_started_at/completed_at`
 
-#### 버전 통일
-- **A-3**: `plugin.json`과 `package.json`의 버전을 3.0.0으로 통일
+#### Version Unification
+- **A-3**: Unified `plugin.json` and `package.json` versions to 3.0.0
 
-#### SKILL.md 업데이트
-- 4-phase 워크플로우 반영
-- 제로베이스 모드 트리거 키워드 추가 ("새 프로젝트 시작", "제로베이스", "zero-base", "from scratch")
-- 신규 기능 설명 추가 (Research 캐싱, 부분 재실행, Plan 템플릿, 대화형 리뷰 등)
+#### SKILL.md Updates
+- Reflects 4-phase workflow
+- Added Zero-Base mode trigger keywords ("new project", "zero-base", "from scratch")
+- Added descriptions for new features (Research caching, partial re-run, Plan templates, interactive review, etc.)
 
-#### Reference 가이드 업데이트
-- `research-guide.md` — Executive Summary/Key Findings 출력 형식 추가, 제로베이스 가이드 링크
-- `planning-guide.md` — Plan Summary 출력 형식 추가, 템플릿 가이드 링크
-- `implementation-guide.md` — 완료 후 Test phase 전환으로 Completion Protocol 변경
+#### Reference Guide Updates
+- `research-guide.md` — Added Executive Summary/Key Findings output format, link to Zero-Base guide
+- `planning-guide.md` — Added Plan Summary output format, link to templates guide
+- `implementation-guide.md` — Updated Completion Protocol to transition to Test phase
 
 ## [2.0.0] - 2026-03-07
 
 ### Added
-- 작업별 폴더 히스토리 (`deep-work/YYYYMMDD-HHMMSS-slug/`)
-- 승인 시 자동 구현 시작
-- 세션 리포트 자동 생성 (`report.md`)
-- `/deep-report` 커맨드 (리포트 조회/재생성)
-- `/deep-status` 커맨드 (상태, 진행률, 세션 히스토리)
-- Solo/Team 모드 선택
-- Team 모드: 3명 병렬 Research, 파일 소유권 기반 병렬 Implement, 크로스 리뷰
+- Per-task folder history (`deep-work/YYYYMMDD-HHMMSS-slug/`)
+- Auto-starts implementation on plan approval
+- Auto-generates session report (`report.md`)
+- `/deep-report` command (view/regenerate report)
+- `/deep-status` command (status, progress, session history)
+- Solo/Team mode selection
+- Team mode: 3-agent parallel Research, file-ownership-based parallel Implement, cross-review
 
 ### Changed
-- 상태 파일에 `work_dir`, `team_mode`, `started_at` 필드 추가
-- Phase Guard가 `deep-work/` 디렉토리 내 문서 수정은 허용
+- Added `work_dir`, `team_mode`, `started_at` fields to state file
+- Phase Guard now allows document edits within `deep-work/` directory
 
 ## [1.1.0] - 2026-03-01
 
 ### Added
-- Phase Guard (PreToolUse hook) — Research/Plan 단계에서 코드 파일 수정 차단
-- 상태 파일 기반 phase 관리
+- Phase Guard (PreToolUse hook) — Blocks code file modifications during Research/Plan phases
+- State-file-based phase management
 
 ### Changed
-- 기존 단순 프롬프트 기반에서 hook 기반 강제 분리로 전환
+- Migrated from simple prompt-based approach to hook-based enforcement
 
 ## [1.0.0] - 2026-02-15
 
 ### Added
-- 초기 버전
-- 3단계 워크플로우: Research → Plan → Implement
-- `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement` 커맨드
-- `research.md`, `plan.md` 산출물 생성
-- 반복적 Plan 리뷰 지원
+- Initial release
+- 3-phase workflow: Research → Plan → Implement
+- `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement` commands
+- `research.md` and `plan.md` artifact generation
+- Iterative Plan review support

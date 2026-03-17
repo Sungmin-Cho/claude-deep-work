@@ -9,8 +9,8 @@ Claude Code Plugin Marketplace | Claude Code 플러그인 마켓플레이스
 | [deep-work](./plugins/deep-work/) | 3.1.0 | 4-phase workflow with model routing, notifications, quality gates |
 
 **Documentation | 문서**:
-- [English](./plugins/deep-work/README.en.md)
-- [한국어](./plugins/deep-work/README.md)
+- [English](./plugins/deep-work/README.md)
+- [한국어](./plugins/deep-work/README.ko.md)
 
 ## Installation | 설치
 
