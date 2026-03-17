@@ -1,3 +1,5 @@
+[English](./CHANGELOG.en.md) | **한국어**
+
 # Changelog
 
 All notable changes to the Deep Work plugin will be documented in this file.
