@@ -39,8 +39,10 @@ Without structure, Claude Code will:
 ## Key Features
 
 - **Phase Guard** — Code edits physically blocked via PreToolUse hook during non-implementation phases
+- **3-Tier Quality Gates** — Required (blocking), Advisory (warning), Insight (informational) — each gate type serves a different purpose
+- **Plan Alignment** — Built-in drift detection verifies your implementation matches the approved plan — catches missed items and scope creep
+- **SOLID Review** — Advisory design quality check against SRP, OCP, LSP, ISP, DIP with per-file scorecards
 - **Model Routing** — Assigns optimal models per phase (sonnet for research, haiku for tests) — **30-40% token savings**
-- **Quality Gates** — Define required/advisory checks in your plan (coverage thresholds, bundle size limits)
 - **Incremental Research** — `--incremental` flag re-analyzes only git-changed areas — **60-80% time savings**
 - **Multi-Channel Notifications** — Get notified on Slack, Discord, Telegram, or any webhook when phases complete
 - **Solo & Team Modes** — Single agent or parallel agent teams with cross-review
@@ -65,7 +67,9 @@ claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-wor
 | `/deep-work <task>` | Init | Start session, configure options |
 | `/deep-research` | 1 | Analyze codebase → `research.md` |
 | `/deep-plan` | 2 | Create plan → `plan.md` → approve → auto-implement |
-| `/deep-test` | 4 | Verify → pass or loop back to fix |
+| `/deep-test` | 4 | Verify → drift check → quality gates → pass or loop back |
+| `/drift-check` | — | Plan-vs-implementation alignment check |
+| `/solid-review` | — | SOLID design principles review |
 | `/deep-status` | — | Progress, timing, session history |
 | `/deep-report` | — | Full session report |
 
