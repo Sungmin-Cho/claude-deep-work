@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "deep-work",
-      "description": "4-phase workflow (Research → Plan → Implement → Test) with model routing, multi-channel notifications, quality gates, and more",
-      "version": "3.1.0",
+      "description": "4-phase workflow with 3-tier Quality Gate system (Plan Alignment + SOLID Review), model routing, notifications, and more",
+      "version": "3.2.0",
       "source": "./plugins/deep-work"
     }
   ]
