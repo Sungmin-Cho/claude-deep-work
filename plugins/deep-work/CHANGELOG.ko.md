@@ -7,6 +7,22 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-03-18
+
+### Added
+- **3계층 Quality Gate 시스템**: Quality Gate를 3계층으로 분리 — Required (차단), Advisory (경고), Insight (정보, v3.3 예정).
+- **Plan Alignment / Drift Detection**: `/drift-check` 커맨드 및 `/deep-test` 내장 Required 게이트. plan.md 항목과 실제 git diff를 자동 비교하여 미구현 항목, 범위 초과, 설계 이탈을 감지. `drift-report.md` 산출물.
+- **SOLID Design Review**: `/solid-review` 커맨드 및 Advisory Quality Gate. 5가지 SOLID 원칙(SRP, OCP, LSP, ISP, DIP) 기준 코드 설계 품질 리뷰. 파일별 스코어카드, 종합 판정, Top 5 리팩토링 제안. `solid-review.md` 산출물.
+- **solid-guide.md**: 프레임워크 무관 SOLID 리뷰 체크리스트 (심각도 기준 + KISS 균형)
+- **solid-prompt-guide.md**: AI 도구에 SOLID 준수 코드를 요청하고 AI 출력물을 검증하는 가이드
+
+### Changed
+- `/deep-test`에서 plan.md 존재 시 다른 Quality Gate 이전에 Plan Alignment 검사를 자동 실행 (설정 불필요)
+- SKILL.md 구조 개선: Plan Alignment, SOLID Review, Session Report를 "Quality Gates & Utilities" 섹션으로 분리 (기존 "The Four Phases" 하위에서 이동)
+- SKILL.md description 최적화: ~40개 세부 트리거 키워드를 ~10개 대표 키워드로 통합 (신호 대 잡음비 개선)
+- SKILL.md에 v3.2.0 Features 섹션 추가 (영어 일관성 유지)
+- State 스키마에 `plan_approved_at` 필드 추가 (선택적, Drift Detection 비교 기준)
+
 ## [3.1.0] - 2026-03-17
 
 ### Breaking Changes

@@ -7,6 +7,22 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-03-18
+
+### Added
+- **3-Tier Quality Gate System**: Quality Gates now support three tiers — Required (blocking), Advisory (warning), and Insight (informational, planned for v3.3).
+- **Plan Alignment / Drift Detection**: `/drift-check` command and built-in Required gate in `/deep-test`. Automatically compares plan.md items against actual git diff to detect unimplemented items, out-of-scope changes, and design decision drift. Produces `drift-report.md`.
+- **SOLID Design Review**: `/solid-review` command and Advisory Quality Gate. Evaluates code against 5 SOLID principles (SRP, OCP, LSP, ISP, DIP) with per-file scorecards, overall verdict, and top-5 refactoring suggestions. Produces `solid-review.md`.
+- **solid-guide.md**: Framework-agnostic SOLID review checklist with severity levels and KISS balance criteria
+- **solid-prompt-guide.md**: Guide for requesting SOLID-compliant code from AI tools and verifying AI output
+
+### Changed
+- `/deep-test` now automatically runs Plan Alignment check before other Quality Gates when plan.md exists (no configuration needed)
+- SKILL.md restructured: moved Plan Alignment, SOLID Review, and Session Report under new "Quality Gates & Utilities" section (previously misplaced under "The Four Phases")
+- SKILL.md description optimized: consolidated ~40 granular trigger keywords into ~10 representative phrases for better signal-to-noise ratio
+- v3.2.0 Features section added to SKILL.md with English-consistent language
+- `plan_approved_at` field added to state schema (optional, used by Drift Detection baseline)
+
 ## [3.1.0] - 2026-03-17
 
 ### Breaking Changes

@@ -65,6 +65,8 @@ Code file modifications are **physically blocked** during Phases 1, 2, and 4 (vi
 | `/deep-plan` | Phase 2: Implementation plan → `plan.md`, auto-implement on approval |
 | `/deep-implement` | Phase 3: Execute the plan (can also be run manually) |
 | `/deep-test` | Phase 4: Run integration tests, return to implement on failure |
+| `/drift-check` | Verify implementation matches the approved plan (standalone or built-in gate) |
+| `/solid-review` | SOLID design principles review (standalone or advisory gate) |
 | `/deep-report` | Generate or view session report |
 | `/deep-status` | Current status, progress, phase durations, session history |
 
@@ -80,6 +82,8 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | `test-results.md` | Phase 4 complete | Verification results (cumulative per attempt) |
 | `report.md` | Session complete | Full session report (includes phase durations) |
 | `quality-gates.md` | Phase 4 complete | Quality Gate results detail (required/advisory) |
+| `drift-report.md` | Phase 4 complete | Plan alignment verification results |
+| `solid-review.md` | Phase 4 complete | SOLID design review scorecard and suggestions |
 | `plan-diff.md` | Plan rewrite | Structural change comparison between plan versions |
 
 ## Session State
@@ -101,6 +105,7 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `notifications` | Notification settings (channel list, enabled status) |
 | `last_research_commit` | Git commit hash at the time of last research |
 | `quality_gates_passed` | Whether all Quality Gates passed |
+| `plan_approved_at` | Timestamp when plan was approved (used by Drift Detection) |
 
 ## Workflow Details
 
@@ -176,6 +181,11 @@ implement → test → (pass) → idle + report
 **v3.1 features:**
 - **Quality Gate system** — Define gates in plan.md (required ✅ / advisory ⚠️), outputs `quality-gates.md`
 - **Model routing** — Delegate Test Phase to a haiku model Agent for minimum cost
+
+**v3.2 features:**
+- **3-Tier Quality Gate system** — Required (blocking) / Advisory (warning) / Insight (informational)
+- **Plan Alignment (Drift Detection)** — Built-in Required gate that automatically verifies implementation matches the approved plan. Detects unimplemented items, out-of-scope changes, and design decision drift. Outputs `drift-report.md`.
+- **SOLID Design Review** — Advisory gate for evaluating code against SRP, OCP, LSP, ISP, DIP. Per-file scorecard, top-5 refactoring suggestions. Outputs `solid-review.md`.
 
 ### Session Report
 

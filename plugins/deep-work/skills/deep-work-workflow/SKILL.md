@@ -19,7 +19,9 @@ description: |
   "모델 설정", "incremental research", "증분 리서치", "변경분만 분석", "--incremental",
   "quality gate", "품질 게이트", "coverage 임계값", "advisory gate", "plan diff",
   "계획 비교", "플랜 변경", "notification", "알림 설정", "slack 알림", "discord 알림",
-  "telegram 알림". This skill covers the full Research -> Plan -> Implement -> Test
+  "telegram 알림", "SOLID review", "SOLID 리뷰", "design review", "설계 리뷰",
+  "code quality review", "drift check", "plan alignment", "계획 정합성",
+  "3-tier quality gate", "3계층 품질 게이트". This skill covers the full Research -> Plan -> Implement -> Test
   lifecycle including phase enforcement, state management, iterative plan review, and
   automated testing loops. Even if the user does not explicitly mention "deep work" or
   "workflow", consider triggering this skill for complex feature requests touching multiple
@@ -136,6 +138,43 @@ For detailed guidance, see [Implementation Guide](references/implementation-guid
 - **Git integration**: Suggests commit after all tests pass
 
 For detailed guidance, see [Testing Guide](references/testing-guide.md).
+
+## Quality Gates & Utilities
+
+### Plan Alignment Check (`/drift-check`)
+
+**Goal**: Verify implementation matches the approved plan.
+
+**What happens**:
+- Compares plan.md items with actual git diff
+- Reports: implemented, missing, out-of-scope, design drift
+- Saves results to `$WORK_DIR/drift-report.md`
+
+**Built-in behavior**: Automatically runs as a Required gate during `/deep-test` when plan.md exists. No need to add to Quality Gates table.
+
+**Dual mode**:
+- **Standalone**: `/drift-check [plan-file]` — works without an active deep-work session
+- **Workflow**: Built-in Required gate in the Test phase (auto-runs before other gates)
+
+**Key principle**: "When the plan becomes the verification standard, you write plans more carefully."
+
+### SOLID Design Review (`/solid-review`)
+
+**Goal**: Evaluate code against the 5 SOLID design principles.
+
+**What happens**:
+- Analyzes target code for SRP, OCP, LSP, ISP, DIP compliance
+- Generates a scorecard with per-principle status
+- Provides concrete refactoring suggestions
+- Saves results to `$WORK_DIR/solid-review.md` (workflow mode) or outputs to terminal (standalone)
+
+**Dual mode**:
+- **Standalone**: `/solid-review [target]` — works without an active deep-work session
+- **Workflow**: Integrates as an Advisory Quality Gate in the Test phase
+
+**Key principle**: "Working code is not enough. Well-designed code is what survives change."
+
+For detailed guidance, see [SOLID Guide](references/solid-guide.md) or [SOLID Prompt Guide](references/solid-prompt-guide.md).
 
 ### Session Report (`/deep-report`)
 
@@ -290,3 +329,23 @@ plan.md에 Quality Gates 테이블 정의 시, required/advisory 게이트 실�
 
 ### Plan Diff
 Plan 재작성 시 구조적 변경 사항을 자동 시각화하여 plan-diff.md 생성.
+
+## v3.2.0 Features
+
+### 3-Tier Quality Gate System
+Quality Gates split into three tiers during Test phase:
+- **Required** (blocking): Correctness (tests/lint) + Plan Alignment (Drift Detection)
+- **Advisory** (warning): SOLID Design Review
+- **Insight** (informational): planned for v3.3
+
+### Plan Alignment (Drift Detection)
+`/drift-check` — Automatic plan-vs-implementation verification. Runs as a built-in Required gate in `/deep-test`.
+- Detects unimplemented plan items
+- Detects out-of-scope changes
+- Detects design decision drift
+
+### SOLID Design Review
+`/solid-review` — Design quality review based on the 5 SOLID principles. Optional Advisory gate.
+- SRP, OCP, LSP, ISP, DIP checklist
+- Per-file scorecard + overall verdict
+- Top 5 refactoring suggestions

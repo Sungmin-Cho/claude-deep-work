@@ -45,6 +45,40 @@ If `model_routing.test` is NOT "main":
 If `model_routing.test` is "main":
   - Proceed with existing behavior below
 
+### 1-2. Built-in Required Gate: Plan Alignment (Drift Detection)
+
+If `$WORK_DIR/plan.md` exists, perform Plan Alignment check **before** any other verification. This gate runs automatically — it does not need to be listed in the Quality Gates table.
+
+**Steps**:
+1. Parse plan.md to extract:
+   - **File list**: Files listed in "Files to Modify" / "수정 대상 파일" / "File Changes" sections
+   - **Implementation items**: Checklist items (`- [ ]`, `- [x]`) and numbered steps
+   - **Design decisions**: Explicit architectural instructions in "Design Decisions" / "설계 지침" sections
+
+2. Get comparison baseline:
+   - Read `plan_approved_at` from state file → find nearest commit via `git log --before="[timestamp]" -1 --format=%H`
+   - If no timestamp, use plan.md mtime as baseline
+   - If neither available, use `HEAD~10` with a warning
+
+3. Run `git diff --name-only [baseline]..HEAD` to get changed files
+
+4. Compare and classify each plan item:
+   - **Implemented**: Plan item reflected in actual code → PASS
+   - **Not implemented**: Plan item missing from code → FAIL
+   - **Out of scope**: Code change not in plan (exclude test files, configs) → WARNING
+   - **Design drift**: Implementation contradicts plan's design decisions → FAIL
+
+5. Generate `$WORK_DIR/drift-report.md` with the full comparison report
+
+6. **Determine result**:
+   - If not-implemented = 0 AND design-drift = 0 → **PASS** (continue to other gates)
+   - If not-implemented > 0 OR design-drift > 0 → **FAIL** (Required Gate failure)
+     - Display: "Plan Alignment 실패 — 미구현 [N]건, 설계 이탈 [N]건"
+     - Skip all remaining gates (both Required and Advisory)
+     - Treat as test failure → follow existing retry logic (Section 5 "Some tests fail")
+
+For detailed comparison logic, see the `/drift-check` command.
+
 ### 2. Auto-detect verification commands
 
 Read project root configuration files to identify available verification commands:

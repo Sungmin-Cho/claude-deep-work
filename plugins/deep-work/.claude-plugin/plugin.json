@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "3.1.0",
-  "description": "4-phase workflow (Research → Plan → Implement → Test) with model routing, multi-channel notifications, incremental research, quality gates, and plan diff",
+  "version": "3.2.0",
+  "description": "4-phase workflow with 3-tier Quality Gate system: Plan Alignment (Required), SOLID Review (Advisory), plus model routing, notifications, incremental research, and plan diff",
   "author": {
     "name": "sungmin"
   },
@@ -12,6 +12,12 @@
     "deep-work",
     "research",
     "planning",
-    "agent-team"
+    "agent-team",
+    "solid",
+    "code-review",
+    "design-patterns",
+    "drift-detection",
+    "plan-alignment",
+    "quality-gate"
   ]
 }
