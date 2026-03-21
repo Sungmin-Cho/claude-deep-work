@@ -8,6 +8,10 @@ argument-hint: "plan file path (optional, defaults to active session's plan.md)"
 
 You are performing a **Plan Alignment Check** — comparing the approved plan against actual implementation to detect drift.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Critical Constraints
 
 - **DO NOT modify any code files.** This is a verification-only operation.

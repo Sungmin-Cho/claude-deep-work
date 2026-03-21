@@ -7,6 +7,10 @@ description: "Check the current deep work session status and progress"
 
 Display the current state of the Deep Work session and session history.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Instructions
 
 ### 0. Check for compare mode

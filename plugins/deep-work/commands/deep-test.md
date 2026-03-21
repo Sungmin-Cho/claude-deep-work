@@ -7,6 +7,10 @@ description: "Phase 4: Run comprehensive tests and verify implementation"
 
 You are in the **Test** phase of a Deep Work session. This phase runs comprehensive verification on the implemented code and manages the implement-test retry loop.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Critical Constraints
 
 🚫 **DO NOT modify any code files in this phase.**

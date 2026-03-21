@@ -8,6 +8,10 @@ argument-hint: "target file or directory (optional)"
 
 You are performing a **SOLID Design Review** — analyzing code against the 5 SOLID design principles to evaluate design quality and suggest improvements.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Critical Constraints
 
 - **DO NOT modify any code files.** This is a review-only operation.

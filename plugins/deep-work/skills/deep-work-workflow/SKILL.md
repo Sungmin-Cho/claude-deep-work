@@ -271,6 +271,10 @@ Deep Work and Claude's built-in plan mode serve different purposes and can work 
 
 **Combined usage pattern**: Use built-in plan mode for initial task decomposition, then Deep Work for complex subtasks that need thorough research and planning before implementation.
 
+## Internationalization
+
+All commands detect the user's language from their messages or Claude Code's `language` setting, and output messages in that language. Command templates use Korean as the reference format; Claude translates naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Compatibility
 
 - Team mode requires Agent Teams feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`).

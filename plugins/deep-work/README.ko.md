@@ -241,6 +241,16 @@ plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다
 - **⚠️ 권고(advisory)**: 경고만 기록, 차단 없음
 - 미정의 시 기존 auto-detection 유지
 
+## 다국어 지원 (v3.2.2)
+
+모든 커맨드가 사용자의 언어를 자동으로 감지하여 해당 언어로 메시지를 출력합니다. 별도 설정 불필요.
+
+- **한국어**: 기본 참조 템플릿
+- **영어**: 자동 번역
+- **기타 언어**: 일본어, 중국어 등 Claude가 지원하는 모든 언어
+
+사용자 메시지 또는 Claude Code `language` 설정에서 언어를 감지합니다.
+
 ## Phase Guard
 
 `hooks/scripts/phase-guard.sh`가 Write/Edit 도구 호출을 감시합니다:
@@ -294,7 +304,7 @@ Team 모드 활성화:
 | 중간 | Plan → Implement → Test (Research 생략) | 2-4 파일, 익숙한 영역의 확장 |
 | 낮음 | 워크플로우 불필요 | 단일 파일 수정, 설정 변경 |
 
-## 설치 (v3.2.1)
+## 설치 (v3.2.2)
 
 Claude Code 설정에 마켓플레이스를 추가합니다:
 

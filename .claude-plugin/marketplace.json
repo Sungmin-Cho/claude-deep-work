@@ -9,7 +9,7 @@
     {
       "name": "deep-work",
       "description": "4-phase workflow with 3-tier Quality Gate system (Plan Alignment + SOLID Review), model routing, notifications, and more",
-      "version": "3.2.1",
+      "version": "3.2.2",
       "source": "./plugins/deep-work"
     }
   ]

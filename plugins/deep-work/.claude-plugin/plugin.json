@@ -1,6 +1,6 @@
 {
   "name": "deep-work",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "4-phase workflow with 3-tier Quality Gate system: Plan Alignment (Required), SOLID Review (Advisory), plus model routing, notifications, incremental research, and plan diff",
   "author": {
     "name": "sungmin"

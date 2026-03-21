@@ -7,6 +7,10 @@ description: "Generate or view the deep work session report"
 
 Generate or regenerate a comprehensive report for the current (or most recent) Deep Work session.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Instructions
 
 ### 1. Read state file

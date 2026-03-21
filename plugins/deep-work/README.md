@@ -242,6 +242,16 @@ Define Quality Gates in plan.md and they will be automatically executed during t
 - **⚠️ Advisory**: Warning logged only, does not block
 - Falls back to existing auto-detection when not defined
 
+## Internationalization (v3.2.2)
+
+All commands automatically detect the user's language and output messages accordingly. Supported through Claude's native multilingual capability — no configuration needed.
+
+- **Korean**: Default reference templates
+- **English**: Automatically translated
+- **Other languages**: Japanese, Chinese, and any language Claude supports
+
+The plugin detects language from user messages or the Claude Code `language` setting.
+
 ## Phase Guard
 
 `hooks/scripts/phase-guard.sh` monitors Write/Edit tool calls:
@@ -295,7 +305,7 @@ Enabling Team mode:
 | Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
 | Low | No workflow needed | Single file edit, config changes |
 
-## Installation (v3.2.1)
+## Installation (v3.2.2)
 
 Add the marketplace to your Claude Code settings:
 

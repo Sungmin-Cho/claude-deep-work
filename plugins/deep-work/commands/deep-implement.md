@@ -7,6 +7,10 @@ description: "Phase 3: Implement the approved plan mechanically"
 
 You are in the **Implementation** phase of a Deep Work session.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
+
 ## Critical Constraints
 
 ✅ **Follow the plan EXACTLY. Do not deviate.**

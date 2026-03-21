@@ -8,6 +8,10 @@ argument-hint: task description
 
 You are initializing a **Deep Work** session — a structured 4-phase workflow that enforces strict separation between planning and coding.
 
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure. Do NOT mix languages within a single message.
+
 ## Your Task
 
 The user wants to work on: **$ARGUMENTS**

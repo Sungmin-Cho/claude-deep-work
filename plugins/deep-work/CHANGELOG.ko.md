@@ -7,6 +7,12 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2026-03-21
+
+### Added
+- **다국어 지원 (i18n)**: 9개 커맨드 파일 모두 사용자의 메시지 또는 Claude Code `language` 설정에서 언어를 감지하여 해당 언어로 모든 사용자 대면 메시지를 출력. 한국어 템플릿을 참조 포맷으로 유지하며 Claude가 사용자 언어에 맞게 자연스럽게 번역. 영어, 일본어, 중국어 등 모든 언어 사용자 지원.
+- SKILL.md에 Internationalization 섹션 추가.
+
 ## [3.2.1] - 2026-03-21
 
 ### Fixed
