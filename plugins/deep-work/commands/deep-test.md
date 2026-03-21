@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Glob, Grep, Edit, Agent
+allowed-tools: Bash, Read, Write, Glob, Grep, Agent
 description: "Phase 4: Run comprehensive tests and verify implementation"
 ---
 

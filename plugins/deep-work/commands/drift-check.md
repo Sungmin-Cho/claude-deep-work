@@ -1,6 +1,6 @@
 ---
 allowed-tools: Read, Grep, Glob, Bash
-description: "Plan 대비 구현 정합성 검증. 미구현/범위 초과/설계 이탈을 감지. 독립 실행 또는 deep-work Required Gate로 사용."
+description: "Plan alignment verification — detects unimplemented items, out-of-scope changes, and design drift. Standalone or deep-work Required Gate."
 argument-hint: "plan file path (optional, defaults to active session's plan.md)"
 ---
 

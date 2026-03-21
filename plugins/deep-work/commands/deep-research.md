@@ -30,7 +30,7 @@ Set `WORK_DIR` to the value of `work_dir` from the state file.
 
 **Record start time**: Update `research_started_at` in the state file with the current ISO timestamp.
 
-### 0. Check for partial re-run
+### 1-1. Check for partial re-run
 
 Check if `$ARGUMENTS` contains a `--scope=` option.
 
@@ -45,7 +45,7 @@ If scope option is present:
 
 Valid scope values: `architecture`, `patterns`, `data`, `api`, `infrastructure`, `dependencies`
 
-### 0-1. Check for previous Research cache
+### 1-2. Check for previous Research cache
 
 Search the `deep-work/` directory for the most recent `research.md` from a previous session (not the current session).
 
@@ -71,7 +71,7 @@ If the user selects option 1:
 If the user selects option 2 or git is not available:
 - Proceed with full analysis as normal
 
-### 0-2. Check for incremental mode
+### 1-3. Check for incremental mode
 
 If `$ARGUMENTS` contains `--incremental`:
 

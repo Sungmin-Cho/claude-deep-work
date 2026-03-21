@@ -294,22 +294,39 @@ Team 모드 활성화:
 | 중간 | Plan → Implement → Test (Research 생략) | 2-4 파일, 익숙한 영역의 확장 |
 | 낮음 | 워크플로우 불필요 | 단일 파일 수정, 설정 변경 |
 
-## 설치
+## 설치 (v3.2.1)
 
-### 방법 1: GitHub Marketplace (권장)
+Claude Code 설정에 마켓플레이스를 추가합니다:
 
-```bash
-# 마켓플레이스에서 설치
-claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-work
+```json
+// ~/.claude/settings.json
+{
+  "extraKnownMarketplaces": {
+    "claude-deep-work": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/Sungmin-Cho/claude-deep-work.git"
+      }
+    }
+  }
+}
 ```
 
-### 방법 2: npm
+그 후 설치:
+
+```bash
+claude plugin install deep-work
+```
+
+### 기타 설치 방법
+
+#### npm
 
 ```bash
 npm install @claude-deep-work/deep-work
 ```
 
-### 방법 3: 로컬 (개발용)
+#### 로컬 (개발용)
 
 이 저장소를 `~/.claude/plugins/deep-work/`에 클론합니다.
 Claude Code가 자동으로 플러그인을 감지합니다.

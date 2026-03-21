@@ -1,6 +1,6 @@
 ---
 allowed-tools: Read, Grep, Glob, Bash, Write, Agent
-description: "SOLID 디자인 원칙 기반 코드 설계 품질 리뷰. 독립 실행 또는 deep-work Advisory Quality Gate로 사용."
+description: "SOLID design principles code review — evaluates SRP, OCP, LSP, ISP, DIP compliance. Standalone or deep-work Advisory Quality Gate."
 argument-hint: "target file or directory (optional)"
 ---
 

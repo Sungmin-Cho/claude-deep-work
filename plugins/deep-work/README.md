@@ -295,22 +295,39 @@ Enabling Team mode:
 | Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
 | Low | No workflow needed | Single file edit, config changes |
 
-## Installation
+## Installation (v3.2.1)
 
-### Option 1: GitHub Marketplace (recommended)
+Add the marketplace to your Claude Code settings:
 
-```bash
-# Install from marketplace
-claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-work
+```json
+// ~/.claude/settings.json
+{
+  "extraKnownMarketplaces": {
+    "claude-deep-work": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/Sungmin-Cho/claude-deep-work.git"
+      }
+    }
+  }
+}
 ```
 
-### Option 2: npm
+Then install:
+
+```bash
+claude plugin install deep-work
+```
+
+### Other Installation Methods
+
+#### npm
 
 ```bash
 npm install @claude-deep-work/deep-work
 ```
 
-### Option 3: Local (development)
+#### Local (development)
 
 Clone this repository to `~/.claude/plugins/deep-work/`.
 Claude Code will automatically detect the plugin.

@@ -7,6 +7,20 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-03-21
+
+### Fixed
+- **SKILL.md description trimmed**: Reduced from ~1,500 chars to ~450 chars (3x over budget). Removes sub-feature trigger phrases that diluted matching precision and wasted prompt budget on every conversation.
+- **SKILL.md changelog bloat removed**: Removed v3.1.0/v3.2.0 Features sections (~400 words) that duplicated content already covered in the body. Moved `compatibility` frontmatter (non-standard field) into body section.
+- **deep-research.md section numbering**: Renumbered steps 0, 0-1, 0-2 to 1-1, 1-2, 1-3 to match logical execution order.
+- **deep-test.md allowed-tools**: Removed `Edit` from allowed-tools — code modifications are blocked during Test phase by Phase Guard.
+- **Command description language consistency**: Standardized `drift-check.md` and `solid-review.md` descriptions to English (matching the other 7 commands).
+- **notify.sh JSON safety**: Added `MESSAGE` variable escaping (double quotes and backslashes) before JSON interpolation to prevent malformed payloads.
+- **Phase Guard path reference**: Added explicit `hooks/scripts/phase-guard.sh` path in SKILL.md for discoverability.
+
+### Added
+- `.gitignore` file mirroring `.npmignore` patterns to prevent accidental commits of state files and session artifacts.
+
 ## [3.2.0] - 2026-03-18
 
 ### Added

@@ -9,6 +9,9 @@ STATE_FILE="${1:-.claude/deep-work.local.md}"
 PHASE="${2:-unknown}"
 STATUS="${3:-completed}"
 MESSAGE="${4:-Deep Work: ${PHASE} ${STATUS}}"
+# Escape double quotes and backslashes for safe JSON interpolation
+MESSAGE="${MESSAGE//\\/\\\\}"
+MESSAGE="${MESSAGE//\"/\\\"}"
 TITLE="Deep Work"
 
 # ─── 설정 읽기 ───────────────────────────────────────────

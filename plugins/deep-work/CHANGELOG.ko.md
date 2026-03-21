@@ -7,6 +7,20 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-03-21
+
+### Fixed
+- **SKILL.md description 축소**: ~1,500자 → ~450자 (권장치의 3배 초과 해소). 하위 기능 트리거 키워드 제거하여 매칭 정확도 향상 및 매 대화마다 소모되는 프롬프트 예산 절감.
+- **SKILL.md changelog 중복 제거**: 본문과 중복되던 v3.1.0/v3.2.0 Features 섹션(~400단어) 삭제. 비표준 `compatibility` frontmatter 필드를 본문 Compatibility 섹션으로 이동.
+- **deep-research.md 섹션 번호 정리**: 0, 0-1, 0-2 → 1-1, 1-2, 1-3으로 논리적 실행 순서에 맞게 변경.
+- **deep-test.md allowed-tools 수정**: Phase Guard가 코드 수정을 차단하는 Test phase에서 `Edit` 도구 제거.
+- **커맨드 description 언어 통일**: `drift-check.md`, `solid-review.md`의 description을 한국어에서 영문으로 변경 (나머지 7개 커맨드와 일치).
+- **notify.sh JSON 안전성**: JSON 보간 전 `MESSAGE` 변수의 쌍따옴표/백슬래시 이스케이프 추가하여 잘못된 페이로드 방지.
+- **Phase Guard 경로 참조**: SKILL.md에 `hooks/scripts/phase-guard.sh` 명시적 경로 추가.
+
+### Added
+- `.gitignore` 파일 추가 (`.npmignore` 패턴 반영). 상태 파일 및 세션 아티팩트의 실수 커밋 방지.
+
 ## [3.2.0] - 2026-03-18
 
 ### Added

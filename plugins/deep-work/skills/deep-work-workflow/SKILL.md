@@ -2,35 +2,12 @@
 name: deep-work-workflow
 description: |
   This skill should be used when the user wants to follow a structured, phase-based
-  development workflow that separates research, planning, implementation, and testing into
-  distinct phases. It applies when users say things like "deep work", "3단계 워크플로우",
-  "4단계 워크플로우", "기획과 코딩 분리", "plan before code", "리서치 플랜 구현",
-  "structured workflow", "analyze the codebase first then plan", "research then plan then
-  implement", "분석 후 구현", "계획 세우고 구현", "새 프로젝트 시작", "제로베이스",
-  "zero-base", "from scratch", or want to enforce strict separation between planning and
-  coding to avoid premature implementation. Also use this skill when the user describes
-  a complex, multi-file task that would benefit from structured planning — for example
-  "복잡한 기능 구현", "여러 파일을 수정해야 하는 작업", "큰 작업을 체계적으로 진행하고
-  싶어", "코드 분석 먼저 하고 싶어", "구현 전에 계획부터 세워줘", "this is a big change,
-  let's plan first", "analyze the codebase before we start", "I want to understand the
-  code before making changes", or any request involving architectural changes, cross-module
-  refactoring, or unfamiliar codebase exploration where jumping straight to implementation
-  would risk mistakes. Also triggers on: "model routing", "모델 라우팅", "토큰 절약",
-  "모델 설정", "incremental research", "증분 리서치", "변경분만 분석", "--incremental",
-  "quality gate", "품질 게이트", "coverage 임계값", "advisory gate", "plan diff",
-  "계획 비교", "플랜 변경", "notification", "알림 설정", "slack 알림", "discord 알림",
-  "telegram 알림", "SOLID review", "SOLID 리뷰", "design review", "설계 리뷰",
-  "code quality review", "drift check", "plan alignment", "계획 정합성",
-  "3-tier quality gate", "3계층 품질 게이트". This skill covers the full Research -> Plan -> Implement -> Test
-  lifecycle including phase enforcement, state management, iterative plan review, and
-  automated testing loops. Even if the user does not explicitly mention "deep work" or
-  "workflow", consider triggering this skill for complex feature requests touching multiple
-  files or modules where a structured approach would prevent common AI coding pitfalls like
-  architecture ignorance, duplicate implementation, or premature coding.
-compatibility: |
-  Team mode requires Agent Teams feature (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1).
-  Solo mode works with standard Claude Code installation.
-  Requires PreToolUse hook support for phase enforcement.
+  development workflow that strictly separates research, planning, implementation, and
+  testing. It applies when users say things like "deep work", "plan before code",
+  "structured workflow", "research then plan then implement", "기획과 코딩 분리",
+  "분석 후 구현", "계획 세우고 구현", "제로베이스", "from scratch", or when the user
+  describes a complex, multi-file task that would benefit from structured planning
+  to avoid premature implementation, architecture ignorance, or duplicate code.
 ---
 
 # Deep Work Workflow: Research → Plan → Implement → Test
@@ -192,7 +169,7 @@ For detailed guidance, see [SOLID Guide](references/solid-guide.md) or [SOLID Pr
 
 ## Phase Enforcement
 
-A PreToolUse hook (`phase-guard.sh`) enforces phase boundaries:
+A PreToolUse hook (`hooks/scripts/phase-guard.sh`) enforces phase boundaries:
 
 - During **Research**, **Plan**, and **Test** phases: Write/Edit tools are blocked for all files except `$WORK_DIR/` documents and the state file
 - During **Implement** phase: All tools are available
@@ -280,27 +257,10 @@ Use `/deep-status` at any time to see the current state, progress, phase duratio
 - Trivial text or config changes
 - You already know exactly what to do
 
-## Complexity Assessment
-
-Not every task needs the full four-phase workflow. Assess task complexity before starting:
-
-**Full 4-phase workflow (Research -> Plan -> Implement -> Test):**
-- Touches 5+ files across multiple modules
-- Involves architectural changes or new patterns
-- Working in an unfamiliar codebase
-- Previous attempts have gone wrong
-- High-risk changes (auth, data, payments)
-
-**Lightweight mode (skip to /deep-plan directly):**
+**Lightweight mode** (skip to /deep-plan directly):
 - Touches 2-4 files in a well-understood area
 - Follows established patterns with minor extensions
-- Medium complexity where a plan helps but exhaustive research is overkill
 - Start with `/deep-work` then select "Plan부터" to skip research
-
-**No workflow needed:**
-- Single-file bug fixes or config changes
-- Trivial text edits
-- Tasks where the solution is already known
 
 ## Complementary Usage with Built-in Plan Mode
 
@@ -311,41 +271,8 @@ Deep Work and Claude's built-in plan mode serve different purposes and can work 
 
 **Combined usage pattern**: Use built-in plan mode for initial task decomposition, then Deep Work for complex subtasks that need thorough research and planning before implementation.
 
-## v3.1.0 Features
+## Compatibility
 
-### Model Routing
-Phase별 최적 모델 배정. 비대화형 Phase는 Agent를 스폰하여 지정 모델로 실행.
-- Research/Implement: sonnet (기본), Test: haiku (기본)
-- Plan: 대화형이므로 메인 세션 유지
-
-### Multi-Channel Notifications
-Phase 완료 시 알림 전송. 로컬(OS 네이티브), Slack, Discord, Telegram, 커스텀 Webhook 지원.
-
-### Incremental Research
-`/deep-research --incremental` — git diff 기반으로 변경 영역만 재분석.
-
-### Quality Gates
-plan.md에 Quality Gates 테이블 정의 시, required/advisory 게이트 실행.
-
-### Plan Diff
-Plan 재작성 시 구조적 변경 사항을 자동 시각화하여 plan-diff.md 생성.
-
-## v3.2.0 Features
-
-### 3-Tier Quality Gate System
-Quality Gates split into three tiers during Test phase:
-- **Required** (blocking): Correctness (tests/lint) + Plan Alignment (Drift Detection)
-- **Advisory** (warning): SOLID Design Review
-- **Insight** (informational): planned for v3.3
-
-### Plan Alignment (Drift Detection)
-`/drift-check` — Automatic plan-vs-implementation verification. Runs as a built-in Required gate in `/deep-test`.
-- Detects unimplemented plan items
-- Detects out-of-scope changes
-- Detects design decision drift
-
-### SOLID Design Review
-`/solid-review` — Design quality review based on the 5 SOLID principles. Optional Advisory gate.
-- SRP, OCP, LSP, ISP, DIP checklist
-- Per-file scorecard + overall verdict
-- Top 5 refactoring suggestions
+- Team mode requires Agent Teams feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`).
+- Solo mode works with standard Claude Code installation.
+- Requires PreToolUse hook support for phase enforcement.
