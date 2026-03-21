@@ -338,8 +338,8 @@ Spawn 3 `general-purpose` agents using the Agent tool:
 - Use `TaskList` to check progress periodically
 - **Display progress as each agent completes**:
   ```
-  [1/3] arch-analyst 완료 ✅ (pattern-analyst, risk-analyst 대기 중...)
-  [2/3] pattern-analyst 완료 ✅ (risk-analyst 대기 중...)
+  [1/3] arch-analyst 완료 ✅ (pattern-analyst, risk-analyst 진행 중...)
+  [2/3] pattern-analyst 완료 ✅ (risk-analyst 진행 중...)
   [3/3] risk-analyst 완료 ✅
   ```
 - Wait until all 3 tasks are completed

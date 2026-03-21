@@ -152,7 +152,7 @@ baseline-commit 결정:
 **Workflow Mode**:
 - Write full report to `$WORK_DIR/drift-report.md`
 - Display summary in terminal
-- FAIL 시: "미구현 항목을 구현하거나, `/deep-plan --update`로 Plan을 수정하세요."
+- FAIL 시: "미구현 항목을 구현하거나, /deep-plan 명령을 다시 실행하여 Plan을 수정하세요."
 
 **Standalone Mode**:
 - Display full report in terminal

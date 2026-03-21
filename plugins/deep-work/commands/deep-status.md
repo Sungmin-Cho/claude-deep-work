@@ -44,7 +44,7 @@ If `$ARGUMENTS` contains `--compare`:
 Look for `.claude/deep-work.local.md`. If it doesn't exist, display:
 
 ```
-ℹ️  활성화된 Deep Work 세션이 없습니다.
+ℹ️ 활성화된 Deep Work 세션이 없습니다.
 
 새 세션을 시작하려면: /deep-work <작업 설명>
 ```
@@ -90,7 +90,7 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 🤝 작업 모드: [Solo / Team]
 🏗️ 프로젝트 타입: [Existing / Zero-Base]
 🌿 Git 브랜치: [git_branch or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=현재 세션, Implement=[model], Test=[model]
+🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 📍 현재 단계: [Phase name with emoji]
@@ -121,11 +121,11 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 ```
 
 Adjust the "다음 행동" based on the current phase:
-- **research**: `/deep-research 를 실행하세요`
-- **plan**: `/deep-plan 을 실행하세요` (or "plan.md를 검토하고 승인하세요" if plan exists)
-- **implement**: `/deep-implement 를 실행하세요`
-- **test**: `/deep-test 를 실행하세요` (or "코드를 수정한 후 /deep-test를 다시 실행하세요" if test_retry_count > 0)
-- **idle**: `세션이 완료되었습니다. /deep-report 로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
+- **research**: `/deep-research 명령을 실행하세요`
+- **plan**: `/deep-plan 명령을 실행하세요` (or "plan.md를 검토하고 승인하세요" if plan exists)
+- **implement**: `/deep-implement 명령을 실행하세요`
+- **test**: `/deep-test 명령을 실행하세요` (or "코드를 수정한 후 /deep-test 명령을 다시 실행하세요" if test_retry_count > 0)
+- **idle**: `세션이 완료되었습니다. /deep-report 명령으로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
 
 ### 5. Show session history
 

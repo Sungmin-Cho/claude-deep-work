@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Glob
+allowed-tools: Bash, Read, Write, Glob, AskUserQuestion
 description: "Start a deep work session with 4-phase workflow (Research → Plan → Implement → Test)"
 argument-hint: task description
 ---
@@ -137,7 +137,7 @@ Ask the user using AskUserQuestion:
 
 ```
 🧠 모델 라우팅 설정:
-  기본값: Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku
+  기본값: Research=sonnet, Plan=main (현재 세션), Implement=sonnet, Test=haiku
 
   1. ✅ 기본값 사용 (권장)
   2. ⚙️ 커스텀 설정
@@ -158,7 +158,7 @@ Check if a previous session's `.claude/deep-work.local.md` has a `notifications:
 If previous notification settings exist:
 ```
 📋 이전 알림 설정을 유지합니다: [channel types list]
-   변경하려면 "변경"을 입력하세요. (유지: Enter)
+   변경 없이 유지하려면 Enter를 누르세요. 변경하려면 "변경"을 입력하세요.
 ```
 Copy the previous notification settings to the new state file.
 
@@ -255,7 +255,7 @@ $ARGUMENTS
 
 ## Progress Log
 - [$(date)] Session initialized
-- [$(date)] Phase 1 (Research) started
+- [$(date)] Phase <1 (Research) or 2 (Plan)> started
 ```
 
 ### 8. Confirm and guide
@@ -272,7 +272,7 @@ Determine the starting phase and display accordingly:
 🤝 작업 모드: Solo / Team (Agent Team)
 🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
 🌿 Git 브랜치: [branch name or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=현재 세션, Implement=[model], Test=[model]
+🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 🔄 워크플로우:
@@ -285,7 +285,7 @@ Determine the starting phase and display accordingly:
    - 코드 파일 수정이 차단됩니다
    - $WORK_DIR/ 내 문서만 작성 가능합니다
 
-👉 다음 단계: /deep-research 를 실행하여 코드베이스 분석을 시작하세요.
+👉 다음 단계: /deep-research 명령을 실행하여 코드베이스 분석을 시작하세요.
 ```
 
 **If starting from Plan (skip research):**
@@ -298,7 +298,7 @@ Determine the starting phase and display accordingly:
 🤝 작업 모드: Solo / Team (Agent Team)
 🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
 🌿 Git 브랜치: [branch name or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=현재 세션, Implement=[model], Test=[model]
+🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 🔄 워크플로우:
@@ -310,7 +310,7 @@ Determine the starting phase and display accordingly:
 ⚡ 현재 상태: Plan 단계
    - 코드 파일 수정이 차단됩니다
 
-👉 다음 단계: /deep-plan 을 실행하여 구현 계획을 작성하세요.
+👉 다음 단계: /deep-plan 명령을 실행하여 구현 계획을 작성하세요.
 ```
 
 If `team_mode` is `team`, add the following after the mode line:

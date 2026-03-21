@@ -197,7 +197,7 @@ Display inline:
 📊 Quality Gate 결과:
   ✅ [Gate 1]: PASS
   ✅ [Gate 2]: PASS
-  ⚠️ [Gate 3]: 72% (≥80% advisory) — 경고만, 차단 없음
+  ⚠️ [Gate 3]: 72% (≥80% 권고) — 경고만, 차단 없음
 ```
 
 ### 5. Determine outcome
@@ -257,7 +257,7 @@ If any verification fails and `test_retry_count` < `max_test_retries`:
      - [Type Check] src/auth.ts:42 — Type 'string' is not assignable to 'number'
      - [Test] auth.test.ts — "should validate token" FAILED
 
-   implement 단계로 복귀합니다. 위 이슈를 수정한 후 /deep-test를 실행하세요.
+   Implement 단계로 복귀합니다. 위 이슈를 수정한 후 /deep-test 명령을 실행하세요.
    ```
 
 4. **Send notification**:

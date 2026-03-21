@@ -37,7 +37,7 @@ If a previous `$WORK_DIR/plan.md` exists and `iteration_count` > 0:
 1. Copy the existing plan.md to `$WORK_DIR/plan.v{iteration_count}.md` (e.g., plan.v1.md, plan.v2.md)
 2. Proceed to create the new plan.md
 
-### 1-3. Plan Diff visualization (if iteration_count > 0)
+### 1-2. Plan Diff visualization (if iteration_count > 0)
 
 **This section executes AFTER the new plan.md is written (Section 3) but BEFORE the review presentation (Section 4).**
 
@@ -97,7 +97,7 @@ If `iteration_count` > 0 and a previous `$WORK_DIR/plan.v{iteration_count}.md` e
 
 If `iteration_count` is 0, skip this section entirely.
 
-### 1-2. Template suggestion (optional)
+### 1-3. Template suggestion (optional)
 
 Read `references/plan-templates.md` from the skill directory to check for matching templates.
 
@@ -265,7 +265,7 @@ Display:
   - 태스크 수: N개
   - 위험도: 낮음/중간/높음
 
-⚠️  아직 구현을 시작하지 않습니다!
+⚠️ 아직 구현을 시작하지 않습니다!
 
 📋 계획이 준비되었습니다. 리뷰해주세요.
 
@@ -287,7 +287,7 @@ When the user provides chat-based feedback instead of approval:
      - [변경된 부분 요약 1]
      - [변경된 부분 요약 2]
 
-   계속 피드백을 주시거나, "승인"으로 다음 단계로 진행하세요.
+   계속 피드백을 주시거나, "승인"을 입력하여 다음 단계로 진행하세요.
    ```
 4. Wait for the next feedback or approval
 

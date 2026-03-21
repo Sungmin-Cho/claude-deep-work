@@ -133,7 +133,7 @@ Write `$WORK_DIR/report.md` with the following structure:
 
 ## Quality Gate Results
 [If $WORK_DIR/quality-gates.md exists, read and include its latest attempt table here]
-[If quality-gates.md does not exist: "Quality Gates 미정의 — 기본 auto-detection 사용"]
+[If quality-gates.md does not exist: "Quality Gates 미정의 — 기본 자동 감지 사용"]
 
 ## Test Retry History
 [If test_retry_count > 0, summarize each attempt from test-results.md]

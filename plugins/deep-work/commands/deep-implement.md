@@ -133,7 +133,7 @@ Continue to [Final: Transition to Test](#final-transition-to-test).
 3. Merge clusters where files import each other (to avoid conflicts)
 4. Target 2–4 clusters. If total tasks are few (≤3), display a message and fall back to Solo:
    ```
-   ℹ️ 태스크가 소규모라 Solo로 진행합니다.
+   ℹ️ 태스크 수가 적어 Solo 모드로 진행합니다.
    ```
 
 ### 3-TEAM-2. Create team
@@ -173,8 +173,8 @@ For each cluster, create a task with `TaskCreate`. Each task description MUST in
 - Use `TaskList` to check progress periodically
 - **Display progress as each agent completes**:
   ```
-  [1/N] impl-1 완료 ✅ (impl-2, impl-3 대기 중...)
-  [2/N] impl-2 완료 ✅ (impl-3 대기 중...)
+  [1/N] impl-1 완료 ✅ (impl-2, impl-3 진행 중...)
+  [2/N] impl-2 완료 ✅ (impl-3 진행 중...)
   [N/N] impl-3 완료 ✅
   ```
 - If an agent reports an issue via message, evaluate and provide guidance or escalate to the user

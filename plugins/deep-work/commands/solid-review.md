@@ -155,4 +155,4 @@ If called as a Quality Gate during Test phase:
 
 If called outside the Test phase:
 - Still run the review
-- Note: "deep-work 워크플로우 활성 — 결과가 $WORK_DIR/solid-review.md에 저장됩니다"
+- Note: "deep-work 워크플로우 활성 상태 — 결과가 $WORK_DIR/solid-review.md에 저장됩니다"
