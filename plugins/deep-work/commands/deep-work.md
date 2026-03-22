@@ -36,6 +36,56 @@ Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle`
 
 Ask the user to confirm using AskUserQuestion before proceeding. If the user declines, stop.
 
+### 1.5. Profile load & flag parsing
+
+#### 1.5a. Extract flags from $ARGUMENTS
+
+Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string — the remainder becomes the task description.
+
+| Flag | Effect |
+|------|--------|
+| `--setup` | Force profile re-setup (all questions asked, profile overwritten) |
+| `--team` | Override `team_mode` to `"team"` for this session only |
+| `--zero-base` | Override `project_type` to `"zero-base"` for this session only |
+| `--skip-research` | Override `start_phase` to `"plan"` for this session only |
+| `--no-branch` | Override `git_branch` to `false` for this session only |
+
+After removing flags, trim whitespace. The remainder is the task description.
+
+#### 1.5b. Validate task description
+
+If the task description is empty after flag removal:
+- If `--setup` flag is present **without** a task description:
+  - Proceed to Steps 4~6 to ask all questions
+  - Save answers as profile (Step 7.5)
+  - Display: `💾 프로필이 업데이트되었습니다.`
+  - **Stop here** — do NOT start a new session
+- Otherwise:
+  - Ask the user: "작업 설명을 입력해주세요" using AskUserQuestion
+  - Use the response as the task description
+
+#### 1.5c. Load profile
+
+Read `.claude/deep-work-profile.yaml` if it exists.
+
+**If profile exists AND `--setup` is NOT set:**
+1. Parse YAML fields: `defaults.team_mode`, `defaults.project_type`, `defaults.start_phase`, `defaults.git_branch`, `defaults.model_routing.*`, `defaults.notifications.*`
+2. Check `version` field. If not `1`, display warning and treat as no profile:
+   ```
+   ⚠️ 프로필 버전이 호환되지 않습니다 (version: [N]). 기존 질문 흐름을 진행합니다.
+   ```
+3. Apply flag overrides (if any): flags take precedence over profile values
+4. Display applied profile:
+   ```
+   ⚡ 프로필 적용: [team_mode] / [project_type] / [start_phase]부터 / [research]-[plan]-[implement]-[test]
+   ```
+5. Set `PROFILE_LOADED` = true
+6. **Skip Steps 4, 4-1, 4-2, 5, and 6** — use profile values directly
+
+**If profile does NOT exist OR `--setup` IS set:**
+1. Set `PROFILE_LOADED` = false
+2. Continue to Steps 4~6 as normal (existing behavior)
+
 ### 2. Create the task-specific output directory
 
 Generate a folder name from the task description:
@@ -68,6 +118,13 @@ git rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
 If the project is a git repository:
+
+**If `PROFILE_LOADED` is true:**
+- If profile `git_branch` is `true`: automatically run `git checkout -b deep-work/[SLUG]` without asking. Set `git_branch` in state file.
+- If profile `git_branch` is `false`: skip branch creation. Set `git_branch` to empty string.
+- Do NOT ask the user — use the profile value directly.
+
+**If `PROFILE_LOADED` is false** (original behavior):
 
 ```
 🌿 Git 브랜치를 생성할까요?
@@ -215,6 +272,8 @@ If the user chooses option 1 (default):
 
 ### 7. Create the state file
 
+**Derived state from profile:** If `start_phase` is `"plan"` (from profile or `--skip-research` flag), set `current_phase: plan` and `research_complete: true` in the state file below. This matches the existing Step 6 behavior when "Plan부터" is selected.
+
 Create or overwrite `.claude/deep-work.local.md` with the following content. Use the current timestamp and the determined values.
 
 ```markdown
@@ -261,6 +320,36 @@ $ARGUMENTS
 - [$(date)] Session initialized
 - [$(date)] Phase <1 (Research) or 2 (Plan)> started
 ```
+
+### 7.5. Save profile
+
+**If `PROFILE_LOADED` is false** (first run or `--setup`):
+
+Save the current session configuration as `.claude/deep-work-profile.yaml`:
+
+```yaml
+version: 1
+created_at: "<current ISO timestamp>"
+updated_at: "<current ISO timestamp>"
+
+defaults:
+  team_mode: "<selected team_mode>"
+  project_type: "<selected project_type>"
+  start_phase: "<selected start_phase>"
+  git_branch: <true if branch was created, false otherwise>
+  model_routing:
+    research: "<selected>"
+    plan: "main"
+    implement: "<selected>"
+    test: "<selected>"
+  notifications:
+    enabled: <true/false>
+    channels: <copy from state file notifications.channels>
+```
+
+Display: `💾 프로필이 저장되었습니다. 다음 실행부터 이 설정이 자동 적용됩니다.`
+
+**If `PROFILE_LOADED` is true**: Skip this step.
 
 ### 8. Confirm and guide
 

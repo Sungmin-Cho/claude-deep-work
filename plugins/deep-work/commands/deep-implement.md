@@ -58,11 +58,18 @@ If `model_routing.implement` is NOT "main" and `team_mode` is "solo":
   - Read `$WORK_DIR/plan.md` Task Checklist
   - Use the Agent tool to spawn an implementation agent:
     - `model`: value of `model_routing.implement` (e.g., "sonnet")
-    - `prompt`: Include the plan.md content, all Solo Mode Implementation instructions (Sections 0, 3-SOLO, 4-SOLO, 5-SOLO), task_description, WORK_DIR path, and checkpoint info
+    - `prompt`: Include the plan.md content, all Solo Mode Implementation instructions (Sections 0, 3-SOLO, 4-SOLO, 5-SOLO), task_description, WORK_DIR path, checkpoint info, AND the following checkpoint mandate: "⚠️ 체크포인트 필수: 각 태스크를 완료할 때마다 즉시 $WORK_DIR/plan.md에서 해당 항목을 `- [ ]`에서 `- [x]`로 변경하세요. 이것은 세션 재개 시 진행률 복원에 사용됩니다. 태스크 완료와 체크마크 업데이트를 분리하지 마세요."
     - `description`: "Deep implement execution"
     - `mode`: "bypassPermissions"
   - Wait for Agent completion
-  - After completion, verify all tasks are marked `[x]` in plan.md
+  - **Checkpoint verification**: After Agent completion, verify plan.md integrity:
+    1. Read `$WORK_DIR/plan.md` and count `- [x]` (completed) and `- [ ]` (incomplete) items
+    2. Run `git diff --name-only` to collect actually changed files
+    3. For each plan task with a file path:
+       - If task is `[x]` but file is NOT in git diff → display warning: `⚠️ Task [N] ([file]) marked complete but no git changes detected`
+       - If file IS in git diff but task is `[ ]` → auto-correct to `[x]` in plan.md
+    4. If `$WORK_DIR/file-changes.log` exists, use it as secondary cross-reference (may be empty if PostToolUse hook didn't fire for delegated agent)
+    5. Display summary: `🔧 체크포인트 검증: [completed]/[total] 완료, [corrected]개 자동 보정`
   - Skip to [Final: Transition to Test](#final-transition-to-test)
 
 If `model_routing.implement` is "main" or `team_mode` is "team":

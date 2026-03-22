@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "3.3.0"
+version: "3.3.2"
 description: |
   This skill should be used when the user wants to follow a structured, phase-based
   development workflow that strictly separates research, planning, implementation, and
@@ -10,7 +10,8 @@ description: |
   "품질 게이트", "SOLID review", "drift check", "deep-insight", "코드 메트릭",
   or when the user describes a complex, multi-file task that would benefit from
   structured planning to avoid premature implementation, architecture ignorance,
-  or duplicate code.
+  or duplicate code. Also triggers on "resume session", "이어서", "세션 재개",
+  "프로필", "profile", "quick start", "빠른 시작".
 ---
 
 # Deep Work Workflow: Research → Plan → Implement → Test
@@ -216,6 +217,7 @@ This is not a suggestion — it's a hard gate. The AI literally cannot modify co
 /deep-report                                            # View or regenerate report
 /deep-status                                            # Check status and history
 /deep-status --compare                                  # Compare two sessions
+/deep-resume                                            # Resume interrupted session
 ```
 
 ### Session Options
@@ -245,6 +247,29 @@ deep-work/
 ```
 
 Previous sessions are preserved when starting new ones. Use `/deep-status` to view history or `/deep-status --compare` to compare sessions.
+
+## Profile System
+
+On the first `/deep-work` run, you answer setup questions (mode, model routing, notifications, etc.) as usual. Your answers are automatically saved to `.claude/deep-work-profile.yaml`. On subsequent runs, the profile is loaded and **all setup questions are skipped** — you only provide the task description.
+
+**Flags** override profile values for a single session:
+- `/deep-work --team "task"` — use Team mode this time
+- `/deep-work --zero-base "task"` — zero-base project this time
+- `/deep-work --skip-research "task"` — skip to Plan phase
+- `/deep-work --no-branch "task"` — no git branch this time
+- `/deep-work --setup` — re-run all setup questions and update the profile
+
+## Session Resume (`/deep-resume`)
+
+Resume an interrupted deep-work session. Detects the active session, restores AI context from artifacts (research.md, plan.md, test-results.md), and auto-continues from the current phase.
+
+**What it restores**:
+- Phase state and progress (which tasks are done, which remain)
+- Research findings (Executive Summary only — keeps token usage low)
+- Plan content (full plan.md for implement phase)
+- Test failure details (for retry attempts)
+
+**Usage**: Simply run `/deep-resume` in a new CLI session. No arguments needed.
 
 ## State Management
 
@@ -319,6 +344,27 @@ Automatic session status check and notification on CLI session end.
 - Reminds about active sessions when closing CLI
 - Sends notification via configured channels (Slack, Discord, Telegram, etc.)
 - Non-blocking — never prevents session close
+
+## v3.3.2 Features
+
+### Profile System
+Automatic profile save/load for zero-question session initialization.
+- First run saves setup answers to `.claude/deep-work-profile.yaml`
+- Subsequent runs skip all questions, apply profile instantly
+- Override flags: `--team`, `--zero-base`, `--skip-research`, `--no-branch`
+- Re-setup: `/deep-work --setup`
+
+### Session Resume
+`/deep-resume` command for interrupted session continuation.
+- Auto-detects active session and current phase
+- Restores AI context from artifacts (research.md, plan.md, test-results.md)
+- Auto-continues from current phase with full checkpoint support
+- Implement phase uses checkpoint-based resume (bypasses model routing re-delegation)
+
+### Checkpoint Verification
+Post-agent implementation verification using `git diff` cross-reference.
+- Detects unmarked completed tasks and auto-corrects plan.md
+- Primary verification via `git diff`, secondary via `file-changes.log` when available
 
 ## Compatibility & Requirements
 

@@ -7,6 +7,33 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.2] - 2026-03-22
+
+### Added
+- **Profile System**: Automatic profile save/load for zero-question session initialization.
+  - First `/deep-work` run saves setup answers to `.claude/deep-work-profile.yaml`
+  - Subsequent runs skip all setup questions, apply saved profile instantly
+  - Override flags for single-session changes: `--team`, `--zero-base`, `--skip-research`, `--no-branch`
+  - Profile re-setup: `/deep-work --setup`
+  - Profile version field (`version: 1`) for future migration support
+- **Session Resume (`/deep-resume`)**: Resume interrupted sessions with full context restoration.
+  - Auto-detects active session from `.claude/deep-work.local.md`
+  - Restores AI context from artifacts: research.md (summary), plan.md (full), test-results.md (failures)
+  - Auto-continues from current phase: research → plan review → implement checkpoint → test
+  - Implement phase always uses checkpoint-based resume (bypasses model routing re-delegation for safety)
+- **Checkpoint Verification**: Post-agent implementation integrity check.
+  - Uses `git diff --name-only` as primary verification source
+  - Auto-corrects plan.md `[x]` markers when git changes exist but task was unmarked
+  - Falls back gracefully when `file-changes.log` is unavailable (agent delegation mode)
+
+### Changed
+- `deep-work.md` restructured with Step 1.5 (profile load/flag parse) and Step 7.5 (profile save)
+- `deep-work.md` Step 2-1 (git branch) now auto-creates/skips based on profile setting
+- `deep-implement.md` Section 0-pre agent prompt includes checkpoint mandate
+- `deep-implement.md` Section 0-pre adds post-agent checkpoint verification step
+- SKILL.md description extended with resume/profile trigger keywords
+- SKILL.md updated with Profile System, Session Resume, and v3.3.2 Features sections
+
 ## [3.3.0] - 2026-03-22
 
 ### Added

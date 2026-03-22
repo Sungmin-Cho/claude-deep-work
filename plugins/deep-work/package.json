@@ -1,6 +1,6 @@
 {
   "name": "@claude-deep-work/deep-work",
-  "version": "3.3.0",
+  "version": "3.3.2",
   "description": "Deep Work plugin for Claude Code - 4-phase workflow with 3-tier Quality Gate system (Plan Alignment + SOLID Review + Code Insight), PostToolUse file tracking, Stop hook",
   "author": "sungmin",
   "license": "MIT",
