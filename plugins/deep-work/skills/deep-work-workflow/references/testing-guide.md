@@ -97,6 +97,7 @@ plan.md에 `## Quality Gates` 마크다운 테이블을 정의하면, Test Phase
 ### 게이트 유형
 - **✅ 필수(required)**: 실패 시 implement 복귀
 - **⚠️ 권고(advisory)**: 실패 시 경고만 기록
+- **ℹ️ 인사이트(insight)**: 결과 기록만 (차단 없음, v3.3)
 
 ### 정의 형식
 ```markdown
@@ -104,6 +105,7 @@ plan.md에 `## Quality Gates` 마크다운 테이블을 정의하면, Test Phase
 |------|--------|------|--------|
 | Type Check | `npx tsc --noEmit` | ✅ | — |
 | Coverage | `npm test -- --coverage` | ⚠️ | ≥80% |
+| Complexity | `npx complexity-report src/` | ℹ️ | — |
 ```
 
 ### 결과 파일

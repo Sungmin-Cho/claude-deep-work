@@ -51,6 +51,8 @@ Read all available session artifacts:
 - `$WORK_DIR/plan.md` — plan and implementation checklist (if exists)
 - `$WORK_DIR/test-results.md` — test results (if exists)
 - `$WORK_DIR/quality-gates.md` — quality gate results (if exists)
+- `$WORK_DIR/insight-report.md` — insight analysis results (if exists)
+- `$WORK_DIR/file-changes.log` — file modification tracking log (if exists)
 - `$WORK_DIR/plan-diff.md` — plan diff visualization (if exists)
 
 ### 4. Calculate phase durations
@@ -117,11 +119,19 @@ Write `$WORK_DIR/report.md` with the following structure:
 [Parse checklist from plan.md. ✅ = completed, ❌ = issue, ⬜ = not started]
 
 ## Files Changed
+
+If `$WORK_DIR/file-changes.log` exists:
+- Parse unique file paths from the log
+- Cross-reference with `git status` to categorize as Created/Modified/Deleted
+- Show modification count per file (how many times each file was edited during implementation)
+
+If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
+
 ### Created
 - [list of new files]
 
 ### Modified
-- [list of modified files]
+- [list of modified files] (수정 횟수: N회)
 
 ### Deleted
 - [list of deleted files, if any]
@@ -138,6 +148,10 @@ Write `$WORK_DIR/report.md` with the following structure:
 ## Quality Gate Results
 [If $WORK_DIR/quality-gates.md exists, read and include its latest attempt table here]
 [If quality-gates.md does not exist: "Quality Gates 미정의 — 기본 자동 감지 사용"]
+
+## Insight Analysis
+[If $WORK_DIR/insight-report.md exists, include the "종합 인사이트 요약" section here]
+[If insight-report.md does not exist: "Insight 분석 미실행"]
 
 ## Test Retry History
 [If test_retry_count > 0, summarize each attempt from test-results.md]

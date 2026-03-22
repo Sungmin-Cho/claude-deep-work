@@ -1,13 +1,16 @@
 ---
 name: deep-work-workflow
+version: "3.3.0"
 description: |
   This skill should be used when the user wants to follow a structured, phase-based
   development workflow that strictly separates research, planning, implementation, and
   testing. It applies when users say things like "deep work", "plan before code",
   "structured workflow", "research then plan then implement", "기획과 코딩 분리",
-  "분석 후 구현", "계획 세우고 구현", "제로베이스", "from scratch", or when the user
-  describes a complex, multi-file task that would benefit from structured planning
-  to avoid premature implementation, architecture ignorance, or duplicate code.
+  "분석 후 구현", "계획 세우고 구현", "제로베이스", "from scratch", "quality gate",
+  "품질 게이트", "SOLID review", "drift check", "deep-insight", "코드 메트릭",
+  or when the user describes a complex, multi-file task that would benefit from
+  structured planning to avoid premature implementation, architecture ignorance,
+  or duplicate code.
 ---
 
 # Deep Work Workflow: Research → Plan → Implement → Test
@@ -153,6 +156,27 @@ For detailed guidance, see [Testing Guide](references/testing-guide.md).
 
 For detailed guidance, see [SOLID Guide](references/solid-guide.md) or [SOLID Prompt Guide](references/solid-prompt-guide.md).
 
+### Code Insight Analysis (`/deep-insight`)
+
+**Goal**: Provide informational code metrics without blocking workflow.
+
+**What happens**:
+- Measures file metrics (lines, functions, exports)
+- Analyzes complexity indicators (nesting depth, long functions, large files)
+- Builds dependency graph (circular references, hub files, import depth)
+- Records change summary from PostToolUse file tracking
+- Saves results to `$WORK_DIR/insight-report.md`
+
+**Built-in behavior**: Automatically runs as an Insight gate during `/deep-test` after Required and Advisory gates. Never blocks workflow.
+
+**Dual mode**:
+- **Standalone**: `/deep-insight [target]` — works without an active deep-work session
+- **Workflow**: Built-in Insight gate in the Test phase (auto-runs after other gates)
+
+**Key principle**: "Numbers don't judge. They illuminate what words might miss."
+
+For detailed guidance, see [Insight Guide](references/insight-guide.md).
+
 ### Session Report (`/deep-report`)
 
 **Goal**: Generate or view a comprehensive report of the entire session.
@@ -169,11 +193,11 @@ For detailed guidance, see [SOLID Guide](references/solid-guide.md) or [SOLID Pr
 
 ## Phase Enforcement
 
-A PreToolUse hook (`hooks/scripts/phase-guard.sh`) enforces phase boundaries:
+Hooks enforce phase boundaries and track activity:
 
-- During **Research**, **Plan**, and **Test** phases: Write/Edit tools are blocked for all files except `$WORK_DIR/` documents and the state file
-- During **Implement** phase: All tools are available
-- When no session is active: No restrictions
+- **PreToolUse** (`phase-guard.sh`): During Research, Plan, and Test phases — Write/Edit tools are blocked for all files except `$WORK_DIR/` documents and the state file. During Implement — all tools available. No session — no restrictions.
+- **PostToolUse** (`file-tracker.sh`): During Implement phase — automatically logs modified file paths to `$WORK_DIR/file-changes.log` with timestamps. Used by `/deep-report` and `/deep-insight`.
+- **Stop** (`session-end.sh`): On CLI session end — if a deep-work session is active, outputs a reminder message and sends notification via configured channels.
 
 This is not a suggestion — it's a hard gate. The AI literally cannot modify code files until the plan is approved, and cannot modify code during testing.
 
@@ -275,8 +299,33 @@ Deep Work and Claude's built-in plan mode serve different purposes and can work 
 
 All commands detect the user's language from their messages or Claude Code's `language` setting, and output messages in that language. Command templates use Korean as the reference format; Claude translates naturally to the user's language while preserving emoji, formatting, and structure.
 
-## Compatibility
+## v3.3.0 Features
 
-- Team mode requires Agent Teams feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`).
-- Solo mode works with standard Claude Code installation.
-- Requires PreToolUse hook support for phase enforcement.
+### Insight Tier Quality Gate
+Third and final tier of the 3-tier Quality Gate system. Provides code metrics and analysis without blocking workflow.
+- `/deep-insight` command with standalone/workflow dual mode
+- Built-in: file metrics, complexity indicators, dependency graph, change summary
+- Custom: user-defined ℹ️ gates in plan.md Quality Gates table
+- Results saved to `$WORK_DIR/insight-report.md`
+
+### PostToolUse File Tracking
+Automatic tracking of file modifications during Implement phase.
+- PostToolUse hook logs every Write/Edit/MultiEdit to `$WORK_DIR/file-changes.log`
+- Used by `/deep-report` for accurate file change counts
+- Used by `/deep-insight` for change summary analysis
+
+### Stop Hook — Session End Handler
+Automatic session status check and notification on CLI session end.
+- Reminds about active sessions when closing CLI
+- Sends notification via configured channels (Slack, Discord, Telegram, etc.)
+- Non-blocking — never prevents session close
+
+## Compatibility & Requirements
+
+- **Solo mode**: Works with standard Claude Code installation
+- **Team mode**: Requires Agent Teams feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
+- **Phase enforcement**: Requires PreToolUse hook support
+- **File tracking**: Requires PostToolUse hook support
+- **Session end handler**: Requires Stop hook support
+
+For previous version features (v3.1 Model Routing, Notifications, Incremental Research, Quality Gates, Plan Diff; v3.2 3-Tier Quality Gates, Drift Detection, SOLID Review), see the [CHANGELOG](../../CHANGELOG.md).

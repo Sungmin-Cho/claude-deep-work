@@ -4,6 +4,10 @@
 
 A Claude Code plugin that enforces **strict separation of planning and coding** through a 4-phase workflow.
 
+<p align="center">
+  <img src="./demo-en.gif" alt="Deep Work Plugin Demo — 4-Phase Workflow with 3-Tier Quality Gates" width="800">
+</p>
+
 ## The Problem
 
 Common pitfalls when AI coding tools tackle complex tasks:
@@ -22,7 +26,7 @@ The **Research → Plan → Implement → Test** workflow enforces strict separa
 - **Phase 3 (Implement)**: Mechanical execution of the approved plan (starts automatically on approval)
 - **Phase 4 (Test)**: Automated tests, linting, and type-checking; falls back to implementation on failure
 
-Code file modifications are **physically blocked** during Phases 1, 2, and 4 (via PreToolUse hook).
+Code file modifications are **physically blocked** during Phases 1, 2, and 4 (via PreToolUse hook). File changes are **automatically tracked** during Phase 3 (via PostToolUse hook).
 
 ## Usage
 
@@ -67,6 +71,7 @@ Code file modifications are **physically blocked** during Phases 1, 2, and 4 (vi
 | `/deep-test` | Phase 4: Run integration tests, return to implement on failure |
 | `/drift-check` | Verify implementation matches the approved plan (standalone or built-in gate) |
 | `/solid-review` | SOLID design principles review (standalone or advisory gate) |
+| `/deep-insight` | Code metrics, complexity, dependency analysis (standalone or insight gate) |
 | `/deep-report` | Generate or view session report |
 | `/deep-status` | Current status, progress, phase durations, session history |
 
@@ -84,6 +89,8 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | `quality-gates.md` | Phase 4 complete | Quality Gate results detail (required/advisory) |
 | `drift-report.md` | Phase 4 complete | Plan alignment verification results |
 | `solid-review.md` | Phase 4 complete | SOLID design review scorecard and suggestions |
+| `insight-report.md` | Phase 4 complete | Code metrics, complexity, dependency analysis |
+| `file-changes.log` | Phase 3 ongoing | Auto-tracked file modifications (PostToolUse hook) |
 | `plan-diff.md` | Plan rewrite | Structural change comparison between plan versions |
 
 ## Session State
@@ -187,6 +194,11 @@ implement → test → (pass) → idle + report
 - **Plan Alignment (Drift Detection)** — Built-in Required gate that automatically verifies implementation matches the approved plan. Detects unimplemented items, out-of-scope changes, and design decision drift. Outputs `drift-report.md`.
 - **SOLID Design Review** — Advisory gate for evaluating code against SRP, OCP, LSP, ISP, DIP. Per-file scorecard, top-5 refactoring suggestions. Outputs `solid-review.md`.
 
+**v3.3 features:**
+- **Insight Tier Quality Gate** — `/deep-insight` command and built-in Insight gate. Measures file metrics, complexity indicators, dependency graph, and change summary. Outputs `insight-report.md`. Never blocks workflow.
+- **PostToolUse File Tracking** — Automatically logs file modifications during Implement phase to `file-changes.log`. Feeds into `/deep-report` and `/deep-insight`.
+- **Stop Hook** — Sends reminder and notification when CLI session ends with an active deep-work session.
+
 ### Session Report
 
 Automatically generated report after session completion:
@@ -240,6 +252,7 @@ Define Quality Gates in plan.md and they will be automatically executed during t
 
 - **✅ Required**: Returns to implement on failure
 - **⚠️ Advisory**: Warning logged only, does not block
+- **ℹ️ Insight**: Results recorded for information only (v3.3)
 - Falls back to existing auto-detection when not defined
 
 ## Internationalization (v3.2.2)
@@ -252,16 +265,24 @@ All commands automatically detect the user's language and output messages accord
 
 The plugin detects language from user messages or the Claude Code `language` setting.
 
-## Phase Guard
+## Hooks
 
-`hooks/scripts/phase-guard.sh` monitors Write/Edit tool calls:
+Three hooks manage the session lifecycle:
 
-| Phase | Code Changes | Doc Changes | Blocked Message |
-|-------|-------------|-------------|-----------------|
-| Research | ❌ Blocked | ✅ Allowed | "→ Run /deep-plan or /deep-research" |
-| Plan | ❌ Blocked | ✅ Allowed | "→ Approve plan or re-run /deep-plan" |
-| Implement | ✅ Allowed | ✅ Allowed | — |
-| Test | ❌ Blocked | ✅ Allowed | "→ Handled automatically on pass/fail" |
+| Hook | Script | Trigger | Purpose |
+|------|--------|---------|---------|
+| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit | Blocks code edits during research/plan/test phases |
+| PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit | Tracks file modifications during implement phase |
+| Stop | `session-end.sh` | CLI session end | Reminds about active sessions, sends notifications |
+
+### Phase Guard
+
+| Phase | Code Changes | Doc Changes | File Tracking |
+|-------|-------------|-------------|---------------|
+| Research | ❌ Blocked | ✅ Allowed | — |
+| Plan | ❌ Blocked | ✅ Allowed | — |
+| Implement | ✅ Allowed | ✅ Allowed | ✅ Tracked |
+| Test | ❌ Blocked | ✅ Allowed | — |
 | Idle | ✅ Allowed | ✅ Allowed | — |
 
 ## Session Options
@@ -305,7 +326,7 @@ Enabling Team mode:
 | Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
 | Low | No workflow needed | Single file edit, config changes |
 
-## Installation (v3.2.2)
+## Installation (v3.3.0)
 
 Add the marketplace to your Claude Code settings:
 

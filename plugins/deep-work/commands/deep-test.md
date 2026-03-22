@@ -126,11 +126,12 @@ Read `$WORK_DIR/plan.md` and look for a `## Quality Gates` section containing a 
 
 If a Quality Gates section exists:
 - Parse the table into a list of gates
-- Each gate has: name, command, type (✅=required, ⚠️=advisory), threshold
+- Each gate has: name, command, type (✅=required, ⚠️=advisory, ℹ️=insight), threshold
 - **Use these gates instead of auto-detected commands** (Section 2 results are overridden)
 - Execute gates in the order listed in the table
 - For required (✅) gates: failure triggers implement rollback (same as current test failure)
 - For advisory (⚠️) gates: failure records a warning only, does NOT trigger rollback
+- For insight (ℹ️) gates: results recorded for informational purposes only — always treated as pass
 
 If no Quality Gates section exists:
 - Use the auto-detected commands from Section 2 (existing behavior, backward compatible)
@@ -187,9 +188,16 @@ If Quality Gates were defined in plan.md, write `$WORK_DIR/quality-gates.md`:
 |------|--------|------|----------|--------|--------|----------|
 | [name] | `[command]` | ✅ PASS / ⚠️ WARN | [duration] | [actual] | [threshold] | [details] |
 
+### Insight Gates
+| Gate | 명령어 | 결과 | 측정값 | 세부 사항 |
+|------|--------|------|--------|----------|
+| Code Insight | [auto] | ℹ️ INFO | — | [summary] |
+| [user gate] | `[command]` | ℹ️ INFO / ℹ️ SKIP | [value] | [details] |
+
 ### 판정: ✅ PASS / ⚠️ PASS with warnings / ❌ FAIL
 - Required: N/N 통과
 - Advisory: N/N 통과
+- Insight: N개 분석 완료
 ```
 
 Update `quality_gates_passed` in the state file:
@@ -203,6 +211,27 @@ Display inline:
   ✅ [Gate 2]: PASS
   ⚠️ [Gate 3]: 72% (≥80% 권고) — 경고만, 차단 없음
 ```
+
+### 4-2. Built-in Insight Analysis & Insight Gate Results
+
+After all Required and Advisory gates complete (regardless of their results), run the built-in Insight analysis. Insight gates NEVER affect pass/fail determination.
+
+**Steps**:
+
+1. **Run built-in Insight analysis**: Read the `/deep-insight` command file and execute its analysis logic (Sections 3A-3D) against the files modified during implementation. Save results to `$WORK_DIR/insight-report.md`.
+
+2. **Run user-defined Insight gates**: If plan.md has ℹ️ gates defined in the Quality Gates table, execute each command and record the output. Failed commands are recorded as ℹ️ SKIP (not as failures).
+
+3. **Append Insight results to quality-gates.md**: Add the `### Insight Gates` section to the file.
+
+4. **Display inline summary**:
+   ```
+   ℹ️ Insight 분석:
+     ℹ️ Code Insight: N파일, N줄, 복잡도 지표 N건
+     ℹ️ [User Gate]: [output summary]
+   ```
+
+5. **Important**: Even if Insight analysis fails completely, it does NOT affect the overall pass/fail determination. Silently skip and continue to Section 5.
 
 ### 5. Determine outcome
 

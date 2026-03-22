@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "3.2.2",
-  "description": "4-phase workflow with 3-tier Quality Gate system: Plan Alignment (Required), SOLID Review (Advisory), plus model routing, notifications, incremental research, and plan diff",
+  "version": "3.3.0",
+  "description": "4-phase workflow with 3-tier Quality Gate system: Plan Alignment (Required), SOLID Review (Advisory), Code Insight (Insight), plus PostToolUse file tracking, Stop hook, model routing, notifications, incremental research, and plan diff",
   "author": {
     "name": "sungmin"
   },
@@ -18,6 +18,11 @@
     "design-patterns",
     "drift-detection",
     "plan-alignment",
-    "quality-gate"
+    "quality-gate",
+    "insight",
+    "code-metrics",
+    "file-tracking",
+    "posttooluse",
+    "stop-hook"
   ]
 }

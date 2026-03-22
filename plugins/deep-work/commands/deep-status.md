@@ -70,6 +70,8 @@ Read the following files if they exist:
 - `$WORK_DIR/report.md` — check if it exists
 - `$WORK_DIR/test-results.md` — check if it exists
 - `$WORK_DIR/quality-gates.md` — check if it exists
+- `$WORK_DIR/insight-report.md` — check if it exists
+- `$WORK_DIR/file-changes.log` — check if it exists
 - `$WORK_DIR/plan-diff.md` — check if it exists
 
 ### 3. Calculate progress
@@ -119,6 +121,8 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
    - $WORK_DIR/test-results.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/report.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/quality-gates.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/insight-report.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/file-changes.log: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/plan-diff.md: [존재함 ✅ / 없음 ⬜]
 
 👉 다음 행동: [안내 메시지]

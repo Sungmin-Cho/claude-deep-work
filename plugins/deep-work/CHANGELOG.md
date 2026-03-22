@@ -7,6 +7,30 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-03-22
+
+### Added
+- **Insight Tier Quality Gate**: Third and final tier of the 3-tier Quality Gate system. Provides informational code metrics and analysis without blocking workflow.
+  - `/deep-insight` command with standalone/workflow dual mode
+  - Built-in analyses: file metrics, complexity indicators, dependency graph, change summary
+  - Custom ℹ️ gates in plan.md Quality Gates table
+  - Produces `insight-report.md` artifact
+  - Automatically runs during `/deep-test` after Required and Advisory gates
+- **PostToolUse File Tracking**: `file-tracker.sh` hook automatically logs file modifications during Implement phase to `$WORK_DIR/file-changes.log` with timestamps. Used by `/deep-report` and `/deep-insight`.
+- **Stop Hook — Session End Handler**: `session-end.sh` hook fires on CLI session close. If a deep-work session is active, outputs a reminder message and sends notification via configured channels.
+- **insight-guide.md**: Reference guide for Insight tier — analysis interpretation, custom gate definition, limitations
+
+### Changed
+- `hooks.json` expanded from PreToolUse-only to PreToolUse + PostToolUse + Stop events
+- `/deep-test` Section 2-1 now parses ℹ️ (insight) markers in Quality Gates table alongside ✅ (required) and ⚠️ (advisory)
+- `/deep-test` Section 4 adds new "4-2. Built-in Insight Analysis" step after Required/Advisory gates
+- `quality-gates.md` output format includes new "Insight Gates" section and insight count in verdict
+- `/deep-report` reads `insight-report.md` and `file-changes.log` for enriched reports
+- `/deep-status` artifact checklist includes `insight-report.md` and `file-changes.log`
+- `/deep-implement` notes PostToolUse file tracking in Solo Mode instructions
+- SKILL.md Phase Enforcement section updated to document all three hook types
+- SKILL.md description extended with insight/metrics/tracking trigger keywords
+
 ## [3.2.2] - 2026-03-21
 
 ### Added

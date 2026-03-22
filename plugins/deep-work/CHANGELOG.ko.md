@@ -7,6 +7,30 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-03-22
+
+### Added
+- **Insight 계층 Quality Gate**: 3계층 Quality Gate 시스템의 세 번째이자 마지막 계층. 워크플로우 차단 없이 코드 메트릭과 분석 정보를 제공.
+  - `/deep-insight` 커맨드 (standalone/workflow 이중 모드)
+  - 내장 분석: 파일 메트릭, 복잡도 지표, 의존성 그래프, 변경 요약
+  - plan.md Quality Gates 테이블에 커스텀 ℹ️ 게이트 정의 가능
+  - `insight-report.md` 산출물
+  - `/deep-test`에서 Required/Advisory 게이트 이후 자동 실행
+- **PostToolUse 파일 추적**: `file-tracker.sh` 훅이 Implement 단계에서 파일 수정을 자동으로 `$WORK_DIR/file-changes.log`에 타임스탬프와 함께 기록. `/deep-report`와 `/deep-insight`에서 활용.
+- **Stop 훅 — 세션 종료 핸들러**: `session-end.sh` 훅이 CLI 세션 종료 시 실행. Deep Work 세션이 활성 상태이면 알림 메시지 출력 및 설정된 채널로 알림 전송.
+- **insight-guide.md**: Insight 계층 레퍼런스 가이드 — 분석 해석 방법, 커스텀 게이트 정의, 제한 사항
+
+### Changed
+- `hooks.json`이 PreToolUse 전용에서 PreToolUse + PostToolUse + Stop 3개 이벤트로 확장
+- `/deep-test` Section 2-1에서 ✅(required), ⚠️(advisory)와 함께 ℹ️(insight) 마커 파싱 추가
+- `/deep-test` Section 4에 "4-2. Built-in Insight Analysis" 단계 추가 (Required/Advisory 게이트 이후 실행)
+- `quality-gates.md` 출력에 "Insight Gates" 섹션 및 판정의 insight 카운트 추가
+- `/deep-report`가 `insight-report.md`와 `file-changes.log`를 읽어 리포트 보강
+- `/deep-status` 산출물 목록에 `insight-report.md`, `file-changes.log` 추가
+- `/deep-implement`에 PostToolUse 파일 추적 안내 노트 추가
+- SKILL.md Phase Enforcement 섹션에 3개 훅 유형 전체 문서화
+- SKILL.md description에 insight/metrics/tracking 트리거 키워드 추가
+
 ## [3.2.2] - 2026-03-21
 
 ### Added

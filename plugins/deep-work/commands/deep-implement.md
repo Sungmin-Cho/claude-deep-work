@@ -89,6 +89,8 @@ Start sequential execution from the first incomplete task.
 
 ### 3-SOLO. Execute tasks sequentially
 
+> ℹ️ PostToolUse 훅이 파일 변경을 자동 추적합니다. 수정된 파일은 `$WORK_DIR/file-changes.log`에 기록됩니다.
+
 For each unchecked task (`- [ ]`):
 
 1. **Announce** what you're about to do
