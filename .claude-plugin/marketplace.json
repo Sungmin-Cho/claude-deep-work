@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "deep-work",
-      "description": "4-phase workflow with 3-tier Quality Gate system, Profile-based quick start, Session Resume, and Checkpoint verification",
-      "version": "3.3.2",
+      "description": "4-phase workflow with 3-tier Quality Gate, Multi-preset Profile System, Session Resume, and Checkpoint verification",
+      "version": "3.3.3",
       "source": "./plugins/deep-work"
     }
   ]
