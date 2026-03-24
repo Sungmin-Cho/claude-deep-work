@@ -49,6 +49,7 @@ Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string
 | `--zero-base` | Override `project_type` to `"zero-base"` for this session only |
 | `--skip-research` | Override `start_phase` to `"plan"` for this session only |
 | `--no-branch` | Override `git_branch` to `false` for this session only |
+| `--profile=X` | Use preset named `X` directly (skip interactive selection) |
 
 After removing flags, trim whitespace. The remainder is the task description.
 
@@ -56,11 +57,14 @@ After removing flags, trim whitespace. The remainder is the task description.
 
 If the task description is empty after flag removal:
 - If `--setup` flag is present **without** a task description:
-  - Proceed to Steps 4~6 to ask all questions
-  - Save answers as profile (Step 7.5)
+  - Read `.claude/deep-work-profile.yaml` if it exists
+  - If profile exists (v1 or v2): Show preset management UI (see Step 1.5d)
+  - If profile does not exist: Proceed to Steps 4~6 to ask all questions, save as v2 profile (Step 7.5)
   - Display: `💾 프로필이 업데이트되었습니다.`
   - **Stop here** — do NOT start a new session
-- Otherwise:
+- If `--setup` flag is present **with** a task description:
+  - Show preset management UI (Step 1.5d) → save → continue session with selected preset
+- Otherwise (no `--setup`, task description is empty):
   - Ask the user: "작업 설명을 입력해주세요" using AskUserQuestion
   - Use the response as the task description
 
@@ -69,22 +73,95 @@ If the task description is empty after flag removal:
 Read `.claude/deep-work-profile.yaml` if it exists.
 
 **If profile exists AND `--setup` is NOT set:**
-1. Parse YAML fields: `defaults.team_mode`, `defaults.project_type`, `defaults.start_phase`, `defaults.git_branch`, `defaults.model_routing.*`, `defaults.notifications.*`
-2. Check `version` field. If not `1`, display warning and treat as no profile:
+
+1. Parse `version` field:
+   - If `version` is `1`: **Auto-migrate to v2** — wrap existing `defaults.*` fields into `presets.default.*`, set `version: 2`, `active: default`. Overwrite the file. Display:
+     ```
+     🔄 프로필을 v2 형식으로 자동 업그레이드했습니다. (default 프리셋으로 변환)
+     ```
+   - If `version` is `2`: Proceed normally.
+   - Otherwise: Display warning and treat as no profile:
+     ```
+     ⚠️ 프로필 버전이 호환되지 않습니다 (version: [N]). 기존 질문 흐름을 진행합니다.
+     ```
+
+2. **Preset selection** (v2 profile):
+   - If `--profile=X` flag is set:
+     - Look up `presets[X]`. If found, select it.
+     - If not found: Display error and fall back to interactive selection:
+       ```
+       ⚠️ 프리셋 '[X]'을(를) 찾을 수 없습니다. 사용 가능한 프리셋 중에서 선택하세요.
+       ```
+   - If no `--profile` flag AND only 1 preset exists:
+     - Auto-select the only preset.
+   - If no `--profile` flag AND 2+ presets exist:
+     - Use AskUserQuestion to let the user choose:
+       ```
+       🎯 프리셋을 선택하세요:
+         1. dev — Solo / 기존 코드베이스 / Research부터
+         2. quick — Solo / 기존 코드베이스 / Plan부터
+         3. review — Team / 기존 코드베이스 / Research부터
+       ```
+       (Each option shows the preset name + key settings summary: team_mode / project_type / start_phase)
+
+3. **Map selected preset fields to internal variables:**
+   - `presets.<name>.team_mode` → `TEAM_MODE`
+   - `presets.<name>.project_type` → `PROJECT_TYPE`
+   - `presets.<name>.start_phase` → `START_PHASE`
+   - `presets.<name>.git_branch` → `GIT_BRANCH`
+   - `presets.<name>.model_routing.*` → `MODEL_ROUTING_*`
+   - `presets.<name>.notifications.*` → `NOTIFICATIONS_*`
+
+4. Apply flag overrides (if any): `--team`, `--zero-base`, `--skip-research`, `--no-branch` take precedence over preset values.
+
+5. Display applied profile:
    ```
-   ⚠️ 프로필 버전이 호환되지 않습니다 (version: [N]). 기존 질문 흐름을 진행합니다.
+   ⚡ 프리셋 적용: [preset_name] — [team_mode] / [project_type] / [start_phase]부터 / [research]-[plan]-[implement]-[test]
    ```
-3. Apply flag overrides (if any): flags take precedence over profile values
-4. Display applied profile:
-   ```
-   ⚡ 프로필 적용: [team_mode] / [project_type] / [start_phase]부터 / [research]-[plan]-[implement]-[test]
-   ```
-5. Set `PROFILE_LOADED` = true
-6. **Skip Steps 4, 4-1, 4-2, 5, and 6** — use profile values directly
+
+6. Set `PROFILE_LOADED` = true, `SELECTED_PRESET` = preset name
+7. **Skip Steps 4, 4-1, 4-2, 5, and 6** — use preset values directly
 
 **If profile does NOT exist OR `--setup` IS set:**
 1. Set `PROFILE_LOADED` = false
 2. Continue to Steps 4~6 as normal (existing behavior)
+
+#### 1.5d. Preset management UI (for `--setup`)
+
+This UI is shown when `--setup` flag is used with an existing v2 profile.
+
+1. Read `.claude/deep-work-profile.yaml` and parse `presets` keys.
+2. If version is 1, auto-migrate to v2 first (same as Step 1.5c migration).
+3. Display preset list using AskUserQuestion:
+   ```
+   ⚙️ 프리셋 관리
+
+   현재 프리셋:
+     1. dev ✏️ — Solo / existing / Research부터
+     2. quick ✏️ — Solo / existing / Plan부터
+     3. ➕ 새 프리셋 만들기
+
+   편집하거나 새로 만들 프리셋을 선택하세요:
+   ```
+
+4. **If existing preset selected (edit):**
+   - Display current values for each setting
+   - Ask each question (Steps 4~6 flow) with current value as default
+   - User can press Enter to keep existing value or type a new one
+   - Save updated values back to the preset
+
+5. **If "새 프리셋 만들기" selected:**
+   - Ask for preset name using AskUserQuestion:
+     ```
+     📝 프리셋 이름을 입력하세요 (영문, 예: dev, quick, review):
+     ```
+   - Proceed through Steps 4~6 to collect all settings
+   - Save as a new preset under the given name
+
+6. After saving:
+   - Display: `💾 프리셋 '[name]'이(가) 저장되었습니다.`
+   - Update `active` field to the saved preset name
+   - Set `PROFILE_LOADED` = true, `SELECTED_PRESET` = saved preset name
 
 ### 2. Create the task-specific output directory
 
@@ -285,6 +362,7 @@ iteration_count: 0
 research_complete: <false or true>
 plan_approved: false
 team_mode: <solo or team>
+preset: "<SELECTED_PRESET or 'default'>"
 project_type: <existing or zero-base>
 started_at: "<current ISO timestamp>"
 git_branch: "<branch name or empty>"
@@ -328,26 +406,28 @@ $ARGUMENTS
 Save the current session configuration as `.claude/deep-work-profile.yaml`:
 
 ```yaml
-version: 1
+version: 2
 created_at: "<current ISO timestamp>"
 updated_at: "<current ISO timestamp>"
+active: "default"
 
-defaults:
-  team_mode: "<selected team_mode>"
-  project_type: "<selected project_type>"
-  start_phase: "<selected start_phase>"
-  git_branch: <true if branch was created, false otherwise>
-  model_routing:
-    research: "<selected>"
-    plan: "main"
-    implement: "<selected>"
-    test: "<selected>"
-  notifications:
-    enabled: <true/false>
-    channels: <copy from state file notifications.channels>
+presets:
+  default:
+    team_mode: "<selected team_mode>"
+    project_type: "<selected project_type>"
+    start_phase: "<selected start_phase>"
+    git_branch: <true if branch was created, false otherwise>
+    model_routing:
+      research: "<selected>"
+      plan: "main"
+      implement: "<selected>"
+      test: "<selected>"
+    notifications:
+      enabled: <true/false>
+      channels: <copy from state file notifications.channels>
 ```
 
-Display: `💾 프로필이 저장되었습니다. 다음 실행부터 이 설정이 자동 적용됩니다.`
+Display: `💾 프로필이 저장되었습니다 (default 프리셋). 다음 실행부터 이 설정이 자동 적용됩니다.`
 
 **If `PROFILE_LOADED` is true**: Skip this step.
 
@@ -362,6 +442,7 @@ Determine the starting phase and display accordingly:
 
 📋 작업: $ARGUMENTS
 📂 작업 폴더: $WORK_DIR
+🎯 프리셋: [preset_name]
 🤝 작업 모드: Solo / Team (Agent Team)
 🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
 🌿 Git 브랜치: [branch name or "없음"]
@@ -388,6 +469,7 @@ Determine the starting phase and display accordingly:
 
 📋 작업: $ARGUMENTS
 📂 작업 폴더: $WORK_DIR
+🎯 프리셋: [preset_name]
 🤝 작업 모드: Solo / Team (Agent Team)
 🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
 🌿 Git 브랜치: [branch name or "없음"]
@@ -405,6 +487,8 @@ Determine the starting phase and display accordingly:
 
 👉 다음 단계: /deep-plan 명령을 실행하여 구현 계획을 작성하세요.
 ```
+
+If `PROFILE_LOADED` is false, omit the 🎯 프리셋 line.
 
 If `team_mode` is `team`, add the following after the mode line:
 ```
