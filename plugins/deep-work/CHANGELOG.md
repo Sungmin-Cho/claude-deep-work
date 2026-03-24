@@ -7,6 +7,35 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.3] - 2026-03-24
+
+### Added
+- **Multi-Preset Profile System**: Named presets for different work styles (e.g., `dev`, `quick`, `review`).
+  - Profile v2 format with `presets:` key (single YAML file, multiple named presets)
+  - Auto-migration from v1 to v2 (existing single profile → `default` preset)
+  - `/deep-work --setup` now opens preset management UI (create, edit presets)
+  - `/deep-work --profile=X "task"` for direct preset selection (skip interactive)
+  - Interactive preset selection via AskUserQuestion when multiple presets exist
+  - Single preset auto-applied without prompting
+- **Trigger Evaluation Optimization**: Expanded trigger-eval.json and refined SKILL.md description.
+  - trigger-eval.json expanded from 20 to 31 queries (16 true + 15 false)
+  - Added coverage for v3.3.2 features: profile, preset, resume, checkpoint keywords
+  - Added false-positive guards for ambiguous terms (profile picture, resume template, deep copy, etc.)
+  - SKILL.md description optimized: removed generic keywords, added preset/프리셋
+
+### Changed
+- `deep-work.md` Step 1.5 rewritten for v2 profile: version check (v1 auto-migrate, v2 proceed, other reject), preset selection logic, field-to-variable mapping
+- `deep-work.md` Step 1.5a flag table: added `--profile=X`
+- `deep-work.md` Step 1.5b: `--setup` now shows preset management UI (with or without task)
+- `deep-work.md` Step 1.5d: New preset management UI section (edit existing, create new)
+- `deep-work.md` Step 7: State file template includes `preset` field
+- `deep-work.md` Step 7.5: Profile save format changed from v1 (`defaults.*`) to v2 (`presets.default.*`)
+- `deep-work.md` Step 8: Confirmation message shows preset name (🎯 프리셋: [name])
+- `deep-resume.md` Step 1: Extracts `preset` field from state file
+- `deep-resume.md` Step 3: Resume status display shows preset name
+- SKILL.md Profile System section updated with multi-preset documentation
+- SKILL.md v3.3.3 Features section added
+
 ## [3.3.2] - 2026-03-22
 
 ### Added

@@ -64,7 +64,7 @@ Code file modifications are **physically blocked** during Phases 1, 2, and 4 (vi
 
 | Command | Description |
 |---------|-------------|
-| `/deep-work <task>` | Initialize session, create task folder, select options |
+| `/deep-work <task>` | Initialize session, select preset, create task folder |
 | `/deep-research` | Phase 1: Codebase analysis → `research.md` |
 | `/deep-plan` | Phase 2: Implementation plan → `plan.md`, auto-implement on approval |
 | `/deep-implement` | Phase 3: Execute the plan (can also be run manually) |
@@ -112,6 +112,7 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `notifications` | Notification settings (channel list, enabled status) |
 | `last_research_commit` | Git commit hash at the time of last research |
 | `quality_gates_passed` | Whether all Quality Gates passed |
+| `preset` | Active preset name (v3.3.3) |
 | `plan_approved_at` | Timestamp when plan was approved (used by Drift Detection) |
 
 ## Workflow Details
@@ -199,6 +200,9 @@ implement → test → (pass) → idle + report
 - **PostToolUse File Tracking** — Automatically logs file modifications during Implement phase to `file-changes.log`. Feeds into `/deep-report` and `/deep-insight`.
 - **Stop Hook** — Sends reminder and notification when CLI session ends with an active deep-work session.
 
+**v3.3.3 features:**
+- **Multi-Preset Profile System** — Create named presets (`dev`, `quick`, `review`) for different work styles. Interactive selection when multiple presets exist. Auto-migration from v1 single profile to v2 multi-preset format.
+
 ### Session Report
 
 Automatically generated report after session completion:
@@ -285,9 +289,35 @@ Three hooks manage the session lifecycle:
 | Test | ❌ Blocked | ✅ Allowed | — |
 | Idle | ✅ Allowed | ✅ Allowed | — |
 
+## Profile System (v3.3.3)
+
+On first run, setup questions are asked and saved as the `default` preset. On subsequent runs, the preset is auto-applied — you only provide the task description.
+
+**Multi-preset support:** Create named presets for different work styles. When multiple presets exist, you choose one at session start.
+
+```bash
+# Use a specific preset
+/deep-work --profile=quick "Fix the login bug"
+
+# Manage presets (create, edit)
+/deep-work --setup
+
+# Override preset values for one session
+/deep-work --team "Large refactoring task"
+```
+
+| Flag | Effect |
+|------|--------|
+| `--profile=X` | Use preset X directly |
+| `--setup` | Manage presets (create/edit) |
+| `--team` | Override to Team mode |
+| `--zero-base` | Override to greenfield |
+| `--skip-research` | Start from Plan phase |
+| `--no-branch` | Skip git branch creation |
+
 ## Session Options
 
-Options selected when running `/deep-work`:
+Options selected when running `/deep-work` (or saved in a preset):
 
 | Option | Choices | Description |
 |--------|---------|-------------|
@@ -326,7 +356,7 @@ Enabling Team mode:
 | Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
 | Low | No workflow needed | Single file edit, config changes |
 
-## Installation (v3.3.0)
+## Installation (v3.3.3)
 
 Add the marketplace to your Claude Code settings:
 

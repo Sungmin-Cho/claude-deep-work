@@ -7,6 +7,62 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.3] - 2026-03-24
+
+### Added
+- **멀티 프리셋 Profile System**: 작업 스타일별 Named 프리셋 지원 (예: `dev`, `quick`, `review`).
+  - Profile v2 형식: 단일 YAML 파일에 `presets:` 키로 여러 프리셋 저장
+  - v1 → v2 자동 마이그레이션 (기존 단일 프로필 → `default` 프리셋으로 래핑)
+  - `/deep-work --setup`으로 프리셋 관리 UI (생성, 수정)
+  - `/deep-work --profile=X "작업"` 으로 프리셋 직접 지정 (인터랙티브 스킵)
+  - 프리셋 2개 이상 시 AskUserQuestion으로 선택
+  - 프리셋 1개인 경우 자동 적용
+- **트리거 평가 최적화**: trigger-eval.json 확장 및 SKILL.md description 정제.
+  - trigger-eval.json 20개 → 31개 (16 true + 15 false)
+  - v3.3.2 기능 커버리지 추가: profile, preset, resume, checkpoint 키워드
+  - 동음이의어 false positive 방지 (profile picture, resume template, deep copy 등)
+  - SKILL.md description 최적화: 범용 키워드 제거, preset/프리셋 추가
+
+### Changed
+- `deep-work.md` Step 1.5 전면 재작성: v2 프로필 버전 체크 (v1 자동 마이그레이션, v2 정상 진행, 그 외 거부), 프리셋 선택 로직, 필드→변수 매핑
+- `deep-work.md` Step 1.5a 플래그 테이블에 `--profile=X` 추가
+- `deep-work.md` Step 1.5b: `--setup` 시 프리셋 관리 UI 표시 (태스크 유무에 따라 분기)
+- `deep-work.md` Step 1.5d: 프리셋 관리 UI 신규 섹션 (편집, 생성)
+- `deep-work.md` Step 7: 상태 파일 템플릿에 `preset` 필드 추가
+- `deep-work.md` Step 7.5: 프로필 저장 형식 v1 (`defaults.*`) → v2 (`presets.default.*`)
+- `deep-work.md` Step 8: 확인 메시지에 프리셋 이름 표시 (🎯 프리셋: [name])
+- `deep-resume.md` Step 1: 상태 파일에서 `preset` 필드 추출
+- `deep-resume.md` Step 3: 재개 상태 표시에 프리셋 이름 포함
+- SKILL.md Profile System 섹션에 멀티 프리셋 문서 추가
+- SKILL.md v3.3.3 Features 섹션 추가
+
+## [3.3.2] - 2026-03-22
+
+### Added
+- **Profile System**: 질문 없는 세션 초기화를 위한 자동 프로필 저장/로드.
+  - 첫 `/deep-work` 실행 시 설정 답변을 `.claude/deep-work-profile.yaml`에 자동 저장
+  - 이후 실행 시 모든 설정 질문 스킵, 저장된 프로필 즉시 적용
+  - 단일 세션 오버라이드 플래그: `--team`, `--zero-base`, `--skip-research`, `--no-branch`
+  - 프로필 재설정: `/deep-work --setup`
+  - 마이그레이션용 프로필 버전 필드 (`version: 1`)
+- **Session Resume (`/deep-resume`)**: 중단된 세션 복구 및 전체 컨텍스트 복원.
+  - `.claude/deep-work.local.md`에서 활성 세션 자동 감지
+  - 산출물에서 AI 컨텍스트 복원: research.md (요약), plan.md (전문), test-results.md (실패 내역)
+  - Phase별 자동 재개: research → plan 리뷰 → implement 체크포인트 → test
+  - Implement 단계: 체크포인트 기반 재개 (모델 라우팅 재위임 우회)
+- **Checkpoint Verification**: Agent 위임 후 구현 무결성 검증.
+  - `git diff --name-only` 기반 1차 검증
+  - git 변경이 있으나 미표시된 태스크의 plan.md `[x]` 자동 보정
+  - `file-changes.log` 미존재 시 graceful fallback (Agent 위임 모드)
+
+### Changed
+- `deep-work.md` Step 1.5 (프로필 로드/플래그 파싱), Step 7.5 (프로필 저장) 구조 추가
+- `deep-work.md` Step 2-1 (git 브랜치) 프로필 설정에 따라 자동 생성/스킵
+- `deep-implement.md` Section 0-pre Agent 프롬프트에 체크포인트 의무 명시
+- `deep-implement.md` Section 0-pre에 Agent 완료 후 체크포인트 검증 단계 추가
+- SKILL.md description에 resume/profile 트리거 키워드 추가
+- SKILL.md에 Profile System, Session Resume, v3.3.2 Features 섹션 추가
+
 ## [3.3.0] - 2026-03-22
 
 ### Added
