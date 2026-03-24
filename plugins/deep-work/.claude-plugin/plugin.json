@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "3.3.2",
-  "description": "4-phase workflow with 3-tier Quality Gate system, Profile-based quick start, Session Resume, and Checkpoint verification",
+  "version": "3.3.3",
+  "description": "4-phase workflow with 3-tier Quality Gate, Multi-preset Profile System, Session Resume, and Checkpoint verification",
   "author": {
     "name": "sungmin"
   },
@@ -23,6 +23,9 @@
     "code-metrics",
     "file-tracking",
     "posttooluse",
-    "stop-hook"
+    "stop-hook",
+    "preset",
+    "multi-preset",
+    "profile-v2"
   ]
 }
