@@ -1,17 +1,15 @@
 ---
 name: deep-work-workflow
-version: "3.3.2"
+version: "3.3.3"
 description: |
-  This skill should be used when the user wants to follow a structured, phase-based
-  development workflow that strictly separates research, planning, implementation, and
-  testing. It applies when users say things like "deep work", "plan before code",
-  "structured workflow", "research then plan then implement", "기획과 코딩 분리",
+  This skill should be used when the user wants to follow a phase-based deep work
+  workflow that separates research, planning, implementation, and testing. It applies
+  when users say things like "deep work", "plan before code", "기획과 코딩 분리",
   "분석 후 구현", "계획 세우고 구현", "제로베이스", "from scratch", "quality gate",
-  "품질 게이트", "SOLID review", "drift check", "deep-insight", "코드 메트릭",
+  "SOLID review", "drift check", "deep-insight", "코드 메트릭", "preset", "프리셋",
+  "resume session", "세션 재개", "이어서", "프로필", "빠른 시작",
   or when the user describes a complex, multi-file task that would benefit from
-  structured planning to avoid premature implementation, architecture ignorance,
-  or duplicate code. Also triggers on "resume session", "이어서", "세션 재개",
-  "프로필", "profile", "quick start", "빠른 시작".
+  structured planning before implementation.
 ---
 
 # Deep Work Workflow: Research → Plan → Implement → Test
@@ -250,14 +248,17 @@ Previous sessions are preserved when starting new ones. Use `/deep-status` to vi
 
 ## Profile System
 
-On the first `/deep-work` run, you answer setup questions (mode, model routing, notifications, etc.) as usual. Your answers are automatically saved to `.claude/deep-work-profile.yaml`. On subsequent runs, the profile is loaded and **all setup questions are skipped** — you only provide the task description.
+On the first `/deep-work` run, you answer setup questions (mode, model routing, notifications, etc.) as usual. Your answers are automatically saved to `.claude/deep-work-profile.yaml` as the `default` preset. On subsequent runs, the profile is loaded and **all setup questions are skipped** — you only provide the task description.
+
+**Multi-preset support (v3.3.3)**: Create named presets for different work styles (e.g., `dev`, `quick`, `review`). When multiple presets exist, you'll be asked to choose one at session start. All presets are stored in a single YAML file.
 
 **Flags** override profile values for a single session:
+- `/deep-work --profile=quick "task"` — use a specific preset
 - `/deep-work --team "task"` — use Team mode this time
 - `/deep-work --zero-base "task"` — zero-base project this time
 - `/deep-work --skip-research "task"` — skip to Plan phase
 - `/deep-work --no-branch "task"` — no git branch this time
-- `/deep-work --setup` — re-run all setup questions and update the profile
+- `/deep-work --setup` — manage presets (create, edit)
 
 ## Session Resume (`/deep-resume`)
 
@@ -365,6 +366,22 @@ Automatic profile save/load for zero-question session initialization.
 Post-agent implementation verification using `git diff` cross-reference.
 - Detects unmarked completed tasks and auto-corrects plan.md
 - Primary verification via `git diff`, secondary via `file-changes.log` when available
+
+## v3.3.3 Features
+
+### Multi-Preset Profile System
+Named presets for different work styles — quick setup, review-focused, etc.
+- Profile v2 format with `presets:` key (single YAML file)
+- Auto-migration from v1 (existing single profile → `default` preset)
+- `/deep-work --setup` for preset management (create, edit)
+- `/deep-work --profile=X "task"` for direct preset selection
+- Interactive preset selection via AskUserQuestion when multiple presets exist
+
+### Trigger Evaluation Optimization
+Expanded test cases and refined description for better trigger accuracy.
+- trigger-eval.json expanded from 20 to 31+ queries
+- Description keywords optimized (reduced false positives)
+- Coverage for v3.3.2 features (profile, resume, checkpoint, preset)
 
 ## Compatibility & Requirements
 
