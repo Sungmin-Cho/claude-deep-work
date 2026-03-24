@@ -1,0 +1,126 @@
+[
+  {
+    "query": "이 프로젝트에 JWT 인증을 추가해야 하는데, 코드베이스가 복잡해서 분석부터 하고 싶어. 여러 모듈에 걸쳐서 변경해야 할 것 같은데 체계적으로 진행해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to refactor the payment module — it touches about 15 files across 3 packages. Let's plan this out carefully before writing any code",
+    "should_trigger": true
+  },
+  {
+    "query": "deep work 세션 시작해줘. 새로운 API 엔드포인트 추가 작업이야",
+    "should_trigger": true
+  },
+  {
+    "query": "방금 구현한 코드에 대해 SOLID 리뷰 한번 해줘. 설계 품질이 괜찮은지 확인하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "plan.md에 적은 대로 다 구현했는지 drift check 해줘. 미구현 항목이 있는지 확인해봐",
+    "should_trigger": true
+  },
+  {
+    "query": "제로베이스로 새 프로젝트 시작할건데, Next.js + Prisma 스택으로 SaaS 앱을 만들어야 해. 아키텍처 설계부터 하고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "이 작업 quality gate에 coverage 80% 임계값을 추가하고, SOLID review도 advisory gate로 넣어줘",
+    "should_trigger": true
+  },
+  {
+    "query": "deep-research를 incremental로 돌려줘. 지난번 이후로 변경된 부분만 분석하면 될 것 같아",
+    "should_trigger": true
+  },
+  {
+    "query": "아 이전에 작업했던 결과 확인하고 싶은데, deep-status에서 이전 세션이랑 비교해줄 수 있어?",
+    "should_trigger": true
+  },
+  {
+    "query": "3계층 품질 게이트 시스템으로 테스트 단계를 강화하고 싶어. plan alignment을 required gate로 설정하는 방법 알려줘",
+    "should_trigger": true
+  },
+  {
+    "query": "프로필로 deep work 시작할게. 기본 프리셋 써줘",
+    "should_trigger": true
+  },
+  {
+    "query": "프리셋 설정해줘. dev랑 quick 모드 두 개 만들고 싶어",
+    "should_trigger": true
+  },
+  {
+    "query": "아까 작업하다 끊겼는데 세션 재개해줘",
+    "should_trigger": true
+  },
+  {
+    "query": "이어서 작업하고 싶어. 체크포인트에서 재개할 수 있어?",
+    "should_trigger": true
+  },
+  {
+    "query": "resume my deep work session from the last checkpoint",
+    "should_trigger": true
+  },
+  {
+    "query": "deep work 빠른 시작으로 해줘. quick 프리셋 있으면 그걸로",
+    "should_trigger": true
+  },
+  {
+    "query": "src/utils/helpers.ts 파일에서 formatDate 함수의 버그 좀 고쳐줘. 타임존 처리가 잘못되고 있어",
+    "should_trigger": false
+  },
+  {
+    "query": "이 PR 좀 리뷰해줘. #234번인데 인증 로직 변경한 거야. 코드 스타일이랑 보안 이슈 위주로 봐줘",
+    "should_trigger": false
+  },
+  {
+    "query": "package.json에 eslint 설정 추가해줘. prettier랑 충돌 안 나게 해줘",
+    "should_trigger": false
+  },
+  {
+    "query": "README.md에 설치 방법이랑 API 사용법 좀 정리해줘. 마크다운 테이블로 깔끔하게",
+    "should_trigger": false
+  },
+  {
+    "query": "git log 보여줘. 최근 10개 커밋이랑 어떤 파일들이 변경됐는지",
+    "should_trigger": false
+  },
+  {
+    "query": "이 함수 설명 좀 해줘. useCallback이 여기서 왜 필요한 건지 잘 모르겠어",
+    "should_trigger": false
+  },
+  {
+    "query": "docker-compose.yml 파일 만들어줘. postgres랑 redis 같이 띄울 수 있게",
+    "should_trigger": false
+  },
+  {
+    "query": "SOLID 원칙이 뭔지 설명해줘. 대학 과제로 레포트를 써야 해서",
+    "should_trigger": false
+  },
+  {
+    "query": "npm test가 실패하고 있는데 에러 로그 좀 봐줘. jest에서 timeout 나는 것 같아",
+    "should_trigger": false
+  },
+  {
+    "query": "Slack Webhook URL을 .env에 추가하고 알림 보내는 유틸 함수 하나만 만들어줘",
+    "should_trigger": false
+  },
+  {
+    "query": "profile picture를 변경하는 API 엔드포인트 만들어줘",
+    "should_trigger": false
+  },
+  {
+    "query": "이력서(resume) 템플릿을 React 컴포넌트로 만들어줘",
+    "should_trigger": false
+  },
+  {
+    "query": "git checkpoint 태그를 자동으로 만드는 스크립트 짜줘",
+    "should_trigger": false
+  },
+  {
+    "query": "deep copy를 구현해야 하는데, structuredClone이랑 JSON.parse 중 뭐가 나아?",
+    "should_trigger": false
+  },
+  {
+    "query": "work directory를 /tmp로 변경하는 설정 알려줘",
+    "should_trigger": false
+  }
+]
