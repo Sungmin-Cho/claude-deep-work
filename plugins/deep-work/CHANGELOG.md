@@ -7,6 +7,16 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-03-25
+
+### Added
+- **Git-based auto-update check**: SessionStart hook checks GitHub for newer versions on every session start. Supports auto-update, snooze (escalating backoff: 24h→48h→1w), and opt-out. Modeled after gstack's update-check pattern.
+- **Shell injection prevention**: phase-guard.sh and file-tracker.sh now pass values via `process.argv` instead of string interpolation, preventing injection from file paths containing special characters.
+
+### Fixed
+- macOS compatibility: removed `timeout` command usage (not available on macOS)
+- Version consistency: CLAUDE.md and TODOS.md now reflect correct v4.0 version
+
 ## [4.0.0] - 2026-03-25
 
 ### BREAKING — Evidence-Driven Development Protocol
