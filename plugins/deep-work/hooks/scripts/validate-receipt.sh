@@ -6,7 +6,7 @@
 # Note: $WORK_DIR is always the directory containing session-receipt.json,
 # regardless of worktree mode. The caller passes the correct path.
 
-set -euo pipefail
+set -eo pipefail
 
 WORK_DIR="${1:-.}"
 RECEIPTS_DIR="$WORK_DIR/receipts"
@@ -75,8 +75,7 @@ fi
 
 if [[ ! -d "$RECEIPTS_DIR" ]]; then
   check "receipts directory exists" "FAIL — $RECEIPTS_DIR not found"
-  # Output summary and exit
-  node -e "console.log(JSON.stringify({passed:$CHECKS_PASSED,total:$CHECKS_TOTAL,errors:$(node -e "console.log(JSON.stringify([$(printf '"%s",' "${ERRORS[@]}" | sed 's/,$//')]))")}))" 2>/dev/null || echo '{"passed":0,"total":1,"errors":["receipts directory missing"]}'
+  printf '{"result":"fail","passed":%d,"total":%d,"errors":["receipts directory missing"]}\n' "$CHECKS_PASSED" "$CHECKS_TOTAL"
   exit 1
 fi
 
@@ -150,15 +149,23 @@ fi
 RESULT="pass"
 [[ ${#ERRORS[@]} -gt 0 ]] && RESULT="fail"
 
+# Build result JSON safely via node process.argv
+ERRORS_STR=""
+for e in "${ERRORS[@]+"${ERRORS[@]}"}"; do
+  [ -n "$ERRORS_STR" ] && ERRORS_STR="$ERRORS_STR|||"
+  ERRORS_STR="$ERRORS_STR$e"
+done
+WARNINGS_STR=""
+for w in "${WARNINGS[@]+"${WARNINGS[@]}"}"; do
+  [ -n "$WARNINGS_STR" ] && WARNINGS_STR="$WARNINGS_STR|||"
+  WARNINGS_STR="$WARNINGS_STR$w"
+done
 node -e "
-  const result = {
-    result: '$RESULT',
-    passed: $CHECKS_PASSED,
-    total: $CHECKS_TOTAL,
-    errors: $(printf '%s\n' "${ERRORS[@]}" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.stringify(d.trim().split('\n').filter(Boolean))))" 2>/dev/null || echo '[]'),
-    warnings: $(printf '%s\n' "${WARNINGS[@]}" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.stringify(d.trim().split('\n').filter(Boolean))))" 2>/dev/null || echo '[]')
-  };
-  console.log(JSON.stringify(result, null, 2));
-" 2>/dev/null || echo "{\"result\":\"$RESULT\",\"passed\":$CHECKS_PASSED,\"total\":$CHECKS_TOTAL}"
+  const [,, result, passed, total, errorsStr, warningsStr] = process.argv;
+  const errors = errorsStr ? errorsStr.split('|||').filter(Boolean) : [];
+  const warnings = warningsStr ? warningsStr.split('|||').filter(Boolean) : [];
+  console.log(JSON.stringify({ result, passed: +passed, total: +total, errors, warnings }, null, 2));
+" "$RESULT" "$CHECKS_PASSED" "$CHECKS_TOTAL" "$ERRORS_STR" "$WARNINGS_STR" \
+  2>/dev/null || echo "{\"result\":\"$RESULT\",\"passed\":$CHECKS_PASSED,\"total\":$CHECKS_TOTAL}"
 
 [[ "$RESULT" == "pass" ]] && exit 0 || exit 1

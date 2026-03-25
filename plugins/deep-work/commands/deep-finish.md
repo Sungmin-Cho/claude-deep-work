@@ -131,9 +131,19 @@ Use AskUserQuestion:
 
 #### Option: Merge
 
-1. Get base branch: `git log --oneline -1 [worktree_base_commit]` to find the original branch
-2. Switch to base: `cd [project_root] && git checkout [base_branch]`
-3. Merge: `git merge [worktree_branch]`
+1. Check for uncommitted changes in worktree:
+   ```bash
+   git -C [worktree_path] status --porcelain
+   ```
+   If dirty:
+   ```
+   ⚠️ Worktree에 커밋되지 않은 변경이 있습니다.
+      먼저 변경사항을 커밋하거나 stash 하세요.
+   ```
+   Ask: A) 변경사항 커밋 후 진행 B) 취소
+2. Get base branch from state: `worktree_base_branch` (stored at worktree creation time)
+3. Switch to base: `cd [project_root] && git checkout [worktree_base_branch]`
+4. Merge: `git merge [worktree_branch]`
 4. **Merge conflict handling**: If merge fails:
    ```
    ⚠️ 충돌이 발생했습니다. 충돌 파일:

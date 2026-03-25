@@ -66,7 +66,10 @@ function processFile(filePath) {
   }
 
   try {
-    fs.writeFileSync(filePath, JSON.stringify(result.receipt, null, 2));
+    // Atomic write: write to temp file, then rename (prevents corruption on crash)
+    const tmpPath = filePath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(result.receipt, null, 2));
+    fs.renameSync(tmpPath, filePath);
   } catch (err) {
     return { status: 'error', error: `Cannot write: ${err.message}` };
   }
