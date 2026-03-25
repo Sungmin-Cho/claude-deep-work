@@ -41,7 +41,7 @@ Engage the user in a structured design conversation:
 
 #### 2a. Problem Definition
 ```
-🧠 브레인스톰 시작: [task_description]
+브레인스톰 시작: [task_description]
 
 먼저 문제를 정확히 이해하겠습니다.
 ```
@@ -56,7 +56,7 @@ Ask the user (one at a time):
 Based on the user's answers, propose 2-3 distinct approaches:
 
 ```
-📊 접근 방식 비교:
+접근 방식 비교:
 
 APPROACH A: [Name]
   요약: [1-2문장]
@@ -70,7 +70,7 @@ APPROACH B: [Name]
   단점: [bullets]
   복잡도: S/M/L
 
-💡 추천: [A/B] — [이유]
+추천: [A/B] — [이유]
 ```
 
 Wait for user's choice or feedback.
@@ -121,24 +121,32 @@ Write `$WORK_DIR/brainstorm.md`:
 Research 단계에서 코드베이스를 분석하여 이 접근 방식의 실현 가능성을 검증합니다.
 ```
 
-### 4. Spec Review (subagent)
+### 4. Structural Review
 
-Spawn a fresh Agent (spec-reviewer) to review brainstorm.md:
-- **Input**: brainstorm.md file path
-- **Prompt**: "Review this brainstorm document. Check: Is the problem clearly defined? Are the approaches meaningfully different? Are success criteria measurable? Are edge cases considered? Return: { result: 'PASS'|'FAIL', issues: [{ section, issue, fix }], score: 1-10 }"
+Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
+
+Follow the **Structural Review Protocol** with these settings:
+- **Phase**: brainstorm
+- **Document**: `$WORK_DIR/brainstorm.md`
+- **Dimensions**: problem_clarity, approach_differentiation, success_measurability, edge_case_coverage
+- **Output**: `$WORK_DIR/brainstorm-review.json` + `$WORK_DIR/brainstorm-review.md`
 - **Model**: "haiku"
+- **Max iterations**: 2
 
-If FAIL: Apply fixes, re-run review (max 2 iterations).
-If PASS: Proceed.
+If `--skip-review` flag was set during session init (check state file `review_state: skipped`), skip this step entirely and proceed.
+
+After review completes, update state file:
+- `review_state: completed`
+- `review_results.brainstorm`: `{score: N, iterations: N, timestamp: "ISO"}`
 
 ### 5. Present and transition
 
 ```
-📋 브레인스톰 완료!
+브레인스톰 완료!
 
-📄 문서: $WORK_DIR/brainstorm.md
-🎯 선택된 접근법: [Approach Name]
-📊 Spec Review: [score]/10
+문서: $WORK_DIR/brainstorm.md
+선택된 접근법: [Approach Name]
+Spec Review: [score]/10
 
 다음 단계: Research 단계로 진행합니다.
 ```

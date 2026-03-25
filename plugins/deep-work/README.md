@@ -429,6 +429,35 @@ Enabling Team mode:
 | Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
 | Low | No workflow needed | Single file edit, config changes |
 
+## Multi-Model Verification (v4.2)
+
+deep-work v4.2 adds adversarial multi-model review to catch design flaws before implementation.
+
+### How it works
+1. **Structural Review** — Every phase document (brainstorm, research, plan) is reviewed by a Claude haiku subagent on phase-specific dimensions
+2. **Adversarial Review** (plan only) — codex and/or gemini-cli independently review your plan. Conflicts are shown transparently for you to resolve
+3. **Review Gate** — Low structural scores or critical consensus issues block auto-implement
+
+### Setup
+Cross-model review requires [codex](https://github.com/openai/codex) and/or [gemini-cli](https://github.com/google/gemini-cli) to be installed. deep-work auto-detects them at session init.
+
+```bash
+# Install codex (optional)
+npm install -g @openai/codex
+
+# Install gemini-cli (optional)
+npm install -g @google/gemini-cli
+```
+
+If neither tool is installed, deep-work works normally with structural review only.
+
+### Flags
+- `--skip-review` — Skip all reviews (useful for spike/experimental work)
+
+### Commands
+- `/deep-review` — Manually trigger review on current phase document
+- `/deep-review --adversarial` — Run only adversarial cross-model review
+
 ## Installation (v3.3.3)
 
 Add the marketplace to your Claude Code settings:

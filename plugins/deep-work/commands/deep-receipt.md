@@ -30,7 +30,7 @@ Receipts are stored in `$WORK_DIR/receipts/SLICE-NNN.json`.
 Scan `$WORK_DIR/receipts/` directory for all receipt JSON files. For each receipt, display:
 
 ```
-📊 Receipt Dashboard
+Receipt Dashboard
 
 ┌──────────┬──────────┬──────────┬──────────┬──────────┐
 │ Slice    │ TDD      │ Tests    │ Spec     │ Review   │
@@ -38,7 +38,7 @@ Scan `$WORK_DIR/receipts/` directory for all receipt JSON files. For each receip
 │ SLICE-001│ ✅ GREEN │ 5/5 PASS │ 3/3 ✅   │ PASS     │
 │ SLICE-002│ 🟡 RED_V │ 2/5 FAIL │ 1/3 ⏳   │ —        │
 │ SLICE-003│ ⬜ PEND  │ —        │ —        │ —        │
-│ SLICE-004│ ⚡ SPIKE │ —        │ —        │ ⚠️       │
+│ SLICE-004│ SPIKE    │ —        │ —        │ ⚠️       │
 └──────────┴──────────┴──────────┴──────────┴──────────┘
 
 요약:
@@ -53,7 +53,7 @@ TDD state icons:
 - 🟡 RED_VERIFIED — verified failing test, implementation pending
 - 🟢 GREEN_ELIGIBLE — production code written, verification pending
 - ⬜ PENDING — not started
-- ⚡ SPIKE — spike mode (not merge-eligible)
+- SPIKE — spike mode (not merge-eligible)
 
 ## View
 
@@ -62,7 +62,7 @@ TDD state icons:
 Read `$WORK_DIR/receipts/SLICE-NNN.json` and display formatted:
 
 ```
-📋 Receipt: SLICE-NNN — [Goal from plan.md]
+Receipt: SLICE-NNN — [Goal from plan.md]
 
 TDD Cycle:
   🔴 RED:   [timestamp] — [test name]
@@ -110,7 +110,7 @@ Read all receipt files, combine into a single JSON array, and write to `$WORK_DI
 }
 ```
 
-Display: `📦 Exported: $WORK_DIR/receipts-export.json`
+Display: `Exported: $WORK_DIR/receipts-export.json`
 
 ## Export — Markdown
 
@@ -138,10 +138,10 @@ Generate a markdown summary suitable for PR descriptions. Write to `$WORK_DIR/re
 - All requirements met: [N/N] slices
 ```
 
-Display: `📝 Exported: $WORK_DIR/receipts-export.md`
+Display: `Exported: $WORK_DIR/receipts-export.md`
 
 Copy to clipboard suggestion:
 ```
-📋 PR 디스크립션에 붙여넣으려면:
+PR 디스크립션에 붙여넣으려면:
    cat $WORK_DIR/receipts-export.md | pbcopy
 ```

@@ -52,7 +52,7 @@ Build a list of slices with their metadata.
 Check for already completed slices (`- [x]`). If any exist:
 
 ```
-🔄 이전 구현 진행 상황 감지:
+이전 구현 진행 상황 감지:
    완료: [N]개 / 전체: [M]개
    마지막 완료: SLICE-[K]: [description]
    미완료 slice부터 이어서 진행합니다.
@@ -89,7 +89,7 @@ Read `model_routing.implement` from state file (default: "auto").
 
 5. Display:
    ```
-   🧠 모델 자동 선택: [model] (슬라이스 크기: [size])
+   모델 자동 선택: [model] (슬라이스 크기: [size])
       Override: /deep-slice model SLICE-NNN [model]
    ```
 
@@ -157,7 +157,7 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 
 **Coaching mode addition**: If `tdd_mode` is "coaching":
 ```
-💡 좋습니다! failing test를 먼저 작성했습니다.
+좋습니다! failing test를 먼저 작성했습니다.
    이제 최소한의 코드로 이 테스트를 통과시켜 보세요.
    팁: 불필요한 코드를 추가하지 말고, 테스트를 통과시키는 데 필요한 것만 작성하세요.
 ```
@@ -201,7 +201,7 @@ After GREEN (or after implementation in relaxed/spike mode):
 3. Update receipt: `spec_compliance.checklist` with true/false per item
 
 ```
-📋 Spec Checklist:
+Spec Checklist:
    ✅ [requirement 1]
    ✅ [requirement 2]
    ❌ [requirement 3] — [reason]
@@ -285,7 +285,7 @@ If a test fails unexpectedly during Step B-2 (GREEN) or a previously passing tes
 
 1. Display:
    ```
-   🐛 Debug 모드 진입: 예기치 않은 테스트 실패 감지
+   Debug 모드 진입: 예기치 않은 테스트 실패 감지
       실패 테스트: [test name]
       예상: PASS, 실제: FAIL
    ```
@@ -311,7 +311,7 @@ When exiting spike mode (switching `tdd_mode` from "spike" to "strict" or "relax
 2. Reset slice to PENDING: `tdd_state: PENDING`
 3. Display:
    ```
-   🔄 Spike 종료 — TDD 모드로 전환
+   Spike 종료 — TDD 모드로 전환
       spike 코드가 git stash에 보관되었습니다.
       이제 TDD 사이클로 다시 시작하세요.
       stash 확인: git stash list
@@ -350,7 +350,7 @@ After all slices are complete:
    ```
    ✅ 구현이 완료되었습니다. 테스트 단계로 진입합니다.
 
-   📊 구현 결과:
+   구현 결과:
      - 완료 slice: N/N
      - TDD 준수율: [strict: N, relaxed: N, spike: N]
      - Receipt 완성: N/N

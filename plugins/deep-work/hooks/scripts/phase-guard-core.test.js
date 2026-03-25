@@ -92,6 +92,45 @@ describe('Bash Command Detection', () => {
   });
 });
 
+// ─── Cross-Model Review Tool Tests (v4.2) ───────────────────
+
+describe('Cross-Model Review Safe Patterns', () => {
+  it('allows codex exec (adversarial review)', () => {
+    const result = detectBashFileWrite('codex exec "Review this plan document"');
+    assert.ok(!result.isFileWrite);
+  });
+
+  it('allows timeout + codex exec', () => {
+    const result = detectBashFileWrite('timeout 120 codex exec "$(cat /tmp/dw-review-abc.txt)" -s read-only');
+    assert.ok(!result.isFileWrite);
+  });
+
+  it('allows gemini exec', () => {
+    const result = detectBashFileWrite('gemini exec "Review this plan"');
+    assert.ok(!result.isFileWrite);
+  });
+
+  it('allows gemini -p (fallback mode)', () => {
+    const result = detectBashFileWrite('gemini -p "Review this plan"');
+    assert.ok(!result.isFileWrite);
+  });
+
+  it('allows which codex/gemini (tool detection)', () => {
+    assert.ok(!detectBashFileWrite('which codex').isFileWrite);
+    assert.ok(!detectBashFileWrite('which gemini').isFileWrite);
+  });
+
+  it('allows mktemp (prompt temp file creation)', () => {
+    const result = detectBashFileWrite('mktemp /tmp/dw-review-XXXXXXXX.txt');
+    assert.ok(!result.isFileWrite);
+  });
+
+  it('allows codex --version (tool verification)', () => {
+    assert.ok(!detectBashFileWrite('codex --version').isFileWrite);
+    assert.ok(!detectBashFileWrite('gemini --version').isFileWrite);
+  });
+});
+
 // ─── Slice Scope Tests ───────────────────────────────────────
 
 describe('Slice Scope', () => {

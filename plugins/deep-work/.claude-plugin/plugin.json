@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "4.1.0",
-  "description": "Evidence-Driven Development Protocol — worktree isolation, model auto-routing, TDD enforcement, receipt validation, session lifecycle management",
+  "version": "4.2.0",
+  "description": "Evidence-Driven Development Protocol — adversarial multi-model review, worktree isolation, model auto-routing, TDD enforcement, receipt validation, session lifecycle management",
   "author": {
     "name": "sungmin"
   },

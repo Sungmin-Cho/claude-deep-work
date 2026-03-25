@@ -7,6 +7,31 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-03-25
+
+### 추가
+- **구조적 리뷰(Structural Review)**: 모든 페이즈 문서(brainstorm, research, plan)가 Claude haiku 서브에이전트를 통해 페이즈별 차원으로 구조적 리뷰를 받음
+- **적대적 크로스 모델 리뷰(Adversarial Review)**: Plan 문서가 codex 및/또는 gemini-cli에 의해 독립적으로 리뷰됨 (아키텍처, 가정, 리스크 커버리지)
+- **갈등 해결 UX**: 모델 간 의견이 다를 때 갈등을 투명하게 표시하고 사용자가 해결 방식을 결정 (수용, 면책, 수동 편집)
+- **리뷰 게이트**: 구조적 리뷰 점수 <5 또는 비판적 합의 이슈가 있으면 자동 구현 전환 차단
+- **`/deep-review` 커맨드**: 구조적 또는 적대적 리뷰를 언제든 수동 트리거
+- **`--skip-review` 플래그**: spike/실험 세션에서 모든 리뷰 건너뛰기
+- **크로스 모델 도구 자동 감지**: 세션 초기화 시 codex/gemini-cli 자동 감지
+- **프로필 `cross_model_preference`**: 프리셋에 크로스 모델 선호 저장 (항상/안함/매번 확인)
+- **리뷰 상태 resume/status 통합**: `/deep-resume`이 리뷰 상태를 인식; `/deep-status`가 리뷰 결과 표시
+- **JSON 스키마 정규화**: 모든 리뷰 결과가 구조화된 JSON으로 저장 (`{phase}-review.json`)
+
+### 변경
+- `deep-brainstorm.md`: 기존 spec review를 review-gate 프로토콜 참조로 교체
+- `deep-research.md`: 리서치 완료 후 구조적 리뷰 추가
+- `deep-plan.md`: 승인 전 구조적 + 적대적 리뷰 추가
+- `phase-guard-core.js`: SAFE_COMMAND_PATTERNS에 codex/gemini/mktemp 추가
+- State 파일: `review_state`, `cross_model_tools`, `cross_model_enabled`, `review_results` 필드 추가
+- 프로필: 프리셋 스키마에 `cross_model_preference` 추가
+
+### 수정
+- `.gitignore`: `deep-work-workflow-workspace/` 추가하여 venv 추적 방지
+
 ## [4.1.0] - 2026-03-25
 
 ### Added

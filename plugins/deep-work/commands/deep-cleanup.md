@@ -41,7 +41,7 @@ For each deep-work worktree:
 ### 3. Display worktree list
 
 ```
-🌳 Deep Work Worktrees
+Deep Work Worktrees
 
 ┌────────┬──────────────────────┬──────────┬──────────┬───────────┐
 │ #      │ Branch               │ Age      │ Status   │ Changes   │
@@ -66,11 +66,11 @@ Stop here.
 Use AskUserQuestion:
 
 ```
-🧹 stale worktree를 정리할까요?
+stale worktree를 정리할까요?
 
-1. 🗑️ clean stale 삭제 — 변경사항 없는 stale worktree만 삭제
-2. 🗑️ 모든 stale 삭제 — dirty 포함 모든 stale worktree 삭제
-3. 📋 개별 선택 — 하나씩 선택하여 삭제
+1. clean stale 삭제 — 변경사항 없는 stale worktree만 삭제
+2. 모든 stale 삭제 — dirty 포함 모든 stale worktree 삭제
+3. 개별 선택 — 하나씩 선택하여 삭제
 4. ❌ 취소
 ```
 
@@ -89,12 +89,12 @@ For each worktree to delete:
    git worktree remove --force [path]  # dirty (after confirmation)
    git branch -D [branch]              # remove the branch too
    ```
-4. Display per-worktree: `🗑️ [branch] 삭제 완료`
+4. Display per-worktree: `[branch] 삭제 완료`
 
 ### 6. Summary
 
 ```
-🧹 Cleanup 완료
+Cleanup 완료
    삭제: [N]개 worktree
    유지: [M]개 worktree (active 또는 사용자 선택)
 ```

@@ -73,7 +73,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
 ### 3. Display session summary
 
 ```
-📋 Deep Work 세션 요약
+Deep Work 세션 요약
    Task: [task_description]
    Branch: [worktree_branch or current branch]
    Slices: [completed]/[total] 완료
@@ -108,21 +108,21 @@ Use AskUserQuestion:
 **If `worktree_enabled` is `true`:**
 
 ```
-🏁 세션을 어떻게 마무리할까요?
+세션을 어떻게 마무리할까요?
 
-1. 🔀 Merge — 베이스 브랜치로 병합
-2. 🔗 PR 생성 — Pull Request 만들기 [gh 미설치시: (unavailable — gh CLI 필요)]
-3. 📌 브랜치 유지 — 나중에 /deep-finish로 다시 정리
-4. 🗑️ 삭제 — 브랜치와 worktree 삭제
+1. Merge — 베이스 브랜치로 병합
+2. PR 생성 — Pull Request 만들기 [gh 미설치시: (unavailable — gh CLI 필요)]
+3. 브랜치 유지 — 나중에 /deep-finish로 다시 정리
+4. 삭제 — 브랜치와 worktree 삭제
 ```
 
 **If `worktree_enabled` is `false`:**
 
 ```
-🏁 세션을 어떻게 마무리할까요?
+세션을 어떻게 마무리할까요?
 
-1. 🔗 PR 생성 — Pull Request 만들기 [gh 미설치시: (unavailable)]
-2. 📌 현재 상태 유지 — 세션만 종료
+1. PR 생성 — Pull Request 만들기 [gh 미설치시: (unavailable)]
+2. 현재 상태 유지 — 세션만 종료
 ```
 
 (Merge와 Discard는 worktree가 없으면 위험하므로 비활성화)
@@ -196,7 +196,7 @@ Use AskUserQuestion:
 1. Update session receipt: `outcome: "keep"`
 2. Display:
    ```
-   📌 브랜치가 유지됩니다: [worktree_branch]
+   브랜치가 유지됩니다: [worktree_branch]
       나중에 /deep-finish로 다시 정리할 수 있습니다.
    ```
 

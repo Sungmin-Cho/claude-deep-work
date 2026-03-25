@@ -397,6 +397,32 @@ When research is complete, update `.claude/deep-work.local.md`:
 - Update `last_research_commit` to the current git HEAD: run `git rev-parse HEAD 2>/dev/null` and store the result
 - Add a progress log entry for research completion
 
+### 4.5. Structural Review
+
+Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
+
+Follow the **Structural Review Protocol** with these settings:
+- **Phase**: research
+- **Document**: `$WORK_DIR/research.md`
+- **Dimensions**: completeness, accuracy, relevance, depth, actionability
+- **Output**: `$WORK_DIR/research-review.json` + `$WORK_DIR/research-review.md`
+- **Model**: "haiku"
+- **Max iterations**: 2
+
+If `--skip-review` flag was set during session init (check state file `review_state: skipped`), skip this step entirely and proceed.
+
+Update state file when starting review:
+- `review_state: in_progress`
+
+After review completes, update state file:
+- `review_state: completed`
+- `review_results.research`: `{score: N, iterations: N, timestamp: "ISO"}`
+
+Display:
+```
+Structural Review 결과: [score]/10 ([iterations]회 반복)
+```
+
 ## 5. Guide the user
 
 Display:
@@ -404,15 +430,15 @@ Display:
 ```
 ✅ Research 단계가 완료되었습니다!
 
-📄 연구 결과: $WORK_DIR/research.md
+연구 결과: $WORK_DIR/research.md
 
-📊 분석 요약:
+분석 요약:
   - [분석한 주요 내용 요약 3-5줄]
 
-⚡ 현재 상태: Plan 단계로 전환됨
+현재 상태: Plan 단계로 전환됨
    - 여전히 코드 파일 수정이 차단됩니다
 
-👉 다음 단계:
+다음 단계:
   1. $WORK_DIR/research.md 를 검토하세요
   2. 특정 영역만 재분석하려면: /deep-research --scope=api,data
   3. 준비되면 /deep-plan 을 실행하세요
@@ -420,7 +446,7 @@ Display:
 
 If Team mode was used, also display:
 ```
-🤝 팀 리서치 결과:
+팀 리서치 결과:
   - arch-analyst: $WORK_DIR/research-architecture.md
   - pattern-analyst: $WORK_DIR/research-patterns.md
   - risk-analyst: $WORK_DIR/research-dependencies.md

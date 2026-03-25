@@ -92,11 +92,11 @@ If `iteration_count` > 0 and a previous `$WORK_DIR/plan.v{iteration_count}.md` e
 
 5. Display summary during the review presentation (add to Section 4 display):
 ```
-📊 Plan Diff (v{N} → v{N+1}):
+Plan Diff (v{N} → v{N+1}):
   ➕ 추가: [N]개 태스크
   ✏️ 수정: [N]개 태스크
   ➖ 삭제: [N]개 태스크
-  📄 상세: $WORK_DIR/plan-diff.md
+  상세: $WORK_DIR/plan-diff.md
 ```
 
 If `iteration_count` is 0, skip this section entirely.
@@ -108,7 +108,7 @@ Read `references/plan-templates.md` from the skill directory to check for matchi
 Analyze the task description and research.md to identify the most appropriate template:
 
 ```
-📋 적합한 Plan 템플릿이 있습니다: [Template Name]
+적합한 Plan 템플릿이 있습니다: [Template Name]
    템플릿을 활용할까요? (y/n)
 ```
 
@@ -282,16 +282,84 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
 - **이전 버전**: plan.v{N}.md
 ```
 
+### 3.5. Structural Review
+
+Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
+
+Follow the **Structural Review Protocol** with these settings:
+- **Phase**: plan
+- **Document**: `$WORK_DIR/plan.md`
+- **Dimensions**: architecture_fit, slice_executability, testability, rollback_completeness, risk_coverage
+- **Output**: `$WORK_DIR/plan-review.json` + `$WORK_DIR/plan-review.md`
+- **Model**: "haiku"
+- **Max iterations**: 2
+
+If `--skip-review` flag was set (check state file `review_state: skipped`), skip sections 3.5 and 3.6 entirely and proceed to Section 4.
+
+Update state file when starting review:
+- `review_state: in_progress`
+
+After structural review completes:
+- Update `review_results.plan.spec_score` in state file
+- If score < 5: display warning but do NOT block yet (blocking happens at approval)
+
+Display:
+```
+Plan Structural Review: [score]/10 ([iterations]회 반복)
+```
+
+### 3.6. Adversarial Cross-Model Review
+
+**Prerequisites**: Structural review (Section 3.5) must have completed.
+
+Read state file `cross_model_enabled` field.
+- If `{codex: false, gemini: false}` or field missing: skip this section entirely.
+- If at least one model enabled: proceed.
+
+Read `references/review-gate.md` and follow the **Adversarial Review Protocol**.
+
+**Progress display during execution:**
+```
+크로스 모델 리뷰 진행 중...
+   ⏳ [Model] 리뷰 중... (예상 30-60초)
+```
+
+Each model completion:
+```
+   ✅ [Model] 리뷰 완료 ([N]초)
+```
+
+After all models complete, Claude synthesizes results following the protocol's synthesis rules.
+
+**Display conflict resolution UX** per the protocol. Each conflict gets its own AskUserQuestion.
+
+**After conflict resolution**, check if plan.md was modified:
+- If modified (user accepted external model's opinion or made manual edits):
+  - Count modified sections (markdown ## headings)
+  - Display re-review recommendation:
+    ```
+    plan.md가 수정되었습니다.
+
+    크로스 리뷰를 한번 더 진행할까요?
+      1. ✅ 네, 수정 사항 검증 (추천 — [N]개+ 섹션 수정됨)
+      2. ❌ 아니요, 이대로 진행
+      3. Structural review만 다시 실행 (빠름)
+    ```
+  - Max 2 re-review loops
+
+Save results: `$WORK_DIR/plan-cross-review.json`
+Update state: `review_results.plan.model_scores`, `review_results.plan.conflicts`, `review_results.plan.waivers`, `review_state: completed`
+
 ### 4. Present for interactive review
 
 Display:
 
 ```
-📋 구현 계획이 작성되었습니다!
+구현 계획이 작성되었습니다!
 
-📄 계획서: $WORK_DIR/plan.md
+계획서: $WORK_DIR/plan.md
 
-📊 계획 요약:
+계획 요약:
   - 변경 파일 수: N개
   - 신규 파일: N개
   - 수정 파일: N개
@@ -300,7 +368,7 @@ Display:
 
 ⚠️ 아직 구현을 시작하지 않습니다!
 
-📋 계획이 준비되었습니다. 리뷰해주세요.
+계획이 준비되었습니다. 리뷰해주세요.
 
 피드백 방법:
   • 채팅으로 수정 요청 (예: "3번 항목을 B 접근법으로 변경해줘")
@@ -316,7 +384,7 @@ When the user provides chat-based feedback instead of approval:
 2. Apply the user's feedback to modify plan.md
 3. Highlight what was changed:
    ```
-   📝 plan.md가 수정되었습니다:
+   plan.md가 수정되었습니다:
      - [변경된 부분 요약 1]
      - [변경된 부분 요약 2]
 
@@ -329,6 +397,35 @@ Repeat this loop until the user approves.
 ### 5. Handle approval
 
 When the user says "승인", "approve", "approved", "LGTM", or similar approval words:
+
+#### 5a-pre. Review Gate Check
+
+Before approving, check review results:
+
+1. Read `review_results.plan.spec_score` from state file
+2. Read `$WORK_DIR/plan-cross-review.json` if it exists — check for unresolved critical consensus issues
+
+**If spec_score < 5 OR unresolved critical consensus exists:**
+```
+⚠️ Review Gate: 구현 자동 전환이 차단되었습니다.
+
+사유:
+  - Structural Review 점수: [N]/10 (최소 5 필요)
+  - 미해결 Critical Consensus: [N]건
+
+해결 방법:
+  1. plan.md를 수정하고 /deep-review 실행
+  2. 또는 "강제 승인"을 입력하여 리뷰 게이트 우회
+```
+
+Use AskUserQuestion:
+- A) plan.md 수정 후 재리뷰
+- B) 강제 승인 (리뷰 게이트 우회)
+
+If B: proceed with approval but add `review_gate_overridden: true` to state file.
+If A: loop back to Section 4-1 (interactive feedback).
+
+**If reviews pass or were skipped:** proceed to existing 5a (mode re-evaluation) and 5b (state update).
 
 #### 5a. Mode re-evaluation (Team → Solo)
 
@@ -343,7 +440,7 @@ If any of these conditions are met, suggest switching to Solo:
 - All tasks target the same file
 
 ```
-💡 모드 전환 제안
+모드 전환 제안
 
 계획을 분석한 결과, 이 작업은 Solo 모드가 더 효율적일 수 있습니다:
 - 태스크 수: [N]개 (≤3)
@@ -368,7 +465,7 @@ If ALL of these conditions are met, suggest switching to Team:
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set
 
 ```
-💡 모드 전환 제안
+모드 전환 제안
 
 계획을 분석한 결과, 이 작업은 Team 모드가 더 효율적일 수 있습니다:
 - 태스크 수: [N]개 (≥6)

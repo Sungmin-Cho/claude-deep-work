@@ -23,7 +23,7 @@ Follow these steps exactly:
 ### 0. Update check
 
 The SessionStart hook runs `update-check.sh` and may output one of:
-- `JUST_UPGRADED <old> <new>` → Display: `✅ deep-work v{new}으로 업그레이드되었습니다! (v{old}에서)` and continue.
+- `JUST_UPGRADED <old> <new>` → Display: `deep-work v{new}으로 업그레이드되었습니다! (v{old}에서)` and continue.
 - `UPGRADE_AVAILABLE <old> <new>` → Handle below.
 - (nothing) → Skip, continue to Step 1.
 
@@ -36,12 +36,12 @@ The SessionStart hook runs `update-check.sh` and may output one of:
    - **Git install**: `cd <plugin-dir> && git fetch origin && git reset --hard origin/main`
    - **npm install**: `npm update @claude-deep-work/deep-work`
    - Write current version to `~/.claude/.deep-work-just-upgraded` as marker
-   - Display: `🔄 deep-work v{old} → v{new} 자동 업그레이드 완료!`
+   - Display: `deep-work v{old} → v{new} 자동 업그레이드 완료!`
    - If upgrade fails: display warning and continue with current version
 
 3. **If `auto_update` is not set or false**: Use AskUserQuestion:
    ```
-   🔄 deep-work v{new}이 사용 가능합니다 (현재 v{old}). 업그레이드하시겠습니까?
+   deep-work v{new}이 사용 가능합니다 (현재 v{old}). 업그레이드하시겠습니까?
    ```
    Options:
    - A) 지금 업그레이드 → Execute upgrade (same as auto), continue
@@ -79,6 +79,7 @@ Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string
 | `--skip-research` | Override `start_phase` to `"plan"` for this session only |
 | `--skip-brainstorm` | Skip Phase 0 brainstorm, start at research |
 | `--tdd=MODE` | Set TDD mode: `strict` (default), `relaxed`, `coaching`, `spike` |
+| `--skip-review` | Set `review_state` to `"skipped"` for this session |
 | `--no-branch` | Override `git_branch` to `false` for this session only |
 | `--profile=X` | Use preset named `X` directly (skip interactive selection) |
 
@@ -91,7 +92,7 @@ If the task description is empty after flag removal:
   - Read `.claude/deep-work-profile.yaml` if it exists
   - If profile exists (v1 or v2): Show preset management UI (see Step 1.5d)
   - If profile does not exist: Proceed to Steps 4~6 to ask all questions, save as v2 profile (Step 7.5)
-  - Display: `💾 프로필이 업데이트되었습니다.`
+  - Display: `프로필이 업데이트되었습니다.`
   - **Stop here** — do NOT start a new session
 - If `--setup` flag is present **with** a task description:
   - Show preset management UI (Step 1.5d) → save → continue session with selected preset
@@ -108,7 +109,7 @@ Read `.claude/deep-work-profile.yaml` if it exists.
 1. Parse `version` field:
    - If `version` is `1`: **Auto-migrate to v2** — wrap existing `defaults.*` fields into `presets.default.*`, set `version: 2`, `active: default`. Overwrite the file. Display:
      ```
-     🔄 프로필을 v2 형식으로 자동 업그레이드했습니다. (default 프리셋으로 변환)
+     프로필을 v2 형식으로 자동 업그레이드했습니다. (default 프리셋으로 변환)
      ```
    - If `version` is `2`: Proceed normally.
    - Otherwise: Display warning and treat as no profile:
@@ -128,7 +129,7 @@ Read `.claude/deep-work-profile.yaml` if it exists.
    - If no `--profile` flag AND 2+ presets exist:
      - Use AskUserQuestion to let the user choose:
        ```
-       🎯 프리셋을 선택하세요:
+       프리셋을 선택하세요:
          1. dev — Solo / 기존 코드베이스 / Research부터
          2. quick — Solo / 기존 코드베이스 / Plan부터
          3. review — Team / 기존 코드베이스 / Research부터
@@ -143,20 +144,21 @@ Read `.claude/deep-work-profile.yaml` if it exists.
    - `presets.<name>.model_routing.*` → `MODEL_ROUTING_*`
    - `presets.<name>.model_routing.routing_table` → `ROUTING_TABLE` (v4.1: custom S/M/L/XL→model mapping)
    - `presets.<name>.notifications.*` → `NOTIFICATIONS_*`
+   - `presets.<name>.cross_model_preference` → `CROSS_MODEL_PREFERENCE` (default: `"ask"`)
 
 4. Apply flag overrides (if any): `--team`, `--zero-base`, `--skip-research`, `--no-branch` take precedence over preset values.
 
 5. Display applied profile and offer per-session override:
    ```
-   ⚡ 프리셋 적용: [preset_name]
-     🤝 작업 모드: [Solo / Team]
-     🏗️ 프로젝트: [기존 코드베이스 / 제로베이스]
-     🧠 시작 단계: [Brainstorm / Research / Plan]
-     🧪 TDD 모드: [strict / relaxed / coaching / spike]
-     🔧 모델 라우팅: R=[model] P=main I=[model] T=[model]
+   프리셋 적용: [preset_name]
+     작업 모드: [Solo / Team]
+     프로젝트: [기존 코드베이스 / 제로베이스]
+     시작 단계: [Brainstorm / Research / Plan]
+     TDD 모드: [strict / relaxed / coaching / spike]
+     모델 라우팅: R=[model] P=main I=[model] T=[model]
 
    1. ✅ 이대로 진행 (기본)
-   2. ⚙️ 이번 세션만 설정 변경
+   2. 이번 세션만 설정 변경
    ```
 
    If the user chooses option 2:
@@ -186,12 +188,12 @@ This UI is shown when `--setup` flag is used with an existing v2 profile.
 2. If version is 1, auto-migrate to v2 first (same as Step 1.5c migration).
 3. Display preset list using AskUserQuestion:
    ```
-   ⚙️ 프리셋 관리
+   프리셋 관리
 
    현재 프리셋:
      1. dev ✏️ — Solo / existing / Research부터
      2. quick ✏️ — Solo / existing / Plan부터
-     3. ➕ 새 프리셋 만들기
+     3. 새 프리셋 만들기
 
    편집하거나 새로 만들 프리셋을 선택하세요:
    ```
@@ -205,13 +207,13 @@ This UI is shown when `--setup` flag is used with an existing v2 profile.
 5. **If "새 프리셋 만들기" selected:**
    - Ask for preset name using AskUserQuestion:
      ```
-     📝 프리셋 이름을 입력하세요 (영문, 예: dev, quick, review):
+     프리셋 이름을 입력하세요 (영문, 예: dev, quick, review):
      ```
    - Proceed through Steps 4~6 to collect all settings
    - Save as a new preset under the given name
 
 6. After saving:
-   - Display: `💾 프리셋 '[name]'이(가) 저장되었습니다.`
+   - Display: `프리셋 '[name]'이(가) 저장되었습니다.`
    - Update `active` field to the saved preset name
    - Set `PROFILE_LOADED` = true, `SELECTED_PRESET` = saved preset name
 
@@ -237,6 +239,65 @@ mkdir -p "deep-work/${TASK_FOLDER}"
 ```
 
 Set `WORK_DIR` to `deep-work/${TASK_FOLDER}`.
+
+### 2.5. Cross-model tool detection
+
+Detect available cross-model review tools:
+
+```bash
+CODEX_PATH=$(which codex 2>/dev/null || true)
+GEMINI_PATH=$(which gemini 2>/dev/null || true)
+
+# Verify executability
+CODEX_OK=false
+GEMINI_OK=false
+[ -n "$CODEX_PATH" ] && codex --version >/dev/null 2>&1 && CODEX_OK=true
+[ -n "$GEMINI_PATH" ] && gemini --version >/dev/null 2>&1 && GEMINI_OK=true
+```
+
+**If both tools unavailable (CODEX_OK=false AND GEMINI_OK=false):**
+- Set `cross_model_tools: {codex: {available: false, path: ""}, gemini: {available: false, path: ""}}` in state file
+- Set `cross_model_enabled: {codex: false, gemini: false}`
+- Do NOT display anything — proceed silently
+
+**If at least one tool available:**
+
+Display detection results:
+```
+크로스 모델 도구 감지:
+   codex: ✅ 설치됨 ([path], v[version]) / ❌ 미설치
+   gemini-cli: ✅ 설치됨 ([path], v[version]) / ❌ 미설치
+```
+
+**Check profile for saved preference:**
+
+Read `.claude/deep-work-profile.yaml` for `presets.<active>.cross_model_preference`.
+- If `"always"`: auto-enable detected tools, display "프로필 설정: 항상 사용"
+- If `"never"`: auto-disable, display "프로필 설정: 항상 스킵"
+- If `"ask"` or missing: ask user via AskUserQuestion
+
+**AskUserQuestion (if preference is "ask" or missing):**
+
+If both tools available:
+```
+크로스 모델 리뷰를 활성화할까요?
+  Plan 단계에서 codex/gemini가 독립적으로 계획서를 리뷰합니다.
+  1. 둘 다 사용 (권장)
+  2. codex만 사용
+  3. gemini만 사용
+  4. 사용 안함
+```
+
+If only one tool available:
+```
+[tool] 크로스 모델 리뷰를 활성화할까요?
+  1. 사용 (권장)
+  2. 사용 안함
+```
+
+Store result in state file: `cross_model_enabled: {codex: true/false, gemini: true/false}`
+Store tool info: `cross_model_tools: {codex: {available: bool, path: "..."}, gemini: {available: bool, path: "..."}}`
+
 
 ### 2-1. Git branch & worktree setup (git repository only)
 
@@ -290,7 +351,7 @@ If a git repository, determine the isolation mode:
 
 6. Display:
    ```
-   🌿 Worktree 격리 활성화
+   Worktree 격리 활성화
       Branch: dw/[SLUG]
       Path: .worktrees/dw/[SLUG]
       Base: [short hash]
@@ -310,11 +371,11 @@ If a git repository, determine the isolation mode:
 
 **If `PROFILE_LOADED` is false** (no preset — ask user):
 ```
-🌿 Git 격리 방식을 선택하세요:
+Git 격리 방식을 선택하세요:
    (현재 브랜치: [current branch])
 
-1. 🌳 Worktree 격리 (권장) — 별도 디렉토리에서 격리 작업
-2. 🌿 새 브랜치 — 현재 위치에서 새 브랜치 생성
+1. Worktree 격리 (권장) — 별도 디렉토리에서 격리 작업
+2. 새 브랜치 — 현재 위치에서 새 브랜치 생성
 3. ❌ 현재 브랜치 유지
 ```
 
@@ -339,7 +400,7 @@ Create these empty files:
 Ask the user to choose the work mode using AskUserQuestion:
 
 ```
-🤝 작업 모드를 선택하세요:
+작업 모드를 선택하세요:
   1. Solo — 혼자 진행 (기본)
   2. Team — Agent Team으로 병렬 진행
 ```
@@ -377,11 +438,11 @@ Ask the user to choose the work mode using AskUserQuestion:
 Ask the user using AskUserQuestion:
 
 ```
-🧠 모델 라우팅 설정:
+모델 라우팅 설정:
   기본값: Research=sonnet, Plan=main (현재 세션), Implement=sonnet, Test=haiku
 
   1. ✅ 기본값 사용 (권장)
-  2. ⚙️ 커스텀 설정
+  2. 커스텀 설정
 ```
 
 If the user chooses option 1 (default):
@@ -398,17 +459,17 @@ Check if a previous session's `.claude/deep-work.local.md` has a `notifications:
 
 If previous notification settings exist:
 ```
-📋 이전 알림 설정을 유지합니다: [channel types list]
+이전 알림 설정을 유지합니다: [channel types list]
    변경 없이 유지하려면 Enter를 누르세요. 변경하려면 "변경"을 입력하세요.
 ```
 Copy the previous notification settings to the new state file.
 
 If no previous settings exist or user wants to change:
 ```
-🔔 알림을 설정할까요?
+알림을 설정할까요?
   1. ❌ 알림 없음 (기본)
-  2. 🖥️ 로컬 알림만 (OS 네이티브)
-  3. 📱 외부 채널 추가 (Slack / Discord / Telegram / Webhook)
+  2. 로컬 알림만 (OS 네이티브)
+  3. 외부 채널 추가 (Slack / Discord / Telegram / Webhook)
 ```
 
 If option 2: Set `notifications.enabled: true`, `channels: [{type: "local"}]`
@@ -420,8 +481,8 @@ Ask the user using AskUserQuestion:
 
 ```
 프로젝트 타입을 선택하세요:
-1. 🔧 기존 코드베이스 개선 (기본) — 이미 코드가 있는 프로젝트
-2. 🆕 제로베이스 — 새 프로젝트를 처음부터 시작
+1. 기존 코드베이스 개선 (기본) — 이미 코드가 있는 프로젝트
+2. 제로베이스 — 새 프로젝트를 처음부터 시작
 ```
 
 If the user chooses option 2:
@@ -436,9 +497,9 @@ Ask the user using AskUserQuestion:
 
 ```
 시작 단계를 선택하세요:
-1. 🧠 Brainstorm부터 (기본) — "왜 만드는가"부터 탐색
-2. 🔍 Research부터 — 코드베이스 분석부터 시작 (brainstorm 생략)
-3. 📋 Plan부터 — 이미 코드베이스를 잘 아는 경우
+1. Brainstorm부터 (기본) — "왜 만드는가"부터 탐색
+2. Research부터 — 코드베이스 분석부터 시작 (brainstorm 생략)
+3. Plan부터 — 이미 코드베이스를 잘 아는 경우
 ```
 
 If `--skip-brainstorm` flag is set: auto-select option 2 (Research).
@@ -462,11 +523,11 @@ If the user chooses option 3:
 Ask the user using AskUserQuestion:
 
 ```
-🧪 TDD 모드를 선택하세요:
-1. 🔒 strict (기본) — failing test 없이 production 코드 수정 불가
-2. 📖 coaching — TDD 가이드 제공 (차단 대신 교육)
-3. 🔓 relaxed — TDD 강제 없음 (자유롭게 코딩)
-4. ⚡ spike — 탐색적 코딩 (merge 불가)
+TDD 모드를 선택하세요:
+1. strict (기본) — failing test 없이 production 코드 수정 불가
+2. coaching — TDD 가이드 제공 (차단 대신 교육)
+3. relaxed — TDD 강제 없음 (자유롭게 코딩)
+4. spike — 탐색적 코딩 (merge 불가)
 ```
 
 If `--tdd=MODE` flag is set: auto-select the specified mode.
@@ -527,6 +588,18 @@ quality_gates_passed: null
 notifications:
   enabled: false
   channels: []
+review_state: "pending"
+cross_model_tools:
+  codex: {available: false, path: ""}
+  gemini: {available: false, path: ""}
+cross_model_enabled:
+  codex: false
+  gemini: false
+review_results:
+  brainstorm: {score: 0, iterations: 0, timestamp: ""}
+  research: {score: 0, iterations: 0, timestamp: ""}
+  plan: {spec_score: 0, model_scores: {}, conflicts: 0, waivers: 0, timestamp: ""}
+review_gate_overridden: false
 ---
 
 # Deep Work Session
@@ -538,6 +611,8 @@ $ARGUMENTS
 - [$(date)] Session initialized
 - [$(date)] Phase <0 (Brainstorm) or 1 (Research) or 2 (Plan)> started
 ```
+
+If `--skip-review` flag was set: use `review_state: "skipped"` instead of `"pending"`.
 
 ### 7.5. Save profile
 
@@ -566,9 +641,10 @@ presets:
     notifications:
       enabled: <true/false>
       channels: <copy from state file notifications.channels>
+    cross_model_preference: "ask"
 ```
 
-Display: `💾 프로필이 저장되었습니다 (default 프리셋). 다음 실행부터 이 설정이 자동 적용됩니다.`
+Display: `프로필이 저장되었습니다 (default 프리셋). 다음 실행부터 이 설정이 자동 적용됩니다.`
 
 **If `PROFILE_LOADED` is true**: Skip this step.
 
@@ -581,28 +657,29 @@ Determine the starting phase and display accordingly:
 ```
 ✅ Deep Work 세션이 시작되었습니다!
 
-📋 작업: $ARGUMENTS
-📂 작업 폴더: $WORK_DIR
-🎯 프리셋: [preset_name]
-🤝 작업 모드: Solo / Team (Agent Team)
-🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
-🌿 Git 브랜치: [branch name or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
-🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
-🧪 TDD 모드: strict / relaxed / coaching / spike
+작업: $ARGUMENTS
+작업 폴더: $WORK_DIR
+프리셋: [preset_name]
+작업 모드: Solo / Team (Agent Team)
+프로젝트 타입: 기존 코드베이스 / 제로베이스
+Git 브랜치: [branch name or "없음"]
+모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
+알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
+TDD 모드: strict / relaxed / coaching / spike
+리뷰: [활성화 (codex + gemini) / 활성화 (codex만) / 비활성화 / 스킵됨]
 
-🔄 워크플로우:
+워크플로우:
   Phase 0: /deep-brainstorm  ← 현재 단계
   Phase 1: /deep-research
   Phase 2: /deep-plan
   Phase 3: /deep-implement (계획 승인 시 자동 실행, TDD 강제)
   Phase 4: /deep-test (구현 완료 시 자동 실행, receipt 검증)
 
-⚡ 현재 상태: Brainstorm 단계
+현재 상태: Brainstorm 단계
    - 코드 파일 수정이 차단됩니다
    - "왜 만드는가"를 먼저 탐색합니다
 
-👉 다음 단계: /deep-brainstorm 명령을 실행하여 디자인 탐색을 시작하세요.
+다음 단계: /deep-brainstorm 명령을 실행하여 디자인 탐색을 시작하세요.
 ```
 
 **If starting from Research:**
@@ -610,27 +687,28 @@ Determine the starting phase and display accordingly:
 ```
 ✅ Deep Work 세션이 시작되었습니다! (Brainstorm 생략)
 
-📋 작업: $ARGUMENTS
-📂 작업 폴더: $WORK_DIR
-🎯 프리셋: [preset_name]
-🤝 작업 모드: Solo / Team (Agent Team)
-🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
-🌿 Git 브랜치: [branch name or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
-🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
-🧪 TDD 모드: strict / relaxed / coaching / spike
+작업: $ARGUMENTS
+작업 폴더: $WORK_DIR
+프리셋: [preset_name]
+작업 모드: Solo / Team (Agent Team)
+프로젝트 타입: 기존 코드베이스 / 제로베이스
+Git 브랜치: [branch name or "없음"]
+모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
+알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
+TDD 모드: strict / relaxed / coaching / spike
+리뷰: [활성화 (codex + gemini) / 활성화 (codex만) / 비활성화 / 스킵됨]
 
-🔄 워크플로우:
+워크플로우:
   Phase 1: /deep-research  ← 현재 단계
   Phase 2: /deep-plan
   Phase 3: /deep-implement (계획 승인 시 자동 실행, TDD 강제)
   Phase 4: /deep-test (구현 완료 시 자동 실행, receipt 검증)
 
-⚡ 현재 상태: Research 단계
+현재 상태: Research 단계
    - 코드 파일 수정이 차단됩니다
    - $WORK_DIR/ 내 문서만 작성 가능합니다
 
-👉 다음 단계: /deep-research 명령을 실행하여 코드베이스 분석을 시작하세요.
+다음 단계: /deep-research 명령을 실행하여 코드베이스 분석을 시작하세요.
 ```
 
 **If starting from Plan (skip research):**
@@ -638,28 +716,29 @@ Determine the starting phase and display accordingly:
 ```
 ✅ Deep Work 세션이 시작되었습니다! (Research 단계 생략)
 
-📋 작업: $ARGUMENTS
-📂 작업 폴더: $WORK_DIR
-🎯 프리셋: [preset_name]
-🤝 작업 모드: Solo / Team (Agent Team)
-🏗️ 프로젝트 타입: 기존 코드베이스 / 제로베이스
-🌿 Git 브랜치: [branch name or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
-🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
+작업: $ARGUMENTS
+작업 폴더: $WORK_DIR
+프리셋: [preset_name]
+작업 모드: Solo / Team (Agent Team)
+프로젝트 타입: 기존 코드베이스 / 제로베이스
+Git 브랜치: [branch name or "없음"]
+모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
+알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
+리뷰: [활성화 (codex + gemini) / 활성화 (codex만) / 비활성화 / 스킵됨]
 
-🔄 워크플로우:
+워크플로우:
   Phase 1: /deep-research  ✅ 건너뜀
   Phase 2: /deep-plan      ← 현재 단계
   Phase 3: /deep-implement (계획 승인 시 자동 실행)
   Phase 4: /deep-test (구현 완료 시 자동 실행)
 
-⚡ 현재 상태: Plan 단계
+현재 상태: Plan 단계
    - 코드 파일 수정이 차단됩니다
 
-👉 다음 단계: /deep-plan 명령을 실행하여 구현 계획을 작성하세요.
+다음 단계: /deep-plan 명령을 실행하여 구현 계획을 작성하세요.
 ```
 
-If `PROFILE_LOADED` is false, omit the 🎯 프리셋 line.
+If `PROFILE_LOADED` is false, omit the 프리셋 line.
 
 If `team_mode` is `team`, add the following after the mode line:
 ```

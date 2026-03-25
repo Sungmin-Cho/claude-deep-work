@@ -33,7 +33,7 @@ Check if `$WORK_DIR/report.md` exists.
 
 - If it exists, ask the user:
   ```
-  📄 기존 리포트가 있습니다: $WORK_DIR/report.md
+  기존 리포트가 있습니다: $WORK_DIR/report.md
 
   1. 기존 리포트 표시
   2. 리포트 재생성 (현재 상태 기반)
@@ -155,6 +155,25 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 [If $WORK_DIR/quality-gates.md exists, read and include its latest attempt table here]
 [If quality-gates.md does not exist: "Quality Gates 미정의 — 기본 자동 감지 사용"]
 
+## Review Results
+
+### Structural Reviews
+| Phase | Score | Iterations | Timestamp |
+|-------|-------|------------|-----------|
+| Brainstorm | [N]/10 | [N] | [time] |
+| Research | [N]/10 | [N] | [time] |
+| Plan | [N]/10 | [N] | [time] |
+
+### Adversarial Review (Plan)
+- **Models**: [Claude + Codex / Claude + Gemini / Claude only / 미실행]
+- **Scores**: Claude [N]/10, [Model] [N]/10
+- **Consensus**: [N]건
+- **Conflicts**: [N]건 (resolved: [N], waived: [N])
+- **Review Gate**: [통과 ✅ / 우회됨 ⚠️ / 미실행 ⬜]
+
+(If review_state is "skipped": `리뷰: 스킵됨 (--skip-review)`)
+(If cross_model not available: `크로스 모델: 도구 미설치 (structural review만 실행)`)
+
 ## Insight Analysis
 [If $WORK_DIR/insight-report.md exists, include the "종합 인사이트 요약" section here]
 [If insight-report.md does not exist: "Insight 분석 미실행"]
@@ -180,13 +199,13 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 ### 6. Display confirmation
 
 ```
-📄 세션 리포트가 생성되었습니다!
+세션 리포트가 생성되었습니다!
 
-📂 위치: $WORK_DIR/report.md
+위치: $WORK_DIR/report.md
 
-📊 세션 상태: [current_phase]
-📋 작업: [task_description]
-⏱️ 총 소요 시간: [total duration]
+세션 상태: [current_phase]
+작업: [task_description]
+총 소요 시간: [total duration]
 
 리포트를 검토하고 필요시 /deep-report 로 재생성할 수 있습니다.
 ```
@@ -196,7 +215,7 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 If `git_branch` is set in the state file and `current_phase` is `idle`:
 
 ```
-📝 변경사항을 커밋할까요?
+변경사항을 커밋할까요?
    브랜치: [git_branch]
    변경 파일: [N]개
 
