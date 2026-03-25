@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "4.1.0"
+version: "4.2.0"
 description: |
   This skill should be used when the user wants to follow an evidence-driven development
   protocol with TDD enforcement, slice-based execution, and receipt-based evidence collection.
@@ -12,11 +12,25 @@ description: |
   "systematic debugging", "코드 리뷰", "spec compliance", "worktree", "격리",
   "deep-finish", "deep-history", "deep-cleanup", "model routing", "모델 라우팅",
   "receipt validation", "CI/CD", "session lifecycle", "세션 완료",
+  "cross-model review", "크로스 모델", "adversarial review", "리뷰 게이트",
+  "review gate", "deep-review", "structural review", "구조적 리뷰",
   or when the user describes a complex, multi-file task that would benefit from
   structured planning before implementation.
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+
+## v4.2 Adversarial Multi-Model Review Gate
+
+v4.2 adds multi-model document verification:
+- **Structural Review**: All phase docs reviewed by haiku subagent with phase-specific dimensions
+- **Adversarial Review** (plan only): codex/gemini-cli independently review — conflicts shown to user
+- **Review Gate**: Low scores or critical consensus blocks auto-implement
+- **`/deep-review`**: Manual review trigger at any time
+- **`--skip-review`**: Skip reviews for spike/experimental work
+- **Cross-model auto-detection**: codex/gemini-cli detected at session init
+- **Profile persistence**: `cross_model_preference` saved in presets
+- **JSON normalization**: Review results stored as structured `{phase}-review.json`
 
 ## v4.1 Backbone-First Integration
 

@@ -7,6 +7,31 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-03-25
+
+### Added
+- **Structural Review**: All phase documents (brainstorm, research, plan) now undergo structural review via Claude haiku subagent with phase-specific dimensions
+- **Adversarial Cross-Model Review**: Plan documents are independently reviewed by codex and/or gemini-cli for architecture, assumptions, and risk coverage
+- **Conflict Resolution UX**: When models disagree, conflicts are transparently shown to users who decide the resolution (accept, waiver, or manual edit)
+- **Review Gate**: Structural review score <5 or critical consensus issues block auto-implement transition
+- **`/deep-review` command**: Manually trigger structural or adversarial review at any time
+- **`--skip-review` flag**: Skip all reviews for spike/experimental sessions
+- **Cross-model tool auto-detection**: Automatically detects codex/gemini-cli at session init
+- **Profile `cross_model_preference`**: Save cross-model preference (always/never/ask) in presets
+- **Review state in resume/status**: `/deep-resume` recognizes review state; `/deep-status` displays review results
+- **JSON Schema normalization**: All review results stored as structured JSON (`{phase}-review.json`)
+
+### Changed
+- `deep-brainstorm.md`: Spec review replaced with review-gate protocol reference
+- `deep-research.md`: Added structural review after research completion
+- `deep-plan.md`: Added structural + adversarial review before approval
+- `phase-guard-core.js`: Added codex/gemini/mktemp to SAFE_COMMAND_PATTERNS
+- State file: Added `review_state`, `cross_model_tools`, `cross_model_enabled`, `review_results` fields
+- Profile: Added `cross_model_preference` to preset schema
+
+### Fixed
+- `.gitignore`: Added `deep-work-workflow-workspace/` to prevent venv from being tracked
+
 ## [4.1.0] - 2026-03-25
 
 ### Added

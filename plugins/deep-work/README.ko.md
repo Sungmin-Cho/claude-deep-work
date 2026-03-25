@@ -381,6 +381,35 @@ Team 모드 활성화:
 | 중간 | Plan → Implement → Test (Research 생략) | 2-4 파일, 익숙한 영역의 확장 |
 | 낮음 | 워크플로우 불필요 | 단일 파일 수정, 설정 변경 |
 
+## 멀티 모델 검증 (v4.2)
+
+deep-work v4.2는 구현 전에 설계 결함을 잡기 위한 적대적 멀티 모델 리뷰를 추가합니다.
+
+### 작동 방식
+1. **구조적 리뷰** — 모든 페이즈 문서(brainstorm, research, plan)가 Claude haiku 서브에이전트로 페이즈별 차원으로 리뷰됨
+2. **적대적 리뷰** (plan만) — codex 및/또는 gemini-cli가 독립적으로 계획서를 리뷰. 갈등은 투명하게 표시되어 사용자가 해결
+3. **리뷰 게이트** — 낮은 구조적 점수 또는 비판적 합의 이슈가 있으면 자동 구현 차단
+
+### 설정
+크로스 모델 리뷰는 [codex](https://github.com/openai/codex) 및/또는 [gemini-cli](https://github.com/google/gemini-cli) 설치가 필요합니다. deep-work가 세션 초기화 시 자동 감지합니다.
+
+```bash
+# codex 설치 (선택)
+npm install -g @openai/codex
+
+# gemini-cli 설치 (선택)
+npm install -g @google/gemini-cli
+```
+
+두 도구 모두 미설치 시, deep-work는 구조적 리뷰만으로 정상 동작합니다.
+
+### 플래그
+- `--skip-review` — 모든 리뷰 건너뛰기 (spike/실험 작업에 유용)
+
+### 커맨드
+- `/deep-review` — 현재 페이즈 문서에 리뷰 수동 트리거
+- `/deep-review --adversarial` — 적대적 크로스 모델 리뷰만 실행
+
 ## 설치 (v4.0.1)
 
 Claude Code 설정에 마켓플레이스를 추가합니다:
