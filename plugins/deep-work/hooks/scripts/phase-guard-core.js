@@ -427,6 +427,49 @@ if (require.main === module) {
   });
 }
 
+// ─── Model Routing (v4.1) ───────────────────────────────────
+
+const DEFAULT_ROUTING_TABLE = {
+  S: 'haiku',
+  M: 'sonnet',
+  L: 'sonnet',
+  XL: 'opus',
+};
+
+const VALID_MODELS = ['haiku', 'sonnet', 'opus', 'main', 'auto'];
+
+/**
+ * Looks up the model for a given slice size.
+ * @param {string} size - S, M, L, or XL
+ * @param {object} [customTable] - Custom routing table (optional)
+ * @returns {{ model: string, valid: boolean }}
+ */
+function lookupModel(size, customTable) {
+  const table = { ...DEFAULT_ROUTING_TABLE, ...(customTable || {}) };
+  const normalizedSize = (size || 'M').toUpperCase();
+  const model = table[normalizedSize];
+  if (!model) {
+    return { model: table['M'] || 'sonnet', valid: false };
+  }
+  return { model, valid: true };
+}
+
+/**
+ * Validates a model name.
+ * @param {string} model - Model name to validate
+ * @returns {{ valid: boolean, fallback: string }}
+ */
+function validateModelName(model) {
+  if (!model || typeof model !== 'string') {
+    return { valid: false, fallback: 'sonnet' };
+  }
+  const normalized = model.toLowerCase().trim();
+  if (VALID_MODELS.includes(normalized)) {
+    return { valid: true, fallback: normalized };
+  }
+  return { valid: false, fallback: 'sonnet' };
+}
+
 // ─── Exports (for testing) ───────────────────────────────────
 
 module.exports = {
@@ -441,4 +484,8 @@ module.exports = {
   isExemptFile,
   truncateOutput,
   processHook,
+  DEFAULT_ROUTING_TABLE,
+  VALID_MODELS,
+  lookupModel,
+  validateModelName,
 };

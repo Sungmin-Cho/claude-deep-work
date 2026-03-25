@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "4.0.1"
+version: "4.1.0"
 description: |
   This skill should be used when the user wants to follow an evidence-driven development
   protocol with TDD enforcement, slice-based execution, and receipt-based evidence collection.
@@ -9,16 +9,30 @@ description: |
   "slice", "brainstorm", "브레인스톰", "제로베이스", "from scratch", "quality gate",
   "SOLID review", "drift check", "deep-insight", "코드 메트릭", "preset", "프리셋",
   "resume session", "세션 재개", "이어서", "프로필", "빠른 시작", "debug mode",
-  "systematic debugging", "코드 리뷰", "spec compliance",
+  "systematic debugging", "코드 리뷰", "spec compliance", "worktree", "격리",
+  "deep-finish", "deep-history", "deep-cleanup", "model routing", "모델 라우팅",
+  "receipt validation", "CI/CD", "session lifecycle", "세션 완료",
   or when the user describes a complex, multi-file task that would benefit from
   structured planning before implementation.
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
 
+## v4.1 Backbone-First Integration
+
+v4.1 adds full session lifecycle management and cost optimization:
+- **Worktree isolation**: Sessions run in isolated git worktrees by default — main branch stays clean
+- **Model auto-routing**: Slice complexity (S/M/L/XL) drives model selection (haiku/sonnet/opus)
+- **Session lifecycle**: `/deep-finish` with merge/PR/keep/discard + `session-receipt.json`
+- **CI/CD validation**: `validate-receipt.sh` + GitHub Actions template for receipt chain checks
+- **Session history**: `/deep-history` cross-session trends: model usage, TDD compliance, cost
+- **Worktree cleanup**: `/deep-cleanup` for stale worktree management
+- **Receipt schema v1.0**: model_used, git_before/after, estimated_cost, schema versioning
+- **Shell utilities DRY**: Shared utils.sh eliminates hook script code duplication
+
 ## v4.0 Evidence-Driven Development Protocol
 
-v4.0 introduces the **Evidence-Driven Protocol** — every code change must carry proof:
+v4.0 introduced the **Evidence-Driven Protocol** — every code change must carry proof:
 - **Slice-based execution**: Plan tasks are "slices" with TDD cycles and spec checklists
 - **TDD enforcement**: Failing test required before production code (hook-enforced)
 - **Receipt system**: JSON evidence collected per slice (test output, git diff, spec check)

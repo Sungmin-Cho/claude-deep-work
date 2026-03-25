@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "deep-work",
-      "description": "Evidence-Driven Development Protocol — TDD enforcement, slice/receipt system, 5-phase workflow, Bash hook monitoring, 2-stage code review",
-      "version": "4.0.1",
+      "description": "Evidence-Driven Development Protocol — worktree isolation, model auto-routing, TDD enforcement, receipt validation, session lifecycle management",
+      "version": "4.1.0",
       "source": "./plugins/deep-work"
     }
   ]

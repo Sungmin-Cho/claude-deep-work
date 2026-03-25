@@ -12,24 +12,24 @@
   Block with guidance message if in non-implement phase or TDD state requires test first.
 - **Status:** DONE — implemented in PR1 (hooks.json + phase-guard.sh + phase-guard-core.js)
 
-## P2 — Important (v4.0 follow-up)
+## P2 — Important (v4.1 — IMPLEMENTED)
 
 ### Model routing auto-selection by slice complexity
 - **What:** Auto-select model (haiku/sonnet/opus) based on slice estimated_size field
 - **Why:** Optimize cost — small slices don't need expensive models
-- **Deferred to:** v4.1
+- **Status:** DONE — v4.1 (auto routing table in deep-implement.md Step 4)
 
 ### Git worktree isolation
-- **What:** Integrate superpowers-style worktree isolation for implementation sessions
+- **What:** Worktree-based isolation for implementation sessions
 - **Why:** Prevents accidental changes to main branch during deep-work sessions
-- **Deferred to:** v4.1
+- **Status:** DONE — v4.1 (deep-work.md Step 2-1, deep-finish.md, deep-cleanup.md)
 
 ### Finishing-a-development-branch workflow
 - **What:** 4 completion options (merge, PR, keep, discard) at session end
 - **Why:** Clean session termination with explicit user choice
-- **Deferred to:** v4.1
+- **Status:** DONE — v4.1 (/deep-finish command)
 
 ### CI/CD integration via receipt export
 - **What:** GitHub Actions workflow that validates receipt completeness
 - **Why:** Receipt export (PR4) creates the data; CI validates it
-- **Deferred to:** v4.1
+- **Status:** DONE — v4.1 (validate-receipt.sh + templates/deep-work-ci.yml)

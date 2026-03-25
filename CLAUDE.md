@@ -75,4 +75,4 @@ node --test phase-guard-core.test.js    # Unit tests (v4.0)
 
 ## Version
 
-Current: 4.0.0 (Evidence-Driven Development Protocol)
+Current: 4.1.0 (Backbone-First Integration — Worktree + Model Routing + Receipt Validation + Session Lifecycle)

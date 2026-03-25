@@ -18,6 +18,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 - `/deep-receipt view SLICE-NNN` — Show detailed receipt for a specific slice
 - `/deep-receipt export --format=json` — Export all receipts as single JSON file
 - `/deep-receipt export --format=md` — Export as markdown (for PR descriptions)
+- `/deep-receipt export --format=ci` — Export CI bundle (session-receipt + all slice receipts in one JSON, for GitHub Actions validation)
 
 ## Prerequisites
 

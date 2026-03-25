@@ -1,0 +1,65 @@
+# deep-work-ci.yml — GitHub Actions workflow for receipt validation
+#
+# Copy this file to your project's .github/workflows/ directory.
+# Update the VALIDATE_SCRIPT path to point to your validate-receipt.sh location.
+#
+# This workflow runs on PRs that contain deep-work receipt files and validates
+# that all receipts are properly formatted and complete.
+
+name: Deep Work Receipt Validation
+
+on:
+  pull_request:
+    paths:
+      - '**/receipts/SLICE-*.json'
+      - '**/session-receipt.json'
+
+jobs:
+  validate-receipts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Find receipt directories
+        id: find
+        run: |
+          DIRS=$(find . -name "session-receipt.json" -exec dirname {} \; | sort -u)
+          if [ -z "$DIRS" ]; then
+            DIRS=$(find . -path "*/receipts/SLICE-*.json" -exec dirname {} \; | sort -u | xargs -I{} dirname {})
+          fi
+          echo "dirs<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIRS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Validate receipts
+        run: |
+          # Update this path to your validate-receipt.sh location
+          VALIDATE_SCRIPT="./scripts/validate-receipt.sh"
+
+          # If using the deep-work plugin directly:
+          # VALIDATE_SCRIPT="./plugins/deep-work/hooks/scripts/validate-receipt.sh"
+
+          FAILED=0
+          while IFS= read -r dir; do
+            [ -z "$dir" ] && continue
+            echo "::group::Validating $dir"
+            if bash "$VALIDATE_SCRIPT" "$dir"; then
+              echo "✅ $dir: PASS"
+            else
+              echo "❌ $dir: FAIL"
+              FAILED=$((FAILED + 1))
+            fi
+            echo "::endgroup::"
+          done <<< "${{ steps.find.outputs.dirs }}"
+
+          if [ $FAILED -gt 0 ]; then
+            echo "::error::$FAILED receipt directories failed validation"
+            exit 1
+          fi
+          echo "✅ All receipt directories passed validation"

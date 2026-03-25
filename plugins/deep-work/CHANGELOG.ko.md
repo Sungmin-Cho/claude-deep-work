@@ -7,6 +7,28 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-03-25
+
+### Added
+- **Worktree 격리**: 세션이 기본적으로 격리된 git worktree에서 실행됩니다. `/deep-work` 시 `.worktrees/dw/<slug>/`에 worktree를 생성하여 main 브랜치를 보호합니다. `--no-branch` 또는 프리셋의 `git_branch: false`로 비활성화 가능.
+- **슬라이스 복잡도 기반 모델 자동 선택**: 구현 단계에서 각 슬라이스의 크기(S/M/L/XL)에 따라 최적 모델(haiku/sonnet/opus)을 자동 선택합니다. `/deep-slice model SLICE-NNN <모델>`로 슬라이스별 override 가능. 프리셋에서 routing_table 커스터마이즈 가능.
+- **세션 완료 워크플로우** (`/deep-finish`): 세션 종료 시 4가지 옵션 제공 — 베이스 브랜치로 병합, PR 생성, 브랜치 유지, 삭제. `session-receipt.json`으로 전체 세션 요약 생성.
+- **CI/CD receipt 검증**: `validate-receipt.sh`로 receipt 체인 무결성 검증. `templates/deep-work-ci.yml`로 GitHub Actions 워크플로우 템플릿 제공. `/deep-receipt export --format=ci`로 CI 친화적 번들 내보내기.
+- **세션 이력 대시보드** (`/deep-history`): 과거 세션들의 모델 사용량, TDD 준수율, 완료율, 비용 추적 등 크로스 세션 트렌드 표시.
+- **Worktree 정리** (`/deep-cleanup`): 7일 이상 된 비활성 deep-work worktree를 스캔하고 일괄/개별 삭제 옵션 제공.
+- **Receipt 스키마 v1.0**: 새 필드 — `schema_version`, `model_used`, `model_auto_selected`, `worktree_branch`, `git_before`, `git_after`, `estimated_cost`. Session receipt은 파생 캐시이며 slice receipt이 정본.
+- **Receipt 마이그레이션 헬퍼** (`receipt-migration.js`): v4.1 이전 receipt을 스키마 v1.0으로 자동 변환. atomic write 및 손상 파일 백업 지원.
+- **Worktree 인식 세션 재개** (`/deep-resume`): 세션 재개 시 worktree 경로를 감지하고 작업 디렉토리 컨텍스트를 복원. 삭제된 worktree도 우아하게 처리.
+- **모델 비용 추적**: slice 및 session receipt에 `estimated_cost` 필드로 세션별 AI 모델 사용 비용 가시성 제공.
+- **Shell 유틸리티 추출** (`utils.sh`): 3개 hook 스크립트의 공통 함수를 단일 소스 파일로 추출하여 코드 중복 제거.
+- **모델 라우팅 테스트**: 라우팅 테이블 조회, 모델 이름 검증, 커스텀 테이블 override에 대한 11개 새 유닛 테스트 추가 (총 48개 테스트).
+
+### Changed
+- 기본 `model_routing.implement`가 `"sonnet"`에서 `"auto"` (크기 기반 라우팅)로 변경
+- 프리셋의 기본 `git_branch`가 `true`로 변경 (worktree 격리 기본 활성화)
+- `session-end.sh`가 worktree 브랜치 정보를 표시하고 `/deep-finish` 사용을 안내
+- `validate-receipt.sh`가 macOS Bash 3.2 호환을 위해 `set -eo pipefail` 사용
+
 ## [4.0.1] - 2026-03-25
 
 ### Added

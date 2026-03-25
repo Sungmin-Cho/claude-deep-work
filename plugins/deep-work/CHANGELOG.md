@@ -7,6 +7,28 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-03-25
+
+### Added
+- **Worktree isolation**: Sessions now run in isolated git worktrees by default. `/deep-work` creates a worktree at `.worktrees/dw/<slug>/`, keeping main branch clean. Opt-out with `--no-branch` or `git_branch: false` in preset.
+- **Model auto-routing by slice complexity**: Implement phase automatically selects the optimal model (haiku/sonnet/opus) based on each slice's size (S/M/L/XL). Override per-slice with `/deep-slice model SLICE-NNN <model>`. Customizable routing table in presets.
+- **Session completion workflow** (`/deep-finish`): 4 explicit options at session end — merge to base branch, create PR, keep branch for later, or discard. Generates `session-receipt.json` with full session summary.
+- **CI/CD receipt validation**: `validate-receipt.sh` validates receipt chain integrity. `templates/deep-work-ci.yml` provides a GitHub Actions workflow template. `/deep-receipt export --format=ci` for CI-friendly bundle export.
+- **Session history dashboard** (`/deep-history`): Cross-session trends showing model usage, TDD compliance rates, completion rates, and cost tracking.
+- **Worktree cleanup** (`/deep-cleanup`): Scans for stale deep-work worktrees (7+ days, no active session) and offers batch or individual cleanup.
+- **Receipt schema v1.0**: New fields — `schema_version`, `model_used`, `model_auto_selected`, `worktree_branch`, `git_before`, `git_after`, `estimated_cost`. Session receipt is a derived cache; slice receipts are the canonical source of truth.
+- **Receipt migration helper** (`receipt-migration.js`): Auto-converts pre-v4.1 receipts to schema v1.0 with atomic writes and corrupted file backup.
+- **Worktree-aware resume** (`/deep-resume`): Detects worktree path on session resume and restores working directory context. Handles deleted worktrees gracefully.
+- **Model cost tracking**: `estimated_cost` field in slice and session receipts for per-session AI model spending visibility.
+- **Shell utilities extraction** (`utils.sh`): Shared functions (`find_project_root`, `normalize_path`, `read_frontmatter_field`, `init_deep_work_state`) extracted from 3 hook scripts into a single source file, eliminating code duplication.
+- **Model routing tests**: 11 new unit tests for routing table lookup, model name validation, and custom table overrides (total: 48 tests across 2 test files).
+
+### Changed
+- Default `model_routing.implement` changed from `"sonnet"` to `"auto"` (size-based routing)
+- Default `git_branch` in presets changed to `true` (worktree isolation enabled by default)
+- `session-end.sh` now shows worktree branch info and suggests `/deep-finish` for cleanup
+- `validate-receipt.sh` uses `set -eo pipefail` instead of `set -euo pipefail` for macOS Bash 3.2 compatibility
+
 ## [4.0.1] - 2026-03-25
 
 ### Added
