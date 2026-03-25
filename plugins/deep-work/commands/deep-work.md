@@ -145,13 +145,33 @@ Read `.claude/deep-work-profile.yaml` if it exists.
 
 4. Apply flag overrides (if any): `--team`, `--zero-base`, `--skip-research`, `--no-branch` take precedence over preset values.
 
-5. Display applied profile:
+5. Display applied profile and offer per-session override:
    ```
-   ⚡ 프리셋 적용: [preset_name] — [team_mode] / [project_type] / [start_phase]부터 / [brainstorm]-[research]-[plan]-[implement]-[test]
+   ⚡ 프리셋 적용: [preset_name]
+     🤝 작업 모드: [Solo / Team]
+     🏗️ 프로젝트: [기존 코드베이스 / 제로베이스]
+     🧠 시작 단계: [Brainstorm / Research / Plan]
+     🧪 TDD 모드: [strict / relaxed / coaching / spike]
+     🔧 모델 라우팅: R=[model] P=main I=[model] T=[model]
+
+   1. ✅ 이대로 진행 (기본)
+   2. ⚙️ 이번 세션만 설정 변경
    ```
 
+   If the user chooses option 2:
+   - Ask each setting **individually** using AskUserQuestion (one per question):
+     a. 작업 모드: Solo / Team
+     b. 프로젝트 타입: 기존 / 제로베이스
+     c. 시작 단계: Brainstorm / Research / Plan
+     d. TDD 모드: strict / relaxed / coaching / spike
+     e. 모델 라우팅: 기본값 사용 / 커스텀
+   - Override preset values for this session only (don't save to profile)
+   - These overrides do NOT modify the saved preset
+
+   If the user chooses option 1: use preset values as-is.
+
 6. Set `PROFILE_LOADED` = true, `SELECTED_PRESET` = preset name
-7. **Skip Steps 4, 4-1, 4-2, 5, and 6** — use preset values directly
+7. **Skip Steps 4, 4-1, 4-2, 5, and 6** — use preset values directly (unless user chose option 2 above, in which case the overridden values are used)
 
 **If profile does NOT exist OR `--setup` IS set:**
 1. Set `PROFILE_LOADED` = false
@@ -384,6 +404,25 @@ If the user chooses option 3:
 - Set `research_complete` to `true`
 - Skip research.md placeholder creation
 - The starting phase guidance will tell the user to run `/deep-plan`
+
+### 6-1. Select TDD mode
+
+Ask the user using AskUserQuestion:
+
+```
+🧪 TDD 모드를 선택하세요:
+1. 🔒 strict (기본) — failing test 없이 production 코드 수정 불가
+2. 📖 coaching — TDD 가이드 제공 (차단 대신 교육)
+3. 🔓 relaxed — TDD 강제 없음 (자유롭게 코딩)
+4. ⚡ spike — 탐색적 코딩 (merge 불가)
+```
+
+If `--tdd=MODE` flag is set: auto-select the specified mode.
+
+- Option 1: Set `tdd_mode` to `strict`
+- Option 2: Set `tdd_mode` to `coaching`
+- Option 3: Set `tdd_mode` to `relaxed`
+- Option 4: Set `tdd_mode` to `spike`
 
 ### 7. Create the state file
 
