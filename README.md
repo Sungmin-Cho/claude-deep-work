@@ -55,6 +55,9 @@ Without structure, Claude Code will:
 - **CI/CD Receipt Validation** — `validate-receipt.sh` + GitHub Actions template for automated receipt chain checks
 - **Session History** — `/deep-history` cross-session trends: model usage, TDD compliance, cost tracking
 - **Solo & Team Modes** — Single agent or parallel agent teams with cross-review
+- **Adversarial Multi-Model Review** — codex/gemini independently review plan documents; conflicts shown transparently (`/deep-review`)
+- **Structural Review** — All phase documents reviewed by haiku subagent with phase-specific dimensions
+- **Review Gate** — Low review scores or critical consensus issues block auto-implement
 
 ## Quick Start
 
@@ -83,6 +86,7 @@ claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-wor
 | `/deep-finish` | End | Finish session: merge, PR, keep, or discard (v4.1) |
 | `/deep-history` | — | Cross-session trends: models, TDD, cost (v4.1) |
 | `/deep-cleanup` | — | Clean up stale worktrees (v4.1) |
+| `/deep-review` | — | Manual structural/adversarial review trigger (v4.2) |
 | `/deep-resume` | — | Resume active session with worktree restore |
 | `/drift-check` | — | Plan-vs-implementation alignment check |
 | `/solid-review` | — | SOLID design principles review |

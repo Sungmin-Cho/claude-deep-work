@@ -20,6 +20,7 @@ deep-work/
 │   │   ├── deep-status.md      # /deep-status — session info
 │   │   ├── deep-report.md      # /deep-report — session report
 │   │   ├── deep-resume.md      # /deep-resume — resume session
+│   │   ├── deep-review.md       # /deep-review — manual review trigger (v4.2)
 │   │   ├── drift-check.md      # /drift-check — plan alignment
 │   │   ├── solid-review.md     # /solid-review — SOLID design
 │   │   └── deep-insight.md     # /deep-insight — code metrics
@@ -28,7 +29,7 @@ deep-work/
 │   │   └── scripts/
 │   │       ├── phase-guard.sh      # PreToolUse — bash+Node hybrid
 │   │       ├── phase-guard-core.js # Node.js: TDD state machine, Bash detection
-│   │       ├── phase-guard-core.test.js # 29 unit tests (node:test)
+│   │       ├── phase-guard-core.test.js # 47 unit tests (node:test)
 │   │       ├── file-tracker.sh     # PostToolUse — tracks + receipt collection
 │   │       ├── update-check.sh     # SessionStart — git-based version check
 │   │       ├── session-end.sh      # Stop — session reminder
@@ -36,7 +37,8 @@ deep-work/
 │   ├── skills/
 │   │   └── deep-work-workflow/
 │   │       ├── SKILL.md
-│   │       └── references/     # Guide documents
+│   │       └── references/
+│   │           └── review-gate.md  # Reusable review protocol (v4.2)
 │   ├── package.json
 │   ├── README.md / README.ko.md
 │   └── CHANGELOG.md / CHANGELOG.ko.md
@@ -51,15 +53,17 @@ deep-work/
 - **Phase enforcement**: PreToolUse hook (`phase-guard.sh`) physically blocks Write/Edit
   during non-implement phases (research, plan, test, brainstorm).
 - **Session state**: `.claude/deep-work.local.md` YAML frontmatter stores current_phase,
-  work_dir, slice states, TDD mode, timestamps.
+  work_dir, slice states, TDD mode, review_state, cross_model settings, timestamps.
 - **Quality Gates**: 3-tier system — Required (blocks), Advisory (warns), Insight (info).
+- **Review Gate** (v4.2): Structural review + adversarial cross-model review on phase documents.
+  codex/gemini-cli auto-detected at session init. Results in `{phase}-review.json`.
 - **Commands are markdown**: Each slash command is a `.md` file with YAML frontmatter.
   Claude reads and follows the instructions.
 
 ## Testing
 
 ```bash
-# No automated test suite yet — v4.0 adds node:test for phase-guard-core.js
+# 47 unit tests — v4.0 added node:test, v4.2 added cross-model review safe pattern tests
 cd plugins/deep-work/hooks/scripts
 node --test phase-guard-core.test.js    # Unit tests (v4.0)
 ```
