@@ -145,6 +145,11 @@ const SAFE_COMMAND_PATTERNS = [
   /\bgrep\b/, /\bfind\b/, /\bwc\b/, /\bsort\b/, /\buniq\b/,
   /\bnode\s+--test\b/, /\bnode\s+-e\b/,
   /\bmkdir\s/, /\brm\s/,  // directory operations, not file writes to source
+  // v4.2: cross-model review tools (adversarial review in plan phase)
+  /\bcodex\s+exec\b/, /\bcodex\s+--version\b/,
+  /\bgemini\s+exec\b/, /\bgemini\s+-p\b/, /\bgemini\s+--version\b/,
+  /\btimeout\s+\d+\s+codex\b/, /\btimeout\s+\d+\s+gemini\b/,
+  /\bmktemp\b/,
 ];
 
 /**
