@@ -121,15 +121,23 @@ Write `$WORK_DIR/brainstorm.md`:
 Research 단계에서 코드베이스를 분석하여 이 접근 방식의 실현 가능성을 검증합니다.
 ```
 
-### 4. Spec Review (subagent)
+### 4. Structural Review
 
-Spawn a fresh Agent (spec-reviewer) to review brainstorm.md:
-- **Input**: brainstorm.md file path
-- **Prompt**: "Review this brainstorm document. Check: Is the problem clearly defined? Are the approaches meaningfully different? Are success criteria measurable? Are edge cases considered? Return: { result: 'PASS'|'FAIL', issues: [{ section, issue, fix }], score: 1-10 }"
+Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
+
+Follow the **Structural Review Protocol** with these settings:
+- **Phase**: brainstorm
+- **Document**: `$WORK_DIR/brainstorm.md`
+- **Dimensions**: problem_clarity, approach_differentiation, success_measurability, edge_case_coverage
+- **Output**: `$WORK_DIR/brainstorm-review.json` + `$WORK_DIR/brainstorm-review.md`
 - **Model**: "haiku"
+- **Max iterations**: 2
 
-If FAIL: Apply fixes, re-run review (max 2 iterations).
-If PASS: Proceed.
+If `--skip-review` flag was set during session init (check state file `review_state: skipped`), skip this step entirely and proceed.
+
+After review completes, update state file:
+- `review_state: completed`
+- `review_results.brainstorm`: `{score: N, iterations: N, timestamp: "ISO"}`
 
 ### 5. Present and transition
 
