@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "deep-work",
-      "description": "4-phase workflow with 3-tier Quality Gate, Multi-preset Profile System, Session Resume, and Checkpoint verification",
-      "version": "3.3.3",
+      "description": "Evidence-Driven Development Protocol — TDD enforcement, slice/receipt system, 5-phase workflow, Bash hook monitoring, 2-stage code review",
+      "version": "4.0.1",
       "source": "./plugins/deep-work"
     }
   ]

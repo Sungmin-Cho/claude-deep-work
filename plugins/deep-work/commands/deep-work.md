@@ -1,12 +1,12 @@
 ---
 allowed-tools: Bash, Read, Write, Glob, AskUserQuestion
-description: "Start a deep work session with 4-phase workflow (Research → Plan → Implement → Test)"
+description: "Start a deep work session with Evidence-Driven Protocol (Brainstorm → Research → Plan → Implement → Test)"
 argument-hint: task description
 ---
 
 # Deep Work Session Initialization
 
-You are initializing a **Deep Work** session — a structured 4-phase workflow that enforces strict separation between planning and coding.
+You are initializing a **Deep Work** session — an Evidence-Driven Development Protocol with 5 phases (Brainstorm → Research → Plan → Implement → Test) that enforces TDD, receipt-based evidence collection, and strict separation between planning and coding.
 
 ## Language
 
@@ -19,6 +19,35 @@ The user wants to work on: **$ARGUMENTS**
 ## Instructions
 
 Follow these steps exactly:
+
+### 0. Update check
+
+The SessionStart hook runs `update-check.sh` and may output one of:
+- `JUST_UPGRADED <old> <new>` → Display: `✅ deep-work v{new}으로 업그레이드되었습니다! (v{old}에서)` and continue.
+- `UPGRADE_AVAILABLE <old> <new>` → Handle below.
+- (nothing) → Skip, continue to Step 1.
+
+**If `UPGRADE_AVAILABLE`:**
+
+1. Read `.claude/deep-work-profile.yaml` for `auto_update` field.
+
+2. **If `auto_update: true`**: Auto-upgrade without asking:
+   - Detect install type: check if plugin directory has `.git` (git install) or not (npm/marketplace)
+   - **Git install**: `cd <plugin-dir> && git fetch origin && git reset --hard origin/main`
+   - **npm install**: `npm update @claude-deep-work/deep-work`
+   - Write current version to `~/.claude/.deep-work-just-upgraded` as marker
+   - Display: `🔄 deep-work v{old} → v{new} 자동 업그레이드 완료!`
+   - If upgrade fails: display warning and continue with current version
+
+3. **If `auto_update` is not set or false**: Use AskUserQuestion:
+   ```
+   🔄 deep-work v{new}이 사용 가능합니다 (현재 v{old}). 업그레이드하시겠습니까?
+   ```
+   Options:
+   - A) 지금 업그레이드 → Execute upgrade (same as auto), continue
+   - B) 항상 최신 상태 유지 → Set `auto_update: true` in profile, execute upgrade
+   - C) 나중에 → Write snooze state to `~/.claude/.deep-work-update-snoozed` (escalating backoff: 24h → 48h → 1 week)
+   - D) 다시 묻지 않기 → Set `update_check: false` in profile
 
 ### 1. Check for existing active session
 
@@ -48,6 +77,8 @@ Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string
 | `--team` | Override `team_mode` to `"team"` for this session only |
 | `--zero-base` | Override `project_type` to `"zero-base"` for this session only |
 | `--skip-research` | Override `start_phase` to `"plan"` for this session only |
+| `--skip-brainstorm` | Skip Phase 0 brainstorm, start at research |
+| `--tdd=MODE` | Set TDD mode: `strict` (default), `relaxed`, `coaching`, `spike` |
 | `--no-branch` | Override `git_branch` to `false` for this session only |
 | `--profile=X` | Use preset named `X` directly (skip interactive selection) |
 

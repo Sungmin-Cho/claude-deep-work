@@ -1,13 +1,25 @@
 {
-  "description": "Phase enforcement, file tracking, and session lifecycle hooks",
+  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v4.0 Evidence-Driven Protocol)",
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-check.sh",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh",
             "timeout": 5
           }
         ]
@@ -15,11 +27,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Write|Edit|MultiEdit|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
+            "command": "CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
             "timeout": 3
           }
         ]

@@ -50,7 +50,7 @@ If `iteration_count` > 0 and a previous `$WORK_DIR/plan.v{iteration_count}.md` e
 1. Read the previous plan version (`plan.v{iteration_count}.md`)
 2. Read the new plan.md
 3. Compare structurally:
-   - **Task Checklist**: Match tasks by file path to detect added/modified/deleted
+   - **Slice Checklist**: Match tasks by file path to detect added/modified/deleted
    - **Files to Modify**: Compare file lists (new files added, files removed)
    - **Architecture Decision**: Text comparison for key changes
    - **Risk Level**: Compare Plan Summary risk levels
@@ -128,6 +128,15 @@ If feedback exists, incorporate it into the updated plan.
 
 Write `$WORK_DIR/plan.md` with the following structure. The document MUST begin with Plan Summary (pyramid principle: conclusions first).
 
+**v4.0 Slice Format**: Each task in the plan is a "slice" — a self-contained unit of work with its own TDD cycle. Every slice MUST have:
+- `files`: list of files this slice modifies
+- `failing_test`: the test that should fail before implementation
+- `verification_cmd`: command to verify the slice works
+- `spec_checklist`: specific requirements this slice must satisfy
+- `size`: S (< 30 min) / M (30-60 min) / L (1+ hour)
+
+The slice format replaces the previous `- [ ] Task N:` checklist format.
+
 **For existing codebases (`project_type: existing`):**
 
 ```markdown
@@ -184,11 +193,24 @@ If something goes wrong:
 1. `git stash` or `git reset` to [commit]
 2. Specific rollback steps...
 
-## Task Checklist
+## Slice Checklist
 
-- [ ] Task 1: [File path] — [What to do] — [Why]
-- [ ] Task 2: [File path] — [What to do] — [Why]
-- [ ] Task 3: [File path] — [What to do] — [Why]
+Each slice is a self-contained unit of work with its own TDD cycle and receipt.
+
+- [ ] SLICE-001: [Goal]
+  - files: [file1, file2]
+  - failing_test: [test file — test description]
+  - verification_cmd: [command to verify]
+  - spec_checklist: [requirement 1, requirement 2]
+  - size: S/M/L
+
+- [ ] SLICE-002: [Goal]
+  - files: [file1, file2]
+  - failing_test: [test file — test description]
+  - verification_cmd: [command to verify]
+  - spec_checklist: [requirement 1, requirement 2]
+  - size: S/M/L
+
 ...
 
 ## Open Questions
@@ -231,8 +253,15 @@ If something goes wrong:
 - `npm init ...` / `python -m venv ...`
 - 의존성 설치 명령어
 
-## Task Checklist
-- [ ] Task 1: [File path] — [What to do] — [Why]
+## Slice Checklist
+
+- [ ] SLICE-001: [Goal]
+  - files: [file1, file2]
+  - failing_test: [test file — test description]
+  - verification_cmd: [command to verify]
+  - spec_checklist: [requirement 1]
+  - size: S/M/L
+
 ...
 
 ## Open Questions
@@ -303,7 +332,7 @@ When the user says "승인", "approve", "approved", "LGTM", or similar approval 
 
 #### 5a. Mode re-evaluation (Team → Solo)
 
-**If `team_mode` is "team"**: Analyze the plan.md Task Checklist:
+**If `team_mode` is "team"**: Analyze the plan.md Slice Checklist:
 - Count the number of tasks
 - Count the number of unique file paths
 - Check if all tasks target the same file
@@ -331,7 +360,7 @@ If user declines: keep Team mode.
 
 #### 5a-2. Mode re-evaluation (Solo → Team)
 
-**If `team_mode` is "solo"**: Analyze the plan.md Task Checklist:
+**If `team_mode` is "solo"**: Analyze the plan.md Slice Checklist:
 
 If ALL of these conditions are met, suggest switching to Team:
 - Task count ≥ 6

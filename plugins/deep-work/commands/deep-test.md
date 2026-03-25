@@ -24,7 +24,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 Read `.claude/deep-work.local.md` and verify:
 - `current_phase` is `test`
-- plan.md's Task Checklist has all items marked as `[x]`
+- plan.md's Slice Checklist has all items marked as `[x]`
 
 If not, inform the user which prerequisite step is missing.
 
@@ -49,7 +49,26 @@ If `model_routing.test` is NOT "main":
 If `model_routing.test` is "main":
   - Proceed with existing behavior below
 
-### 1-2. Built-in Required Gate: Plan Alignment (Drift Detection)
+### 1-2. Built-in Required Gate: Receipt Completeness (v4.0)
+
+Check that all slices have receipt files before proceeding.
+
+**Steps**:
+1. Parse plan.md's Slice Checklist to get all SLICE-NNN IDs
+2. For each slice, check if `$WORK_DIR/receipts/SLICE-NNN.json` exists
+3. For each existing receipt, validate it has `status: "complete"` or `status: "partial"`
+4. If any slice has no receipt file → **FAIL**:
+   ```
+   ❌ Receipt Completeness 실패:
+      SLICE-001: ✅ complete
+      SLICE-002: ❌ receipt 없음
+      SLICE-003: ⚠️ partial (incomplete TDD cycle)
+
+   Implement 단계로 복귀하여 누락된 receipt를 생성하세요.
+   ```
+5. If all receipts exist → **PASS**, proceed to Plan Alignment
+
+### 1-3. Built-in Required Gate: Plan Alignment (Drift Detection)
 
 If `$WORK_DIR/plan.md` exists, perform Plan Alignment check **before** any other verification. This gate runs automatically — it does not need to be listed in the Quality Gates table.
 
@@ -212,7 +231,66 @@ Display inline:
   ⚠️ [Gate 3]: 72% (≥80% 권고) — 경고만, 차단 없음
 ```
 
-### 4-2. Built-in Insight Analysis & Insight Gate Results
+### 4-2. Built-in Required Gate: Spec Compliance Review (v4.0)
+
+After all test/lint gates pass, run spec compliance review using a subagent.
+
+**Steps**:
+1. Read plan.md's Slice Checklist to get all spec_checklist items per slice
+2. Read each receipt's `spec_compliance.checklist` results
+3. Spawn a fresh Agent (spec-compliance-reviewer):
+   - **Input**: plan.md + all receipt JSON files
+   - **Prompt**: "For each slice, verify that every spec_checklist item is implemented correctly. Compare the plan's requirements against the actual code changes (from receipt git_diff). Return JSON: { result: 'PASS'|'FAIL', per_slice: [{ slice_id, checklist_pass: bool, missing: [...] }] }"
+   - **Model**: Use model_routing.test or "haiku"
+4. Parse reviewer result:
+   - All slices pass → **PASS**
+   - Any slice fails → **FAIL** (Required Gate)
+5. Update each receipt: `spec_compliance.reviewer_result`
+6. Display:
+   ```
+   📋 Spec Compliance Review:
+      SLICE-001: ✅ 3/3 requirements met
+      SLICE-002: ❌ 2/3 — missing: [requirement]
+   ```
+
+### 4-3. Built-in Advisory Gate: Code Quality Review (v4.0)
+
+Run code quality review using a subagent. This is advisory — does NOT block.
+
+**Steps**:
+1. Get the full git diff for this session
+2. Spawn a fresh Agent (code-quality-reviewer):
+   - **Input**: git diff + plan.md
+   - **Prompt**: "Review this code diff for quality issues. Check: error handling, naming, DRY violations, type safety, test coverage quality. Return JSON: { result: 'PASS'|'WARN', findings: [{ severity: 'critical'|'important'|'suggestion', file, issue, fix }] }"
+   - **Model**: Use model_routing.test or "haiku"
+3. Parse reviewer result:
+   - No critical findings → **PASS**
+   - Any critical findings → **WARN** (Advisory, does not block)
+4. Update receipts: `code_review.reviewer_result` and `code_review.findings`
+5. Display:
+   ```
+   🔍 Code Quality Review:
+      Critical: 0 | Important: 2 | Suggestions: 5
+      ⚠️ [important finding 1]
+      ⚠️ [important finding 2]
+   ```
+
+### 4-4. Built-in Required Gate: Verification Evidence (v4.0)
+
+Verify that actual test execution evidence exists — not just claims of passing.
+
+**Steps**:
+1. For each receipt, check that `tdd.passing_test_output` is non-empty
+2. Check that `verification.full_test_suite` shows a PASS result
+3. If any receipt lacks actual test output → **FAIL**:
+   ```
+   ❌ Verification Evidence 부족:
+      SLICE-002: passing_test_output가 비어있음
+      실제 테스트 실행 증거가 필요합니다.
+   ```
+4. All evidence present → **PASS**
+
+### 4-5. Built-in Insight Analysis & Insight Gate Results
 
 After all Required and Advisory gates complete (regardless of their results), run the built-in Insight analysis. Insight gates NEVER affect pass/fail determination.
 

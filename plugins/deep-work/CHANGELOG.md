@@ -7,6 +7,50 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-03-25
+
+### Added
+- **Git-based auto-update check**: SessionStart hook checks GitHub for newer versions on every session start. Supports auto-update, snooze (escalating backoff: 24h→48h→1w), and opt-out. Modeled after gstack's update-check pattern.
+- **Shell injection prevention**: phase-guard.sh and file-tracker.sh now pass values via `process.argv` instead of string interpolation, preventing injection from file paths containing special characters.
+
+### Fixed
+- macOS compatibility: removed `timeout` command usage (not available on macOS)
+- Version consistency: CLAUDE.md and TODOS.md now reflect correct v4.0 version
+
+## [4.0.0] - 2026-03-25
+
+### BREAKING — Evidence-Driven Development Protocol
+
+deep-work is now an **evidence-driven development protocol**. Every code change carries proof: failing test output, passing test output, git diff, spec compliance check, and code review — all collected as JSON receipts.
+
+### Added
+- **Phase 0: Brainstorm** (`/deep-brainstorm`): Explore "why" before "how" — problem definition, approach comparison, spec-reviewer validation. Skip with `--skip-brainstorm`.
+- **Slice-based execution**: Plan tasks are now "slices" — self-contained units with TDD cycles, file scope, verification commands, and spec checklists.
+- **TDD enforcement**: Hook-enforced state machine (PENDING→RED→RED_VERIFIED→GREEN_ELIGIBLE→GREEN→REFACTOR). Production code edits blocked until failing test exists. Modes: `strict`, `relaxed`, `coaching`, `spike`.
+- **Receipt system**: JSON evidence per slice in `receipts/SLICE-NNN.json` — test output, git diff, lint results, spec checklist, code review.
+- **Bash tool monitoring**: PreToolUse hook now intercepts Bash commands, blocking file-writing patterns (`echo >`, `sed -i`, `cp`, `tee`) during non-implement phases. Closes the bypass gap where AI could use shell redirects instead of Write/Edit.
+- **Systematic debugging** (`/deep-debug`): 4-phase root-cause investigation (investigate→analyze→hypothesize→fix). Auto-triggers on unexpected test failures. Escalates after 3 failed hypotheses.
+- **Slice management** (`/deep-slice`): Dashboard with ASCII progress visualization, manual activation, spike mode entry, slice reset with git stash.
+- **Receipt management** (`/deep-receipt`): Dashboard view, per-slice detail, export as JSON (CI/CD) or markdown (PR descriptions).
+- **2-stage code review**: Spec Compliance Review (required gate) + Code Quality Review (advisory gate) via subagents in test phase.
+- **Receipt Completeness Gate**: Required gate — blocks test phase if any slice lacks a receipt.
+- **Verification Evidence Gate**: Required gate — ensures actual test execution output exists.
+- **TDD Coaching mode**: Guides beginners through TDD with educational messages instead of hard blocks.
+- **Spike Mode Guard**: Auto-stashes spike code and resets slice on mode exit.
+- **29 unit tests**: Node.js test suite for phase-guard-core.js (TDD state machine, Bash detection, slice scope, receipt validation).
+
+### Changed
+- Hook architecture: bash+Node.js hybrid — fast path in bash (~50ms), complex logic in Node.js subprocess (~200ms).
+- Plan format: Task Checklist → Slice Checklist with per-slice metadata.
+- `hooks.json`: Added `Bash` to PreToolUse and PostToolUse matchers.
+- `phase-guard.sh`: Full rewrite as bash+Node hybrid.
+- `file-tracker.sh`: Extended for receipt collection and active slice mapping.
+- `deep-implement.md`: Full rewrite — slice-unit TDD execution.
+- `deep-test.md`: 4 new quality gates (Receipt, Spec, Quality, Evidence).
+- `deep-plan.md`: Slice format with TDD fields.
+- `deep-work.md`: Phase 0 option, `--tdd=MODE` flag, `--skip-brainstorm` flag.
+- `package.json`: Version 4.0.0.
+
 ## [3.3.3] - 2026-03-24
 
 ### Added

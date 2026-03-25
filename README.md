@@ -2,7 +2,7 @@
 
 **Stop Claude from coding before it thinks.**
 
-> AI coding tools are powerful but reckless — they skip analysis, ignore existing patterns, and start writing code before understanding the codebase. Deep Work fixes this by enforcing a **Research → Plan → Implement → Test** pipeline where code edits are *physically blocked* until the plan is approved.
+> AI coding tools are powerful but reckless — they skip analysis, ignore existing patterns, and start writing code before understanding the codebase. Deep Work fixes this with an **Evidence-Driven Development Protocol** — a **Brainstorm → Research → Plan → Implement → Test** pipeline where every code change must carry proof: failing test, passing test, spec compliance check, and code review receipt.
 
 [English](./plugins/deep-work/README.md) | [한국어](./plugins/deep-work/README.ko.md)
 
@@ -25,28 +25,32 @@ Without structure, Claude Code will:
 ```
 /deep-work "Add JWT authentication"
 
-  📖 Research ──→ 📋 Plan ──→ 🔨 Implement ──→ 🧪 Test
-     │               │             │                │
-  Analyze code    You review    Follows plan     Auto-verify
-  6 areas deep    & approve     exactly          lint/test/types
-     │               │             │                │
-  🔒 Code edits   🔒 Code edits  ✅ Edits        🔒 Code edits
-     BLOCKED         BLOCKED      ALLOWED           BLOCKED
+  🧠 Brainstorm ─→ 📖 Research ─→ 📋 Plan ─→ 🔨 Implement ─→ 🧪 Test
+     │                │              │            │                │
+  Why before       Analyze code   You review   TDD enforced     Receipt +
+  how (skip-able)  6 areas deep   & approve    per slice        2-stage review
+     │                │              │            │                │
+  🔒 Edits         🔒 Edits       🔒 Edits    ✅ Edits         🔒 Edits
+     BLOCKED          BLOCKED        BLOCKED    (with receipt)     BLOCKED
 ```
 
-**One command to start. One word ("approve") to ship.**
+**One command to start. Evidence-driven all the way through.**
 
 ## Key Features
 
+- **Evidence-Driven Protocol** — Every code change carries a JSON receipt: failing test, passing test, git diff, spec compliance, code review
+- **TDD Enforcement** — Hook-enforced state machine blocks production code edits until a failing test exists (strict/relaxed/coaching/spike modes)
+- **Bash Monitoring** — PreToolUse hook also intercepts `echo >`, `sed -i`, `cp`, `tee` — no file-write bypass via shell
+- **Slice-Based Execution** — Plan tasks are "slices" with per-slice TDD cycles, spec checklists, and receipts
+- **2-Stage Code Review** — Spec Compliance (required) + Code Quality (advisory) via subagents
+- **Systematic Debugging** — 4-phase root-cause investigation, auto-triggers on unexpected failures (`/deep-debug`)
+- **Phase 0 Brainstorm** — Optional "why before how" design exploration (`/deep-brainstorm`, skip-able)
 - **Phase Guard** — Code edits physically blocked via PreToolUse hook during non-implementation phases
-- **3-Tier Quality Gates** — Required (blocking), Advisory (warning), Insight (informational) — each gate type serves a different purpose
-- **Plan Alignment** — Built-in drift detection verifies your implementation matches the approved plan — catches missed items and scope creep
-- **SOLID Review** — Advisory design quality check against SRP, OCP, LSP, ISP, DIP with per-file scorecards
-- **Model Routing** — Assigns optimal models per phase (sonnet for research, haiku for tests) — **30-40% token savings**
-- **Incremental Research** — `--incremental` flag re-analyzes only git-changed areas — **60-80% time savings**
-- **Multi-Channel Notifications** — Get notified on Slack, Discord, Telegram, or any webhook when phases complete
+- **3-Tier Quality Gates** — Required (blocking), Advisory (warning), Insight (informational)
+- **Receipt Dashboard** — ASCII progress visualization per slice (`/deep-slice`, `/deep-receipt`)
+- **Auto-Update Check** — Git-based update detection on session start with auto-upgrade option
+- **Model Routing** — Assigns optimal models per phase — **30-40% token savings**
 - **Solo & Team Modes** — Single agent or parallel agent teams with cross-review
-- **Greenfield Support** — Zero-base mode for designing new projects from scratch
 
 ## Quick Start
 
@@ -64,10 +68,14 @@ claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-wor
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
-| `/deep-work <task>` | Init | Start session, configure options |
+| `/deep-work <task>` | Init | Start session, configure options, update check |
+| `/deep-brainstorm` | 0 | Design exploration: problem → approaches → spec (skip-able) |
 | `/deep-research` | 1 | Analyze codebase → `research.md` |
-| `/deep-plan` | 2 | Create plan → `plan.md` → approve → auto-implement |
-| `/deep-test` | 4 | Verify → drift check → quality gates → pass or loop back |
+| `/deep-plan` | 2 | Create slice-based plan → `plan.md` → approve → auto-implement |
+| `/deep-test` | 4 | Verify → receipt check → spec review → quality gates |
+| `/deep-debug` | 3* | Systematic debugging: investigate → analyze → hypothesize → fix |
+| `/deep-slice` | 3* | Slice dashboard, activation, spike mode |
+| `/deep-receipt` | — | Receipt dashboard, view, export (JSON/MD) |
 | `/drift-check` | — | Plan-vs-implementation alignment check |
 | `/solid-review` | — | SOLID design principles review |
 | `/deep-status` | — | Progress, timing, session history |
