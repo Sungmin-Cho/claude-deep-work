@@ -33,7 +33,7 @@ Check if `$WORK_DIR/report.md` exists.
 
 - If it exists, ask the user:
   ```
-  📄 기존 리포트가 있습니다: $WORK_DIR/report.md
+  기존 리포트가 있습니다: $WORK_DIR/report.md
 
   1. 기존 리포트 표시
   2. 리포트 재생성 (현재 상태 기반)
@@ -199,13 +199,13 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 ### 6. Display confirmation
 
 ```
-📄 세션 리포트가 생성되었습니다!
+세션 리포트가 생성되었습니다!
 
-📂 위치: $WORK_DIR/report.md
+위치: $WORK_DIR/report.md
 
-📊 세션 상태: [current_phase]
-📋 작업: [task_description]
-⏱️ 총 소요 시간: [total duration]
+세션 상태: [current_phase]
+작업: [task_description]
+총 소요 시간: [total duration]
 
 리포트를 검토하고 필요시 /deep-report 로 재생성할 수 있습니다.
 ```
@@ -215,7 +215,7 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 If `git_branch` is set in the state file and `current_phase` is `idle`:
 
 ```
-📝 변경사항을 커밋할까요?
+변경사항을 커밋할까요?
    브랜치: [git_branch]
    변경 파일: [N]개
 

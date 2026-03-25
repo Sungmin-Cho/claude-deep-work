@@ -42,7 +42,7 @@ For each `session-receipt.json`, extract:
 ### 3. Display session list
 
 ```
-📊 Deep Work Session History
+Deep Work Session History
 
 ┌────┬──────────────────────┬────────────┬────────┬──────────┬───────────┐
 │ #  │ Task                 │ Date       │ Slices │ Outcome  │ Model     │
@@ -58,7 +58,7 @@ S=sonnet H=haiku O=opus M=main
 ### 4. Display aggregate statistics
 
 ```
-📈 Aggregate Stats (최근 [N]개 세션)
+Aggregate Stats (최근 [N]개 세션)
 
    TDD 준수율: strict [N]% | relaxed [N]% | spike [N]%
    모델 사용: haiku [N]회 | sonnet [N]회 | opus [N]회
@@ -76,7 +76,7 @@ If `estimated_cost` data is available:
 Compare the most recent 3 sessions to the 3 before that (if available):
 
 ```
-📉 트렌드 (최근 3 vs 이전 3)
+트렌드 (최근 3 vs 이전 3)
    TDD strict 비율: [N]% → [N]% [↑/↓/→]
    완료율:          [N]% → [N]% [↑/↓/→]
    평균 슬라이스:    [N]개 → [N]개 [↑/↓/→]

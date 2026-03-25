@@ -34,8 +34,8 @@ Stop here.
 ```
 ℹ️ 완료된 세션입니다.
 
-📄 리포트 확인: /deep-report
-🆕 새 세션 시작: /deep-work <작업 설명>
+리포트 확인: /deep-report
+새 세션 시작: /deep-work <작업 설명>
 ```
 
 Stop here.
@@ -53,7 +53,7 @@ If `worktree_enabled` is `true` in the state file:
    - All subsequent Bash calls should prepend `cd [absolute_worktree_path] &&`
    - Display:
      ```
-     🌿 Worktree 복원: [worktree_branch]
+     Worktree 복원: [worktree_branch]
         Path: [worktree_path]
      ```
 
@@ -118,15 +118,15 @@ Based on the current phase, load the relevant artifacts to restore AI context:
 ### 3. Display resume status
 
 ```
-🔄 Deep Work 세션을 재개합니다
+Deep Work 세션을 재개합니다
 
-📋 작업: [task_description]
-📍 현재 단계: [Phase 이름] ([phase_context])
-📂 작업 폴더: [work_dir]
-🎯 프리셋: [preset]
-⏱️ 시작: [started_at]
+작업: [task_description]
+현재 단계: [Phase 이름] ([phase_context])
+작업 폴더: [work_dir]
+프리셋: [preset]
+시작: [started_at]
 
-📥 컨텍스트 복원:
+컨텍스트 복원:
   [✅/⬜] research.md [요약 로드 / 없음]
   [✅/⬜] plan.md [전문 로드 / 요약 로드 / 없음]
   [✅/⬜] 체크리스트 진행률: N/M (XX%)    ← implement만
@@ -136,7 +136,7 @@ Based on the current phase, load the relevant artifacts to restore AI context:
 ▶️ [다음 행동]
 ```
 
-Omit lines that don't apply to the current phase (e.g., don't show 체크리스트 for research phase). (If `preset` is empty or not set, omit the 🎯 프리셋 line.)
+Omit lines that don't apply to the current phase (e.g., don't show 체크리스트 for research phase). (If `preset` is empty or not set, omit the 프리셋 line.)
 
 ### 4. Auto-continue
 
@@ -157,7 +157,7 @@ Read the `/deep-research` command file (located at the same directory level as t
 - If `$WORK_DIR/plan.md` **exists** and `plan_approved` is `false`:
   Read the plan.md content and present it for review:
   ```
-  📋 이전에 작성된 계획서가 있습니다.
+  이전에 작성된 계획서가 있습니다.
 
   [plan.md의 Plan Summary 섹션 표시]
 

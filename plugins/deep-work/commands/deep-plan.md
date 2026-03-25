@@ -92,11 +92,11 @@ If `iteration_count` > 0 and a previous `$WORK_DIR/plan.v{iteration_count}.md` e
 
 5. Display summary during the review presentation (add to Section 4 display):
 ```
-📊 Plan Diff (v{N} → v{N+1}):
+Plan Diff (v{N} → v{N+1}):
   ➕ 추가: [N]개 태스크
   ✏️ 수정: [N]개 태스크
   ➖ 삭제: [N]개 태스크
-  📄 상세: $WORK_DIR/plan-diff.md
+  상세: $WORK_DIR/plan-diff.md
 ```
 
 If `iteration_count` is 0, skip this section entirely.
@@ -108,7 +108,7 @@ Read `references/plan-templates.md` from the skill directory to check for matchi
 Analyze the task description and research.md to identify the most appropriate template:
 
 ```
-📋 적합한 Plan 템플릿이 있습니다: [Template Name]
+적합한 Plan 템플릿이 있습니다: [Template Name]
    템플릿을 활용할까요? (y/n)
 ```
 
@@ -305,7 +305,7 @@ After structural review completes:
 
 Display:
 ```
-📊 Plan Structural Review: [score]/10 ([iterations]회 반복)
+Plan Structural Review: [score]/10 ([iterations]회 반복)
 ```
 
 ### 3.6. Adversarial Cross-Model Review
@@ -320,7 +320,7 @@ Read `references/review-gate.md` and follow the **Adversarial Review Protocol**.
 
 **Progress display during execution:**
 ```
-🔄 크로스 모델 리뷰 진행 중...
+크로스 모델 리뷰 진행 중...
    ⏳ [Model] 리뷰 중... (예상 30-60초)
 ```
 
@@ -338,12 +338,12 @@ After all models complete, Claude synthesizes results following the protocol's s
   - Count modified sections (markdown ## headings)
   - Display re-review recommendation:
     ```
-    📝 plan.md가 수정되었습니다.
+    plan.md가 수정되었습니다.
 
-    🔄 크로스 리뷰를 한번 더 진행할까요?
+    크로스 리뷰를 한번 더 진행할까요?
       1. ✅ 네, 수정 사항 검증 (추천 — [N]개+ 섹션 수정됨)
       2. ❌ 아니요, 이대로 진행
-      3. 📋 Structural review만 다시 실행 (빠름)
+      3. Structural review만 다시 실행 (빠름)
     ```
   - Max 2 re-review loops
 
@@ -355,11 +355,11 @@ Update state: `review_results.plan.model_scores`, `review_results.plan.conflicts
 Display:
 
 ```
-📋 구현 계획이 작성되었습니다!
+구현 계획이 작성되었습니다!
 
-📄 계획서: $WORK_DIR/plan.md
+계획서: $WORK_DIR/plan.md
 
-📊 계획 요약:
+계획 요약:
   - 변경 파일 수: N개
   - 신규 파일: N개
   - 수정 파일: N개
@@ -368,7 +368,7 @@ Display:
 
 ⚠️ 아직 구현을 시작하지 않습니다!
 
-📋 계획이 준비되었습니다. 리뷰해주세요.
+계획이 준비되었습니다. 리뷰해주세요.
 
 피드백 방법:
   • 채팅으로 수정 요청 (예: "3번 항목을 B 접근법으로 변경해줘")
@@ -384,7 +384,7 @@ When the user provides chat-based feedback instead of approval:
 2. Apply the user's feedback to modify plan.md
 3. Highlight what was changed:
    ```
-   📝 plan.md가 수정되었습니다:
+   plan.md가 수정되었습니다:
      - [변경된 부분 요약 1]
      - [변경된 부분 요약 2]
 
@@ -440,7 +440,7 @@ If any of these conditions are met, suggest switching to Solo:
 - All tasks target the same file
 
 ```
-💡 모드 전환 제안
+모드 전환 제안
 
 계획을 분석한 결과, 이 작업은 Solo 모드가 더 효율적일 수 있습니다:
 - 태스크 수: [N]개 (≤3)
@@ -465,7 +465,7 @@ If ALL of these conditions are met, suggest switching to Team:
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set
 
 ```
-💡 모드 전환 제안
+모드 전환 제안
 
 계획을 분석한 결과, 이 작업은 Team 모드가 더 효율적일 수 있습니다:
 - 태스크 수: [N]개 (≥6)

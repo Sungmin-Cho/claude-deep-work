@@ -76,7 +76,7 @@ Read `references/review-gate.md` from the skill directory. Follow its protocol e
 
 Display results:
 ```
-📊 Structural Review 결과: ${phase}
+Structural Review 결과: ${phase}
 
   Overall Score: ${score}/10 — ${grade} (PASS/WARNING/FAIL)
 
@@ -88,12 +88,12 @@ Display results:
   - Major: ${majorCount}
   - Minor: ${minorCount}
 
-  📄 상세: $WORK_DIR/${phase}-review.json
+  상세: $WORK_DIR/${phase}-review.json
 ```
 
 If score < 5 (FAIL), inform the user that review gate is blocking:
 ```
-🚫 Structural review FAIL (${score}/10).
+⛔ Structural review FAIL (${score}/10).
    문서를 수정한 후 /deep-review를 다시 실행하세요.
 ```
 
@@ -140,7 +140,7 @@ If conditions are met:
 
 8. Display summary:
    ```
-   🔍 Adversarial Review 결과:
+   Adversarial Review 결과:
 
      Models: ${modelList}
      Consensus Issues: ${consensusCount}개
@@ -149,7 +149,7 @@ If conditions are met:
 
      Gate Status: ${gateStatus}
 
-     📄 상세: $WORK_DIR/adversarial-review.json
+     상세: $WORK_DIR/adversarial-review.json
    ```
 
 ### 6. Apply review gate blocking
@@ -180,9 +180,9 @@ Update `.claude/deep-work.local.md`:
 ```
 ✅ Review 완료!
 
-  📊 Structural: ${score}/10 (${grade})
+  Structural: ${score}/10 (${grade})
   ${adversarialLine}
-  📄 결과 파일: $WORK_DIR/${phase}-review.json
+  결과 파일: $WORK_DIR/${phase}-review.json
   ${adversarialFileLine}
 
   ${nextStepMessage}

@@ -17,7 +17,7 @@ For each task in the checklist:
 #### 1. Announce
 Tell the user what you're about to do:
 ```
-🔨 Task 3/8: path/to/file.ts — Adding UserService class
+Task 3/8: path/to/file.ts — Adding UserService class
 ```
 
 #### 2. Read First

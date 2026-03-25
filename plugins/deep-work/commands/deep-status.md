@@ -26,7 +26,7 @@ If `$ARGUMENTS` contains `--compare`:
 4. Read research.md, plan.md, and report.md from both sessions
 5. Display a comparison summary:
    ```
-   📊 세션 비교
+   세션 비교
 
    | 항목 | 세션 A | 세션 B |
    |------|--------|--------|
@@ -88,44 +88,44 @@ From `$WORK_DIR/plan.md`, count:
 Show a comprehensive status report. If the `team_mode` field is missing from the state file, treat it as "Solo" (backward compatibility).
 
 ```
-📊 Deep Work 세션 상태
+Deep Work 세션 상태
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📋 작업: [task description]
-📂 작업 폴더: [work_dir]
-🕐 시작: [started_at]
-🔄 반복 횟수: [iteration_count]
-🤝 작업 모드: [Solo / Team]
-🏗️ 프로젝트 타입: [Existing / Zero-Base]
-🌿 Git 브랜치: [git_branch or "없음"]
-🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
-🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
+작업: [task description]
+작업 폴더: [work_dir]
+시작: [started_at]
+반복 횟수: [iteration_count]
+작업 모드: [Solo / Team]
+프로젝트 타입: [Existing / Zero-Base]
+Git 브랜치: [git_branch or "없음"]
+모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
+알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
-📍 현재 단계: [Phase name with emoji]
-   🧠 Phase 0 (Brainstorm): [✅ 완료 / ⏳ 진행중 / ⬜ 대기 / ⏭️ 생략]
-   🔬 Phase 1 (Research):   [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
-   📐 Phase 2 (Plan):       [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
-   🔨 Phase 3 (Implement):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
-   🧪 Phase 4 (Test):       [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
+현재 단계: [Phase name with emoji]
+   Phase 0 (Brainstorm): [✅ 완료 / ⏳ 진행중 / ⬜ 대기 / ⏭️ 생략]
+   Phase 1 (Research):   [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   Phase 2 (Plan):       [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
+   Phase 3 (Implement):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   Phase 4 (Test):       [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
 
-📈 구현 진행률: [N/M 완료 (XX%)]
+구현 진행률: [N/M 완료 (XX%)]
    ████████░░ XX%
 
-⏱️ Phase별 소요 시간:
+Phase별 소요 시간:
    Brainstorm: [duration or "N/A" or "생략"]
    Research: [duration or "N/A"]
    Plan: [duration or "N/A"]
    Implement: [duration or "N/A"]
    Test: [duration or "N/A"]
-📊 Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
-🔬 리뷰 현황:
+Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
+리뷰 현황:
    Brainstorm: [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
    Research: [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
    Plan (Structural): [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
    Plan (Adversarial): [Claude N/10, Codex N/10 — Consensus N, Conflicts N, Waivers N / 미실행 / 도구 미설치]
-🔍 크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
+크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
 
-📁 산출물:
+산출물:
    - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]
    - $WORK_DIR/research.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/plan.md: [존재함 ✅ / 없음 ⬜]
@@ -136,7 +136,7 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
    - $WORK_DIR/file-changes.log: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/plan-diff.md: [존재함 ✅ / 없음 ⬜]
 
-👉 다음 행동: [안내 메시지]
+다음 행동: [안내 메시지]
 ```
 
 Adjust the "다음 행동" based on the current phase:
@@ -158,12 +158,12 @@ ls -d deep-work/*/  2>/dev/null
 If subdirectories exist, display:
 
 ```
-📂 세션 히스토리:
+세션 히스토리:
    - deep-work/20260307-143022-jwt-기반-인증/ [report.md 존재 여부]
    - deep-work/20260306-091500-api-리팩토링/ [report.md 존재 여부]
    ...
 
-💡 TIP: /deep-status --compare 로 두 세션을 비교할 수 있습니다.
+TIP: /deep-status --compare 로 두 세션을 비교할 수 있습니다.
 ```
 
 For each folder, check if `report.md` exists and show:

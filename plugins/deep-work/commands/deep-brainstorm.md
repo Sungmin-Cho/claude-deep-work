@@ -41,7 +41,7 @@ Engage the user in a structured design conversation:
 
 #### 2a. Problem Definition
 ```
-🧠 브레인스톰 시작: [task_description]
+브레인스톰 시작: [task_description]
 
 먼저 문제를 정확히 이해하겠습니다.
 ```
@@ -56,7 +56,7 @@ Ask the user (one at a time):
 Based on the user's answers, propose 2-3 distinct approaches:
 
 ```
-📊 접근 방식 비교:
+접근 방식 비교:
 
 APPROACH A: [Name]
   요약: [1-2문장]
@@ -70,7 +70,7 @@ APPROACH B: [Name]
   단점: [bullets]
   복잡도: S/M/L
 
-💡 추천: [A/B] — [이유]
+추천: [A/B] — [이유]
 ```
 
 Wait for user's choice or feedback.
@@ -142,11 +142,11 @@ After review completes, update state file:
 ### 5. Present and transition
 
 ```
-📋 브레인스톰 완료!
+브레인스톰 완료!
 
-📄 문서: $WORK_DIR/brainstorm.md
-🎯 선택된 접근법: [Approach Name]
-📊 Spec Review: [score]/10
+문서: $WORK_DIR/brainstorm.md
+선택된 접근법: [Approach Name]
+Spec Review: [score]/10
 
 다음 단계: Research 단계로 진행합니다.
 ```

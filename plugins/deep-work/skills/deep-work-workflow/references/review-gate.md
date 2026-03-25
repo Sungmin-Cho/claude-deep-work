@@ -222,7 +222,7 @@ Claude가 모든 모델 결과를 종합하여 다음을 도출한다:
 각 conflict에 대해 `AskUserQuestion`으로 4가지 선택지를 제시한다:
 
 ```
-🔀 Conflict detected on: [dimension / section]
+Conflict detected on: [dimension / section]
 
   Claude (score: ${claudeScore}): ${claudeAssessment}
   ${otherModel} (score: ${otherScore}): ${otherAssessment}
@@ -280,7 +280,7 @@ Conflict resolution으로 plan.md가 수정된 후, 변경 범위에 따라 re-r
 | 50줄 미만 변경 | Skip re-review |
 
 ```
-📝 plan.md가 수정되었습니다 (${changedSections}개 섹션, ${changedLines}줄 변경).
+plan.md가 수정되었습니다 (${changedSections}개 섹션, ${changedLines}줄 변경).
 
   권장: ${recommendation}
   Re-review를 실행할까요? (y/n)
@@ -298,7 +298,7 @@ Conflict resolution으로 plan.md가 수정된 후, 변경 범위에 따라 re-r
 Codex/Gemini 실행 중 (30-120초 소요) 진행 상황을 표시한다:
 
 ```
-🔄 ${model} 리뷰 실행 중... (예상 30-120초)
+${model} 리뷰 실행 중... (예상 30-120초)
 ```
 
 60초 경과 시 경고:

@@ -32,7 +32,7 @@ This command activates automatically when:
 
 1. **Read the error carefully**:
    ```
-   🔍 에러 분석:
+   에러 분석:
       테스트: [failing test name]
       에러 메시지: [exact error]
       스택 트레이스: [relevant lines]
@@ -56,7 +56,7 @@ This command activates automatically when:
 
 3. **Trace data flow**: Follow the data from input to the failure point:
    ```
-   📊 데이터 흐름:
+   데이터 흐름:
       입력: [source] → [transform1] → [transform2] → ❌ [failure point]
       예상: [expected value at failure point]
       실제: [actual value at failure point]
@@ -66,7 +66,7 @@ This command activates automatically when:
 
 1. **Form ONE hypothesis**: Based on evidence, not guessing
    ```
-   💡 가설:
+   가설:
       원인: [specific root cause]
       근거: [evidence supporting this hypothesis]
       검증 방법: [how to test this hypothesis]

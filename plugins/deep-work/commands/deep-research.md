@@ -420,7 +420,7 @@ After review completes, update state file:
 
 Display:
 ```
-📊 Structural Review 결과: [score]/10 ([iterations]회 반복)
+Structural Review 결과: [score]/10 ([iterations]회 반복)
 ```
 
 ## 5. Guide the user
@@ -430,15 +430,15 @@ Display:
 ```
 ✅ Research 단계가 완료되었습니다!
 
-📄 연구 결과: $WORK_DIR/research.md
+연구 결과: $WORK_DIR/research.md
 
-📊 분석 요약:
+분석 요약:
   - [분석한 주요 내용 요약 3-5줄]
 
-⚡ 현재 상태: Plan 단계로 전환됨
+현재 상태: Plan 단계로 전환됨
    - 여전히 코드 파일 수정이 차단됩니다
 
-👉 다음 단계:
+다음 단계:
   1. $WORK_DIR/research.md 를 검토하세요
   2. 특정 영역만 재분석하려면: /deep-research --scope=api,data
   3. 준비되면 /deep-plan 을 실행하세요
@@ -446,7 +446,7 @@ Display:
 
 If Team mode was used, also display:
 ```
-🤝 팀 리서치 결과:
+팀 리서치 결과:
   - arch-analyst: $WORK_DIR/research-architecture.md
   - pattern-analyst: $WORK_DIR/research-patterns.md
   - risk-analyst: $WORK_DIR/research-dependencies.md

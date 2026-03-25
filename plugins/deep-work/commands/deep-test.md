@@ -117,7 +117,7 @@ Read project root configuration files to identify available verification command
 Present detected commands to the user for confirmation:
 
 ```
-🧪 감지된 검증 명령어:
+감지된 검증 명령어:
   1. ✅ [command 1]
   2. ✅ [command 2]
   3. ✅ [command 3]
@@ -225,7 +225,7 @@ Update `quality_gates_passed` in the state file:
 
 Display inline:
 ```
-📊 Quality Gate 결과:
+Quality Gate 결과:
   ✅ [Gate 1]: PASS
   ✅ [Gate 2]: PASS
   ⚠️ [Gate 3]: 72% (≥80% 권고) — 경고만, 차단 없음
@@ -248,7 +248,7 @@ After all test/lint gates pass, run spec compliance review using a subagent.
 5. Update each receipt: `spec_compliance.reviewer_result`
 6. Display:
    ```
-   📋 Spec Compliance Review:
+   Spec Compliance Review:
       SLICE-001: ✅ 3/3 requirements met
       SLICE-002: ❌ 2/3 — missing: [requirement]
    ```
@@ -269,7 +269,7 @@ Run code quality review using a subagent. This is advisory — does NOT block.
 4. Update receipts: `code_review.reviewer_result` and `code_review.findings`
 5. Display:
    ```
-   🔍 Code Quality Review:
+   Code Quality Review:
       Critical: 0 | Important: 2 | Suggestions: 5
       ⚠️ [important finding 1]
       ⚠️ [important finding 2]
@@ -330,10 +330,10 @@ Also check `quality_gates_passed` if Quality Gates were defined:
    ```
    ✅ 모든 검증 통과! 세션이 완료되었습니다.
 
-   🧪 검증 결과:
+   검증 결과:
      [result table]
 
-   📄 상세 결과: $WORK_DIR/test-results.md
+   상세 결과: $WORK_DIR/test-results.md
    ```
 
 3. **Send notification**:
@@ -345,7 +345,7 @@ Also check `quality_gates_passed` if Quality Gates were defined:
 
 5. **Git commit suggestion** (if `git_branch` is set in state file):
    ```
-   📝 변경사항을 커밋할까요?
+   변경사항을 커밋할까요?
       브랜치: [git_branch]
       변경 파일: [N]개
 
