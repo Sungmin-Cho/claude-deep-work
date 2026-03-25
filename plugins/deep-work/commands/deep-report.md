@@ -58,6 +58,7 @@ Read all available session artifacts:
 ### 4. Calculate phase durations
 
 From the state file, calculate time spent in each phase:
+- Brainstorm: `brainstorm_completed_at` - `brainstorm_started_at` (if both exist; "Skipped" if brainstorm was not run)
 - Research: `research_completed_at` - `research_started_at`
 - Plan: `plan_completed_at` - `plan_started_at`
 - Implement: `implement_completed_at` - `implement_started_at`
@@ -90,11 +91,16 @@ Write `$WORK_DIR/report.md` with the following structure:
 ## Phase Duration
 | Phase | Started | Completed | Duration |
 |-------|---------|-----------|----------|
+| Brainstorm | [timestamp] | [timestamp] | [duration or "Skipped"] |
 | Research | [timestamp] | [timestamp] | [duration] |
 | Plan | [timestamp] | [timestamp] | [duration] |
 | Implement | [timestamp] | [timestamp] | [duration] |
 | Test | [timestamp] | [timestamp] | [duration] |
 | **Total** | | | **[total duration]** |
+
+## Brainstorm Summary
+[If brainstorm.md exists: chosen approach, key decisions, success criteria]
+[If brainstorm was skipped: "Brainstorm phase skipped (--skip-brainstorm)."]
 
 ## Research Summary
 [3-5 bullet points summarizing the key findings from research.md]

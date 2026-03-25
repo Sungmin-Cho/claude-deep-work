@@ -7,6 +7,50 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-03-25
+
+### Added
+- **Git 기반 자동 업데이트 체크**: SessionStart 훅에서 GitHub 최신 버전 확인. 자동 업그레이드, 스누즈(24h→48h→1w), 비활성화 지원.
+- **Shell injection 방지**: phase-guard.sh, file-tracker.sh에서 `process.argv`로 안전한 값 전달.
+
+### Fixed
+- macOS 호환성: `timeout` 명령 제거 (macOS 미지원)
+- 버전 일관성: CLAUDE.md, TODOS.md에 올바른 v4.0 버전 반영
+
+## [4.0.0] - 2026-03-25
+
+### BREAKING — Evidence-Driven Development Protocol
+
+deep-work이 **evidence-driven development protocol**로 전환되었습니다. 모든 코드 변경에 증거가 수반됩니다: failing test output, passing test output, git diff, spec compliance check, code review — 모두 JSON receipt으로 수집됩니다.
+
+### Added
+- **Phase 0: 브레인스톰** (`/deep-brainstorm`): "왜 만드는가"를 먼저 탐색 — 문제 정의, 접근법 비교, spec-reviewer 검증. `--skip-brainstorm`으로 생략 가능.
+- **Slice 기반 실행**: Plan 태스크가 "slice"로 변환 — per-slice TDD 사이클, 파일 범위, 검증 커맨드, 스펙 체크리스트 포함.
+- **TDD 강제**: Hook 기반 상태 머신 (PENDING→RED→RED_VERIFIED→GREEN_ELIGIBLE→GREEN→REFACTOR). failing test 없이 production 코드 수정 차단. 모드: `strict`, `relaxed`, `coaching`, `spike`.
+- **Receipt 시스템**: slice별 JSON 증거 수집 (`receipts/SLICE-NNN.json`) — test output, git diff, lint, spec checklist, code review.
+- **Bash 도구 감시**: PreToolUse 훅이 Bash 커맨드도 감시. `echo >`, `sed -i`, `cp`, `tee` 등 파일 쓰기 패턴 탐지/차단.
+- **체계적 디버깅** (`/deep-debug`): 4단계 root-cause 조사 (investigate→analyze→hypothesize→fix). 예기치 않은 테스트 실패 시 자동 진입. 3회 실패 후 에스컬레이션.
+- **Slice 관리** (`/deep-slice`): ASCII 진행 대시보드, 수동 활성화, spike 모드, slice 리셋.
+- **Receipt 관리** (`/deep-receipt`): 대시보드 뷰, per-slice 상세, JSON/Markdown export.
+- **2단계 코드 리뷰**: Spec Compliance Review (required) + Code Quality Review (advisory) — 서브에이전트 기반.
+- **Receipt Completeness Gate** (required): 모든 slice에 receipt 존재 확인.
+- **Verification Evidence Gate** (required): 실제 테스트 실행 증거 확인.
+- **TDD Coaching 모드**: TDD 초보자를 위한 교육적 메시지 (차단 대신 가이드).
+- **Spike Mode Guard**: spike 종료 시 자동 git stash + slice 리셋.
+- **29개 unit test**: phase-guard-core.js (TDD 상태 머신, Bash 탐지, slice scope, receipt 검증).
+
+### Changed
+- Hook 아키텍처: bash+Node.js 하이브리드 — bash fast path (~50ms), Node.js subprocess (~200ms).
+- Plan 포맷: Task Checklist → Slice Checklist (per-slice 메타데이터).
+- `hooks.json`: PreToolUse/PostToolUse에 `Bash` 추가.
+- `phase-guard.sh`: bash+Node 하이브리드로 전면 재작성.
+- `file-tracker.sh`: receipt 수집 및 active slice 매핑 확장.
+- `deep-implement.md`: Slice 단위 TDD 실행으로 전면 재설계.
+- `deep-test.md`: 4개 신규 Quality Gate 추가.
+- `deep-plan.md`: Slice 포맷 도입.
+- `deep-work.md`: Phase 0 옵션, `--tdd=MODE`, `--skip-brainstorm`.
+- `package.json`: 4.0.0 → 4.0.1.
+
 ## [3.3.3] - 2026-03-24
 
 ### Added

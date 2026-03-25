@@ -44,6 +44,13 @@ Stop here.
 
 Based on the current phase, load the relevant artifacts to restore AI context:
 
+#### Phase: `brainstorm`
+
+- Read `$WORK_DIR/brainstorm.md` if it exists
+  - If it has content: display "이전 브레인스톰 결과 발견" and read the content for context
+  - If it doesn't exist or is empty: note "브레인스톰 산출물 없음"
+- Set `phase_context` to "탐색 중"
+
 #### Phase: `research`
 
 - Read `$WORK_DIR/research.md` if it exists
@@ -62,7 +69,7 @@ Based on the current phase, load the relevant artifacts to restore AI context:
 
 - Read `$WORK_DIR/research.md` if it exists — **only Executive Summary** (1 paragraph)
 - Read `$WORK_DIR/plan.md` in full — this is the implementation guide
-  - Parse the Task Checklist: count `- [x]` (completed) and `- [ ]` (incomplete)
+  - Parse the Slice Checklist: count `- [x]` (completed) and `- [ ]` (incomplete)
   - Identify the **last completed task** and the **next incomplete task**
   - Calculate progress: `completed / total * 100`
   - If plan.md doesn't exist: "⚠️ plan.md를 찾을 수 없습니다. /deep-plan을 먼저 실행하세요." → Stop

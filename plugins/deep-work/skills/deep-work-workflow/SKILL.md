@@ -37,9 +37,22 @@ When AI coding tools work on complex tasks without structure, common failure mod
 4. **Scope Creep**: AI adds "improvements" not requested, introducing bugs
 5. **Inconsistency**: AI uses different conventions than the rest of the codebase
 
-The Deep Work workflow prevents these by **strictly separating analysis, planning, coding, and testing** into four distinct phases with enforced gates between them.
+The Deep Work workflow prevents these by **strictly separating brainstorming, analysis, planning, coding, and testing** into five distinct phases with enforced gates between them.
 
-## The Four Phases
+## The Five Phases
+
+### Phase 0: Brainstorm (`/deep-brainstorm`) — Optional
+
+**Goal**: Explore "why before how" — define the problem, compare approaches, establish success criteria.
+
+**What happens**:
+- Structured design conversation with the user
+- 2-3 approach comparison with pros/cons
+- Spec-reviewer subagent validates the brainstorm document
+- Documentation in `$WORK_DIR/brainstorm.md`
+
+**What's blocked**: All code file modifications (enforced by hook)
+**Skip**: Use `--skip-brainstorm` to start directly at Research.
 
 ### Phase 1: Research (`/deep-research`)
 

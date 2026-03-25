@@ -100,15 +100,17 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 📍 현재 단계: [Phase name with emoji]
-   🔬 Phase 1 (Research):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
-   📐 Phase 2 (Plan):      [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
-   🔨 Phase 3 (Implement): [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
-   🧪 Phase 4 (Test):      [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
+   🧠 Phase 0 (Brainstorm): [✅ 완료 / ⏳ 진행중 / ⬜ 대기 / ⏭️ 생략]
+   🔬 Phase 1 (Research):   [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   📐 Phase 2 (Plan):       [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
+   🔨 Phase 3 (Implement):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   🧪 Phase 4 (Test):       [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
 
 📈 구현 진행률: [N/M 완료 (XX%)]
    ████████░░ XX%
 
 ⏱️ Phase별 소요 시간:
+   Brainstorm: [duration or "N/A" or "생략"]
    Research: [duration or "N/A"]
    Plan: [duration or "N/A"]
    Implement: [duration or "N/A"]
@@ -116,6 +118,7 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 📊 Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
 
 📁 산출물:
+   - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]
    - $WORK_DIR/research.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/plan.md: [존재함 ✅ / 없음 ⬜]
    - $WORK_DIR/test-results.md: [존재함 ✅ / 없음 ⬜]
@@ -129,6 +132,7 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
 ```
 
 Adjust the "다음 행동" based on the current phase:
+- **brainstorm**: `/deep-brainstorm 명령을 실행하세요`
 - **research**: `/deep-research 명령을 실행하세요`
 - **plan**: `/deep-plan 명령을 실행하세요` (or "plan.md를 검토하고 승인하세요" if plan exists)
 - **implement**: `/deep-implement 명령을 실행하세요`

@@ -410,10 +410,18 @@ git_branch: "<branch name or empty>"
 test_retry_count: 0
 max_test_retries: 3
 test_passed: false
+tdd_mode: "<selected tdd_mode or 'strict'>"
+active_slice: ""
+tdd_state: "PENDING"
+debug_mode: false
+slice_receipts: {}
+brainstorm_started_at: ""
+brainstorm_completed_at: ""
 research_started_at: ""
 research_completed_at: ""
 plan_started_at: ""
 plan_completed_at: ""
+plan_approved_at: ""
 implement_started_at: ""
 implement_completed_at: ""
 test_started_at: ""
@@ -456,7 +464,8 @@ presets:
   default:
     team_mode: "<selected team_mode>"
     project_type: "<selected project_type>"
-    start_phase: "<selected start_phase>"
+    start_phase: "<brainstorm or research or plan>"
+    tdd_mode: "<selected tdd_mode or 'strict'>"
     git_branch: <true if branch was created, false otherwise>
     model_routing:
       research: "<selected>"
