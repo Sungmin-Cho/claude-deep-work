@@ -1,9 +1,9 @@
 ---
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
-description: "Phase 3: Implement the approved plan mechanically"
+description: "Phase 3: Implement the approved plan using slice-based TDD execution"
 ---
 
-# Phase 3: Deep Implementation
+# Phase 3: Deep Implementation (v4.0 Evidence-Driven Protocol)
 
 You are in the **Implementation** phase of a Deep Work session.
 
@@ -14,10 +14,10 @@ Detect the user's language from their messages or the Claude Code `language` set
 ## Critical Constraints
 
 ✅ **Follow the plan EXACTLY. Do not deviate.**
+✅ **TDD is mandatory**: Write failing test BEFORE production code (unless exempt or spike mode).
 🚫 **Do NOT add features not in the plan.**
-🚫 **Do NOT refactor code not mentioned in the plan.**
-🚫 **Do NOT make "improvements" beyond what was planned.**
-⚠️ **If you encounter an issue, document it — do NOT improvise a fix.**
+🚫 **Do NOT modify files outside the active slice's scope** (warning or block depending on config).
+⚠️ **If you encounter a bug, enter debug mode** — do NOT guess at fixes.
 
 ## Instructions
 
@@ -27,291 +27,290 @@ Read `.claude/deep-work.local.md` and verify:
 - `current_phase` is "implement"
 - `plan_approved` is true
 
-If not, inform the user which prerequisite step is missing.
+Extract `work_dir`, `team_mode`, `tdd_mode`, `active_slice`, `tdd_state` from state file.
+Defaults: `work_dir=deep-work`, `team_mode=solo`, `tdd_mode=strict`, `active_slice=""`, `tdd_state=PENDING`.
 
-Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
-Set `WORK_DIR` to this value.
+**Record start time**: Update `implement_started_at` in the state file.
 
-**Record start time**: Update `implement_started_at` in the state file with the current ISO timestamp.
+### 2. Load plan and parse slices
 
-### 2. Load the plan and check mode
+Read `$WORK_DIR/plan.md` and parse the **Slice Checklist** section. Each slice has:
 
-Read `$WORK_DIR/plan.md` and identify the **Task Checklist** section. Each item should be in the format:
 ```
-- [ ] Task N: [File path] — [What to do] — [Why]
+- [ ] SLICE-NNN: [Goal]
+  - files: [file1, file2]
+  - failing_test: [test file — test description]
+  - verification_cmd: [command to verify]
+  - spec_checklist: [req1, req2]
+  - size: S/M/L
 ```
 
-Read `team_mode` from `.claude/deep-work.local.md`. If missing, treat as `solo`.
+Build a list of slices with their metadata.
 
-- **`team_mode: solo`** → Continue with [Solo Mode Implementation](#solo-mode-implementation)
-- **`team_mode: team`** → Continue with [Team Mode Implementation](#team-mode-implementation)
+### 3. Resume detection
 
----
-
-## Solo Mode Implementation
-
-### 0-pre. Model Routing Check (Solo Mode)
-
-Read `model_routing` from the state file. Default: `{research: "sonnet", plan: "main", implement: "sonnet", test: "haiku"}`.
-
-If `model_routing.implement` is NOT "main" and `team_mode` is "solo":
-  - Read `$WORK_DIR/plan.md` Task Checklist
-  - Use the Agent tool to spawn an implementation agent:
-    - `model`: value of `model_routing.implement` (e.g., "sonnet")
-    - `prompt`: Include the plan.md content, all Solo Mode Implementation instructions (Sections 0, 3-SOLO, 4-SOLO, 5-SOLO), task_description, WORK_DIR path, checkpoint info, AND the following checkpoint mandate: "⚠️ 체크포인트 필수: 각 태스크를 완료할 때마다 즉시 $WORK_DIR/plan.md에서 해당 항목을 `- [ ]`에서 `- [x]`로 변경하세요. 이것은 세션 재개 시 진행률 복원에 사용됩니다. 태스크 완료와 체크마크 업데이트를 분리하지 마세요."
-    - `description`: "Deep implement execution"
-    - `mode`: "bypassPermissions"
-  - Wait for Agent completion
-  - **Checkpoint verification**: After Agent completion, verify plan.md integrity:
-    1. Read `$WORK_DIR/plan.md` and count `- [x]` (completed) and `- [ ]` (incomplete) items
-    2. Run `git diff --name-only` to collect actually changed files
-    3. For each plan task with a file path:
-       - If task is `[x]` but file is NOT in git diff → display warning: `⚠️ Task [N] ([file]) marked complete but no git changes detected`
-       - If file IS in git diff but task is `[ ]` → auto-correct to `[x]` in plan.md
-    4. If `$WORK_DIR/file-changes.log` exists, use it as secondary cross-reference (may be empty if PostToolUse hook didn't fire for delegated agent)
-    5. Display summary: `🔧 체크포인트 검증: [completed]/[total] 완료, [corrected]개 자동 보정`
-  - Skip to [Final: Transition to Test](#final-transition-to-test)
-
-If `model_routing.implement` is "main" or `team_mode` is "team":
-  - Proceed with existing behavior below
-
-### 0. Resume detection (checkpoint support)
-
-Before starting implementation, read plan.md's Task Checklist and check for already completed tasks:
-- `- [x]` items: Already completed tasks
-- `- [ ]` items: Incomplete tasks
-
-If completed tasks exist (1 or more):
+Check for already completed slices (`- [x]`). If any exist:
 
 ```
 🔄 이전 구현 진행 상황 감지:
    완료: [N]개 / 전체: [M]개
-
-   마지막 완료 태스크: Task [K]: [description]
-
-   미완료 태스크부터 이어서 진행합니다.
+   마지막 완료: SLICE-[K]: [description]
+   미완료 slice부터 이어서 진행합니다.
 ```
 
-Start sequential execution from the first incomplete task.
+### 4. Model routing check
 
-### 3-SOLO. Execute tasks sequentially
+Read `model_routing.implement` from state file (default: "sonnet").
 
-> ℹ️ PostToolUse 훅이 파일 변경을 자동 추적합니다. 수정된 파일은 `$WORK_DIR/file-changes.log`에 기록됩니다.
+If NOT "main" and `team_mode` is "solo":
+- Spawn delegated Agent with `model` parameter and `mode: "bypassPermissions"`
+- **CRITICAL**: Include TDD rules in the agent prompt (hooks don't apply to delegated agents):
+  ```
+  ⚠️ TDD 강제 규칙 (반드시 준수):
+  1. 각 slice에서 반드시 failing test를 먼저 작성하세요
+  2. test가 실패하는 것을 확인한 후에만 production 코드를 수정하세요
+  3. production 코드 수정 후 test가 통과하는 것을 확인하세요
+  4. receipt 데이터를 $WORK_DIR/receipts/SLICE-NNN.json에 기록하세요
+  5. exempt 파일 (*.yml, *.md, *.json)은 TDD 없이 수정 가능합니다
+  ```
+- After Agent completion, verify receipts and plan.md integrity
+- Skip to [Final: Transition to Test](#final-transition-to-test)
 
-For each unchecked task (`- [ ]`):
+If "main": proceed with inline execution below.
 
-1. **Announce** what you're about to do
-2. **Read** the target file(s) first
-3. **Implement** the change exactly as described in the plan
-4. **Verify** the change (type check, lint, or basic sanity check if applicable)
-5. **Mark complete** by updating `- [ ]` to `- [x]` in `$WORK_DIR/plan.md`
-6. **Report** the result briefly
+---
 
-### 4-SOLO. Handle errors
+## Slice Execution Loop (Solo Mode)
 
-If you encounter a problem during implementation:
+For each unchecked slice (`- [ ]`), execute the following cycle:
 
-**DO:**
-- Stop the current task
-- Document the issue in `$WORK_DIR/plan.md` under a new `## Issues Encountered` section
-- Inform the user with specifics
-- Wait for user guidance
+### Step A: Activate Slice
 
-**DO NOT:**
-- Improvise a solution not in the plan
-- Stack patches on top of broken code
-- Skip the task and move on silently
-- Add workarounds
+1. Update `.claude/deep-work.local.md`:
+   - `active_slice: SLICE-NNN`
+   - `tdd_state: PENDING`
+2. Display:
+   ```
+   🔷 SLICE-NNN 시작: [Goal]
+      파일: [file1, file2]
+      TDD 모드: [strict/relaxed/coaching/spike]
+   ```
 
-If a rollback is needed, prefer:
+### Step B: TDD Cycle (RED → GREEN → REFACTOR)
+
+**If `tdd_mode` is "strict" or "coaching":**
+
+#### B-1. RED: Write Failing Test
+
+1. Read the slice's `failing_test` field
+2. Create or update the test file with a test that should FAIL
+3. Run the test: execute `verification_cmd`
+4. **Verify it fails for the RIGHT reason** (feature missing, not syntax error)
+5. Capture the failing test output (last 200 lines)
+6. Update state: `tdd_state: RED_VERIFIED`
+7. Update receipt: `tdd.failing_test_output` + `tdd.failing_test_timestamp`
+
+```
+🔴 RED: Failing test 작성 완료
+   테스트: [test description]
+   결과: FAIL ✓ (올바른 이유로 실패)
+```
+
+**Coaching mode addition**: If `tdd_mode` is "coaching":
+```
+💡 좋습니다! failing test를 먼저 작성했습니다.
+   이제 최소한의 코드로 이 테스트를 통과시켜 보세요.
+   팁: 불필요한 코드를 추가하지 말고, 테스트를 통과시키는 데 필요한 것만 작성하세요.
+```
+
+#### B-2. GREEN: Write Minimal Production Code
+
+1. Implement the change — **minimal code to pass the test**
+2. Only modify files listed in the slice's `files` field
+3. Run `verification_cmd` again
+4. **Verify ALL tests pass** (not just the new one)
+5. Capture passing test output
+6. Update state: `tdd_state: GREEN`
+7. Update receipt: `tdd.passing_test_output` + `tdd.passing_test_timestamp`
+
+```
+🟢 GREEN: 테스트 통과!
+   통과: [N]/[N] tests
+```
+
+#### B-3. REFACTOR (optional)
+
+1. If code can be improved while keeping tests green — refactor
+2. Run `verification_cmd` after each refactor to ensure tests still pass
+3. Update state: `tdd_state: REFACTOR`
+
+**If `tdd_mode` is "relaxed":**
+- Skip B-1 (RED). Implement directly, then run verification.
+- Still capture test output for receipt.
+
+**If `tdd_mode` is "spike":**
+- No TDD enforcement. Implement freely.
+- Mark receipt with `tdd_state: SPIKE`
+- **⚠️ Spike code is NOT merge-eligible** — displayed in receipt dashboard
+
+### Step C: Spec Checklist Verification
+
+After GREEN (or after implementation in relaxed/spike mode):
+
+1. Go through each item in the slice's `spec_checklist`
+2. Verify each requirement is met
+3. Update receipt: `spec_compliance.checklist` with true/false per item
+
+```
+📋 Spec Checklist:
+   ✅ [requirement 1]
+   ✅ [requirement 2]
+   ❌ [requirement 3] — [reason]
+```
+
+If any spec item fails: fix it (another RED→GREEN cycle if in strict mode).
+
+### Step D: Collect Receipt
+
+Update `$WORK_DIR/receipts/SLICE-NNN.json`:
+
+```json
+{
+  "slice_id": "SLICE-NNN",
+  "status": "complete",
+  "tdd_state": "GREEN",
+  "tdd": {
+    "failing_test_output": "[last 200 lines]",
+    "failing_test_timestamp": "[ISO]",
+    "passing_test_output": "[last 200 lines]",
+    "passing_test_timestamp": "[ISO]"
+  },
+  "changes": {
+    "git_diff": "[output of git diff for slice files]",
+    "files_modified": ["file1", "file2"],
+    "lines_added": N,
+    "lines_removed": N
+  },
+  "verification": {
+    "lint_output": "[if available]",
+    "typecheck_output": "[if available]",
+    "full_test_suite": "PASS (N/N)"
+  },
+  "spec_compliance": {
+    "checklist": { "req1": true, "req2": true },
+    "reviewer_result": null
+  },
+  "code_review": { "reviewer_result": null, "findings": [] },
+  "debug": null,
+  "timestamp": "[ISO]"
+}
+```
+
+Capture git diff for slice files:
 ```bash
-git stash  # or
-git checkout -- <file>  # for specific files
+git diff -- [file1] [file2]
 ```
 
-### 5-SOLO. Transition to Test phase
+### Step E: Mark Complete & Advance
 
-After all tasks are marked complete:
+1. Update plan.md: `- [ ] SLICE-NNN` → `- [x] SLICE-NNN`
+2. Update state: `active_slice: ""`, `tdd_state: PENDING`
+3. Update receipt: `slice_receipts.SLICE-NNN: complete`
+4. Display:
+   ```
+   ✅ SLICE-NNN 완료: [Goal]
+      TDD: RED → GREEN ✓
+      Receipt: receipts/SLICE-NNN.json ✓
+      진행률: [completed]/[total] slices
+   ```
+5. Proceed to next unchecked slice
 
-Continue to [Final: Transition to Test](#final-transition-to-test).
+---
+
+## Debug Sub-Mode
+
+If a test fails unexpectedly during Step B-2 (GREEN) or a previously passing test regresses:
+
+1. Display:
+   ```
+   🐛 Debug 모드 진입: 예기치 않은 테스트 실패 감지
+      실패 테스트: [test name]
+      예상: PASS, 실제: FAIL
+   ```
+2. Update state: `debug_mode: true`
+3. Follow the systematic debugging process (see `/deep-debug`):
+   - **Investigate**: Read error output, check recent changes
+   - **Analyze**: Compare with working state, identify the exact change that broke it
+   - **Hypothesize**: Form ONE hypothesis about root cause
+   - **Fix**: Apply minimal fix, verify
+4. Record root cause in receipt: `debug.root_cause_note`
+5. Update state: `debug_mode: false`
+6. Resume TDD cycle
+
+**Iron Rule**: Do NOT guess at fixes. If 3 fix attempts fail, **STOP and ask the user**.
+
+---
+
+## Spike Mode Guard
+
+When exiting spike mode (switching `tdd_mode` from "spike" to "strict" or "relaxed"):
+
+1. Stash spike code: `git stash push -m "spike: SLICE-NNN"`
+2. Reset slice to PENDING: `tdd_state: PENDING`
+3. Display:
+   ```
+   🔄 Spike 종료 — TDD 모드로 전환
+      spike 코드가 git stash에 보관되었습니다.
+      이제 TDD 사이클로 다시 시작하세요.
+      stash 확인: git stash list
+      stash 참조: git stash show -p stash@{0}
+   ```
 
 ---
 
 ## Team Mode Implementation
 
-### 3-TEAM-1. Cluster tasks by file ownership
+For `team_mode: team`, the slice execution is distributed across agents:
 
-1. Parse the checklist items from `$WORK_DIR/plan.md` in the format `- [ ] Task N: [file path] — ...`
-2. Group tasks by file path
-3. Merge clusters where files import each other (to avoid conflicts)
-4. Target 2–4 clusters. If total tasks are few (≤3), display a message and fall back to Solo:
-   ```
-   ℹ️ 태스크 수가 적어 Solo 모드로 진행합니다.
-   ```
+### T-1. Cluster slices by file ownership
+- Group slices where `files` overlap → sequential group (no parallel)
+- Independent slices → parallel execution
 
-### 3-TEAM-2. Create team
+### T-2. Create team and dispatch
+- Use `TeamCreate` with team_name `deep-implement`
+- Spawn agents per independent group
+- Each agent gets its assigned slices + TDD rules in prompt (critical: delegated agents bypass hooks)
 
-Use `TeamCreate` with team_name `deep-implement`.
-
-### 3-TEAM-3. Create tasks
-
-For each cluster, create a task with `TaskCreate`. Each task description MUST include:
-
-```
-⚠️ 파일 소유권: 수정 가능한 파일:
-- [file1]
-- [file2]
-다른 파일은 절대 수정하지 마세요.
-
-📋 체크리스트:
-- [ ] Task N: [file] — [description]
-- [ ] Task M: [file] — [description]
-
-각 태스크 완료 후 $WORK_DIR/plan.md에서 해당 항목을 [x]로 변경하세요.
-문제 발생 시 ## Issues Encountered에 기록하고 리더에게 메시지를 보내세요.
-
-⚠️ 계획서를 정확히 따르세요. 이탈/추가 개선 금지.
-```
-
-### 3-TEAM-4. Spawn agents and assign
-
-- Read `model_routing.implement` from the state file (default: "sonnet")
-- Pass the `model` parameter to each Agent spawn call
-- Spawn `general-purpose` agents with names `impl-1`, `impl-2`, etc. (one per cluster)
-- Each agent joins team `deep-implement`
-- Use `TaskUpdate` to assign each task to the corresponding agent
-
-### 3-TEAM-5. Monitor and coordinate with progress notifications
-
-- Use `TaskList` to check progress periodically
-- **Display progress as each agent completes**:
-  ```
-  [1/N] impl-1 완료 ✅ (impl-2, impl-3 진행 중...)
-  [2/N] impl-2 완료 ✅ (impl-3 진행 중...)
-  [N/N] impl-3 완료 ✅
-  ```
-- If an agent reports an issue via message, evaluate and provide guidance or escalate to the user
-- If file dependency conflicts arise, coordinate execution order between agents
-
-### 3-TEAM-6. Cross-Review (Iterative Loop)
-
-After all implementation tasks are completed, proceed to a **cross-review phase** before final verification. Each agent reviews code written by **other** agents, not their own.
-
-#### 6-1. Create cross-review tasks
-
-Create new tasks with `TaskCreate` for each agent to review others' files:
-- `impl-1` reviews files owned by `impl-2` and `impl-3`
-- `impl-2` reviews files owned by `impl-1` and `impl-3`
-- `impl-3` reviews files owned by `impl-1` and `impl-2`
-- (Adjust based on actual number of agents)
-
-Each cross-review task description:
-
-```
-🔍 크로스체크 리뷰
-
-다음 파일들이 계획서($WORK_DIR/plan.md)에 맞게 올바르게 구현되었는지 검증하세요:
-- [file1] (구현자: impl-X)
-- [file2] (구현자: impl-X)
-
-확인 항목:
-1. plan.md의 해당 태스크 설명과 실제 구현이 일치하는지
-2. 기존 코드 패턴/컨벤션을 따르는지
-3. 타입 오류, 런타임 에러 가능성이 없는지
-4. 다른 클러스터의 코드와 호환되는지 (import, 인터페이스 등)
-5. 누락된 사항이 없는지
-
-결과를 $WORK_DIR/plan.md의 ## Cross-Review Results 섹션에 다음 형식으로 작성:
-- ✅ [file]: 이상 없음
-- ❌ [file]: [문제 설명] — [수정 필요 사항]
-
-⚠️ 리뷰만 수행하세요. 직접 코드를 수정하지 마세요.
-```
-
-#### 6-2. Collect cross-review results
-
-After all cross-review tasks complete, read the `## Cross-Review Results` section from `$WORK_DIR/plan.md`:
-
-- **All items ✅**: → Proceed to [3-TEAM-7 (Final Verification)](#3-team-7-final-verification)
-- **Any ❌ items**: → Proceed to [6-3 (Fix Redistribution)](#6-3-fix-redistribution)
-
-#### 6-3. Fix redistribution (Iteration)
-
-1. Analyze ❌ items and create fix tasks for the **original file owner** (the agent who implemented the code)
-2. Include the specific problems and required fixes from the cross-review in the task description
-3. After fixes complete → **Return to 6-1** for another cross-review round
-
-**Iteration termination conditions**:
-- All cross-review items are ✅
-- OR maximum 3 rounds reached — report remaining issues to the user
-
-#### 6-4. Track iteration state
-
-Record each round in `$WORK_DIR/plan.md`:
-
-```
-## Cross-Review Round 1
-- impl-2 reviewed impl-1's files: ✅ all clear
-- impl-1 reviewed impl-2's files: ❌ src/auth/types.ts — missing export
-...
-
-## Cross-Review Round 2 (fixes applied)
-- impl-2 reviewed impl-1's files: ✅ all clear
-- impl-1 reviewed impl-2's files: ✅ fixed
-...
-```
-
-### 3-TEAM-7. Final verification
-
-After cross-review passes:
-- Verify all checklist items in `plan.md` are `[x]` and all cross-review items are ✅
-
-### 3-TEAM-8. Clean up and transition to Test
-
-- Send `shutdown_request` to all team members via `SendMessage`
-- Wait for confirmations, then `TeamDelete`
-- Continue to [Final: Transition to Test](#final-transition-to-test)
+### T-3. Monitor, cross-review, collect receipts
+- Same cross-review loop as v3.3.3
+- After completion: verify all receipts exist in `$WORK_DIR/receipts/`
 
 ---
 
 ## Final: Transition to Test
 
-After all implementation tasks are complete:
+After all slices are complete:
 
-1. **Record completion time**: Update `implement_completed_at` in the state file with the current ISO timestamp
-
-2. **Update state file**:
-   - Set `current_phase: test`
-   - Add completion timestamp to progress log
-
-3. **Display transition message**:
+1. **Verify all receipts**: Check `$WORK_DIR/receipts/SLICE-*.json` exist for all slices
+2. **Record completion**: Update `implement_completed_at`
+3. **Update state**: `current_phase: test`
+4. **Display**:
    ```
    ✅ 구현이 완료되었습니다. 테스트 단계로 진입합니다.
 
    📊 구현 결과:
-     - 완료된 태스크: N/N
-     - 수정된 파일: [list]
-     - 신규 파일: [list]
+     - 완료 slice: N/N
+     - TDD 준수율: [strict: N, relaxed: N, spike: N]
+     - Receipt 완성: N/N
+     - 디버깅 횟수: N회
    ```
-
-   If Team mode was used, also display:
-   ```
-   🤝 팀 구현 결과:
-     - 에이전트 수: N명
-     - 크로스체크 라운드: N회
-     - 발견/수정된 이슈: N건
-   ```
-
-4. **Send notification**:
-   ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "implement" "completed" "✅ Implement 완료 — Test 시작" 2>/dev/null || true
-   ```
-
-5. **Automatically execute Test phase**: Read the `/deep-test` command file and follow all its steps exactly. Do NOT ask the user to run `/deep-test` manually.
+5. **Send notification**
+6. **Auto-execute Test phase**: Read `/deep-test` and follow all steps.
 
 ## Implementation Quality Rules
 
-- **One task at a time**: Complete each task fully before moving to the next
-- **No scope creep**: If you notice something that should be fixed but isn't in the plan, add it to `## Issues Encountered` instead of fixing it
-- **Faithful execution**: The plan was reviewed and approved by the user. Respect their decisions.
-- **Transparency**: If something doesn't work as planned, say so immediately
+- **One slice at a time**: Complete each slice's TDD cycle fully before moving on
+- **No scope creep**: If you notice something outside the plan, add to `## Issues Encountered`
+- **Faithful execution**: The plan was reviewed and approved. Respect it.
+- **Evidence-driven**: Every slice produces a receipt. No receipt = not done.
+- **Debug, don't guess**: Unexpected failures → systematic debugging, not trial-and-error
