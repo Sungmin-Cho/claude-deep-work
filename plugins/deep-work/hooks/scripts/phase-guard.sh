@@ -187,24 +187,17 @@ fi
 # - Bash tool in any non-idle phase (file write detection)
 # - implement phase with strict/coaching TDD mode (TDD state machine)
 
-NODE_INPUT=$(cat <<NODEJSON
-{
-  "action": "pre",
-  "toolName": "${TOOL_NAME}",
-  "toolInput": ${TOOL_INPUT},
-  "state": {
-    "current_phase": "${CURRENT_PHASE}",
-    "tdd_mode": "${TDD_MODE:-strict}",
-    "active_slice": "${ACTIVE_SLICE}",
-    "tdd_state": "${TDD_STATE:-PENDING}"
-  }
-}
-NODEJSON
-)
+# Build JSON input for Node.js using node itself to avoid shell injection
+NODE_INPUT=$(node -e "
+  const input = JSON.parse(process.argv[1]);
+  const state = { current_phase: process.argv[2], tdd_mode: process.argv[3], active_slice: process.argv[4], tdd_state: process.argv[5] };
+  console.log(JSON.stringify({ action: 'pre', toolName: process.argv[6], toolInput: input, state: state }));
+" "$TOOL_INPUT" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" 2>/dev/null)
 
 # Call Node.js with timeout protection
 NODE_RESULT=""
-if NODE_RESULT=$(echo "$NODE_INPUT" | timeout 4 node "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null); then
+# Note: macOS has no `timeout` command. Use node's own setTimeout or rely on hook timeout (5s).
+if NODE_RESULT=$(echo "$NODE_INPUT" | node "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null); then
   # Parse decision from Node.js output
   DECISION=$(echo "$NODE_RESULT" | grep -o '"decision"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
 

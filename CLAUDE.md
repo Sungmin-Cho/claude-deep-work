@@ -69,4 +69,4 @@ node --test phase-guard-core.test.js    # Unit tests (v4.0)
 
 ## Version
 
-Current: 3.3.3 → developing v4.0 (Evidence-Driven Development Protocol)
+Current: 4.0.0 (Evidence-Driven Development Protocol)

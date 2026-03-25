@@ -180,20 +180,20 @@ RECEIPT
   fi
 
   # 파일 변경을 receipt의 changes.files_modified에 추가 (best-effort)
-  # Node.js로 정확한 JSON 조작 (jq 없이)
+  # Node.js로 정확한 JSON 조작 — process.argv로 전달하여 injection 방지
   if command -v node &>/dev/null; then
     node -e "
       const fs = require('fs');
+      const [,, receiptFile, filePath, ts] = process.argv;
       try {
-        const r = JSON.parse(fs.readFileSync('${RECEIPT_FILE}', 'utf8'));
+        const r = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
         if (!r.changes) r.changes = { files_modified: [] };
         if (!r.changes.files_modified) r.changes.files_modified = [];
-        const f = '${FILE_PATH}'.replace(/'/g, '');
-        if (!r.changes.files_modified.includes(f)) r.changes.files_modified.push(f);
-        r.timestamp = '${TIMESTAMP}';
-        fs.writeFileSync('${RECEIPT_FILE}', JSON.stringify(r, null, 2));
+        if (!r.changes.files_modified.includes(filePath)) r.changes.files_modified.push(filePath);
+        r.timestamp = ts;
+        fs.writeFileSync(receiptFile, JSON.stringify(r, null, 2));
       } catch(e) {}
-    " 2>/dev/null || true
+    " "$RECEIPT_FILE" "$FILE_PATH" "$TIMESTAMP" 2>/dev/null || true
   fi
 fi
 

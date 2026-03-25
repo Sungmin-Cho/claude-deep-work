@@ -10,7 +10,7 @@
 - **How:** Add `Bash` to hooks.json PreToolUse matcher. In phase-guard.sh, when tool is
   Bash, parse the `command` field (not `file_path`) and detect file-writing patterns.
   Block with guidance message if in non-implement phase or TDD state requires test first.
-- **Status:** IN PROGRESS — included in PR1
+- **Status:** DONE — implemented in PR1 (hooks.json + phase-guard.sh + phase-guard-core.js)
 
 ## P2 — Important (v4.0 follow-up)
 
