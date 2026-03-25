@@ -65,11 +65,15 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 
 | Command | Description |
 |---------|-------------|
-| `/deep-work <task>` | Initialize session, select preset, create task folder |
+| `/deep-work <task>` | Initialize session, select preset, configure TDD mode, update check |
+| `/deep-brainstorm` | Phase 0: Design exploration — problem definition, approach comparison (skip-able) |
 | `/deep-research` | Phase 1: Codebase analysis → `research.md` |
-| `/deep-plan` | Phase 2: Implementation plan → `plan.md`, auto-implement on approval |
-| `/deep-implement` | Phase 3: Execute the plan (can also be run manually) |
-| `/deep-test` | Phase 4: Run integration tests, return to implement on failure |
+| `/deep-plan` | Phase 2: Slice-based implementation plan → `plan.md`, auto-implement on approval |
+| `/deep-implement` | Phase 3: TDD-enforced slice execution with receipt collection |
+| `/deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates |
+| `/deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix (auto-triggers on failures) |
+| `/deep-slice` | Slice dashboard, manual activation, spike mode, reset |
+| `/deep-receipt` | Receipt dashboard, per-slice view, export (JSON/Markdown) |
 | `/drift-check` | Verify implementation matches the approved plan (standalone or built-in gate) |
 | `/solid-review` | SOLID design principles review (standalone or advisory gate) |
 | `/deep-insight` | Code metrics, complexity, dependency analysis (standalone or insight gate) |
@@ -91,8 +95,11 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | `drift-report.md` | Phase 4 complete | Plan alignment verification results |
 | `solid-review.md` | Phase 4 complete | SOLID design review scorecard and suggestions |
 | `insight-report.md` | Phase 4 complete | Code metrics, complexity, dependency analysis |
-| `file-changes.log` | Phase 3 ongoing | Auto-tracked file modifications (PostToolUse hook) |
+| `file-changes.log` | Phase 3 ongoing | Auto-tracked file modifications with slice mapping (PostToolUse hook) |
 | `plan-diff.md` | Plan rewrite | Structural change comparison between plan versions |
+| `brainstorm.md` | Phase 0 complete | Design spec: problem definition, approach comparison, success criteria |
+| `receipts/SLICE-NNN.json` | Phase 3 ongoing | Per-slice evidence: TDD output, git diff, spec check, review |
+| `debug-log/RC-NNN.md` | Phase 3 (debug) | Root cause analysis notes from systematic debugging |
 
 ## Session State
 
@@ -100,7 +107,7 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 
 | Field | Description |
 |-------|-------------|
-| `current_phase` | Current phase (research / plan / implement / test / idle) |
+| `current_phase` | Current phase (idle / brainstorm / research / plan / implement / test) |
 | `work_dir` | Task folder path |
 | `task_description` | Task description |
 | `team_mode` | Work mode (solo / team) |
@@ -115,6 +122,11 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `quality_gates_passed` | Whether all Quality Gates passed |
 | `preset` | Active preset name (v3.3.3) |
 | `plan_approved_at` | Timestamp when plan was approved (used by Drift Detection) |
+| `tdd_mode` | TDD enforcement mode (strict / relaxed / coaching / spike) |
+| `active_slice` | Currently active slice ID (e.g., SLICE-001) |
+| `tdd_state` | Current TDD state (PENDING / RED / RED_VERIFIED / GREEN_ELIGIBLE / GREEN / REFACTOR / SPIKE) |
+| `debug_mode` | Whether systematic debugging is active |
+| `brainstorm_started_at`, `brainstorm_completed_at` | Phase 0 timestamps |
 
 ## Workflow Details
 
