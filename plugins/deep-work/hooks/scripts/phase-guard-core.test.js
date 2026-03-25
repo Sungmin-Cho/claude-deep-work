@@ -11,6 +11,9 @@ const {
   isTestFilePath,
   isExemptFile,
   processHook,
+  lookupModel,
+  validateModelName,
+  DEFAULT_ROUTING_TABLE,
 } = require('./phase-guard-core.js');
 
 // ─── TDD State Machine Tests (8 tests) ──────────────────────
@@ -225,5 +228,75 @@ describe('processHook', () => {
       state: { current_phase: 'idle' },
     });
     assert.equal(result.decision, 'allow');
+  });
+});
+
+// ─── Model Routing Tests (v4.1) ─────────────────────────────
+
+describe('Model Routing', () => {
+  it('S → haiku', () => {
+    const result = lookupModel('S');
+    assert.equal(result.model, 'haiku');
+    assert.ok(result.valid);
+  });
+
+  it('M → sonnet', () => {
+    const result = lookupModel('M');
+    assert.equal(result.model, 'sonnet');
+    assert.ok(result.valid);
+  });
+
+  it('L → sonnet', () => {
+    const result = lookupModel('L');
+    assert.equal(result.model, 'sonnet');
+    assert.ok(result.valid);
+  });
+
+  it('XL → opus', () => {
+    const result = lookupModel('XL');
+    assert.equal(result.model, 'opus');
+    assert.ok(result.valid);
+  });
+
+  it('undefined size defaults to M → sonnet', () => {
+    const result = lookupModel(undefined);
+    assert.equal(result.model, 'sonnet');
+  });
+
+  it('custom routing table overrides defaults', () => {
+    const result = lookupModel('S', { S: 'sonnet', L: 'opus' });
+    assert.equal(result.model, 'sonnet');
+  });
+
+  it('invalid size falls back to M', () => {
+    const result = lookupModel('XXL');
+    assert.ok(!result.valid);
+    assert.equal(result.model, 'sonnet');
+  });
+});
+
+describe('Model Name Validation', () => {
+  it('valid model names pass', () => {
+    assert.ok(validateModelName('haiku').valid);
+    assert.ok(validateModelName('sonnet').valid);
+    assert.ok(validateModelName('opus').valid);
+    assert.ok(validateModelName('main').valid);
+    assert.ok(validateModelName('auto').valid);
+  });
+
+  it('invalid model name returns fallback sonnet', () => {
+    const result = validateModelName('gpt-4');
+    assert.ok(!result.valid);
+    assert.equal(result.fallback, 'sonnet');
+  });
+
+  it('null/undefined returns fallback', () => {
+    assert.ok(!validateModelName(null).valid);
+    assert.ok(!validateModelName(undefined).valid);
+  });
+
+  it('case insensitive', () => {
+    assert.ok(validateModelName('Haiku').valid);
+    assert.ok(validateModelName('SONNET').valid);
   });
 });

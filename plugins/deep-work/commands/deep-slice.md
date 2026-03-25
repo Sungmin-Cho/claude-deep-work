@@ -17,6 +17,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 - `/deep-slice activate SLICE-NNN` — Manually activate a specific slice
 - `/deep-slice spike SLICE-NNN` — Enter spike mode for a specific slice
 - `/deep-slice reset SLICE-NNN` — Reset a slice to PENDING
+- `/deep-slice model SLICE-NNN [model]` — Override model for a specific slice (v4.1)
 
 ## Slice Status Dashboard
 
@@ -68,6 +69,20 @@ For each slice, read the receipt JSON from `$WORK_DIR/receipts/SLICE-NNN.json` t
       TDD 강제가 해제되었습니다. 자유롭게 코딩하세요.
       ⚠️ spike 코드는 merge 대상이 아닙니다.
       종료 시 /deep-slice reset SLICE-NNN 으로 TDD로 복귀하세요.
+   ```
+
+## Model Override Command (v4.1)
+
+`/deep-slice model SLICE-NNN [model]`:
+
+1. Validate model name: must be one of `haiku`, `sonnet`, `opus`, `main`, `auto`
+2. If invalid, display: `⚠️ 유효하지 않은 모델: [model]. 사용 가능: haiku, sonnet, opus, main, auto`
+3. Store override in state file: `model_overrides.SLICE-NNN: [model]`
+4. Display:
+   ```
+   🧠 SLICE-NNN 모델 override: [model]
+      다음 실행 시 이 모델이 사용됩니다.
+      해제: /deep-slice model SLICE-NNN auto
    ```
 
 ## Reset Command

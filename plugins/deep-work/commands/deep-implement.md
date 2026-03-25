@@ -60,9 +60,42 @@ Check for already completed slices (`- [x]`). If any exist:
 
 ### 4. Model routing check
 
-Read `model_routing.implement` from state file (default: "sonnet").
+Read `model_routing.implement` from state file (default: "auto").
 
-If NOT "main" and `team_mode` is "solo":
+**Routing modes:**
+
+**If "main"**: Use the current conversation's model (no subagent delegation). Proceed with inline execution below.
+
+**If a specific model name** (e.g., "sonnet", "haiku", "opus"): Use that model for ALL slices. Skip to Agent delegation below.
+
+**If "auto"** (v4.1 default — size-based routing):
+
+1. For each slice, read its `size` field from plan.md (default if unspecified: `M`).
+
+2. Look up the routing table. Default table (customizable via preset `routing_table`):
+
+   | Slice Size | Model | Rationale |
+   |-----------|-------|-----------|
+   | S (Small) | haiku | Simple config, 1-2 files, boilerplate |
+   | M (Medium) | sonnet | Standard feature, 3-5 files |
+   | L (Large) | sonnet | Complex feature, 5+ files |
+   | XL (Extra-Large) | opus | Architecture change, 10+ files |
+
+   **Size 결정 주체**: `/deep-plan`에서 사용자가 직접 지정. 미지정 시 기본값 `M`.
+
+3. Check for user override: if the state file has `model_override` for the active slice, use that instead.
+
+4. Validate model name: if the resolved model name is not one of `haiku`, `sonnet`, `opus`, warn and fallback to `sonnet`.
+
+5. Display:
+   ```
+   🧠 모델 자동 선택: [model] (슬라이스 크기: [size])
+      Override: /deep-slice model SLICE-NNN [model]
+   ```
+
+**Agent delegation** (for non-"main" modes):
+
+If `team_mode` is "solo" and model is not "main":
 - Spawn delegated Agent with `model` parameter and `mode: "bypassPermissions"`
 - **CRITICAL**: Include TDD rules in the agent prompt (hooks don't apply to delegated agents):
   ```
@@ -73,7 +106,10 @@ If NOT "main" and `team_mode` is "solo":
   4. receipt 데이터를 $WORK_DIR/receipts/SLICE-NNN.json에 기록하세요
   5. exempt 파일 (*.yml, *.md, *.json)은 TDD 없이 수정 가능합니다
   ```
-- After Agent completion, verify receipts and plan.md integrity
+- Set 10-minute timeout per slice. On timeout: abort, rollback slice to PENDING, warn user.
+- After Agent completion: validate receipt JSON structure. If corrupt, warn and mark slice for re-execution.
+- Record in slice receipt: `model_used`, `model_auto_selected: true/false`, `model_override_reason`
+- After all slices: verify receipts and plan.md integrity
 - Skip to [Final: Transition to Test](#final-transition-to-test)
 
 If "main": proceed with inline execution below.
@@ -86,10 +122,13 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 
 ### Step A: Activate Slice
 
-1. Update `.claude/deep-work.local.md`:
+1. Capture `git_before` hash: `git rev-parse HEAD 2>/dev/null`
+2. Update `.claude/deep-work.local.md`:
    - `active_slice: SLICE-NNN`
    - `tdd_state: PENDING`
-2. Display:
+3. Read worktree state: if `worktree_enabled` is true, set `worktree_branch` for receipt
+4. Determine model: if routing mode is "auto", lookup slice size from plan.md
+5. Display:
    ```
    🔷 SLICE-NNN 시작: [Goal]
       파일: [file1, file2]
@@ -176,9 +215,19 @@ Update `$WORK_DIR/receipts/SLICE-NNN.json`:
 
 ```json
 {
+  "schema_version": "1.0",
   "slice_id": "SLICE-NNN",
+  "goal": "[slice goal from plan.md]",
   "status": "complete",
   "tdd_state": "GREEN",
+  "tdd_mode": "[strict/relaxed/coaching/spike]",
+  "model_used": "[haiku/sonnet/opus/main]",
+  "model_auto_selected": true,
+  "model_override_reason": null,
+  "estimated_cost": null,
+  "worktree_branch": "[dw/slug or empty]",
+  "git_before": "[commit hash before slice]",
+  "git_after": "[commit hash after slice]",
   "tdd": {
     "failing_test_output": "[last 200 lines]",
     "failing_test_timestamp": "[ISO]",
@@ -206,10 +255,13 @@ Update `$WORK_DIR/receipts/SLICE-NNN.json`:
 }
 ```
 
-Capture git diff for slice files:
+Capture git diff and `git_after` hash:
 ```bash
 git diff -- [file1] [file2]
+git rev-parse HEAD 2>/dev/null  # → git_after
 ```
+
+**Note**: `session-receipt.json`은 `/deep-finish`에서 생성됩니다 (derived cache — slice receipts가 canonical source).
 
 ### Step E: Mark Complete & Advance
 

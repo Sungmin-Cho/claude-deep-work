@@ -139,8 +139,9 @@ Read `.claude/deep-work-profile.yaml` if it exists.
    - `presets.<name>.team_mode` → `TEAM_MODE`
    - `presets.<name>.project_type` → `PROJECT_TYPE`
    - `presets.<name>.start_phase` → `START_PHASE`
-   - `presets.<name>.git_branch` → `GIT_BRANCH`
+   - `presets.<name>.git_branch` → `GIT_BRANCH` (default: `true` in v4.1)
    - `presets.<name>.model_routing.*` → `MODEL_ROUTING_*`
+   - `presets.<name>.model_routing.routing_table` → `ROUTING_TABLE` (v4.1: custom S/M/L/XL→model mapping)
    - `presets.<name>.notifications.*` → `NOTIFICATIONS_*`
 
 4. Apply flag overrides (if any): `--team`, `--zero-base`, `--skip-research`, `--no-branch` take precedence over preset values.
@@ -237,7 +238,7 @@ mkdir -p "deep-work/${TASK_FOLDER}"
 
 Set `WORK_DIR` to `deep-work/${TASK_FOLDER}`.
 
-### 2-1. Git branch suggestion (git repository only)
+### 2-1. Git branch & worktree setup (git repository only)
 
 Check if the project is a git repository:
 
@@ -245,36 +246,87 @@ Check if the project is a git repository:
 git rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-If the project is a git repository:
+If **not** a git repository: set `git_branch` to empty string, `worktree_enabled` to `false`. Skip to Step 3.
 
-**If `PROFILE_LOADED` is true:**
-- If profile `git_branch` is `true`: automatically run `git checkout -b deep-work/[SLUG]` without asking. Set `git_branch` in state file.
-- If profile `git_branch` is `false`: skip branch creation. Set `git_branch` to empty string.
-- Do NOT ask the user — use the profile value directly.
+If a git repository, determine the isolation mode:
 
-**If `PROFILE_LOADED` is false** (original behavior):
+**Determine `GIT_BRANCH` value:**
+- If `PROFILE_LOADED` is true: use `presets.<name>.git_branch` (default: `true` in v4.1)
+- If flag `--no-branch` is set: `GIT_BRANCH` = `false`
+- If `PROFILE_LOADED` is false: use AskUserQuestion (original behavior)
 
+**If `GIT_BRANCH` is `true`:**
+
+1. Generate branch name: `dw/[SLUG]` (e.g., `dw/add-model-routing`)
+   - SLUG = task description의 처음 30자를 kebab-case로 변환
+   - 특수문자/한글은 제거하고 영문+숫자+하이픈만 유지
+
+2. Create worktree:
+   ```bash
+   mkdir -p .worktrees 2>/dev/null
+   git worktree add -b "dw/${SLUG}" ".worktrees/dw/${SLUG}" HEAD 2>&1
+   ```
+
+3. **에러 처리**: `git worktree add` 실패 시 (브랜치 이름 충돌, 커밋 없음, 디스크 부족 등):
+   - 경고 표시:
+     ```
+     ⚠️ Worktree 생성 실패: [error message]
+        격리 없이 현재 브랜치에서 진행합니다.
+     ```
+   - Fallback: `git checkout -b deep-work/[SLUG]` 시도 (기존 v4.0 동작)
+   - 그것도 실패하면: 현재 브랜치에서 그대로 진행
+   - Set `worktree_enabled: false`
+
+4. **성공 시**: `.gitignore`에 `.worktrees/`가 없으면 추가.
+
+5. Update state (use absolute paths for reliability across CWD changes):
+   ```yaml
+   worktree_enabled: true
+   worktree_path: "<PROJECT_ROOT>/.worktrees/dw/${SLUG}"
+   worktree_branch: "dw/${SLUG}"
+   worktree_base_branch: "<current branch name before worktree creation>"
+   worktree_base_commit: "<HEAD commit hash>"
+   ```
+
+6. Display:
+   ```
+   🌿 Worktree 격리 활성화
+      Branch: dw/[SLUG]
+      Path: .worktrees/dw/[SLUG]
+      Base: [short hash]
+
+   이 세션의 모든 작업은 격리된 worktree에서 진행됩니다.
+   완료 후 /deep-finish로 merge/PR/유지/삭제를 선택하세요.
+   ```
+
+7. **Working directory 설정**: 후속 명령에서 worktree 내에서 작업하도록:
+   - 모든 `Bash` tool 호출에 `cd <worktree_absolute_path> &&` prepend
+   - `Write`/`Edit` tool의 file path는 worktree 절대 경로 기준
+   - "현재 작업 디렉토리는 `<worktree_path>`입니다" 안내
+
+**If `GIT_BRANCH` is `false`:**
+- Set `worktree_enabled: false`, `git_branch` to empty string
+- 기존 v4.0 동작: 현재 브랜치에서 직접 작업
+
+**If `PROFILE_LOADED` is false** (no preset — ask user):
 ```
-🌿 Git 브랜치를 생성할까요?
-   브랜치명: deep-work/[SLUG]
+🌿 Git 격리 방식을 선택하세요:
    (현재 브랜치: [current branch])
 
-1. ✅ 네 — 새 브랜치 생성
-2. ❌ 아니오 — 현재 브랜치 유지
+1. 🌳 Worktree 격리 (권장) — 별도 디렉토리에서 격리 작업
+2. 🌿 새 브랜치 — 현재 위치에서 새 브랜치 생성
+3. ❌ 현재 브랜치 유지
 ```
 
-If the user agrees:
-- Run `git checkout -b deep-work/[SLUG]`
-- Set `git_branch` to `deep-work/[SLUG]` in the state file
+Option 1: worktree 생성 (위 플로우)
+Option 2: `git checkout -b deep-work/[SLUG]`, `worktree_enabled: false`
+Option 3: 현재 브랜치 유지, `worktree_enabled: false`
 
-If the user declines or not a git repo:
-- Set `git_branch` to empty string
-
-**Capture last research commit**: If the project is a git repository, run:
+**Capture last research commit**: If git repository:
 ```bash
 git rev-parse HEAD 2>/dev/null
 ```
-Store the result as `last_research_commit` in the state file. This will be used by incremental research (`--incremental`) to detect changes since the last research.
+Store as `last_research_commit` in state file.
 
 ### 3. Create placeholder files
 
