@@ -1,18 +1,31 @@
 ---
 name: deep-work-workflow
-version: "3.3.3"
+version: "4.0.0"
 description: |
-  This skill should be used when the user wants to follow a phase-based deep work
-  workflow that separates research, planning, implementation, and testing. It applies
-  when users say things like "deep work", "plan before code", "기획과 코딩 분리",
-  "분석 후 구현", "계획 세우고 구현", "제로베이스", "from scratch", "quality gate",
+  This skill should be used when the user wants to follow an evidence-driven development
+  protocol with TDD enforcement, slice-based execution, and receipt-based evidence collection.
+  It applies when users say things like "deep work", "plan before code", "기획과 코딩 분리",
+  "분석 후 구현", "TDD", "test-driven", "evidence-driven", "receipt", "영수증",
+  "slice", "brainstorm", "브레인스톰", "제로베이스", "from scratch", "quality gate",
   "SOLID review", "drift check", "deep-insight", "코드 메트릭", "preset", "프리셋",
-  "resume session", "세션 재개", "이어서", "프로필", "빠른 시작",
+  "resume session", "세션 재개", "이어서", "프로필", "빠른 시작", "debug mode",
+  "systematic debugging", "코드 리뷰", "spec compliance",
   or when the user describes a complex, multi-file task that would benefit from
   structured planning before implementation.
 ---
 
-# Deep Work Workflow: Research → Plan → Implement → Test
+# Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+
+## v4.0 Evidence-Driven Development Protocol
+
+v4.0 introduces the **Evidence-Driven Protocol** — every code change must carry proof:
+- **Slice-based execution**: Plan tasks are "slices" with TDD cycles and spec checklists
+- **TDD enforcement**: Failing test required before production code (hook-enforced)
+- **Receipt system**: JSON evidence collected per slice (test output, git diff, spec check)
+- **Bash monitoring**: File-writing shell commands are also blocked during non-implement phases
+- **2-stage code review**: Spec compliance + code quality review in test phase
+- **Systematic debugging**: Root-cause investigation before fixes (/deep-debug)
+- **Phase 0 Brainstorm**: Optional design exploration before research (/deep-brainstorm)
 
 ## Why This Workflow Exists
 

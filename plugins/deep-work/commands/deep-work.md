@@ -1,12 +1,12 @@
 ---
 allowed-tools: Bash, Read, Write, Glob, AskUserQuestion
-description: "Start a deep work session with 4-phase workflow (Research → Plan → Implement → Test)"
+description: "Start a deep work session with Evidence-Driven Protocol (Brainstorm → Research → Plan → Implement → Test)"
 argument-hint: task description
 ---
 
 # Deep Work Session Initialization
 
-You are initializing a **Deep Work** session — a structured 4-phase workflow that enforces strict separation between planning and coding.
+You are initializing a **Deep Work** session — an Evidence-Driven Development Protocol with 5 phases (Brainstorm → Research → Plan → Implement → Test) that enforces TDD, receipt-based evidence collection, and strict separation between planning and coding.
 
 ## Language
 
@@ -48,6 +48,8 @@ Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string
 | `--team` | Override `team_mode` to `"team"` for this session only |
 | `--zero-base` | Override `project_type` to `"zero-base"` for this session only |
 | `--skip-research` | Override `start_phase` to `"plan"` for this session only |
+| `--skip-brainstorm` | Skip Phase 0 brainstorm, start at research |
+| `--tdd=MODE` | Set TDD mode: `strict` (default), `relaxed`, `coaching`, `spike` |
 | `--no-branch` | Override `git_branch` to `false` for this session only |
 | `--profile=X` | Use preset named `X` directly (skip interactive selection) |
 

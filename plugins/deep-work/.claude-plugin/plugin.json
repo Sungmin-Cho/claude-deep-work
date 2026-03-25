@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "3.3.3",
-  "description": "4-phase workflow with 3-tier Quality Gate, Multi-preset Profile System, Session Resume, and Checkpoint verification",
+  "version": "4.0.0",
+  "description": "Evidence-Driven Development Protocol — TDD enforcement, slice/receipt system, 5-phase workflow, 2-stage code review, systematic debugging",
   "author": {
     "name": "sungmin"
   },
@@ -10,22 +10,23 @@
   "keywords": [
     "workflow",
     "deep-work",
+    "evidence-driven",
+    "tdd",
+    "test-driven-development",
+    "slice",
+    "receipt",
+    "brainstorm",
     "research",
     "planning",
     "agent-team",
     "solid",
     "code-review",
-    "design-patterns",
-    "drift-detection",
-    "plan-alignment",
+    "spec-compliance",
+    "systematic-debugging",
     "quality-gate",
-    "insight",
-    "code-metrics",
-    "file-tracking",
-    "posttooluse",
-    "stop-hook",
+    "drift-detection",
+    "bash-hook",
     "preset",
-    "multi-preset",
-    "profile-v2"
+    "multi-preset"
   ]
 }
