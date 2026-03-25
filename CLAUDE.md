@@ -8,11 +8,15 @@ deep-work/
 │   ├── .claude-plugin/         # Plugin manifest
 │   │   └── plugin.json
 │   ├── commands/               # Slash commands (markdown)
-│   │   ├── deep-work.md        # /deep-work — session init
+│   │   ├── deep-work.md        # /deep-work — session init + update check
+│   │   ├── deep-brainstorm.md  # /deep-brainstorm — Phase 0 (v4.0)
 │   │   ├── deep-research.md    # /deep-research — Phase 1
-│   │   ├── deep-plan.md        # /deep-plan — Phase 2
-│   │   ├── deep-implement.md   # /deep-implement — Phase 3
-│   │   ├── deep-test.md        # /deep-test — Phase 4
+│   │   ├── deep-plan.md        # /deep-plan — Phase 2 (slice format)
+│   │   ├── deep-implement.md   # /deep-implement — Phase 3 (TDD enforced)
+│   │   ├── deep-test.md        # /deep-test — Phase 4 (receipt gates)
+│   │   ├── deep-debug.md       # /deep-debug — systematic debugging (v4.0)
+│   │   ├── deep-slice.md       # /deep-slice — slice management (v4.0)
+│   │   ├── deep-receipt.md     # /deep-receipt — receipt management (v4.0)
 │   │   ├── deep-status.md      # /deep-status — session info
 │   │   ├── deep-report.md      # /deep-report — session report
 │   │   ├── deep-resume.md      # /deep-resume — resume session
@@ -22,9 +26,11 @@ deep-work/
 │   ├── hooks/
 │   │   ├── hooks.json          # Hook configuration
 │   │   └── scripts/
-│   │       ├── phase-guard.sh      # PreToolUse — blocks edits
-│   │       ├── phase-guard-core.js # Node.js complex logic (v4.0)
-│   │       ├── file-tracker.sh     # PostToolUse — tracks changes
+│   │       ├── phase-guard.sh      # PreToolUse — bash+Node hybrid
+│   │       ├── phase-guard-core.js # Node.js: TDD state machine, Bash detection
+│   │       ├── phase-guard-core.test.js # 29 unit tests (node:test)
+│   │       ├── file-tracker.sh     # PostToolUse — tracks + receipt collection
+│   │       ├── update-check.sh     # SessionStart — git-based version check
 │   │       ├── session-end.sh      # Stop — session reminder
 │   │       └── notify.sh           # Notification helper
 │   ├── skills/

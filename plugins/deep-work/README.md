@@ -2,7 +2,7 @@
 
 # Deep Work Plugin
 
-A Claude Code plugin that enforces **strict separation of planning and coding** through a 4-phase workflow.
+A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a 5-phase workflow (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
 
 <p align="center">
   <img src="./demo-en.gif" alt="Deep Work Plugin Demo — 4-Phase Workflow with 3-Tier Quality Gates" width="800">
@@ -19,14 +19,15 @@ Common pitfalls when AI coding tools tackle complex tasks:
 
 ## The Solution
 
-The **Research → Plan → Implement → Test** workflow enforces strict separation of analysis, planning, implementation, and verification.
+The **Brainstorm → Research → Plan → Implement → Test** workflow enforces evidence-driven development:
 
+- **Phase 0 (Brainstorm)**: Optional design exploration — "why before how" (skip with `--skip-brainstorm`)
 - **Phase 1 (Research)**: Deep analysis and documentation of the codebase
-- **Phase 2 (Plan)**: Detailed implementation plan based on research, requiring user approval
-- **Phase 3 (Implement)**: Mechanical execution of the approved plan (starts automatically on approval)
-- **Phase 4 (Test)**: Automated tests, linting, and type-checking; falls back to implementation on failure
+- **Phase 2 (Plan)**: Slice-based implementation plan with per-slice TDD fields, requiring user approval
+- **Phase 3 (Implement)**: TDD-enforced slice execution — failing test → production code → receipt collection
+- **Phase 4 (Test)**: Receipt completeness, spec compliance review, code quality review, verification evidence
 
-Code file modifications are **physically blocked** during Phases 1, 2, and 4 (via PreToolUse hook). File changes are **automatically tracked** during Phase 3 (via PostToolUse hook).
+Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
 ## Usage
 
