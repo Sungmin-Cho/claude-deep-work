@@ -1,6 +1,18 @@
 {
-  "description": "Phase enforcement, file tracking, and session lifecycle hooks (v4.0 Evidence-Driven Protocol)",
+  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v4.0 Evidence-Driven Protocol)",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-check.sh",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit|Bash",

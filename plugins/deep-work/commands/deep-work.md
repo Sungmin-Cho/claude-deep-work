@@ -20,6 +20,35 @@ The user wants to work on: **$ARGUMENTS**
 
 Follow these steps exactly:
 
+### 0. Update check
+
+The SessionStart hook runs `update-check.sh` and may output one of:
+- `JUST_UPGRADED <old> <new>` → Display: `✅ deep-work v{new}으로 업그레이드되었습니다! (v{old}에서)` and continue.
+- `UPGRADE_AVAILABLE <old> <new>` → Handle below.
+- (nothing) → Skip, continue to Step 1.
+
+**If `UPGRADE_AVAILABLE`:**
+
+1. Read `.claude/deep-work-profile.yaml` for `auto_update` field.
+
+2. **If `auto_update: true`**: Auto-upgrade without asking:
+   - Detect install type: check if plugin directory has `.git` (git install) or not (npm/marketplace)
+   - **Git install**: `cd <plugin-dir> && git fetch origin && git reset --hard origin/main`
+   - **npm install**: `npm update @claude-deep-work/deep-work`
+   - Write current version to `~/.claude/.deep-work-just-upgraded` as marker
+   - Display: `🔄 deep-work v{old} → v{new} 자동 업그레이드 완료!`
+   - If upgrade fails: display warning and continue with current version
+
+3. **If `auto_update` is not set or false**: Use AskUserQuestion:
+   ```
+   🔄 deep-work v{new}이 사용 가능합니다 (현재 v{old}). 업그레이드하시겠습니까?
+   ```
+   Options:
+   - A) 지금 업그레이드 → Execute upgrade (same as auto), continue
+   - B) 항상 최신 상태 유지 → Set `auto_update: true` in profile, execute upgrade
+   - C) 나중에 → Write snooze state to `~/.claude/.deep-work-update-snoozed` (escalating backoff: 24h → 48h → 1 week)
+   - D) 다시 묻지 않기 → Set `update_check: false` in profile
+
 ### 1. Check for existing active session
 
 Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle` and NOT empty, warn the user:
