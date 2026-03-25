@@ -1,0 +1,83 @@
+---
+allowed-tools: Read, Bash, Glob
+description: "View deep work session history — cross-session trends, model usage, TDD compliance"
+---
+
+# Deep Work Session History (v4.1)
+
+View historical session data across all completed Deep Work sessions.
+
+## Language
+
+Detect the user's language from their messages or the Claude Code `language` setting. Output ALL user-facing messages in the detected language.
+
+## Instructions
+
+### 1. Scan for session receipts
+
+Search for `session-receipt.json` files in all deep-work output directories:
+
+```bash
+find . -path "*/deep-work/*/session-receipt.json" -type f 2>/dev/null | sort -r
+```
+
+If no session receipts found:
+```
+ℹ️ 세션 이력이 없습니다.
+   /deep-work로 세션을 시작하고 /deep-finish로 완료하면 이력이 기록됩니다.
+```
+Stop here.
+
+### 2. Parse all session receipts
+
+For each `session-receipt.json`, extract:
+- `session_id`, `task_description`, `started_at`, `finished_at`
+- `outcome` (merge/pr/keep/discard)
+- `slices.total`, `slices.completed`
+- `tdd_compliance` (strict/relaxed/spike/coaching counts)
+- `model_usage` (haiku/sonnet/opus/main counts)
+- `total_estimated_cost`
+- `deep_work_version`
+
+### 3. Display session list
+
+```
+📊 Deep Work Session History
+
+┌────┬──────────────────────┬────────────┬────────┬──────────┬───────────┐
+│ #  │ Task                 │ Date       │ Slices │ Outcome  │ Model     │
+├────┼──────────────────────┼────────────┼────────┼──────────┼───────────┤
+│ 1  │ Add model routing    │ 2026-03-25 │ 4/4    │ PR #42   │ S1 H2 O1 │
+│ 2  │ Fix receipt bug      │ 2026-03-23 │ 2/2    │ merge    │ S2       │
+│ 3  │ Worktree setup       │ 2026-03-20 │ 3/5    │ keep     │ S3       │
+└────┴──────────────────────┴────────────┴────────┴──────────┴───────────┘
+
+S=sonnet H=haiku O=opus M=main
+```
+
+### 4. Display aggregate statistics
+
+```
+📈 Aggregate Stats (최근 [N]개 세션)
+
+   TDD 준수율: strict [N]% | relaxed [N]% | spike [N]%
+   모델 사용: haiku [N]회 | sonnet [N]회 | opus [N]회
+   완료율: [completed]/[total] 슬라이스 ([N]%)
+   결과: merge [N] | PR [N] | keep [N] | discard [N]
+```
+
+If `estimated_cost` data is available:
+```
+   예상 비용: 총 $[N] (세션 평균 $[N])
+```
+
+### 5. Trend indicator
+
+Compare the most recent 3 sessions to the 3 before that (if available):
+
+```
+📉 트렌드 (최근 3 vs 이전 3)
+   TDD strict 비율: [N]% → [N]% [↑/↓/→]
+   완료율:          [N]% → [N]% [↑/↓/→]
+   평균 슬라이스:    [N]개 → [N]개 [↑/↓/→]
+```

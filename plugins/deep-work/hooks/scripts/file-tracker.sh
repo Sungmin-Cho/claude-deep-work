@@ -7,35 +7,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# ─── 유틸리티 ────────────────────────────────────────────────
-
-normalize_path() {
-  local p="$1"
-  p="${p//\\//}"
-  while [[ "$p" == *"//"* ]]; do
-    p="${p//\/\//\/}"
-  done
-  printf '%s' "$p"
-}
-
-find_project_root() {
-  local dir="$PWD"
-  while [[ "$dir" != "/" ]]; do
-    if [[ -d "$dir/.claude" ]]; then
-      echo "$dir"
-      return 0
-    fi
-    dir="$(dirname "$dir")"
-  done
-  echo "$PWD"
-  return 1
-}
+source "$SCRIPT_DIR/utils.sh"
 
 # ─── 프로젝트 루트 & 상태 파일 ──────────────────────────────
 
-PROJECT_ROOT="$(find_project_root 2>/dev/null || echo "$PWD")"
-STATE_FILE="$PROJECT_ROOT/.claude/deep-work.local.md"
+init_deep_work_state
 STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 
 # 상태 파일이 없으면 즉시 종료
@@ -45,32 +21,9 @@ fi
 
 # ─── YAML frontmatter 파싱 ───────────────────────────────────
 
-CURRENT_PHASE=""
-WORK_DIR=""
-ACTIVE_SLICE=""
-IN_FRONTMATTER=false
-while IFS= read -r line; do
-  if [[ "$line" == "---" ]]; then
-    if $IN_FRONTMATTER; then break; else IN_FRONTMATTER=true; continue; fi
-  fi
-  if $IN_FRONTMATTER; then
-    if [[ "$line" =~ ^current_phase:[[:space:]]*(.+)$ ]]; then
-      CURRENT_PHASE="${BASH_REMATCH[1]}"
-      CURRENT_PHASE="${CURRENT_PHASE%\"}" ; CURRENT_PHASE="${CURRENT_PHASE#\"}"
-      CURRENT_PHASE="${CURRENT_PHASE%\'}" ; CURRENT_PHASE="${CURRENT_PHASE#\'}"
-    fi
-    if [[ "$line" =~ ^work_dir:[[:space:]]*(.+)$ ]]; then
-      WORK_DIR="${BASH_REMATCH[1]}"
-      WORK_DIR="${WORK_DIR%\"}" ; WORK_DIR="${WORK_DIR#\"}"
-      WORK_DIR="${WORK_DIR%\'}" ; WORK_DIR="${WORK_DIR#\'}"
-    fi
-    if [[ "$line" =~ ^active_slice:[[:space:]]*(.+)$ ]]; then
-      ACTIVE_SLICE="${BASH_REMATCH[1]}"
-      ACTIVE_SLICE="${ACTIVE_SLICE%\"}" ; ACTIVE_SLICE="${ACTIVE_SLICE#\"}"
-      ACTIVE_SLICE="${ACTIVE_SLICE%\'}" ; ACTIVE_SLICE="${ACTIVE_SLICE#\'}"
-    fi
-  fi
-done < "$STATE_FILE"
+CURRENT_PHASE="$(read_frontmatter_field "$STATE_FILE" "current_phase")"
+WORK_DIR="$(read_frontmatter_field "$STATE_FILE" "work_dir")"
+ACTIVE_SLICE="$(read_frontmatter_field "$STATE_FILE" "active_slice")"
 
 # implement 단계가 아니면 즉시 종료
 if [[ "$CURRENT_PHASE" != "implement" ]]; then

@@ -11,35 +11,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/utils.sh"
 
-# ─── Utility: normalize path separators ──────────────────────
-
-normalize_path() {
-  local p="$1"
-  p="${p//\\//}"
-  while [[ "$p" == *"//"* ]]; do
-    p="${p//\/\//\/}"
-  done
-  printf '%s' "$p"
-}
-
-# ─── Find project root ───────────────────────────────────────
-
-find_project_root() {
-  local dir="$PWD"
-  while [[ "$dir" != "/" ]]; do
-    if [[ -d "$dir/.claude" ]]; then
-      echo "$dir"
-      return 0
-    fi
-    dir="$(dirname "$dir")"
-  done
-  echo "$PWD"
-  return 1
-}
-
-PROJECT_ROOT="$(find_project_root 2>/dev/null || echo "$PWD")"
-STATE_FILE="$PROJECT_ROOT/.claude/deep-work.local.md"
+init_deep_work_state
 
 # ─── FAST PATH: No state file → allow everything ─────────────
 
@@ -49,49 +23,11 @@ fi
 
 # ─── FAST PATH: Read phase from YAML frontmatter ─────────────
 
-CURRENT_PHASE=""
-WORK_DIR=""
-TDD_MODE=""
-ACTIVE_SLICE=""
-TDD_STATE=""
-IN_FRONTMATTER=false
-while IFS= read -r line; do
-  if [[ "$line" == "---" ]]; then
-    if $IN_FRONTMATTER; then
-      break
-    else
-      IN_FRONTMATTER=true
-      continue
-    fi
-  fi
-  if $IN_FRONTMATTER; then
-    if [[ "$line" =~ ^current_phase:[[:space:]]*(.+)$ ]]; then
-      CURRENT_PHASE="${BASH_REMATCH[1]}"
-      CURRENT_PHASE="${CURRENT_PHASE%\"}" ; CURRENT_PHASE="${CURRENT_PHASE#\"}"
-      CURRENT_PHASE="${CURRENT_PHASE%\'}" ; CURRENT_PHASE="${CURRENT_PHASE#\'}"
-    fi
-    if [[ "$line" =~ ^work_dir:[[:space:]]*(.+)$ ]]; then
-      WORK_DIR="${BASH_REMATCH[1]}"
-      WORK_DIR="${WORK_DIR%\"}" ; WORK_DIR="${WORK_DIR#\"}"
-      WORK_DIR="${WORK_DIR%\'}" ; WORK_DIR="${WORK_DIR#\'}"
-    fi
-    if [[ "$line" =~ ^tdd_mode:[[:space:]]*(.+)$ ]]; then
-      TDD_MODE="${BASH_REMATCH[1]}"
-      TDD_MODE="${TDD_MODE%\"}" ; TDD_MODE="${TDD_MODE#\"}"
-      TDD_MODE="${TDD_MODE%\'}" ; TDD_MODE="${TDD_MODE#\'}"
-    fi
-    if [[ "$line" =~ ^active_slice:[[:space:]]*(.+)$ ]]; then
-      ACTIVE_SLICE="${BASH_REMATCH[1]}"
-      ACTIVE_SLICE="${ACTIVE_SLICE%\"}" ; ACTIVE_SLICE="${ACTIVE_SLICE#\"}"
-      ACTIVE_SLICE="${ACTIVE_SLICE%\'}" ; ACTIVE_SLICE="${ACTIVE_SLICE#\'}"
-    fi
-    if [[ "$line" =~ ^tdd_state:[[:space:]]*(.+)$ ]]; then
-      TDD_STATE="${BASH_REMATCH[1]}"
-      TDD_STATE="${TDD_STATE%\"}" ; TDD_STATE="${TDD_STATE#\"}"
-      TDD_STATE="${TDD_STATE%\'}" ; TDD_STATE="${TDD_STATE#\'}"
-    fi
-  fi
-done < "$STATE_FILE"
+CURRENT_PHASE="$(read_frontmatter_field "$STATE_FILE" "current_phase")"
+WORK_DIR="$(read_frontmatter_field "$STATE_FILE" "work_dir")"
+TDD_MODE="$(read_frontmatter_field "$STATE_FILE" "tdd_mode")"
+ACTIVE_SLICE="$(read_frontmatter_field "$STATE_FILE" "active_slice")"
+TDD_STATE="$(read_frontmatter_field "$STATE_FILE" "tdd_state")"
 
 # ─── FAST PATH: idle or empty phase → allow ──────────────────
 
