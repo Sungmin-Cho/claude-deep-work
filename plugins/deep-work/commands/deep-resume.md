@@ -91,6 +91,10 @@ Based on the current phase, load the relevant artifacts to restore AI context:
   - If it doesn't exist: display warning "⚠️ research.md를 찾을 수 없습니다"
 - Read `$WORK_DIR/plan.md` if it exists (for review continuation)
 - Set `phase_context` to "리뷰 대기" if plan.md exists, "작성 대기" if not
+- Read `review_state` from state file
+  - If `"in_progress"`: note "리뷰 진행 중이었음"
+  - If `"completed"`: note "리뷰 완료됨"
+  - Read `$WORK_DIR/plan-review.json` and `$WORK_DIR/plan-cross-review.json` if they exist
 
 #### Phase: `implement`
 
@@ -127,6 +131,7 @@ Based on the current phase, load the relevant artifacts to restore AI context:
   [✅/⬜] plan.md [전문 로드 / 요약 로드 / 없음]
   [✅/⬜] 체크리스트 진행률: N/M (XX%)    ← implement만
   [✅/⬜] 테스트 결과 (시도 N/M)           ← test만
+  [✅/⬜] 리뷰 상태: [완료 (8/10) / 진행중 / 대기 / 스킵]  ← plan만
 
 ▶️ [다음 행동]
 ```
@@ -142,6 +147,9 @@ Execute the appropriate action based on the current phase:
 Read the `/deep-research` command file (located at the same directory level as this command) and follow all its steps. If research.md already has partial content, the research command's cache/incremental logic will handle it.
 
 #### `plan`
+
+- If `review_state` is `"in_progress"` and phase is `plan`:
+  Read the `/deep-review` command file and follow its steps to resume the review.
 
 - If `$WORK_DIR/plan.md` does **not** exist:
   Read the `/deep-plan` command file and follow all its steps.

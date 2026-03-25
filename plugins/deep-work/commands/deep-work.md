@@ -79,6 +79,7 @@ Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string
 | `--skip-research` | Override `start_phase` to `"plan"` for this session only |
 | `--skip-brainstorm` | Skip Phase 0 brainstorm, start at research |
 | `--tdd=MODE` | Set TDD mode: `strict` (default), `relaxed`, `coaching`, `spike` |
+| `--skip-review` | Set `review_state` to `"skipped"` for this session |
 | `--no-branch` | Override `git_branch` to `false` for this session only |
 | `--profile=X` | Use preset named `X` directly (skip interactive selection) |
 
@@ -143,6 +144,7 @@ Read `.claude/deep-work-profile.yaml` if it exists.
    - `presets.<name>.model_routing.*` → `MODEL_ROUTING_*`
    - `presets.<name>.model_routing.routing_table` → `ROUTING_TABLE` (v4.1: custom S/M/L/XL→model mapping)
    - `presets.<name>.notifications.*` → `NOTIFICATIONS_*`
+   - `presets.<name>.cross_model_preference` → `CROSS_MODEL_PREFERENCE` (default: `"ask"`)
 
 4. Apply flag overrides (if any): `--team`, `--zero-base`, `--skip-research`, `--no-branch` take precedence over preset values.
 
@@ -237,6 +239,65 @@ mkdir -p "deep-work/${TASK_FOLDER}"
 ```
 
 Set `WORK_DIR` to `deep-work/${TASK_FOLDER}`.
+
+### 2.5. Cross-model tool detection
+
+Detect available cross-model review tools:
+
+```bash
+CODEX_PATH=$(which codex 2>/dev/null || true)
+GEMINI_PATH=$(which gemini 2>/dev/null || true)
+
+# Verify executability
+CODEX_OK=false
+GEMINI_OK=false
+[ -n "$CODEX_PATH" ] && codex --version >/dev/null 2>&1 && CODEX_OK=true
+[ -n "$GEMINI_PATH" ] && gemini --version >/dev/null 2>&1 && GEMINI_OK=true
+```
+
+**If both tools unavailable (CODEX_OK=false AND GEMINI_OK=false):**
+- Set `cross_model_tools: {codex: {available: false, path: ""}, gemini: {available: false, path: ""}}` in state file
+- Set `cross_model_enabled: {codex: false, gemini: false}`
+- Do NOT display anything — proceed silently
+
+**If at least one tool available:**
+
+Display detection results:
+```
+🔍 크로스 모델 도구 감지:
+   codex: ✅ 설치됨 ([path], v[version]) / ❌ 미설치
+   gemini-cli: ✅ 설치됨 ([path], v[version]) / ❌ 미설치
+```
+
+**Check profile for saved preference:**
+
+Read `.claude/deep-work-profile.yaml` for `presets.<active>.cross_model_preference`.
+- If `"always"`: auto-enable detected tools, display "프로필 설정: 항상 사용"
+- If `"never"`: auto-disable, display "프로필 설정: 항상 스킵"
+- If `"ask"` or missing: ask user via AskUserQuestion
+
+**AskUserQuestion (if preference is "ask" or missing):**
+
+If both tools available:
+```
+🔍 크로스 모델 리뷰를 활성화할까요?
+  Plan 단계에서 codex/gemini가 독립적으로 계획서를 리뷰합니다.
+  1. 둘 다 사용 (권장)
+  2. codex만 사용
+  3. gemini만 사용
+  4. 사용 안함
+```
+
+If only one tool available:
+```
+🔍 [tool] 크로스 모델 리뷰를 활성화할까요?
+  1. 사용 (권장)
+  2. 사용 안함
+```
+
+Store result in state file: `cross_model_enabled: {codex: true/false, gemini: true/false}`
+Store tool info: `cross_model_tools: {codex: {available: bool, path: "..."}, gemini: {available: bool, path: "..."}}`
+
 
 ### 2-1. Git branch & worktree setup (git repository only)
 
@@ -527,6 +588,18 @@ quality_gates_passed: null
 notifications:
   enabled: false
   channels: []
+review_state: "pending"
+cross_model_tools:
+  codex: {available: false, path: ""}
+  gemini: {available: false, path: ""}
+cross_model_enabled:
+  codex: false
+  gemini: false
+review_results:
+  brainstorm: {score: 0, iterations: 0, timestamp: ""}
+  research: {score: 0, iterations: 0, timestamp: ""}
+  plan: {spec_score: 0, model_scores: {}, conflicts: 0, waivers: 0, timestamp: ""}
+review_gate_overridden: false
 ---
 
 # Deep Work Session
@@ -538,6 +611,8 @@ $ARGUMENTS
 - [$(date)] Session initialized
 - [$(date)] Phase <0 (Brainstorm) or 1 (Research) or 2 (Plan)> started
 ```
+
+If `--skip-review` flag was set: use `review_state: "skipped"` instead of `"pending"`.
 
 ### 7.5. Save profile
 
@@ -566,6 +641,7 @@ presets:
     notifications:
       enabled: <true/false>
       channels: <copy from state file notifications.channels>
+    cross_model_preference: "ask"
 ```
 
 Display: `💾 프로필이 저장되었습니다 (default 프리셋). 다음 실행부터 이 설정이 자동 적용됩니다.`
@@ -590,6 +666,7 @@ Determine the starting phase and display accordingly:
 🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 🧪 TDD 모드: strict / relaxed / coaching / spike
+🔬 리뷰: [활성화 (codex + gemini) / 활성화 (codex만) / 비활성화 / 스킵됨]
 
 🔄 워크플로우:
   Phase 0: /deep-brainstorm  ← 현재 단계
@@ -619,6 +696,7 @@ Determine the starting phase and display accordingly:
 🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 🧪 TDD 모드: strict / relaxed / coaching / spike
+🔬 리뷰: [활성화 (codex + gemini) / 활성화 (codex만) / 비활성화 / 스킵됨]
 
 🔄 워크플로우:
   Phase 1: /deep-research  ← 현재 단계
@@ -646,6 +724,7 @@ Determine the starting phase and display accordingly:
 🌿 Git 브랜치: [branch name or "없음"]
 🧠 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 🔔 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
+🔬 리뷰: [활성화 (codex + gemini) / 활성화 (codex만) / 비활성화 / 스킵됨]
 
 🔄 워크플로우:
   Phase 1: /deep-research  ✅ 건너뜀

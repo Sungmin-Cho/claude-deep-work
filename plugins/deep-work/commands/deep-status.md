@@ -73,6 +73,8 @@ Read the following files if they exist:
 - `$WORK_DIR/insight-report.md` — check if it exists
 - `$WORK_DIR/file-changes.log` — check if it exists
 - `$WORK_DIR/plan-diff.md` — check if it exists
+- Read `review_state`, `cross_model_enabled`, and `review_results` from state file
+- Read `$WORK_DIR/brainstorm-review.json`, `$WORK_DIR/research-review.json`, `$WORK_DIR/plan-review.json`, `$WORK_DIR/plan-cross-review.json` if they exist
 
 ### 3. Calculate progress
 
@@ -116,6 +118,12 @@ Show a comprehensive status report. If the `team_mode` field is missing from the
    Implement: [duration or "N/A"]
    Test: [duration or "N/A"]
 📊 Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
+🔬 리뷰 현황:
+   Brainstorm: [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
+   Research: [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
+   Plan (Structural): [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
+   Plan (Adversarial): [Claude N/10, Codex N/10 — Consensus N, Conflicts N, Waivers N / 미실행 / 도구 미설치]
+🔍 크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
 
 📁 산출물:
    - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]

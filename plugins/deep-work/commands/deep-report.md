@@ -155,6 +155,25 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 [If $WORK_DIR/quality-gates.md exists, read and include its latest attempt table here]
 [If quality-gates.md does not exist: "Quality Gates 미정의 — 기본 자동 감지 사용"]
 
+## Review Results
+
+### Structural Reviews
+| Phase | Score | Iterations | Timestamp |
+|-------|-------|------------|-----------|
+| Brainstorm | [N]/10 | [N] | [time] |
+| Research | [N]/10 | [N] | [time] |
+| Plan | [N]/10 | [N] | [time] |
+
+### Adversarial Review (Plan)
+- **Models**: [Claude + Codex / Claude + Gemini / Claude only / 미실행]
+- **Scores**: Claude [N]/10, [Model] [N]/10
+- **Consensus**: [N]건
+- **Conflicts**: [N]건 (resolved: [N], waived: [N])
+- **Review Gate**: [통과 ✅ / 우회됨 ⚠️ / 미실행 ⬜]
+
+(If review_state is "skipped": `리뷰: 스킵됨 (--skip-review)`)
+(If cross_model not available: `크로스 모델: 도구 미설치 (structural review만 실행)`)
+
 ## Insight Analysis
 [If $WORK_DIR/insight-report.md exists, include the "종합 인사이트 요약" section here]
 [If insight-report.md does not exist: "Insight 분석 미실행"]
