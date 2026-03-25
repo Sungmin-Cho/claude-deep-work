@@ -79,6 +79,10 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 | `/deep-insight` | Code metrics, complexity, dependency analysis (standalone or insight gate) |
 | `/deep-report` | Generate or view session report |
 | `/deep-status` | Current status, progress, phase durations, session history |
+| `/deep-resume` | Resume an active session — restores context and continues from current phase |
+| `/deep-finish` | Finish a session — merge, PR, keep, or discard the branch (v4.1) |
+| `/deep-history` | View cross-session trends — model usage, TDD compliance, cost tracking (v4.1) |
+| `/deep-cleanup` | Clean up stale deep-work worktrees (v4.1) |
 
 ## Output Files
 
@@ -98,7 +102,8 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | `file-changes.log` | Phase 3 ongoing | Auto-tracked file modifications with slice mapping (PostToolUse hook) |
 | `plan-diff.md` | Plan rewrite | Structural change comparison between plan versions |
 | `brainstorm.md` | Phase 0 complete | Design spec: problem definition, approach comparison, success criteria |
-| `receipts/SLICE-NNN.json` | Phase 3 ongoing | Per-slice evidence: TDD output, git diff, spec check, review |
+| `receipts/SLICE-NNN.json` | Phase 3 ongoing | Per-slice evidence: TDD output, git diff, spec check, review, model used (v4.1) |
+| `session-receipt.json` | Session finish | Cross-slice session summary — derived cache from slice receipts (v4.1) |
 | `debug-log/RC-NNN.md` | Phase 3 (debug) | Root cause analysis notes from systematic debugging |
 
 ## Session State
@@ -127,6 +132,11 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `tdd_state` | Current TDD state (PENDING / RED / RED_VERIFIED / GREEN_ELIGIBLE / GREEN / REFACTOR / SPIKE) |
 | `debug_mode` | Whether systematic debugging is active |
 | `brainstorm_started_at`, `brainstorm_completed_at` | Phase 0 timestamps |
+| `worktree_enabled` | Whether worktree isolation is active (v4.1) |
+| `worktree_path` | Absolute path to the worktree directory (v4.1) |
+| `worktree_branch` | Branch name inside the worktree (v4.1) |
+| `worktree_base_branch` | Original branch before worktree creation (v4.1) |
+| `worktree_base_commit` | Commit hash at the time of worktree creation (v4.1) |
 
 ## Workflow Details
 
@@ -227,18 +237,67 @@ Automatically generated report after session completion:
 - **Verification Results** — Test/lint/type-check results
 - **Test Retry History** — Results history per attempt
 
-### Model Routing (v3.1)
+### Model Routing (v3.1 → v4.1)
 
-Assigns the optimal model per phase, reducing token costs by 30-40%:
+Assigns the optimal model per phase, reducing token costs by 30-40%.
+
+**v4.1: Auto-routing by slice complexity** — In implement phase, the model is automatically selected based on each slice's size:
+
+| Slice Size | Default Model | Rationale |
+|-----------|--------------|-----------|
+| S (Small) | haiku | Simple config, 1-2 files, boilerplate |
+| M (Medium) | sonnet | Standard feature, 3-5 files |
+| L (Large) | sonnet | Complex feature, 5+ files |
+| XL (Extra-Large) | opus | Architecture change, 10+ files |
+
+Override per-slice: `/deep-slice model SLICE-NNN opus`. Customize the routing table in your preset's `routing_table` field.
+
+**Per-phase defaults:**
 
 | Phase | Default Model | Method | Rationale |
 |-------|--------------|--------|-----------|
 | Research | sonnet | Agent delegation | Sufficient for exploration/analysis |
 | Plan | Main session | Direct execution | Requires interactive feedback |
-| Implement | sonnet | Agent delegation | Sufficient for code writing |
+| Implement | **auto** (v4.1) | Size-based selection | Cost-optimized per slice |
 | Test | haiku | Agent delegation | Only runs tests |
 
-Customizable during `/deep-work` initialization (choose from sonnet, haiku, opus).
+### Worktree Isolation (v4.1)
+
+Sessions now run in an isolated git worktree by default. This prevents accidental changes to the main branch during development.
+
+- `/deep-work` creates a worktree at `.worktrees/dw/<slug>/` with a dedicated branch
+- All work happens inside the worktree — main branch stays clean
+- `/deep-finish` offers 4 completion options: merge, PR, keep branch, or discard
+- `/deep-cleanup` removes stale worktrees (7+ days old, no active session)
+- `/deep-resume` automatically detects and restores worktree context
+- Opt-out with `--no-branch` flag or `git_branch: false` in preset
+
+### Session Lifecycle (v4.1)
+
+Complete session lifecycle management:
+
+```
+/deep-work (start) → worktree created → phases run → /deep-finish (end)
+                                                        ├── merge
+                                                        ├── PR
+                                                        ├── keep
+                                                        └── discard
+```
+
+### Receipt Validation (v4.1)
+
+- Receipt schema v1.0 with `schema_version`, `model_used`, `git_before`/`git_after`, `estimated_cost`
+- `receipt-migration.js` auto-converts pre-v4.1 receipts
+- `validate-receipt.sh` validates receipt chain integrity
+- `templates/deep-work-ci.yml` — GitHub Actions workflow for CI/CD receipt validation
+- `/deep-receipt export --format=ci` for CI-friendly bundle export
+
+### Session History (v4.1)
+
+`/deep-history` shows cross-session trends:
+- Past session list with model usage, TDD compliance, completion rate
+- Aggregate statistics and trend indicators
+- Model cost tracking (`estimated_cost` per slice and session)
 
 ### Multi-Channel Notifications (v3.1)
 
@@ -288,9 +347,10 @@ Three hooks manage the session lifecycle:
 
 | Hook | Script | Trigger | Purpose |
 |------|--------|---------|---------|
-| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit | Blocks code edits during research/plan/test phases |
-| PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit | Tracks file modifications during implement phase |
-| Stop | `session-end.sh` | CLI session end | Reminds about active sessions, sends notifications |
+| SessionStart | `update-check.sh` | startup/resume/clear/compact | Git-based version update check (v4.0) |
+| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/Bash | Blocks code edits during research/plan/test phases; Bash file-write detection (v4.0) |
+| PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit/Bash | Tracks file modifications during implement phase, updates receipts |
+| Stop | `session-end.sh` | CLI session end | Reminds about active sessions, shows worktree info, sends notifications |
 
 ### Phase Guard
 

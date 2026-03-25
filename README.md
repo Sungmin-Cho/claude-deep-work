@@ -49,7 +49,11 @@ Without structure, Claude Code will:
 - **3-Tier Quality Gates** — Required (blocking), Advisory (warning), Insight (informational)
 - **Receipt Dashboard** — ASCII progress visualization per slice (`/deep-slice`, `/deep-receipt`)
 - **Auto-Update Check** — Git-based update detection on session start with auto-upgrade option
-- **Model Routing** — Assigns optimal models per phase — **30-40% token savings**
+- **Model Auto-Routing** — Assigns optimal models per phase **and per slice** (S→haiku, M→sonnet, L→sonnet, XL→opus) — **30-40% token savings**
+- **Worktree Isolation** — Sessions run in isolated git worktrees by default — main branch stays clean
+- **Session Lifecycle** — `/deep-finish` with 4 completion options (merge/PR/keep/discard) + `session-receipt.json`
+- **CI/CD Receipt Validation** — `validate-receipt.sh` + GitHub Actions template for automated receipt chain checks
+- **Session History** — `/deep-history` cross-session trends: model usage, TDD compliance, cost tracking
 - **Solo & Team Modes** — Single agent or parallel agent teams with cross-review
 
 ## Quick Start
@@ -75,7 +79,11 @@ claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-wor
 | `/deep-test` | 4 | Verify → receipt check → spec review → quality gates |
 | `/deep-debug` | 3* | Systematic debugging: investigate → analyze → hypothesize → fix |
 | `/deep-slice` | 3* | Slice dashboard, activation, spike mode |
-| `/deep-receipt` | — | Receipt dashboard, view, export (JSON/MD) |
+| `/deep-receipt` | — | Receipt dashboard, view, export (JSON/MD/CI) |
+| `/deep-finish` | End | Finish session: merge, PR, keep, or discard (v4.1) |
+| `/deep-history` | — | Cross-session trends: models, TDD, cost (v4.1) |
+| `/deep-cleanup` | — | Clean up stale worktrees (v4.1) |
+| `/deep-resume` | — | Resume active session with worktree restore |
 | `/drift-check` | — | Plan-vs-implementation alignment check |
 | `/solid-review` | — | SOLID design principles review |
 | `/deep-status` | — | Progress, timing, session history |

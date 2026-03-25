@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "4.0.1",
-  "description": "Evidence-Driven Development Protocol — TDD enforcement, slice/receipt system, 5-phase workflow, 2-stage code review, systematic debugging",
+  "version": "4.1.0",
+  "description": "Evidence-Driven Development Protocol — worktree isolation, model auto-routing, TDD enforcement, receipt validation, session lifecycle management",
   "author": {
     "name": "sungmin"
   },
@@ -27,6 +27,11 @@
     "drift-detection",
     "bash-hook",
     "preset",
-    "multi-preset"
+    "multi-preset",
+    "worktree",
+    "model-routing",
+    "ci-cd",
+    "receipt-validation",
+    "session-lifecycle"
   ]
 }
