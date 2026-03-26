@@ -53,7 +53,7 @@ function isValidTransition(from, to) {
  * @param {string[]} exemptPatterns - File patterns exempt from TDD (e.g., *.yml)
  * @returns {{ allowed: boolean, reason?: string }}
  */
-function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns) {
+function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns, tddOverride) {
   // spike mode at session level = all edits allowed
   if (tddMode === 'spike') {
     return { allowed: true };
@@ -61,6 +61,11 @@ function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns) {
 
   // relaxed mode = no TDD enforcement
   if (tddMode === 'relaxed') {
+    return { allowed: true };
+  }
+
+  // TDD override = slice-level skip (user chose to bypass TDD via AskUserQuestion)
+  if (tddOverride) {
     return { allowed: true };
   }
 
@@ -366,6 +371,7 @@ function processHook(input) {
           toolInput.command,  // use command as "path" for TDD check
           state.tdd_mode || 'strict',
           state.exempt_patterns,
+          !!state.tdd_override,
         );
         if (!tddResult.allowed) {
           return { decision: 'block', reason: tddResult.reason };
@@ -383,6 +389,7 @@ function processHook(input) {
       filePath,
       state.tdd_mode || 'strict',
       state.exempt_patterns,
+      !!state.tdd_override,
     );
     if (!tddResult.allowed) {
       return { decision: 'block', reason: tddResult.reason };
