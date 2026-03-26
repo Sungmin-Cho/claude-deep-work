@@ -98,7 +98,10 @@ function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns, tddOve
         reason: `💡 TDD 코칭: 이 slice에서 먼저 테스트를 작성해보세요.\n` +
           `현재 상태: ${tddState} — 먼저 failing test를 작성하고 실행하면\n` +
           `production 코드를 수정할 수 있습니다.\n\n` +
-          `팁: 어떤 동작을 테스트해야 할지 생각해보세요.`,
+          `팁: 어떤 동작을 테스트해야 할지 생각해보세요.\n\n` +
+          `TDD를 건너뛰려면:\n` +
+          `  /deep-slice spike SLICE-NNN — 이 slice만 자유 코딩 (merge 불가)\n` +
+          `  /deep-slice reset SLICE-NNN — slice 리셋 후 재시작`,
       };
     }
     return {
@@ -106,7 +109,10 @@ function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns, tddOve
       reason: `⛔ TDD 강제: production 코드 수정이 차단되었습니다.\n` +
         `현재 TDD 상태: ${tddState}\n` +
         `먼저 failing test를 작성하고 실행하세요 (RED → RED_VERIFIED 필요).\n` +
-        `파일: ${filePath}`,
+        `파일: ${filePath}\n\n` +
+        `TDD를 건너뛰려면:\n` +
+        `  /deep-slice spike SLICE-NNN — 이 slice만 자유 코딩 (merge 불가)\n` +
+        `  /deep-slice reset SLICE-NNN — slice 리셋 후 재시작`,
     };
   }
 

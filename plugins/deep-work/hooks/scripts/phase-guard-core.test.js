@@ -39,6 +39,7 @@ describe('TDD State Machine', () => {
     const result = checkTddEnforcement('PENDING', 'src/app.ts', 'strict', []);
     assert.ok(!result.allowed);
     assert.ok(result.reason.includes('TDD 강제'));
+    assert.ok(result.reason.includes('/deep-slice spike'));
   });
 
   it('RED blocks production file edits (need failing test first)', () => {
@@ -55,6 +56,7 @@ describe('TDD State Machine', () => {
     const result = checkTddEnforcement('PENDING', 'src/app.ts', 'coaching', []);
     assert.ok(!result.allowed);
     assert.ok(result.reason.includes('코칭'));
+    assert.ok(result.reason.includes('/deep-slice spike'));
   });
 
   it('test files always allowed regardless of TDD state', () => {
