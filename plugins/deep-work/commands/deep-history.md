@@ -34,7 +34,7 @@ For each `session-receipt.json`, extract:
 - `session_id`, `task_description`, `started_at`, `finished_at`
 - `outcome` (merge/pr/keep/discard)
 - `slices.total`, `slices.completed`
-- `tdd_compliance` (strict/relaxed/spike/coaching counts)
+- `tdd_compliance` (strict/relaxed/override/spike/coaching counts)
 - `model_usage` (haiku/sonnet/opus/main counts)
 - `total_estimated_cost`
 - `deep_work_version`
@@ -60,7 +60,7 @@ S=sonnet H=haiku O=opus M=main
 ```
 Aggregate Stats (최근 [N]개 세션)
 
-   TDD 준수율: strict [N]% | relaxed [N]% | spike [N]%
+   TDD 준수율: strict [N]% | relaxed [N]% | override [N]% | spike [N]%
    모델 사용: haiku [N]회 | sonnet [N]회 | opus [N]회
    완료율: [completed]/[total] 슬라이스 ([N]%)
    결과: merge [N] | PR [N] | keep [N] | discard [N]

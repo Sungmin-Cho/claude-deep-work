@@ -28,7 +28,7 @@ Extract: `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `w
 
 Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
 - Count completed (status: "complete") vs total
-- Aggregate TDD compliance (strict/relaxed/coaching/spike counts)
+- Aggregate TDD compliance (strict/relaxed/coaching/override/spike counts)
 - Aggregate model usage (haiku/sonnet/opus counts)
 - Sum estimated_cost across slices
 
@@ -53,7 +53,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "spike": N
   },
   "tdd_compliance": {
-    "strict": N, "relaxed": N, "spike": N, "coaching": N
+    "strict": N, "relaxed": N, "override": N, "spike": N, "coaching": N
   },
   "model_usage": {
     "haiku": N, "sonnet": N, "opus": N, "main": N
@@ -77,7 +77,7 @@ Deep Work 세션 요약
    Task: [task_description]
    Branch: [worktree_branch or current branch]
    Slices: [completed]/[total] 완료
-   TDD: [strict_count] strict, [spike_count] spike
+   TDD: [strict_count] strict, [override_count] override, [spike_count] spike
    Model: haiku×[n] sonnet×[n] opus×[n]
    Quality gates: [PASS/FAIL summary]
 ```

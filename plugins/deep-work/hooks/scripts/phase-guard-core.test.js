@@ -391,6 +391,20 @@ describe('TDD Override', () => {
     assert.equal(result.decision, 'allow');
   });
 
+  it('processHook: implement + Bash file write + override allows', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Bash',
+      toolInput: { command: "echo 'x' > src/app.ts" },
+      state: {
+        current_phase: 'implement',
+        tdd_mode: 'strict',
+        tdd_state: 'PENDING',
+        tdd_override: true,
+      },
+    });
+    assert.equal(result.decision, 'allow');
+  });
+
   it('processHook: research + override still blocks (override is implement-only)', () => {
     const result = processHook({
       action: 'pre', toolName: 'Bash',
