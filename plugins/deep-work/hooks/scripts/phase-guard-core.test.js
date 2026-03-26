@@ -339,3 +339,65 @@ describe('Model Name Validation', () => {
     assert.ok(validateModelName('SONNET').valid);
   });
 });
+
+// ─── TDD Override Tests (v4.3) ──────────────────────────────
+
+describe('TDD Override', () => {
+  it('override allows production edit in strict mode with PENDING state', () => {
+    const result = checkTddEnforcement('PENDING', 'src/app.ts', 'strict', [], true);
+    assert.ok(result.allowed);
+  });
+
+  it('override allows production edit in coaching mode with PENDING state', () => {
+    const result = checkTddEnforcement('PENDING', 'src/app.ts', 'coaching', [], true);
+    assert.ok(result.allowed);
+  });
+
+  it('no override (undefined) preserves existing strict block', () => {
+    const result = checkTddEnforcement('PENDING', 'src/app.ts', 'strict', [], undefined);
+    assert.ok(!result.allowed);
+  });
+
+  it('override false preserves existing strict block', () => {
+    const result = checkTddEnforcement('PENDING', 'src/app.ts', 'strict', [], false);
+    assert.ok(!result.allowed);
+  });
+
+  it('override with relaxed mode still allows (relaxed checked first)', () => {
+    const result = checkTddEnforcement('PENDING', 'src/app.ts', 'relaxed', [], true);
+    assert.ok(result.allowed);
+  });
+
+  it('override with spike mode still allows (spike checked first)', () => {
+    const result = checkTddEnforcement('PENDING', 'src/app.ts', 'spike', [], true);
+    assert.ok(result.allowed);
+  });
+
+  it('processHook: implement + override allows production edit', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Write',
+      toolInput: { file_path: 'src/auth.ts' },
+      state: {
+        current_phase: 'implement',
+        tdd_mode: 'strict',
+        tdd_state: 'PENDING',
+        active_slice: 'SLICE-001',
+        slice_files: ['src/auth.ts'],
+        tdd_override: true,
+      },
+    });
+    assert.equal(result.decision, 'allow');
+  });
+
+  it('processHook: research + override still blocks (override is implement-only)', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Bash',
+      toolInput: { command: "echo 'x' > src/app.ts" },
+      state: {
+        current_phase: 'research',
+        tdd_override: true,
+      },
+    });
+    assert.equal(result.decision, 'block');
+  });
+});
