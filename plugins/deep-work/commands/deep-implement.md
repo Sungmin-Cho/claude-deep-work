@@ -279,6 +279,73 @@ git rev-parse HEAD 2>/dev/null  # → git_after
 
 ---
 
+## TDD Override (차단 시 대화형 건너뛰기)
+
+**조건**: `model_routing.implement`이 "main"이고, `tdd_mode`가 "strict" 또는 "coaching"일 때만 적용.
+Agent 위임 모드에서는 이 섹션을 건너뛰세요 (hook이 적용되지 않으므로 override 불필요).
+
+TDD 강제로 인해 Write/Edit가 차단된 경우 (hook이 차단 메시지를 반환한 경우):
+
+### 1. 차단 감지
+
+hook 차단 메시지에 "TDD 강제" 또는 "TDD 코칭"이 포함되어 있으면 이 섹션을 따릅니다.
+
+### 2. 사용자에게 질문
+
+AskUserQuestion을 호출하여 사용자의 선택을 받습니다:
+
+```
+TDD가 이 수정을 차단했습니다.
+파일: [차단된 파일 경로]
+TDD 상태: [현재 tdd_state]
+
+어떻게 진행할까요?
+```
+
+선택지:
+- A) 테스트 먼저 작성 (권장) — TDD 사이클대로 진행
+- B) TDD 건너뛰기 - config/설정 파일 수정
+- C) TDD 건너뛰기 - 테스트 작성이 불가능한 코드
+- D) TDD 건너뛰기 - 긴급 수정
+
+### 3. 선택에 따른 처리
+
+**A) 테스트 먼저 작성**: TDD 사이클(Step B)로 돌아가서 정상 진행.
+
+**B/C/D) TDD 건너뛰기**:
+
+1. `.claude/deep-work.local.md`의 `tdd_override` 필드를 현재 `active_slice` 값으로 설정:
+   ```yaml
+   tdd_override: "SLICE-NNN"
+   ```
+
+2. 선택한 사유를 기록 (B=config_change, C=untestable, D=urgent_fix)
+
+3. 차단되었던 Edit/Write를 재시도 — hook이 override를 확인하고 허용
+
+4. Slice 구현이 완료되면 (Step E) override를 해제:
+   ```yaml
+   tdd_override: ""
+   ```
+
+5. Receipt에 override 기록:
+   ```json
+   {
+     "tdd_override": true,
+     "tdd_override_reason": "config_change|untestable|urgent_fix",
+     "tdd_override_timestamp": "[ISO]"
+   }
+   ```
+
+### 4. 주의사항
+
+- Override는 현재 활성 slice 범위 내에서만 유효합니다
+- 다음 slice로 전환 시 override는 자동 해제됩니다
+- Override된 slice는 receipt 대시보드에서 경고(override) 표시됩니다
+- Override는 merge를 차단하지 않지만, TDD 없이 구현되었음을 명시합니다
+
+---
+
 ## Debug Sub-Mode
 
 If a test fails unexpectedly during Step B-2 (GREEN) or a previously passing test regresses:
