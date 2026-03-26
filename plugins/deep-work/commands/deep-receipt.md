@@ -43,7 +43,7 @@ Receipt Dashboard
 
 요약:
   완료: 1/4 (25%)
-  TDD 준수: 1 strict, 0 relaxed, 1 spike
+  TDD 준수: 1 strict, 0 relaxed, 0 override, 1 spike
   총 변경: +142 -23 (8 files)
 ```
 
@@ -54,6 +54,7 @@ TDD state icons:
 - 🟢 GREEN_ELIGIBLE — production code written, verification pending
 - ⬜ PENDING — not started
 - SPIKE — spike mode (not merge-eligible)
+- override — TDD skipped by user (merge-eligible with warning)
 
 ## View
 
@@ -102,7 +103,7 @@ Read all receipt files, combine into a single JSON array, and write to `$WORK_DI
   "summary": {
     "total_slices": N,
     "completed": N,
-    "tdd_compliance": { "strict": N, "relaxed": N, "spike": N },
+    "tdd_compliance": { "strict": N, "relaxed": N, "override": N, "spike": N },
     "total_changes": { "added": N, "removed": N, "files": N },
     "debug_count": N
   },
