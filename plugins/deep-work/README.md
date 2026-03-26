@@ -130,6 +130,7 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `tdd_mode` | TDD enforcement mode (strict / relaxed / coaching / spike) |
 | `active_slice` | Currently active slice ID (e.g., SLICE-001) |
 | `tdd_state` | Current TDD state (PENDING / RED / RED_VERIFIED / GREEN_ELIGIBLE / GREEN / REFACTOR / SPIKE) |
+| `tdd_override` | Slice-level TDD override — set to active slice ID when user bypasses TDD via AskUserQuestion |
 | `debug_mode` | Whether systematic debugging is active |
 | `brainstorm_started_at`, `brainstorm_completed_at` | Phase 0 timestamps |
 | `worktree_enabled` | Whether worktree isolation is active (v4.1) |
@@ -181,13 +182,18 @@ Creates a concrete implementation plan based on research results:
 **v3.1 features:**
 - **Plan Diff visualization** — Automatically compares task/file/architecture/risk changes in `plan-diff.md` when a plan is rewritten
 
-### Phase 3: Implement
+### Phase 3: Implement (v4.0 Evidence-Driven)
 
-Mechanically executes the approved plan:
+Slice-based TDD-enforced execution:
 
-- Executes checklist tasks one by one in order
-- Marks each task complete (`- [x]`) after execution
-- Stops immediately on issues and documents them (no ad-hoc fixes)
+- Per-slice TDD cycle: RED (failing test) → GREEN (minimal code) → REFACTOR
+- **TDD State Machine** hook enforcement — production code edits blocked until failing test output exists
+- Each slice produces a **receipt JSON** (test output, git diff, spec checklist)
+- Unexpected test failures trigger **debug mode** (`/deep-debug`)
+- **Spike mode**: Exploratory coding, auto git stash + TDD restart on exit
+- **Coaching mode**: Educational TDD guidance instead of hard blocks
+- **TDD Override**: When TDD blocks a production edit, Claude asks the user whether to write a test first or skip TDD for this slice (merge-eligible with warning in receipt)
+- Block messages include escape hatch guidance (`/deep-slice spike`, `/deep-slice reset`)
 - **Automatically enters Test phase after implementation completes**
 
 **v3.0 features:**

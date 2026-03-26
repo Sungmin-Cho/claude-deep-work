@@ -29,7 +29,7 @@ deep-work/
 │   │   └── scripts/
 │   │       ├── phase-guard.sh      # PreToolUse — bash+Node hybrid
 │   │       ├── phase-guard-core.js # Node.js: TDD state machine, Bash detection
-│   │       ├── phase-guard-core.test.js # 47 unit tests (node:test)
+│   │       ├── phase-guard-core.test.js # 56 unit tests (node:test)
 │   │       ├── file-tracker.sh     # PostToolUse — tracks + receipt collection
 │   │       ├── update-check.sh     # SessionStart — git-based version check
 │   │       ├── session-end.sh      # Stop — session reminder
@@ -63,7 +63,7 @@ deep-work/
 ## Testing
 
 ```bash
-# 47 unit tests — v4.0 added node:test, v4.2 added cross-model review safe pattern tests
+# 56 unit tests — v4.0 added node:test, v4.2 added cross-model review safe pattern tests
 cd plugins/deep-work/hooks/scripts
 node --test phase-guard-core.test.js    # Unit tests (v4.0)
 ```
@@ -79,4 +79,4 @@ node --test phase-guard-core.test.js    # Unit tests (v4.0)
 
 ## Version
 
-Current: 4.2.0 (Adversarial Multi-Model Review Gate — Structural Review + Cross-Model Verification + Review Gate)
+Current: 4.2.1 (TDD Override — Interactive TDD bypass + Escape hatch guidance in block messages)

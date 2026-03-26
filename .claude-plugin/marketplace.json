@@ -9,7 +9,7 @@
     {
       "name": "deep-work",
       "description": "Evidence-Driven Development Protocol — adversarial multi-model review, worktree isolation, model auto-routing, TDD enforcement, receipt validation, session lifecycle management",
-      "version": "4.2.0",
+      "version": "4.2.1",
       "source": "./plugins/deep-work"
     }
   ]

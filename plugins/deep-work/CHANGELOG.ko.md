@@ -7,6 +7,23 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.1] - 2026-03-26
+
+### 추가
+- **TDD Override**: 구현 중 TDD가 production 파일 수정을 차단하면, Claude가 차단 이유를 설명하고 사용자에게 대화형으로 선택지를 제공 — 테스트 먼저 작성(권장), 또는 사유와 함께 이 slice의 TDD 건너뛰기(config 변경, 테스트 불가, 긴급 수정). Override는 slice 범위로 제한되며 slice 전환 시 자동 해제.
+- **차단 메시지에 탈출구 안내**: strict/coaching 모드의 TDD 차단 메시지에 `/deep-slice spike`, `/deep-slice reset` 대안을 표시하여 사용자가 우회 방법을 즉시 알 수 있도록 개선.
+- **`tdd_override` 상태 필드**: 어떤 slice에 TDD override가 활성화되어 있는지 추적. Hook이 이 필드를 읽어 fast-path 허용 결정.
+- **Receipt에 override 기록**: Override된 slice는 receipt JSON에 `tdd_override: true`와 `tdd_override_reason`으로 기록. Receipt 대시보드에서 `override` 상태를 `spike`와 구분하여 표시 (merge 가능 + 경고).
+- 9개 새 unit test 추가 (총 56개)
+
+### 변경
+- `phase-guard-core.js`: `checkTddEnforcement`에 `tddOverride` 파라미터 추가; `processHook`에서 `state.tdd_override` 전달
+- `phase-guard.sh`: state 파일에서 `tdd_override` 읽기; active slice와 일치하는 override에 대한 fast-path 추가; Node.js에 override 전달
+- `deep-implement.md`: "TDD Override" 섹션 추가 (AskUserQuestion 흐름, main 모델 라우팅만 적용)
+- `deep-receipt.md`: Override 아이콘, 카운트, JSON 스키마 업데이트
+- `deep-finish.md`: `tdd_compliance`에 `override` 카운트 포함
+- `deep-history.md`: `tdd_compliance` 및 TDD 준수율 표시에 `override` 포함
+
 ## [4.2.0] - 2026-03-25
 
 ### 추가

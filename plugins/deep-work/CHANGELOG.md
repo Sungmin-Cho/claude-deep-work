@@ -7,6 +7,23 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.1] - 2026-03-26
+
+### Added
+- **TDD Override**: When TDD blocks a production file edit during implementation, Claude now detects the block, explains the reason to the user, and offers an interactive choice — write the test first (recommended), or skip TDD for this slice with a recorded reason (config change, untestable code, urgent fix). Override is slice-scoped and auto-clears on slice transition.
+- **Escape hatch guidance in block messages**: Both strict and coaching TDD block messages now show `/deep-slice spike` and `/deep-slice reset` as alternatives, so users know how to bypass TDD when needed.
+- **`tdd_override` state field**: New state file field tracks which slice has an active TDD override. Hook reads this field for fast-path allow decisions.
+- **Override in receipts**: Overridden slices are recorded with `tdd_override: true` and `tdd_override_reason` in receipt JSON. Receipt dashboard shows `override` status distinct from `spike` (merge-eligible with warning).
+- 9 new unit tests for TDD override (total: 56 tests)
+
+### Changed
+- `phase-guard-core.js`: `checkTddEnforcement` accepts new `tddOverride` parameter; `processHook` passes `state.tdd_override`
+- `phase-guard.sh`: Reads `tdd_override` from state file; adds fast-path for override matching active slice; passes override to Node.js
+- `deep-implement.md`: New "TDD Override" section with AskUserQuestion flow (main model routing only)
+- `deep-receipt.md`: Override icon, count, and JSON schema updated
+- `deep-finish.md`: `tdd_compliance` includes `override` count
+- `deep-history.md`: `tdd_compliance` and TDD compliance display include `override`
+
 ## [4.2.0] - 2026-03-25
 
 ### Added
