@@ -419,7 +419,7 @@ After all slices are complete:
 
    구현 결과:
      - 완료 slice: N/N
-     - TDD 준수율: [strict: N, relaxed: N, spike: N]
+     - TDD 준수율: [strict: N, relaxed: N, override: N, spike: N]
      - Receipt 완성: N/N
      - 디버깅 횟수: N회
    ```
