@@ -28,6 +28,7 @@ WORK_DIR="$(read_frontmatter_field "$STATE_FILE" "work_dir")"
 TDD_MODE="$(read_frontmatter_field "$STATE_FILE" "tdd_mode")"
 ACTIVE_SLICE="$(read_frontmatter_field "$STATE_FILE" "active_slice")"
 TDD_STATE="$(read_frontmatter_field "$STATE_FILE" "tdd_state")"
+TDD_OVERRIDE="$(read_frontmatter_field "$STATE_FILE" "tdd_override")"
 
 # ─── FAST PATH: idle or empty phase → allow ──────────────────
 
@@ -51,6 +52,12 @@ fi
 # ─── FAST PATH: implement phase, spike mode → allow ──────────
 
 if [[ "$CURRENT_PHASE" == "implement" && "$TDD_MODE" == "spike" ]]; then
+  exit 0
+fi
+
+# ─── FAST PATH: implement phase, TDD override active → allow ─
+
+if [[ "$CURRENT_PHASE" == "implement" && -n "$TDD_OVERRIDE" && "$TDD_OVERRIDE" == "$ACTIVE_SLICE" && "$TOOL_NAME" != "Bash" ]]; then
   exit 0
 fi
 
@@ -126,9 +133,9 @@ fi
 # Build JSON input for Node.js using node itself to avoid shell injection
 NODE_INPUT=$(node -e "
   const input = JSON.parse(process.argv[1]);
-  const state = { current_phase: process.argv[2], tdd_mode: process.argv[3], active_slice: process.argv[4], tdd_state: process.argv[5] };
+  const state = { current_phase: process.argv[2], tdd_mode: process.argv[3], active_slice: process.argv[4], tdd_state: process.argv[5], tdd_override: process.argv[7] === process.argv[4] && process.argv[7] !== '' };
   console.log(JSON.stringify({ action: 'pre', toolName: process.argv[6], toolInput: input, state: state }));
-" "$TOOL_INPUT" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" 2>/dev/null)
+" "$TOOL_INPUT" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" "${TDD_OVERRIDE:-}" 2>/dev/null)
 
 # Call Node.js with timeout protection
 NODE_RESULT=""
