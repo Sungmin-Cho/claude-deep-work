@@ -1,4 +1,5 @@
 .claude/
 deep-work/
+docs/
 *.local.md
 .DS_Store
