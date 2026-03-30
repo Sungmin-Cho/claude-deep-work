@@ -495,6 +495,22 @@ If A: loop back to Section 4-1 (interactive feedback).
 
 **If reviews pass or were skipped:** proceed to existing 5a (mode re-evaluation) and 5b (state update).
 
+#### Team Mode Pre-check
+
+If `team_mode` is "team", validate that Agent Teams is still available before mode re-evaluation:
+
+```bash
+echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-not_set}"
+```
+
+If the result is `not_set` or empty:
+```
+⚠️ Agent Teams 환경변수가 비활성화되었습니다. Solo 모드로 자동 전환합니다.
+```
+- Update `team_mode: solo` in `.claude/deep-work.local.md`
+- Skip the Team → Solo re-evaluation below (already switched)
+- Proceed directly to 5b (state update)
+
 #### 5a. Mode re-evaluation (Team → Solo)
 
 **If `team_mode` is "team"**: Analyze the plan.md Slice Checklist:

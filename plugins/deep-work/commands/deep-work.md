@@ -479,24 +479,45 @@ Ask the user to choose the work mode using AskUserQuestion:
    echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-not_set}"
    ```
 
-2. If the result is `not_set` or empty, display the following and fall back to Solo:
+2. If the result is `not_set` or empty, ask the user whether to auto-configure using AskUserQuestion:
    ```
    ⚠️ Agent Teams 기능이 활성화되지 않았습니다.
 
-   활성화 방법:
-     ~/.claude/settings.json 에 다음을 추가하세요:
-     {
-       "env": {
-         "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-       }
-     }
-     저장 후 Claude Code를 재시작하세요.
+   자동 설정을 진행할까요?
+     1. ✅ 자동 설정 — settings.json에 환경변수를 추가합니다 (Claude Code 재시작 필요)
+     2. ❌ Solo 모드로 진행 — Team 없이 진행합니다
+   ```
 
+3. If the user chooses option 1 (auto-setup):
+   a. Read `~/.claude/settings.json` (create if not exists with `{}`)
+   b. Add or merge the `env` field:
+      ```json
+      {
+        "env": {
+          "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+        }
+      }
+      ```
+      IMPORTANT: Preserve all existing settings — only add/update the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` key within the `env` object.
+   c. Display the result:
+      ```
+      ✅ Agent Teams 환경변수가 설정되었습니다.
+
+      ⚠️ 이 설정은 다음 Claude Code 세션부터 적용됩니다.
+      현재 세션에서는 Solo 모드로 진행합니다.
+
+      다음 세션에서 /deep-work 실행 시 Team 모드를 선택할 수 있습니다.
+      ```
+   d. Set `team_mode` to `solo` for the current session.
+
+4. If the user chooses option 2 (solo fallback):
+   Display:
+   ```
    ℹ️ Solo 모드로 전환하여 진행합니다.
    ```
    Set `team_mode` to `solo`.
 
-3. If the variable is set (any non-empty value), set `team_mode` to `team`.
+5. If the variable is set (any non-empty value), set `team_mode` to `team`.
 
 **If the user selects Solo or default:** Set `team_mode` to `solo`.
 

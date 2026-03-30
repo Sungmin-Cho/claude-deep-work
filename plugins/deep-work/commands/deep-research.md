@@ -304,6 +304,22 @@ Then continue to [Step 4: Update state file](#4-update-state-file).
 
 ---
 
+### Team Mode Pre-check
+
+Before proceeding with team mode, validate that Agent Teams is still available:
+
+```bash
+echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-not_set}"
+```
+
+If the result is `not_set` or empty:
+```
+⚠️ Agent Teams 환경변수가 비활성화되었습니다. Solo 모드로 전환합니다.
+```
+- Update `team_mode: solo` in `.claude/deep-work.local.md`
+- Fall back to the Solo research flow above (Step 1 through Step 4)
+- Do NOT proceed to Team Mode Research below
+
 ## Team Mode Research
 
 ### 2-TEAM-1. Create team

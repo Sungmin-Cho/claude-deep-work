@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "5.1.1"
+version: "5.1.2"
 description: |
   This skill should be used when the user wants to follow an evidence-driven development
   protocol with TDD enforcement, slice-based execution, and receipt-based evidence collection.

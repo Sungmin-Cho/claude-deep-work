@@ -86,4 +86,4 @@ node --test assumption-engine.test.js   # Assumption engine tests (57 tests, v5.
 
 ## Version
 
-Current: 5.1.1 (Security Hardening — Fail-Closed Guards, Atomic Writes, Command Chain Detection)
+Current: 5.1.2 (Team Mode Auto-Setup & Runtime Validation)

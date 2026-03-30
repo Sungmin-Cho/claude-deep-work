@@ -7,6 +7,15 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.2] - 2026-03-30
+
+### Added
+- **Team mode auto-setup**: When user selects Team mode without the required environment variable, Claude Code now offers to automatically configure `~/.claude/settings.json` instead of only showing manual instructions
+- **Team mode runtime validation**: All phases (research, plan, implement) now re-check `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` before attempting team operations, with automatic Solo fallback if unavailable
+
+### Fixed
+- **Team mode Solo fallback**: Team mode selection without proper configuration now reliably falls back to Solo mode across all phases, not just at initialization
+
 ## [5.1.1] - 2026-03-30
 
 ### Fixed

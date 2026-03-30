@@ -7,6 +7,15 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.2] - 2026-03-30
+
+### 추가
+- **Team 모드 자동 설정**: Team 모드 선택 시 환경변수가 미설정이면 수동 안내 대신 Claude Code가 자동으로 `~/.claude/settings.json` 설정을 제안
+- **Team 모드 런타임 검증**: 모든 단계(research, plan, implement)에서 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` 환경변수를 재검증, 비활성화 시 자동 Solo fallback
+
+### 수정
+- **Team 모드 Solo fallback**: 설정 미완료 시 초기화 단계뿐 아니라 전 단계에서 안정적으로 Solo 모드로 전환
+
 ## [5.1.1] - 2026-03-30
 
 ### 수정
