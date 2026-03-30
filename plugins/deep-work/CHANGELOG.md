@@ -7,6 +7,18 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-03-30
+
+### Added
+- **Self-Evolving Harness (Assumption Engine)**: Every enforcement rule is now a falsifiable hypothesis with machine-readable evidence signals. deep-work studies its own assumptions using session data.
+- **`assumptions.json`**: Registry of 5 core assumptions (phase_guard, tdd, research, cross_model_review, receipt_collection) with evidence signals, adjustable enforcement levels, and minimum session thresholds.
+- **`assumption-engine.js`**: Core analysis module with Wilson Score confidence, model-aware splitting, staleness detection, new model detection, per-slice signal evaluation, report generation, ASCII timeline, and shields.io badge export. 42 unit tests.
+- **`/deep-assumptions` command**: Report (default + --verbose), history (ASCII timeline), export (--format=badge), and --rebuild (regenerate JSONL from receipts).
+- **`harness_metadata` in receipts**: Per-slice metadata (model_id, assumption_overrides, rework_count, tests_passed_first_try, bugs_caught_in_red_phase, review_defects_found, research_references_used, cross_model_unique_findings). Backward-compatible.
+- **Session history JSONL**: `harness-sessions.jsonl` appended at session termination via Stop hook. Per-slice data, session dedupe, cross-platform date math. Disk error handling (stderr log, never blocks).
+- **Health summary on session init**: `/deep-work` shows assumption health if sufficient history exists. New model detection with cold start warning.
+- **Assumption Health in reports**: `/deep-report` includes assumption confidence table and per-session harness metadata aggregation.
+
 ## [4.2.1] - 2026-03-26
 
 ### Added

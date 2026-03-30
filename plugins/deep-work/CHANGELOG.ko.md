@@ -7,6 +7,18 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-03-30
+
+### 추가
+- **Self-Evolving Harness (Assumption Engine)**: 모든 enforcement 규칙이 이제 machine-readable evidence signal을 가진 falsifiable hypothesis. deep-work가 세션 데이터로 자체 가설을 검증.
+- **`assumptions.json`**: 5개 핵심 가설 레지스트리 (phase_guard, tdd, research, cross_model_review, receipt_collection). evidence signal, 조절 가능한 enforcement 레벨, 최소 세션 임계값 포함.
+- **`assumption-engine.js`**: Wilson Score confidence, 모델별 분할, staleness 감지, 새 모델 감지, per-slice signal 평가, 리포트 생성, ASCII 타임라인, shields.io 배지 내보내기. 42개 단위 테스트.
+- **`/deep-assumptions` 커맨드**: report (기본 + --verbose), history (ASCII 타임라인), export (--format=badge), --rebuild (receipts에서 JSONL 재생성).
+- **Receipt의 `harness_metadata`**: slice별 메타데이터 (model_id, assumption_overrides, rework_count, tests_passed_first_try 등). 하위 호환.
+- **세션 히스토리 JSONL**: Stop hook에서 `harness-sessions.jsonl` append. per-slice 데이터, 세션 중복 방지, 크로스 플랫폼 날짜 계산.
+- **세션 초기화 시 건강도 요약**: `/deep-work`에서 충분한 히스토리가 있으면 가설 건강도 표시. 새 모델 감지 시 cold start 경고.
+- **리포트의 Assumption Health**: `/deep-report`에 confidence 테이블과 세션별 harness metadata 집계 포함.
+
 ## [4.2.1] - 2026-03-26
 
 ### 추가
