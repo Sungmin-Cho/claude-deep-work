@@ -65,12 +65,12 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 
 | Command | Description |
 |---------|-------------|
-| `/deep-work <task>` | Initialize session, select preset, configure TDD mode, update check |
+| `/deep-work <task>` | Initialize session, select preset, configure TDD mode, update check (`--skip-to-implement` flag) |
 | `/deep-brainstorm` | Phase 0: Design exploration — problem definition, approach comparison (skip-able) |
 | `/deep-research` | Phase 1: Codebase analysis → `research.md` |
-| `/deep-plan` | Phase 2: Slice-based implementation plan → `plan.md`, auto-implement on approval |
+| `/deep-plan` | Phase 2: Slice-based implementation plan → `plan.md`, auto-loop review, auto-implement on approval |
 | `/deep-implement` | Phase 3: TDD-enforced slice execution with receipt collection |
-| `/deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates |
+| `/deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates (auto-loop re-execution) |
 | `/deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix (auto-triggers on failures) |
 | `/deep-slice` | Slice dashboard, manual activation, spike mode, reset |
 | `/deep-receipt` | Receipt dashboard, per-slice view, export (JSON/Markdown) |
@@ -92,7 +92,7 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | File | Created | Description |
 |------|---------|-------------|
 | `research.md` | Phase 1 complete | Codebase analysis results (Executive Summary first) |
-| `plan.md` | Phase 2 complete | Detailed implementation plan (Plan Summary first) |
+| `plan.md` | Phase 2 complete | Detailed implementation plan (Plan Summary first, per-slice contract + acceptance_threshold fields) |
 | `plan.v{N}.md` | Plan rewrite | Previous plan version backup |
 | `test-results.md` | Phase 4 complete | Verification results (cumulative per attempt) |
 | `report.md` | Session complete | Full session report (includes phase durations) |
@@ -140,6 +140,12 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `worktree_branch` | Branch name inside the worktree (v4.1) |
 | `worktree_base_branch` | Original branch before worktree creation (v4.1) |
 | `worktree_base_commit` | Commit hash at the time of worktree creation (v4.1) |
+| `evaluator_model` | Default evaluator model for subagents — `"sonnet"` (v5.1) |
+| `plan_review_retries` | Auto-loop retry count for plan review — `0` (v5.1) |
+| `plan_review_max_retries` | Max retries for plan auto-loop — `3` (v5.1) |
+| `auto_loop_enabled` | Whether auto-loop evaluation is active — `true` (v5.1) |
+| `skipped_phases` | Phases skipped via `--skip-to-implement` — `[]` (v5.1) |
+| `assumption_adjustments` | Active adjustments from Assumption Engine — `[]` (v5.1) |
 
 ## Workflow Details
 
@@ -394,6 +400,7 @@ On first run, setup questions are asked and saved as the `default` preset. On su
 | `--team` | Override to Team mode |
 | `--zero-base` | Override to greenfield |
 | `--skip-research` | Start from Plan phase |
+| `--skip-to-implement` | Skip to implement phase (inline slice required) |
 | `--no-branch` | Skip git branch creation |
 
 ## Session Options
@@ -465,6 +472,33 @@ If neither tool is installed, deep-work works normally with structural review on
 ### Commands
 - `/deep-review` — Manually trigger review on current phase document
 - `/deep-review --adversarial` — Run only adversarial cross-model review
+
+## Auto-Loop Evaluation & Contract Negotiation (v5.1)
+
+deep-work v5.1 adds self-correcting evaluation loops and contract-driven slice negotiation.
+
+### Auto-Loop Evaluation
+- **Plan review auto-loop** — After plan creation, a subagent evaluator automatically reviews the plan. If the review score is below threshold, the plan is revised and re-reviewed (up to `plan_review_max_retries` times) without user intervention.
+- **Test phase auto-retry** — When tests fail, the implement→test cycle re-executes automatically with evaluator feedback, reducing manual back-and-forth.
+- Toggle with `auto_loop_enabled` in session state (default: `true`).
+
+### Contract Negotiation
+Each slice in `plan.md` can now include `contract` and `acceptance_threshold` fields:
+- **`contract`** — Defines the expected inputs, outputs, and invariants for a slice
+- **`acceptance_threshold`** — Numeric threshold (0.0–1.0) that the evaluator must meet for the slice to pass
+
+The evaluator checks each slice against its contract during the test phase. Slices below threshold are flagged for revision.
+
+### Assumption Engine Auto-Apply
+At session start, the Assumption Engine automatically applies adjustments based on historical evidence. Previously manual `/deep-assumptions` adjustments are now proactively suggested and applied when confidence is high enough.
+
+### Adaptive Evaluator Model
+- Default evaluator model: **sonnet** (configurable via `evaluator_model` in session state)
+- The engine can auto-adjust the evaluator model based on task complexity and historical accuracy signals.
+
+### Phase Skip Flexibility
+- **`--skip-to-implement`** flag on `/deep-work` — Skips brainstorm, research, and plan phases, jumping directly to implement. Requires an inline slice definition in the task description.
+- Skipped phases are recorded in `skipped_phases` for traceability in reports and receipts.
 
 ## Installation (v3.3.3)
 

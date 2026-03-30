@@ -15,7 +15,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Detect active session & extract WORK_DIR
 
-Read `.claude/deep-work.local.md`. Extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, and `preset` from the YAML frontmatter.
+Read `.claude/deep-work.local.md`. Extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, `preset`, `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `auto_loop_enabled` from the YAML frontmatter.
 
 Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
 
@@ -124,7 +124,10 @@ Deep Work 세션을 재개합니다
 현재 단계: [Phase 이름] ([phase_context])
 작업 폴더: [work_dir]
 프리셋: [preset]
+평가자 모델: [evaluator_model]
 시작: [started_at]
+Assumption 조정: [N]건 또는 없음
+건너뛴 단계: [list] 또는 없음
 
 컨텍스트 복원:
   [✅/⬜] research.md [요약 로드 / 없음]
@@ -136,7 +139,7 @@ Deep Work 세션을 재개합니다
 ▶️ [다음 행동]
 ```
 
-Omit lines that don't apply to the current phase (e.g., don't show 체크리스트 for research phase). (If `preset` is empty or not set, omit the 프리셋 line.)
+Omit lines that don't apply to the current phase (e.g., don't show 체크리스트 for research phase). (If `preset` is empty or not set, omit the 프리셋 line.) If `evaluator_model` is empty or not set, omit the 평가자 모델 line. If `assumption_adjustments` is empty or not set, show "없음". If `skipped_phases` is empty or not set, show "없음".
 
 ### 4. Auto-continue
 

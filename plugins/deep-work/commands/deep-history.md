@@ -36,6 +36,7 @@ For each `session-receipt.json`, extract:
 - `slices.total`, `slices.completed`
 - `tdd_compliance` (strict/relaxed/override/spike/coaching counts)
 - `model_usage` (haiku/sonnet/opus/main counts)
+- `evaluation.evaluator_model` (haiku/sonnet/opus — the model used for plan/test evaluation)
 - `total_estimated_cost`
 - `deep_work_version`
 
@@ -44,15 +45,16 @@ For each `session-receipt.json`, extract:
 ```
 Deep Work Session History
 
-┌────┬──────────────────────┬────────────┬────────┬──────────┬───────────┐
-│ #  │ Task                 │ Date       │ Slices │ Outcome  │ Model     │
-├────┼──────────────────────┼────────────┼────────┼──────────┼───────────┤
-│ 1  │ Add model routing    │ 2026-03-25 │ 4/4    │ PR #42   │ S1 H2 O1 │
-│ 2  │ Fix receipt bug      │ 2026-03-23 │ 2/2    │ merge    │ S2       │
-│ 3  │ Worktree setup       │ 2026-03-20 │ 3/5    │ keep     │ S3       │
-└────┴──────────────────────┴────────────┴────────┴──────────┴───────────┘
+┌────┬──────────────────────┬────────────┬────────┬──────────┬───────────┬───────────┐
+│ #  │ Task                 │ Date       │ Slices │ Outcome  │ Model     │ Evaluator │
+├────┼──────────────────────┼────────────┼────────┼──────────┼───────────┼───────────┤
+│ 1  │ Add model routing    │ 2026-03-25 │ 4/4    │ PR #42   │ S1 H2 O1 │ sonnet    │
+│ 2  │ Fix receipt bug      │ 2026-03-23 │ 2/2    │ merge    │ S2       │ haiku     │
+│ 3  │ Worktree setup       │ 2026-03-20 │ 3/5    │ keep     │ S3       │ sonnet    │
+└────┴──────────────────────┴────────────┴────────┴──────────┴───────────┴───────────┘
 
 S=sonnet H=haiku O=opus M=main
+Evaluator: evaluation.evaluator_model from session receipt (or "—" if not set)
 ```
 
 ### 4. Display aggregate statistics
@@ -62,6 +64,7 @@ Aggregate Stats (최근 [N]개 세션)
 
    TDD 준수율: strict [N]% | relaxed [N]% | override [N]% | spike [N]%
    모델 사용: haiku [N]회 | sonnet [N]회 | opus [N]회
+   평가자 모델 사용: haiku [N]회 | sonnet [N]회 | opus [N]회
    완료율: [completed]/[total] 슬라이스 ([N]%)
    결과: merge [N] | PR [N] | keep [N] | discard [N]
 ```

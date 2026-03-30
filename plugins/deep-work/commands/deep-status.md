@@ -64,6 +64,8 @@ Set `WORK_DIR` to this value.
 
 Read `model_routing` and `notifications` from the state file. If missing, show defaults (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku for model routing; "설정 없음" for notifications).
 
+Read `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `plan_review_max_retries` from the state file. If missing, default to: evaluator_model="없음", assumption_adjustments=[] (empty), skipped_phases=[] (empty), plan_review_retries=0, plan_review_max_retries=3.
+
 Read the following files if they exist:
 - `$WORK_DIR/research.md` — check if it has content
 - `$WORK_DIR/plan.md` — count checklist progress
@@ -87,6 +89,12 @@ From `$WORK_DIR/plan.md`, count:
 
 Show a comprehensive status report. If the `team_mode` field is missing from the state file, treat it as "Solo" (backward compatibility).
 
+**Conditional v5.1 fields:**
+- `평가자 모델`: Always show the evaluator_model value (or "없음" if not set).
+- `Assumption 조정`: Only show if `assumption_adjustments` is non-empty. Display the count of adjustments.
+- `건너뛴 단계`: Only show if `skipped_phases` is non-empty. Display the list of skipped phase names.
+- `Auto-Loop` on Phase 2 line: Only show the parenthetical if `plan_review_retries` > 0 or `auto_loop_enabled` is true.
+
 ```
 Deep Work 세션 상태
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -99,12 +107,13 @@ Deep Work 세션 상태
 프로젝트 타입: [Existing / Zero-Base]
 Git 브랜치: [git_branch or "없음"]
 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
+평가자 모델: [evaluator_model] (v5.1)
 알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 현재 단계: [Phase name with emoji]
    Phase 0 (Brainstorm): [✅ 완료 / ⏳ 진행중 / ⬜ 대기 / ⏭️ 생략]
    Phase 1 (Research):   [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
-   Phase 2 (Plan):       [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기]
+   Phase 2 (Plan):       [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기] (Auto-Loop: [plan_review_retries]/[plan_review_max_retries])
    Phase 3 (Implement):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
    Phase 4 (Test):       [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
 
@@ -124,6 +133,8 @@ Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
    Plan (Structural): [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
    Plan (Adversarial): [Claude N/10, Codex N/10 — Consensus N, Conflicts N, Waivers N / 미실행 / 도구 미설치]
 크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
+Assumption 조정: [N]건 적용됨 (v5.1)
+건너뛴 단계: [brainstorm, research, plan]
 
 산출물:
    - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]

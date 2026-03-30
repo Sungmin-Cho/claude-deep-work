@@ -86,8 +86,12 @@ Write `$WORK_DIR/report.md` with the following structure:
 | Started | [started_at] |
 | Completed | [current timestamp or "In Progress"] |
 | Current Phase | [current_phase] |
+| Evaluator Model | [evaluator_model or "default"] |
 | Plan Iterations | [iteration_count] |
+| Plan Auto-Loop | [plan_review_retries]/[plan_review_max_retries] |
+| Test Auto-Loop | [test_retry_count]/[max_test_retries] |
 | Model Routing | Research: [model], Plan: 현재 세션, Implement: [model], Test: [model] |
+| Assumption Adjustments | [list of assumption adjustments applied, or "None"] |
 
 ## Phase Duration
 | Phase | Started | Completed | Duration |
@@ -119,11 +123,24 @@ Write `$WORK_DIR/report.md` with the following structure:
 ]
 [If plan-diff.md does not exist: "단일 반복 (재작성 없음)"]
 
+### Plan Auto-Loop History
+[If plan_review_retries > 0 from state file:]
+| Attempt | Score | Issues |
+|---------|-------|--------|
+| 1 | [score]/10 | [list of issues from that attempt] |
+| 2 | [score]/10 | [resolved issues or remaining] |
+[Parse from plan review history in state file or plan-review.json]
+
+[If plan_review_retries == 0: "Auto-loop 미사용 (첫 시도 통과)"]
+
 ## Implementation Results
 | # | Task | File | Status | Notes |
 |---|------|------|--------|-------|
 | 1 | [description] | [path] | ✅/❌/⬜ | [notes] |
 [Parse checklist from plan.md. ✅ = completed, ❌ = issue, ⬜ = not started]
+
+**Contract Compliance**: [N]/[total] contracts verified
+[Parse from slice receipts — count slices where all contracts are met vs total contracts defined]
 
 ## Files Changed
 

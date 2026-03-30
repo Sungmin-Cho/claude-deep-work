@@ -66,7 +66,17 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "receipt_completeness": "PASS/FAIL",
     "verification_evidence": "PASS/FAIL"
   },
-  "deep_work_version": "4.1.0"
+  "evaluation": {
+    "evaluator_model": "sonnet",
+    "plan_review_retries": 0,
+    "test_retry_count": 0,
+    "assumption_adjustments": []
+  },
+  "contract_compliance": {
+    "total_contracts": 0,
+    "contracts_met": 0
+  },
+  "deep_work_version": "5.1.0"
 }
 ```
 

@@ -32,14 +32,14 @@ Scan `$WORK_DIR/receipts/` directory for all receipt JSON files. For each receip
 ```
 Receipt Dashboard
 
-┌──────────┬──────────┬──────────┬──────────┬──────────┐
-│ Slice    │ TDD      │ Tests    │ Spec     │ Review   │
-├──────────┼──────────┼──────────┼──────────┼──────────┤
-│ SLICE-001│ ✅ GREEN │ 5/5 PASS │ 3/3 ✅   │ PASS     │
-│ SLICE-002│ 🟡 RED_V │ 2/5 FAIL │ 1/3 ⏳   │ —        │
-│ SLICE-003│ ⬜ PEND  │ —        │ —        │ —        │
-│ SLICE-004│ SPIKE    │ —        │ —        │ ⚠️       │
-└──────────┴──────────┴──────────┴──────────┴──────────┘
+┌──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ Slice    │ TDD      │ Tests    │ Spec     │ Contract │ Review   │
+├──────────┼──────────┼──────────┼──────────┼──────────┼──────────┤
+│ SLICE-001│ ✅ GREEN │ 5/5 PASS │ 3/3 ✅   │ 4/4 PASS │ PASS     │
+│ SLICE-002│ 🟡 RED_V │ 2/5 FAIL │ 1/3 ⏳   │ 1/3 FAIL │ —        │
+│ SLICE-003│ ⬜ PEND  │ —        │ —        │ —        │ —        │
+│ SLICE-004│ SPIKE    │ —        │ —        │ —        │ ⚠️       │
+└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
 
 요약:
   완료: 1/4 (25%)
@@ -78,6 +78,13 @@ Spec Compliance:
   ✅ [requirement 2]
   ❌ [requirement 3]
 
+Contract Compliance:
+  ✅ [contract item 1]
+  ✅ [contract item 2]
+  ❌ [contract item 3]
+  Threshold: [all/majority]
+  Result: [PASS/FAIL]
+
 Code Review:
   결과: [PASS/WARN]
   Findings: [N] (critical: [N], important: [N])
@@ -105,9 +112,24 @@ Read all receipt files, combine into a single JSON array, and write to `$WORK_DI
     "completed": N,
     "tdd_compliance": { "strict": N, "relaxed": N, "override": N, "spike": N },
     "total_changes": { "added": N, "removed": N, "files": N },
-    "debug_count": N
+    "debug_count": N,
+    "contract_compliance": {
+      "total_items": N,
+      "passed": N,
+      "failed": N,
+      "pass_rate": "N%"
+    }
   },
-  "slices": [ ...all receipt objects... ]
+  "slices": [
+    {
+      "...other receipt fields...",
+      "contract_compliance": {
+        "items": { "item1": true, "item2": true, "item3": false },
+        "threshold": "all",
+        "result": "FAIL"
+      }
+    }
+  ]
 }
 ```
 
@@ -122,10 +144,10 @@ Generate a markdown summary suitable for PR descriptions. Write to `$WORK_DIR/re
 ```markdown
 ## Evidence Summary
 
-| Slice | Goal | TDD | Tests | Spec | Review |
-|-------|------|-----|-------|------|--------|
-| SLICE-001 | [goal] | ✅ strict | 5/5 | 3/3 | PASS |
-| SLICE-002 | [goal] | ✅ strict | 3/3 | 2/2 | PASS |
+| Slice | Goal | TDD | Tests | Spec | Contract | Review |
+|-------|------|-----|-------|------|----------|--------|
+| SLICE-001 | [goal] | ✅ strict | 5/5 | 3/3 | 4/4 PASS | PASS |
+| SLICE-002 | [goal] | ✅ strict | 3/3 | 2/2 | 3/3 PASS | PASS |
 
 ### TDD Compliance
 - Strict mode: N/N slices (100%)
