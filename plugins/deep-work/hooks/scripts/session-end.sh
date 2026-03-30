@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # session-end.sh — Stop hook: CLI 세션 종료 시 활성 deep-work 세션 확인 및 알림
+# + v5.0: 세션 히스토리 JSONL append (harness assumption engine용)
 # Exit codes:
 #   0 = always (Stop hooks must never block session close)
 
@@ -55,5 +56,174 @@ JSON
 
 bash "$SCRIPT_DIR/notify.sh" "$STATE_FILE" "$CURRENT_PHASE" "session_end" \
   "CLI 세션 종료 — Deep Work 세션 활성 중 (Phase: $PHASE_KO)" 2>/dev/null || true
+
+# ─── 세션 히스토리 JSONL append (v5.0) ──────────────────────
+# Appends a session summary to harness-sessions.jsonl for the assumption engine.
+# Errors are logged to stderr and never block session close.
+
+append_session_history() {
+  local work_dir_rel
+  work_dir_rel="$(read_frontmatter_field "$STATE_FILE" "work_dir")"
+  if [[ -z "$work_dir_rel" ]]; then
+    return 0
+  fi
+
+  local work_dir="$PROJECT_ROOT/$work_dir_rel"
+  local history_dir="$work_dir/harness-history"
+  local jsonl_file="$history_dir/harness-sessions.jsonl"
+
+  # ── session_id: started_at timestamp (unique per session)
+  local session_id
+  session_id="$(read_frontmatter_field "$STATE_FILE" "started_at")"
+  if [[ -z "$session_id" ]]; then
+    return 0  # No started_at → cannot identify session
+  fi
+
+  # ── Dedupe: check last 5 lines for existing session_id
+  if [[ -f "$jsonl_file" ]]; then
+    if tail -n 5 "$jsonl_file" 2>/dev/null | grep -qF "\"session_id\":\"$session_id\""; then
+      return 0  # Already recorded
+    fi
+  fi
+
+  # ── Read state fields
+  local tdd_mode test_retry_count
+  tdd_mode="$(read_frontmatter_field "$STATE_FILE" "tdd_mode")"
+  test_retry_count="$(read_frontmatter_field "$STATE_FILE" "test_retry_count")"
+  : "${tdd_mode:=unknown}"
+  : "${test_retry_count:=0}"
+
+  # ── Determine phases_used from timestamps
+  local phases_json="["
+  local first=true
+  local phase ts
+  for phase in brainstorm research plan implement test; do
+    ts="$(read_frontmatter_field "$STATE_FILE" "${phase}_started_at")"
+    if [[ -n "$ts" ]]; then
+      if $first; then first=false; else phases_json+=","; fi
+      phases_json+="\"$phase\""
+    fi
+  done
+  phases_json+="]"
+
+  # ── Determine model_primary (from model_routing or default)
+  local model_primary
+  model_primary="$(read_frontmatter_field "$STATE_FILE" "model_primary")"
+  : "${model_primary:=unknown}"
+
+  # ── Calculate total_duration_minutes from started_at to now
+  local duration_minutes=0
+  if command -v date >/dev/null 2>&1; then
+    local start_epoch now_epoch
+    # macOS date -j vs GNU date
+    if date -j -f "%Y-%m-%dT%H:%M:%S" "$(echo "$session_id" | cut -c1-19)" +%s >/dev/null 2>&1; then
+      start_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$(echo "$session_id" | cut -c1-19)" +%s 2>/dev/null || echo 0)
+    else
+      start_epoch=$(date -d "$session_id" +%s 2>/dev/null || echo 0)
+    fi
+    now_epoch=$(date +%s)
+    if [[ "$start_epoch" -gt 0 ]]; then
+      duration_minutes=$(( (now_epoch - start_epoch) / 60 ))
+    fi
+  fi
+
+  # ── Aggregate receipt data from SLICE-*.json files
+  local receipts_dir="$work_dir/receipts"
+  local slices_total=0
+  local slices_passed_first_try=0
+  local tdd_overrides=0
+  local bugs_caught_in_red_phase=0
+  local research_references_used=0
+  local cross_model_unique_findings=0
+  local slices_json="["
+  local slices_first=true
+
+  if [[ -d "$receipts_dir" ]]; then
+    local receipt_file
+    for receipt_file in "$receipts_dir"/SLICE-*.json; do
+      [[ -f "$receipt_file" ]] || continue
+      slices_total=$((slices_total + 1))
+
+      # Extract per-slice data using lightweight parsing (no jq dependency)
+      local slice_id="" slice_tdd_mode="" slice_status="" slice_model=""
+      local s_tests_first="false" s_rework=0 s_bugs=0 s_refs=0 s_cross=0
+
+      # Best-effort field extraction from JSON (single-line values only)
+      slice_id=$(grep -o '"slice_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:.*"\([^"]*\)".*/\1/' || echo "")
+      slice_status=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:.*"\([^"]*\)".*/\1/' || echo "")
+      slice_tdd_mode=$(grep -o '"tdd_mode"[[:space:]]*:[[:space:]]*"[^"]*"' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:.*"\([^"]*\)".*/\1/' || echo "")
+      slice_model=$(grep -o '"model_used"[[:space:]]*:[[:space:]]*"[^"]*"' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:.*"\([^"]*\)".*/\1/' || echo "")
+
+      # harness_metadata fields (may not exist in older receipts)
+      local hm_block
+      hm_block=$(grep -o '"tests_passed_first_try"[[:space:]]*:[[:space:]]*[a-z]*' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*//' || echo "false")
+      if [[ "$hm_block" == "true" ]]; then
+        s_tests_first="true"
+        slices_passed_first_try=$((slices_passed_first_try + 1))
+      fi
+
+      s_rework=$(grep -o '"rework_count"[[:space:]]*:[[:space:]]*[0-9]*' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*//' || echo "0")
+      s_bugs=$(grep -o '"bugs_caught_in_red_phase"[[:space:]]*:[[:space:]]*[0-9]*' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*//' || echo "0")
+      s_refs=$(grep -o '"research_references_used"[[:space:]]*:[[:space:]]*[0-9]*' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*//' || echo "0")
+      s_cross=$(grep -o '"cross_model_unique_findings"[[:space:]]*:[[:space:]]*[0-9]*' "$receipt_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*//' || echo "0")
+
+      # Check for TDD override
+      if [[ "$slice_tdd_mode" == "override" ]] || grep -q '"action"[[:space:]]*:[[:space:]]*"override"' "$receipt_file" 2>/dev/null; then
+        tdd_overrides=$((tdd_overrides + 1))
+      fi
+
+      bugs_caught_in_red_phase=$((bugs_caught_in_red_phase + ${s_bugs:-0}))
+      research_references_used=$((research_references_used + ${s_refs:-0}))
+      cross_model_unique_findings=$((cross_model_unique_findings + ${s_cross:-0}))
+
+      # Build per-slice JSON entry
+      if $slices_first; then slices_first=false; else slices_json+=","; fi
+      slices_json+="{\"slice_id\":\"${slice_id}\",\"status\":\"${slice_status}\",\"tdd_mode\":\"${slice_tdd_mode}\",\"model\":\"${slice_model}\",\"tests_passed_first_try\":${s_tests_first},\"bugs_caught_in_red\":${s_bugs:-0},\"rework_count\":${s_rework:-0}}"
+    done
+  fi
+  slices_json+="]"
+
+  # ── Review scores from state file
+  # review_results uses YAML flow style: brainstorm: {score: 8, iterations: 1, ...}
+  # Extract score/spec_score numeric value from the flow mapping
+  local review_scores="{}"
+  local bs_score rs_score pl_score
+
+  # Extract the flow-style line for each phase and parse score from it
+  bs_score=$(grep 'brainstorm:' "$STATE_FILE" 2>/dev/null | grep -o 'score:[[:space:]]*[0-9]*' | head -1 | sed 's/score:[[:space:]]*//' || echo "")
+  rs_score=$(grep 'research:' "$STATE_FILE" 2>/dev/null | grep -o 'score:[[:space:]]*[0-9]*' | head -1 | sed 's/score:[[:space:]]*//' || echo "")
+  pl_score=$(grep '  plan:' "$STATE_FILE" 2>/dev/null | grep -o 'spec_score:[[:space:]]*[0-9]*' | head -1 | sed 's/spec_score:[[:space:]]*//' || echo "")
+
+  # Build review_scores JSON
+  local rs_parts=()
+  [[ -n "$bs_score" && "$bs_score" != "0" ]] && rs_parts+=("\"brainstorm\":$bs_score")
+  [[ -n "$rs_score" && "$rs_score" != "0" ]] && rs_parts+=("\"research\":$rs_score")
+  [[ -n "$pl_score" && "$pl_score" != "0" ]] && rs_parts+=("\"plan\":$pl_score")
+  if [[ ${#rs_parts[@]} -gt 0 ]]; then
+    local IFS=","
+    review_scores="{${rs_parts[*]}}"
+  fi
+
+  # ── Determine final_outcome
+  local test_passed
+  test_passed="$(read_frontmatter_field "$STATE_FILE" "test_passed")"
+  local final_outcome="partial"
+  if [[ "$test_passed" == "true" ]]; then
+    final_outcome="pass"
+  elif [[ "$CURRENT_PHASE" == "test" && "$test_passed" == "false" ]]; then
+    final_outcome="fail"
+  fi
+
+  # ── Build the JSONL entry (single line, no jq dependency)
+  local entry
+  entry="{\"session_id\":\"${session_id}\",\"model_primary\":\"${model_primary}\",\"slices\":${slices_json},\"phases_used\":${phases_json},\"slices_total\":${slices_total},\"slices_passed_first_try\":${slices_passed_first_try},\"tdd_mode\":\"${tdd_mode}\",\"tdd_overrides\":${tdd_overrides},\"bugs_caught_in_red_phase\":${bugs_caught_in_red_phase},\"research_references_used\":${research_references_used},\"test_retry_count\":${test_retry_count},\"review_scores\":${review_scores},\"cross_model_unique_findings\":${cross_model_unique_findings},\"total_duration_minutes\":${duration_minutes},\"final_outcome\":\"${final_outcome}\"}"
+
+  # ── Write to JSONL file
+  mkdir -p "$history_dir" 2>/dev/null || return 0
+  echo "$entry" >> "$jsonl_file" 2>/dev/null || return 0
+}
+
+# Run in subshell — errors must never block session close
+(append_session_history) 2>/dev/null || true
 
 exit 0
