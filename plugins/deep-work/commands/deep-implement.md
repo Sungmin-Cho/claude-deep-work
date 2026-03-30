@@ -105,6 +105,7 @@ If `team_mode` is "solo" and model is not "main":
   3. production 코드 수정 후 test가 통과하는 것을 확인하세요
   4. receipt 데이터를 $WORK_DIR/receipts/SLICE-NNN.json에 기록하세요
   5. exempt 파일 (*.yml, *.md, *.json)은 TDD 없이 수정 가능합니다
+  6. receipt에 harness_metadata를 포함하세요 (model_id, rework_count, tests_passed_first_try, bugs_caught_in_red_phase 등)
   ```
 - Set 10-minute timeout per slice. On timeout: abort, rollback slice to PENDING, warn user.
 - After Agent completion: validate receipt JSON structure. If corrupt, warn and mark slice for re-execution.
@@ -251,6 +252,18 @@ Update `$WORK_DIR/receipts/SLICE-NNN.json`:
   },
   "code_review": { "reviewer_result": null, "findings": [] },
   "debug": null,
+  "harness_metadata": {
+    "model_id": "[model identifier, e.g. claude-opus-4-6]",
+    "assumption_overrides": [
+      {"assumption_id": "[id from assumptions.json]", "action": "override", "reason": "[reason]"}
+    ],
+    "rework_count": 0,
+    "tests_passed_first_try": true,
+    "review_defects_found": 0,
+    "research_references_used": 0,
+    "cross_model_unique_findings": 0,
+    "bugs_caught_in_red_phase": 0
+  },
   "timestamp": "[ISO]"
 }
 ```
@@ -260,6 +273,21 @@ Capture git diff and `git_after` hash:
 git diff -- [file1] [file2]
 git rev-parse HEAD 2>/dev/null  # → git_after
 ```
+
+**Collect `harness_metadata`** (v5.0 — optional, backward-compatible):
+
+Populate `harness_metadata` by aggregating data from the current slice execution. If a field cannot be determined, use the default value. Old receipts without `harness_metadata` remain valid.
+
+| Field | How to collect | Default |
+|-------|---------------|---------|
+| `model_id` | Model identifier used for this slice (from model routing or `"main"` if inline) | `"unknown"` |
+| `assumption_overrides` | Array of overrides during this slice. Each TDD override (Step B skip) → `{"assumption_id": "tdd_required_before_implement", "action": "override", "reason": "[config_change\|untestable\|urgent_fix]"}`. Empty array if no overrides. | `[]` |
+| `rework_count` | Number of times this slice returned to RED after a failed GREEN attempt (Step B-2 failure → Debug Sub-Mode → re-enter TDD cycle) | `0` |
+| `tests_passed_first_try` | `true` if verification_cmd passed on the first GREEN attempt (no rework, no debug sub-mode entry) | `true` |
+| `review_defects_found` | Count of findings from `code_review.findings` array for this slice | `0` |
+| `research_references_used` | Count of research findings from `$WORK_DIR/research.md` explicitly referenced during implementation of this slice | `0` |
+| `cross_model_unique_findings` | Count of unique issues found by cross-model review (from `{phase}-review.json` if it exists) for this slice | `0` |
+| `bugs_caught_in_red_phase` | Count of real bugs discovered because the RED test failed for the right reason (test exposed a pre-existing defect, not just "feature not implemented yet") | `0` |
 
 **Note**: `session-receipt.json`은 `/deep-finish`에서 생성됩니다 (derived cache — slice receipts가 canonical source).
 
@@ -335,6 +363,10 @@ TDD 상태: [현재 tdd_state]
      "tdd_override_reason": "config_change|untestable|urgent_fix",
      "tdd_override_timestamp": "[ISO]"
    }
+   ```
+   Also add to `harness_metadata.assumption_overrides`:
+   ```json
+   {"assumption_id": "tdd_required_before_implement", "action": "override", "reason": "[chosen reason]"}
    ```
 
 ### 4. 주의사항
@@ -422,6 +454,7 @@ After all slices are complete:
      - TDD 준수율: [strict: N, relaxed: N, override: N, spike: N]
      - Receipt 완성: N/N
      - 디버깅 횟수: N회
+     - Harness 메타데이터: [N/N receipts with harness_metadata]
    ```
 5. **Send notification**
 6. **Auto-execute Test phase**: Read `/deep-test` and follow all steps.
