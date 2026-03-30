@@ -1,0 +1,864 @@
+#!/usr/bin/env node
+/**
+ * assumption-engine.js — Self-Evolving Harness: Assumption Engine for deep-work v5.0
+ *
+ * Validates whether deep-work's enforcement assumptions are still load-bearing
+ * by analyzing session history against a machine-readable assumption registry.
+ *
+ * Core functions (all pure — read files, return data):
+ * - readRegistry()           — Load assumptions.json
+ * - readHistory()            — Load harness-sessions.jsonl
+ * - rebuildFromReceipts()    — Regenerate JSONL from receipt files
+ * - wilsonScore()            — Lower bound of Wilson confidence interval
+ * - calculateConfidence()    — Model-aware confidence with Wilson scoring
+ * - detectStaleness()        — Flag assumptions not tested in N sessions
+ * - detectNewModel()         — Cold start guard for new model families
+ * - evaluateSignals()        — Map evidence signals to session data (per-slice)
+ * - generateReport()         — Human-readable assumption health report
+ * - generateTimeline()       — ASCII trend chart of confidence over time
+ * - exportBadge()            — shields.io JSON badge for README
+ *
+ * Follows phase-guard-core.js conventions:
+ * - Pure functions with JSDoc
+ * - stdin/stdout JSON when run as CLI
+ * - module.exports for testing
+ *
+ * Error handling:
+ * - ENOENT → fallback defaults (empty registry/history)
+ * - Malformed JSON → skip line + warn via warnings array
+ * - Schema version mismatch → forward-compat (read what we can)
+ * - Division by zero → guard in wilsonScore and confidence
+ * - Orphan assumption IDs → skip silently
+ * - Session dedupe → check session_id before append
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// ─── Constants ──────────────────────────────────────────────
+
+const SCHEMA_VERSION = '1.0';
+
+const CONFIDENCE_THRESHOLDS = {
+  HIGH: 0.7,
+  MEDIUM: 0.4,
+};
+
+const DEFAULT_STALENESS_THRESHOLD = 10;
+
+// ─── Registry ───────────────────────────────────────────────
+
+/**
+ * Reads the assumption registry from disk.
+ * @param {string} registryPath - Path to assumptions.json
+ * @returns {{ assumptions: object[], schema_version: string, warnings: string[] }}
+ */
+function readRegistry(registryPath) {
+  const warnings = [];
+  try {
+    const raw = fs.readFileSync(registryPath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    if (parsed.schema_version !== SCHEMA_VERSION) {
+      warnings.push(
+        `Registry schema_version "${parsed.schema_version}" differs from engine "${SCHEMA_VERSION}". ` +
+        `Proceeding with forward-compat.`
+      );
+    }
+
+    if (!Array.isArray(parsed.assumptions)) {
+      warnings.push('Registry "assumptions" field is not an array. Using empty.');
+      return { assumptions: [], schema_version: parsed.schema_version || SCHEMA_VERSION, warnings };
+    }
+
+    return {
+      assumptions: parsed.assumptions,
+      schema_version: parsed.schema_version || SCHEMA_VERSION,
+      warnings,
+    };
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return { assumptions: [], schema_version: SCHEMA_VERSION, warnings: ['Registry file not found, using empty defaults.'] };
+    }
+    warnings.push(`Failed to read registry: ${err.message}`);
+    return { assumptions: [], schema_version: SCHEMA_VERSION, warnings };
+  }
+}
+
+// ─── History ────────────────────────────────────────────────
+
+/**
+ * Reads session history from a JSONL file.
+ * Skips malformed lines and deduplicates by session_id.
+ * @param {string} historyPath - Path to harness-sessions.jsonl
+ * @returns {{ sessions: object[], warnings: string[] }}
+ */
+function readHistory(historyPath) {
+  const warnings = [];
+  try {
+    const raw = fs.readFileSync(historyPath, 'utf8');
+    const lines = raw.split('\n').filter(line => line.trim().length > 0);
+    const sessions = [];
+    const seenIds = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const session = JSON.parse(lines[i]);
+        if (session.session_id && seenIds.has(session.session_id)) {
+          warnings.push(`Duplicate session_id "${session.session_id}" at line ${i + 1}, skipping.`);
+          continue;
+        }
+        if (session.session_id) {
+          seenIds.add(session.session_id);
+        }
+        sessions.push(session);
+      } catch (parseErr) {
+        warnings.push(`Malformed JSON at line ${i + 1}, skipping.`);
+      }
+    }
+
+    return { sessions, warnings };
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return { sessions: [], warnings: ['History file not found, using empty.'] };
+    }
+    warnings.push(`Failed to read history: ${err.message}`);
+    return { sessions: [], warnings };
+  }
+}
+
+/**
+ * Checks if a session_id already exists in the history.
+ * @param {object[]} sessions - Existing sessions
+ * @param {string} sessionId - ID to check
+ * @returns {boolean}
+ */
+function isSessionDuplicate(sessions, sessionId) {
+  if (!sessionId) return false;
+  return sessions.some(s => s.session_id === sessionId);
+}
+
+// ─── Rebuild from Receipts ──────────────────────────────────
+
+/**
+ * Rebuilds session history by scanning receipt directories.
+ * @param {string} workDir - Project work directory
+ * @param {string[]} [receiptDirs] - Optional list of receipt directories to scan
+ * @returns {{ sessions: object[], warnings: string[] }}
+ */
+function rebuildFromReceipts(workDir, receiptDirs) {
+  const warnings = [];
+  const sessions = [];
+
+  if (!workDir) {
+    return { sessions, warnings: ['No work directory provided.'] };
+  }
+
+  // Default: scan workDir/receipts/
+  const dirs = receiptDirs || [];
+  if (dirs.length === 0) {
+    const defaultReceiptDir = path.join(workDir, 'receipts');
+    if (fs.existsSync(defaultReceiptDir)) {
+      dirs.push(defaultReceiptDir);
+    } else {
+      return { sessions, warnings: ['No receipt directories found.'] };
+    }
+  }
+
+  for (const dir of dirs) {
+    try {
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+      for (const file of files) {
+        try {
+          const raw = fs.readFileSync(path.join(dir, file), 'utf8');
+          const receipt = JSON.parse(raw);
+          // Extract session-level data from receipt
+          if (receipt && receipt.slice_id) {
+            sessions.push({
+              session_id: receipt.session_id || `rebuilt-${file}`,
+              source: 'receipt_rebuild',
+              slice_id: receipt.slice_id,
+              status: receipt.status,
+              tdd_state: receipt.tdd_state,
+              harness_metadata: receipt.harness_metadata || {},
+            });
+          }
+        } catch (parseErr) {
+          warnings.push(`Failed to parse receipt ${file}: ${parseErr.message}`);
+        }
+      }
+    } catch (readErr) {
+      warnings.push(`Failed to read directory ${dir}: ${readErr.message}`);
+    }
+  }
+
+  return { sessions, warnings };
+}
+
+// ─── Wilson Score ────────────────────────────────────────────
+
+/**
+ * Computes the lower bound of the Wilson score confidence interval.
+ * Used instead of a simple ratio to account for sample size.
+ *
+ * With small samples, Wilson score is conservative (lower bound).
+ * With large samples, it converges toward the raw ratio.
+ *
+ * @param {number} positive - Number of supporting signals
+ * @param {number} total - Total signals (supporting + weakening)
+ * @param {number} [z=1.96] - Z-score for confidence level (1.96 = 95%)
+ * @returns {number} Lower bound of confidence interval [0, 1]
+ */
+function wilsonScore(positive, total, z) {
+  if (typeof z === 'undefined') z = 1.96;
+
+  // Guard: division by zero or no data
+  if (total === 0) return 0;
+  if (positive < 0) positive = 0;
+  if (positive > total) positive = total;
+
+  const phat = positive / total;
+  const z2 = z * z;
+
+  const numerator = phat + z2 / (2 * total) -
+    z * Math.sqrt((phat * (1 - phat) + z2 / (4 * total)) / total);
+  const denominator = 1 + z2 / total;
+
+  const score = numerator / denominator;
+  return Math.max(0, Math.min(1, score));
+}
+
+// ─── Confidence Calculation ─────────────────────────────────
+
+/**
+ * Calculates confidence for an assumption, optionally split by model.
+ * @param {object} assumption - Assumption from registry
+ * @param {object[]} sessions - Session history entries
+ * @param {object} [options] - { splitByModel: boolean }
+ * @returns {{ overall: { score: number, category: string, supporting: number, weakening: number, neutral: number, total: number }, byModel?: object, insufficient: boolean }}
+ */
+function calculateConfidence(assumption, sessions, options) {
+  const opts = options || {};
+  const minSessions = assumption.minimum_sessions_for_evaluation || 5;
+
+  // Evaluate signals for all sessions
+  const evaluated = sessions.map(s => evaluateSignals(assumption, s));
+
+  const overall = _computeConfidenceFromEvaluated(evaluated, minSessions);
+
+  const result = { overall, insufficient: overall.total < minSessions };
+
+  // Model-aware split
+  if (opts.splitByModel) {
+    const byModel = {};
+    const modelGroups = {};
+    for (let i = 0; i < sessions.length; i++) {
+      const model = sessions[i].model_primary || 'unknown';
+      if (!modelGroups[model]) modelGroups[model] = [];
+      modelGroups[model].push(evaluated[i]);
+    }
+    for (const [model, evals] of Object.entries(modelGroups)) {
+      byModel[model] = _computeConfidenceFromEvaluated(evals, minSessions);
+    }
+    result.byModel = byModel;
+  }
+
+  return result;
+}
+
+/**
+ * Internal: compute confidence from an array of evaluated signal results.
+ * @param {object[]} evaluated - Array of { supporting, weakening, neutral }
+ * @param {number} minSessions - Minimum sessions for evaluation
+ * @returns {{ score: number, category: string, supporting: number, weakening: number, neutral: number, total: number }}
+ */
+function _computeConfidenceFromEvaluated(evaluated, minSessions) {
+  let supporting = 0;
+  let weakening = 0;
+  let neutral = 0;
+
+  for (const e of evaluated) {
+    supporting += e.supporting;
+    weakening += e.weakening;
+    neutral += e.neutral;
+  }
+
+  const total = evaluated.length;
+  const signalTotal = supporting + weakening;
+  const score = wilsonScore(supporting, signalTotal);
+
+  let category;
+  if (total < minSessions) {
+    category = 'INSUFFICIENT';
+  } else if (score >= CONFIDENCE_THRESHOLDS.HIGH) {
+    category = 'HIGH';
+  } else if (score >= CONFIDENCE_THRESHOLDS.MEDIUM) {
+    category = 'MEDIUM';
+  } else {
+    category = 'LOW';
+  }
+
+  return { score, category, supporting, weakening, neutral, total };
+}
+
+// ─── Staleness Detection ────────────────────────────────────
+
+/**
+ * Detects whether an assumption is stale (not recently tested).
+ * @param {object} assumption - Assumption from registry
+ * @param {object[]} sessions - Session history entries
+ * @param {number} [threshold] - Number of sessions without signal before stale
+ * @returns {{ stale: boolean, sessionsSinceLastSignal: number, threshold: number }}
+ */
+function detectStaleness(assumption, sessions, threshold) {
+  const thresh = threshold ||
+    assumption.staleness_threshold ||
+    DEFAULT_STALENESS_THRESHOLD;
+
+  if (sessions.length === 0) {
+    return { stale: false, sessionsSinceLastSignal: 0, threshold: thresh, reason: 'no_history' };
+  }
+
+  // Walk sessions from newest to oldest to find last signal
+  let sessionsSinceLastSignal = 0;
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    const result = evaluateSignals(assumption, sessions[i]);
+    if (result.supporting > 0 || result.weakening > 0) {
+      break;
+    }
+    sessionsSinceLastSignal++;
+  }
+
+  // If we went through all sessions without finding a signal
+  if (sessionsSinceLastSignal === sessions.length) {
+    return { stale: true, sessionsSinceLastSignal, threshold: thresh, reason: 'no_signals_ever' };
+  }
+
+  return {
+    stale: sessionsSinceLastSignal >= thresh,
+    sessionsSinceLastSignal,
+    threshold: thresh,
+  };
+}
+
+// ─── New Model Detection ────────────────────────────────────
+
+/**
+ * Detects whether the current model is new (no history).
+ * @param {string} currentModel - Current model_primary identifier
+ * @param {object[]} sessions - Session history entries
+ * @returns {{ isNew: boolean, sessionsWithModel: number, totalSessions: number }}
+ */
+function detectNewModel(currentModel, sessions) {
+  if (!currentModel || sessions.length === 0) {
+    return { isNew: true, sessionsWithModel: 0, totalSessions: sessions.length };
+  }
+
+  const sessionsWithModel = sessions.filter(s => s.model_primary === currentModel).length;
+  return {
+    isNew: sessionsWithModel === 0,
+    sessionsWithModel,
+    totalSessions: sessions.length,
+  };
+}
+
+// ─── Signal Evaluation ──────────────────────────────────────
+
+/**
+ * Signal evaluation map: maps signal labels to computation functions.
+ * Each function takes a session object and returns a boolean.
+ * Unmapped signals are silently ignored.
+ */
+const SIGNAL_EVALUATORS = {
+  // Phase Guard signals
+  'test_pass_rate_with_guard > test_pass_rate_without': (session) => {
+    if (!session.slices_total) return null;
+    return session.slices_passed_first_try / session.slices_total > 0.8;
+  },
+  'high_override_rate': (session) => {
+    if (!session.slices_total) return null;
+    return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+  },
+  'zero_rework_after_override': (session) => {
+    if (session.tdd_overrides === undefined || session.tdd_overrides === 0) return null;
+    return (session.test_retry_count || 0) === 0;
+  },
+  'model_passes_all_tests_first_try': (session) => {
+    if (!session.slices_total) return null;
+    return session.slices_passed_first_try === session.slices_total;
+  },
+
+  // TDD signals
+  'bugs_caught_in_red_phase > 0': (session) => {
+    return (session.bugs_caught_in_red_phase || 0) > 0;
+  },
+  'rework_count_strict < rework_count_relaxed': (session) => {
+    // Can only evaluate if mode is strict and we have rework data
+    if (session.tdd_mode !== 'strict') return null;
+    return (session.test_retry_count || 0) === 0;
+  },
+  'override_rate > 50%': (session) => {
+    if (!session.slices_total) return null;
+    return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+  },
+  'zero_bugs_caught_in_red': (session) => {
+    return (session.bugs_caught_in_red_phase || 0) === 0;
+  },
+  'relaxed_mode_same_quality': (session) => {
+    if (session.tdd_mode !== 'relaxed') return null;
+    return session.final_outcome === 'pass';
+  },
+
+  // Research signals
+  'plan_review_score_with_research > plan_review_score_without': (session) => {
+    if (!session.review_scores || !session.phases_used) return null;
+    const hasResearch = session.phases_used.includes('research');
+    if (!hasResearch) return null;
+    return (session.review_scores.plan || 0) >= 7;
+  },
+  'research_findings_not_referenced_in_plan': (session) => {
+    if (!session.phases_used) return null;
+    const hasResearch = session.phases_used.includes('research');
+    if (!hasResearch) return null;
+    return (session.research_references_used || 0) === 0;
+  },
+  'plan_score_high_despite_shallow_research': (session) => {
+    if (!session.review_scores || !session.phases_used) return null;
+    const hasResearch = session.phases_used.includes('research');
+    if (hasResearch) return null; // Only for sessions without research
+    return (session.review_scores.plan || 0) >= 7;
+  },
+
+  // Cross-model review signals
+  'cross_model_found_unique_issues > 0': (session) => {
+    return (session.cross_model_unique_findings || 0) > 0;
+  },
+  'plan_revision_after_cross_review': (session) => {
+    // Approximation: cross model findings led to action
+    return (session.cross_model_unique_findings || 0) > 0;
+  },
+  'cross_model_agrees_with_claude_always': (session) => {
+    return (session.cross_model_unique_findings || 0) === 0;
+  },
+  'zero_actionable_findings': (session) => {
+    return (session.cross_model_unique_findings || 0) === 0;
+  },
+
+  // Receipt signals
+  'receipt_data_contradicts_model_claim': (session) => {
+    // Can only be detected from detailed receipt analysis
+    const meta = session.harness_metadata || {};
+    return meta.receipt_contradictions ? meta.receipt_contradictions > 0 : null;
+  },
+  'test_phase_catches_receipt_gap': (session) => {
+    const meta = session.harness_metadata || {};
+    return meta.receipt_gaps_caught ? meta.receipt_gaps_caught > 0 : null;
+  },
+  'receipts_always_match_model_claims': (session) => {
+    const meta = session.harness_metadata || {};
+    if (meta.receipt_contradictions === undefined) return null;
+    return meta.receipt_contradictions === 0;
+  },
+  'receipt_data_never_referenced_in_test_phase': (session) => {
+    const meta = session.harness_metadata || {};
+    return meta.receipts_referenced_in_test === false;
+  },
+};
+
+/**
+ * Evaluates evidence signals for an assumption against a single session.
+ * Per-slice analysis: if session has slices array, evaluate per slice and aggregate.
+ * @param {object} assumption - Assumption from registry
+ * @param {object} session - Single session from history
+ * @returns {{ supporting: number, weakening: number, neutral: number, details: object[] }}
+ */
+function evaluateSignals(assumption, session) {
+  if (!assumption || !assumption.evidence_signals) {
+    return { supporting: 0, weakening: 0, neutral: 1, details: [] };
+  }
+
+  const details = [];
+  let supporting = 0;
+  let weakening = 0;
+
+  // If session has per-slice data, evaluate each slice
+  const slices = session.slices || [session];
+
+  for (const slice of slices) {
+    // Evaluate supporting signals
+    for (const signal of (assumption.evidence_signals.supporting || [])) {
+      const evaluator = SIGNAL_EVALUATORS[signal];
+      if (!evaluator) {
+        // Unmapped signal — skip silently
+        continue;
+      }
+      const result = evaluator(slice);
+      if (result === true) {
+        supporting++;
+        details.push({ signal, type: 'supporting', value: true, slice_id: slice.slice_id });
+      } else if (result === false) {
+        // Supporting signal returned false — not a weakening signal, just not supporting
+        details.push({ signal, type: 'supporting', value: false, slice_id: slice.slice_id });
+      }
+      // result === null means not applicable for this session
+    }
+
+    // Evaluate weakening signals
+    for (const signal of (assumption.evidence_signals.weakening || [])) {
+      const evaluator = SIGNAL_EVALUATORS[signal];
+      if (!evaluator) {
+        continue;
+      }
+      const result = evaluator(slice);
+      if (result === true) {
+        weakening++;
+        details.push({ signal, type: 'weakening', value: true, slice_id: slice.slice_id });
+      } else if (result === false) {
+        details.push({ signal, type: 'weakening', value: false, slice_id: slice.slice_id });
+      }
+    }
+  }
+
+  const neutral = (supporting === 0 && weakening === 0) ? 1 : 0;
+
+  return { supporting, weakening, neutral, details };
+}
+
+// ─── Report Generation ──────────────────────────────────────
+
+/**
+ * Generates a human-readable assumption health report.
+ * @param {object[]} assumptions - Array of assumptions from registry
+ * @param {object[]} sessions - Session history entries
+ * @param {object} [options] - { splitByModel: boolean, verbose: boolean }
+ * @returns {{ text: string, data: object[] }}
+ */
+function generateReport(assumptions, sessions, options) {
+  const opts = options || {};
+  const data = [];
+  const lines = [];
+
+  lines.push(`ASSUMPTION HEALTH REPORT (${sessions.length} sessions analyzed)`);
+  lines.push('='.repeat(56));
+  lines.push('');
+
+  if (sessions.length === 0) {
+    lines.push('No session history available. Run deep-work sessions to collect data.');
+    return { text: lines.join('\n'), data };
+  }
+
+  const proposedChanges = [];
+
+  for (let i = 0; i < assumptions.length; i++) {
+    const assumption = assumptions[i];
+    const confidence = calculateConfidence(assumption, sessions, { splitByModel: opts.splitByModel });
+    const staleness = detectStaleness(assumption, sessions);
+
+    const entry = {
+      id: assumption.id,
+      hypothesis: assumption.hypothesis,
+      confidence,
+      staleness,
+      current_enforcement: assumption.current_enforcement,
+      adjustable_levels: assumption.adjustable_levels,
+    };
+
+    let verdict, reason;
+    if (confidence.insufficient) {
+      verdict = 'INSUFFICIENT DATA';
+      reason = `Need ${assumption.minimum_sessions_for_evaluation} sessions, have ${confidence.overall.total}`;
+    } else if (staleness.stale) {
+      verdict = 'STALE';
+      reason = `No signal in last ${staleness.sessionsSinceLastSignal} sessions (threshold: ${staleness.threshold})`;
+    } else if (confidence.overall.category === 'HIGH') {
+      verdict = 'KEEP';
+      reason = `at current level (${assumption.current_enforcement})`;
+    } else if (confidence.overall.category === 'MEDIUM') {
+      verdict = 'CONSIDER';
+      const levels = assumption.adjustable_levels || [];
+      const currentIdx = levels.indexOf(assumption.current_enforcement);
+      const nextLevel = currentIdx >= 0 && currentIdx < levels.length - 1
+        ? levels[currentIdx + 1]
+        : null;
+      if (nextLevel) {
+        reason = `loosening to "${nextLevel}"`;
+        proposedChanges.push({
+          id: assumption.id,
+          from: assumption.current_enforcement,
+          to: nextLevel,
+        });
+      } else {
+        reason = 'reviewing enforcement level';
+      }
+    } else {
+      verdict = 'RECOMMEND';
+      const levels = assumption.adjustable_levels || [];
+      const currentIdx = levels.indexOf(assumption.current_enforcement);
+      const nextLevel = currentIdx >= 0 && currentIdx < levels.length - 1
+        ? levels[currentIdx + 1]
+        : null;
+      if (nextLevel) {
+        reason = `loosening to "${nextLevel}"`;
+        proposedChanges.push({
+          id: assumption.id,
+          from: assumption.current_enforcement,
+          to: nextLevel,
+        });
+      } else {
+        reason = 'reviewing enforcement level';
+      }
+    }
+
+    entry.verdict = verdict;
+    entry.reason = reason;
+    data.push(entry);
+
+    const o = confidence.overall;
+    lines.push(`${i + 1}. ${assumption.id}`);
+    lines.push(`   Hypothesis: ${assumption.hypothesis}`);
+    lines.push(`   Evidence:   ${o.supporting} supporting / ${o.weakening} weakening / ${o.neutral} neutral`);
+    lines.push(`   Confidence: ${o.category} (${o.score.toFixed(2)})`);
+    lines.push(`   Verdict:    ${verdict} ${reason}`);
+
+    if (staleness.stale) {
+      lines.push(`   WARNING:    Stale — no signal in ${staleness.sessionsSinceLastSignal} sessions`);
+    }
+
+    // Model-aware breakdown
+    if (opts.splitByModel && confidence.byModel) {
+      for (const [model, mc] of Object.entries(confidence.byModel)) {
+        lines.push(`   [${model}]: ${mc.category} (${mc.score.toFixed(2)}) — ${mc.supporting}S/${mc.weakening}W/${mc.total} sessions`);
+      }
+    }
+
+    lines.push('');
+  }
+
+  // Proposed changes section
+  if (proposedChanges.length > 0) {
+    lines.push('PROPOSED CONFIG CHANGES (for manual application):');
+    for (const change of proposedChanges) {
+      lines.push(`  ${change.id}: ${change.from} -> ${change.to}`);
+    }
+    lines.push('');
+    lines.push('To apply: update enforcement in /deep-work session init or .claude/deep-work.local.md');
+    lines.push('(Auto-application is a Phase 2 feature — MVP is report-only)');
+  } else {
+    lines.push('No changes recommended at this time.');
+  }
+
+  return { text: lines.join('\n'), data };
+}
+
+// ─── Timeline ───────────────────────────────────────────────
+
+/**
+ * Generates an ASCII trend chart showing confidence evolution over time.
+ * Groups sessions into windows and shows confidence per window.
+ * @param {object} assumption - Single assumption from registry
+ * @param {object[]} sessions - Session history entries (ordered by time)
+ * @param {object} [options] - { windowSize: number, width: number, height: number }
+ * @returns {string} ASCII chart
+ */
+function generateTimeline(assumption, sessions, options) {
+  const opts = options || {};
+  const windowSize = opts.windowSize || 3;
+  const width = opts.width || 40;
+  const height = opts.height || 10;
+
+  if (sessions.length === 0) {
+    return `[${assumption.id}] No history available.`;
+  }
+
+  // Build confidence scores per window
+  const scores = [];
+  for (let i = 0; i < sessions.length; i += windowSize) {
+    const window = sessions.slice(i, i + windowSize);
+    const evaluated = window.map(s => evaluateSignals(assumption, s));
+    let sup = 0, weak = 0;
+    for (const e of evaluated) {
+      sup += e.supporting;
+      weak += e.weakening;
+    }
+    const total = sup + weak;
+    scores.push(total > 0 ? wilsonScore(sup, total) : 0);
+  }
+
+  if (scores.length === 0) {
+    return `[${assumption.id}] No data windows.`;
+  }
+
+  // Render ASCII chart
+  const lines = [];
+  lines.push(`[${assumption.id}] Confidence Timeline`);
+  lines.push(`${'─'.repeat(width + 6)}`);
+
+  for (let row = height; row >= 0; row--) {
+    const threshold = row / height;
+    let label;
+    if (row === height) label = '1.0';
+    else if (row === Math.round(height * CONFIDENCE_THRESHOLDS.HIGH)) label = '0.7';
+    else if (row === Math.round(height * CONFIDENCE_THRESHOLDS.MEDIUM)) label = '0.4';
+    else if (row === 0) label = '0.0';
+    else label = '   ';
+
+    let rowStr = label.padStart(3) + ' |';
+    const barWidth = Math.min(scores.length, width);
+    for (let col = 0; col < barWidth; col++) {
+      const scoreRow = Math.round(scores[col] * height);
+      if (scoreRow >= row && row > 0) {
+        rowStr += '\u2588'; // full block
+      } else if (row === Math.round(height * CONFIDENCE_THRESHOLDS.HIGH)) {
+        rowStr += '-';
+      } else if (row === Math.round(height * CONFIDENCE_THRESHOLDS.MEDIUM)) {
+        rowStr += '-';
+      } else {
+        rowStr += ' ';
+      }
+    }
+    lines.push(rowStr);
+  }
+
+  lines.push('    +' + '─'.repeat(Math.min(scores.length, width)));
+  lines.push('     ' + 'oldest'.padEnd(Math.min(scores.length, width) - 6) + 'newest');
+
+  return lines.join('\n');
+}
+
+// ─── Badge Export ───────────────────────────────────────────
+
+/**
+ * Exports a shields.io compatible JSON badge.
+ * @param {object[]} assumptions - Array of assumptions from registry
+ * @param {object[]} sessions - Session history entries
+ * @returns {object} shields.io endpoint badge JSON
+ */
+function exportBadge(assumptions, sessions) {
+  if (assumptions.length === 0 || sessions.length === 0) {
+    return {
+      schemaVersion: 1,
+      label: 'harness health',
+      message: 'no data',
+      color: 'lightgrey',
+    };
+  }
+
+  let totalScore = 0;
+  let evaluated = 0;
+
+  for (const assumption of assumptions) {
+    const confidence = calculateConfidence(assumption, sessions);
+    if (!confidence.insufficient) {
+      totalScore += confidence.overall.score;
+      evaluated++;
+    }
+  }
+
+  if (evaluated === 0) {
+    return {
+      schemaVersion: 1,
+      label: 'harness health',
+      message: 'insufficient data',
+      color: 'lightgrey',
+    };
+  }
+
+  const avgScore = totalScore / evaluated;
+  const pct = Math.round(avgScore * 100);
+
+  let color;
+  if (avgScore >= CONFIDENCE_THRESHOLDS.HIGH) {
+    color = 'brightgreen';
+  } else if (avgScore >= CONFIDENCE_THRESHOLDS.MEDIUM) {
+    color = 'yellow';
+  } else {
+    color = 'red';
+  }
+
+  return {
+    schemaVersion: 1,
+    label: 'harness health',
+    message: `${pct}%`,
+    color,
+  };
+}
+
+// ─── CLI Entry ──────────────────────────────────────────────
+
+if (require.main === module) {
+  let input = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', chunk => { input += chunk; });
+  process.stdin.on('end', () => {
+    try {
+      const parsed = JSON.parse(input);
+      const { action, registryPath, historyPath, workDir, model, options } = parsed;
+
+      let result;
+      switch (action) {
+        case 'report': {
+          const registry = readRegistry(registryPath);
+          const history = readHistory(historyPath);
+          const report = generateReport(registry.assumptions, history.sessions, options);
+          result = { ...report, warnings: [...registry.warnings, ...history.warnings] };
+          break;
+        }
+        case 'timeline': {
+          const registry = readRegistry(registryPath);
+          const history = readHistory(historyPath);
+          const timelines = {};
+          for (const a of registry.assumptions) {
+            timelines[a.id] = generateTimeline(a, history.sessions, options);
+          }
+          result = { timelines, warnings: [...registry.warnings, ...history.warnings] };
+          break;
+        }
+        case 'badge': {
+          const registry = readRegistry(registryPath);
+          const history = readHistory(historyPath);
+          result = exportBadge(registry.assumptions, history.sessions);
+          break;
+        }
+        case 'detect-model': {
+          const history = readHistory(historyPath);
+          result = detectNewModel(model, history.sessions);
+          break;
+        }
+        case 'rebuild': {
+          result = rebuildFromReceipts(workDir, options && options.receiptDirs);
+          break;
+        }
+        default:
+          result = { error: `Unknown action: ${action}` };
+      }
+
+      process.stdout.write(JSON.stringify(result));
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(`assumption-engine error: ${err.message}\n`);
+      process.stdout.write(JSON.stringify({ error: err.message }));
+      process.exit(0);
+    }
+  });
+}
+
+// ─── Exports (for testing) ──────────────────────────────────
+
+module.exports = {
+  SCHEMA_VERSION,
+  CONFIDENCE_THRESHOLDS,
+  DEFAULT_STALENESS_THRESHOLD,
+  SIGNAL_EVALUATORS,
+  readRegistry,
+  readHistory,
+  isSessionDuplicate,
+  rebuildFromReceipts,
+  wilsonScore,
+  calculateConfidence,
+  detectStaleness,
+  detectNewModel,
+  evaluateSignals,
+  generateReport,
+  generateTimeline,
+  exportBadge,
+};

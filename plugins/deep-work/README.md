@@ -81,6 +81,7 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 | `/deep-status` | Current status, progress, phase durations, session history |
 | `/deep-resume` | Resume an active session — restores context and continues from current phase |
 | `/deep-finish` | Finish a session — merge, PR, keep, or discard the branch (v4.1) |
+| `/deep-assumptions` | Assumption health report, history timeline, badge export, JSONL rebuild (v5.0) |
 | `/deep-history` | View cross-session trends — model usage, TDD compliance, cost tracking (v4.1) |
 | `/deep-cleanup` | Clean up stale deep-work worktrees (v4.1) |
 
@@ -105,6 +106,7 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | `receipts/SLICE-NNN.json` | Phase 3 ongoing | Per-slice evidence: TDD output, git diff, spec check, review, model used (v4.1) |
 | `session-receipt.json` | Session finish | Cross-slice session summary — derived cache from slice receipts (v4.1) |
 | `debug-log/RC-NNN.md` | Phase 3 (debug) | Root cause analysis notes from systematic debugging |
+| `harness-history/harness-sessions.jsonl` | Session end | Per-session assumption engine data — per-slice evidence, model, confidence signals (v5.0) |
 
 ## Session State
 

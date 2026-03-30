@@ -54,6 +54,7 @@ Read all available session artifacts:
 - `$WORK_DIR/insight-report.md` — insight analysis results (if exists)
 - `$WORK_DIR/file-changes.log` — file modification tracking log (if exists)
 - `$WORK_DIR/plan-diff.md` — plan diff visualization (if exists)
+- `deep-work/harness-history/harness-sessions.jsonl` — assumption engine session history (if exists)
 
 ### 4. Calculate phase durations
 
@@ -177,6 +178,39 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 ## Insight Analysis
 [If $WORK_DIR/insight-report.md exists, include the "종합 인사이트 요약" section here]
 [If insight-report.md does not exist: "Insight 분석 미실행"]
+
+## Assumption Health (v5.0)
+
+Generate assumption health data by running the assumption engine:
+
+```bash
+echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":"deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+```
+
+Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumptions.json`).
+
+[If harness-sessions.jsonl exists and engine returns data:]
+
+| Assumption | Confidence | Category | Verdict | Details |
+|-----------|-----------|----------|---------|---------|
+| phase_guard_blocks_edits | 0.82 | HIGH | KEEP | [S]S/[W]W/[N]N |
+| tdd_required_before_implement | 0.56 | MEDIUM | CONSIDER | [S]S/[W]W/[N]N |
+| research_required_before_plan | 0.75 | HIGH | KEEP | [S]S/[W]W/[N]N |
+| cross_model_review | — | INSUFFICIENT | — | [N]/[min] sessions |
+| receipt_collection | 0.90 | HIGH | KEEP | [S]S/[W]W/[N]N |
+
+**Proposed Changes**: [If any proposed changes from report: list them. Otherwise: "None"]
+
+**This Session's Harness Metadata**:
+- Slices with harness_metadata: [N]/[total]
+- TDD overrides: [count]
+- Bugs caught in RED: [count]
+- Research references used: [count]
+- Cross-model unique findings: [count]
+
+[Aggregate harness_metadata from $WORK_DIR/receipts/SLICE-*.json for the current session.]
+
+[If harness-sessions.jsonl does not exist: "Assumption 엔진 기록 없음 — 세션 완료 후 자동 수집됩니다."]
 
 ## Test Retry History
 [If test_retry_count > 0, summarize each attempt from test-results.md]

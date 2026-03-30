@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "assumptions": [
+    {
+      "id": "phase_guard_blocks_edits",
+      "component": "phase-guard.sh",
+      "hypothesis": "Blocking code edits during non-implement phases improves final code quality",
+      "evidence_signals": {
+        "supporting": ["test_pass_rate_with_guard > test_pass_rate_without"],
+        "weakening": ["high_override_rate", "zero_rework_after_override", "model_passes_all_tests_first_try"]
+      },
+      "current_enforcement": "block",
+      "adjustable_levels": ["block", "warn", "off"],
+      "minimum_sessions_for_evaluation": 5
+    },
+    {
+      "id": "tdd_required_before_implement",
+      "component": "phase-guard-core.js",
+      "hypothesis": "Requiring RED-GREEN-REFACTOR cycle produces fewer bugs than implement-then-test",
+      "evidence_signals": {
+        "supporting": ["bugs_caught_in_red_phase > 0", "rework_count_strict < rework_count_relaxed"],
+        "weakening": ["override_rate > 50%", "zero_bugs_caught_in_red", "relaxed_mode_same_quality"]
+      },
+      "current_enforcement": "strict",
+      "adjustable_levels": ["strict", "coaching", "relaxed", "off"],
+      "minimum_sessions_for_evaluation": 10,
+      "_rationale_for_10": "TDD has higher variance (strict/coaching/relaxed/spike modes) — needs more data points for meaningful comparison"
+    },
+    {
+      "id": "research_required_before_plan",
+      "component": "deep-research.md",
+      "hypothesis": "Exhaustive codebase analysis before planning prevents architectural mistakes",
+      "evidence_signals": {
+        "supporting": ["plan_review_score_with_research > plan_review_score_without"],
+        "weakening": ["research_findings_not_referenced_in_plan", "plan_score_high_despite_shallow_research"]
+      },
+      "current_enforcement": "required",
+      "adjustable_levels": ["required", "recommended", "optional"],
+      "minimum_sessions_for_evaluation": 5
+    },
+    {
+      "id": "cross_model_review_improves_quality",
+      "component": "review-gate.md",
+      "hypothesis": "Multi-model adversarial review catches defects that single-model review misses",
+      "evidence_signals": {
+        "supporting": ["cross_model_found_unique_issues > 0", "plan_revision_after_cross_review"],
+        "weakening": ["cross_model_agrees_with_claude_always", "zero_actionable_findings"]
+      },
+      "current_enforcement": "optional",
+      "adjustable_levels": ["required", "optional", "off"],
+      "minimum_sessions_for_evaluation": 5
+    },
+    {
+      "id": "receipt_collection_ensures_evidence",
+      "component": "file-tracker.sh",
+      "hypothesis": "Structured JSON receipts provide verification evidence that model self-reports cannot",
+      "evidence_signals": {
+        "supporting": ["receipt_data_contradicts_model_claim", "test_phase_catches_receipt_gap"],
+        "weakening": ["receipts_always_match_model_claims", "receipt_data_never_referenced_in_test_phase"]
+      },
+      "current_enforcement": "required",
+      "adjustable_levels": ["required", "optional"],
+      "minimum_sessions_for_evaluation": 10,
+      "_rationale_for_10": "Receipt utility is binary (used or not) — needs more sessions to distinguish signal from noise"
+    }
+  ]
+}

@@ -21,6 +21,7 @@ deep-work/
 │   │   ├── deep-report.md      # /deep-report — session report
 │   │   ├── deep-resume.md      # /deep-resume — resume session
 │   │   ├── deep-review.md       # /deep-review — manual review trigger (v4.2)
+│   │   ├── deep-assumptions.md # /deep-assumptions — assumption health (v5.0)
 │   │   ├── drift-check.md      # /drift-check — plan alignment
 │   │   ├── solid-review.md     # /solid-review — SOLID design
 │   │   └── deep-insight.md     # /deep-insight — code metrics
@@ -30,6 +31,8 @@ deep-work/
 │   │       ├── phase-guard.sh      # PreToolUse — bash+Node hybrid
 │   │       ├── phase-guard-core.js # Node.js: TDD state machine, Bash detection
 │   │       ├── phase-guard-core.test.js # 56 unit tests (node:test)
+│   │       ├── assumption-engine.js     # Node.js: Assumption Engine — Wilson Score, per-slice (v5.0)
+│   │       ├── assumption-engine.test.js # 42 unit tests (node:test, v5.0)
 │   │       ├── file-tracker.sh     # PostToolUse — tracks + receipt collection
 │   │       ├── update-check.sh     # SessionStart — git-based version check
 │   │       ├── session-end.sh      # Stop — session reminder
@@ -57,15 +60,19 @@ deep-work/
 - **Quality Gates**: 3-tier system — Required (blocks), Advisory (warns), Insight (info).
 - **Review Gate** (v4.2): Structural review + adversarial cross-model review on phase documents.
   codex/gemini-cli auto-detected at session init. Results in `{phase}-review.json`.
+- **Assumption Engine** (v5.0): Self-evolving harness. Each enforcement rule is a falsifiable
+  hypothesis with evidence signals. `assumption-engine.js` computes Wilson Score confidence,
+  model-aware splitting, staleness detection. `/deep-assumptions` reports health.
 - **Commands are markdown**: Each slash command is a `.md` file with YAML frontmatter.
   Claude reads and follows the instructions.
 
 ## Testing
 
 ```bash
-# 56 unit tests — v4.0 added node:test, v4.2 added cross-model review safe pattern tests
+# 98 unit tests — v4.0 added node:test, v5.0 added assumption engine tests
 cd plugins/deep-work/hooks/scripts
-node --test phase-guard-core.test.js    # Unit tests (v4.0)
+node --test phase-guard-core.test.js    # Phase guard tests (56 tests)
+node --test assumption-engine.test.js   # Assumption engine tests (42 tests, v5.0)
 ```
 
 ## Conventions
@@ -79,4 +86,4 @@ node --test phase-guard-core.test.js    # Unit tests (v4.0)
 
 ## Version
 
-Current: 4.2.1 (TDD Override — Interactive TDD bypass + Escape hatch guidance in block messages)
+Current: 5.0.0 (Self-Evolving Harness — Assumption Engine with Wilson Score, model-aware analysis, per-slice evidence)
