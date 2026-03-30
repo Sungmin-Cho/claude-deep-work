@@ -463,6 +463,25 @@ const SIGNAL_EVALUATORS = {
     const meta = session.harness_metadata || {};
     return meta.receipts_referenced_in_test === false;
   },
+
+  // Evaluator model signals (v5.1)
+  'evaluator_found_real_issues': (session) => {
+    if (!session.review_scores) return null;
+    return (session.review_scores.plan_revisions_from_review || 0) > 0;
+  },
+  'no_missed_issues_in_test_phase': (session) => {
+    return (session.test_retry_count || 0) === 0;
+  },
+  'evaluator_zero_findings_consistently': (session) => {
+    if (!session.review_scores) return null;
+    return (session.review_scores.plan || 10) >= 9 &&
+      (session.review_scores.plan_revisions_from_review || 0) === 0;
+  },
+  'missed_issues_caught_in_test': (session) => {
+    if (!session.review_scores) return null;
+    return (session.test_retry_count || 0) > 0 &&
+      (session.review_scores.plan || 0) >= 7;
+  },
 };
 
 /**
@@ -783,6 +802,159 @@ function exportBadge(assumptions, sessions) {
   };
 }
 
+// ─── Auto-Adjust (v5.1) ───────────────────────────────────────
+
+/**
+ * Mapping from assumption IDs to config fields and their adjustment levels.
+ * Levels are ordered from strictest to most relaxed.
+ * Floor is the last allowed level (auto-adjust will not go below it).
+ */
+const AUTO_ADJUST_MAP = {
+  tdd_required_before_implement: {
+    field: 'tdd_mode',
+    levels: ['strict', 'coaching', 'relaxed', 'off'],
+    floor: 'coaching',
+    default: 'strict',
+  },
+  receipt_collection_ensures_evidence: {
+    field: 'receipt_depth',
+    levels: ['full', 'minimal'],
+    floor: 'minimal',
+    default: 'full',
+  },
+  evaluator_model_quality: {
+    field: 'evaluator_model',
+    levels: ['opus', 'sonnet', 'haiku'],
+    floor: 'haiku',
+    default: 'sonnet',
+  },
+};
+
+const AUTO_ADJUST_THRESHOLDS = {
+  HIGH: 0.7,
+  MEDIUM: 0.3,
+};
+
+/**
+ * Computes auto-adjustments based on session history and current config.
+ * Pure function — reads no files, returns data only.
+ *
+ * @param {object[]} sessions - Session history entries
+ * @param {object} currentConfig - Current config { tdd_mode, receipt_depth, evaluator_model, ... }
+ * @param {object} [options] - {
+ *   minSessions: number (cold start threshold, default 5),
+ *   defaults: object (default config values for tightening comparison),
+ *   userOverrides: object (session-level user flags that suppress adjustments),
+ *   splitByModel: boolean,
+ *   currentModel: string,
+ *   tighteningMinSessions: number (min sessions at current level before tightening, default 3),
+ *   registryPath: string (path to assumptions.json),
+ * }
+ * @returns {{
+ *   adjustments: Array<{ field: string, from: string, to: string, score: number, reason: string, direction: 'relax'|'tighten', suppressed?: boolean }>,
+ *   coldStart: boolean,
+ *   notification: string,
+ * }}
+ */
+function autoAdjust(sessions, currentConfig, options) {
+  const opts = options || {};
+  const minSessions = opts.minSessions || 5;
+  const defaults = opts.defaults || { tdd_mode: 'strict', receipt_depth: 'full', evaluator_model: 'sonnet' };
+  const userOverrides = opts.userOverrides || {};
+  const tighteningMinSessions = opts.tighteningMinSessions || 3;
+
+  if (sessions.length < minSessions) {
+    return { adjustments: [], coldStart: true, notification: '' };
+  }
+
+  let assumptions = [];
+  if (opts.registryPath) {
+    const reg = readRegistry(opts.registryPath);
+    assumptions = reg.assumptions;
+  }
+
+  const adjustments = [];
+
+  for (const [assumptionId, mapping] of Object.entries(AUTO_ADJUST_MAP)) {
+    const { field, levels, floor, default: defaultLevel } = mapping;
+    const currentLevel = currentConfig[field] || defaultLevel;
+    const currentIdx = levels.indexOf(currentLevel);
+    const floorIdx = levels.indexOf(floor);
+
+    if (currentIdx < 0) continue;
+
+    const assumption = assumptions.find(a => a.id === assumptionId);
+    if (!assumption) continue;
+
+    let confidence;
+    if (opts.splitByModel && opts.currentModel) {
+      const modelSessions = sessions.filter(s => s.model_primary === opts.currentModel);
+      if (modelSessions.length < minSessions) {
+        confidence = calculateConfidence(assumption, sessions);
+      } else {
+        confidence = calculateConfidence(assumption, modelSessions);
+      }
+    } else {
+      confidence = calculateConfidence(assumption, sessions);
+    }
+
+    const score = confidence.overall.score;
+    if (confidence.insufficient) continue;
+
+    const isSuppressed = field in userOverrides;
+
+    let to = null;
+    let direction = null;
+    let reason = '';
+
+    if (score >= AUTO_ADJUST_THRESHOLDS.HIGH) {
+      const defaultIdx = levels.indexOf(defaultLevel);
+      if (currentIdx > defaultIdx && sessions.length >= tighteningMinSessions) {
+        const tightenIdx = Math.max(currentIdx - 1, defaultIdx);
+        to = levels[tightenIdx];
+        direction = 'tighten';
+        reason = `score ${score.toFixed(2)} (HIGH) — evidence supports tightening back toward default`;
+      }
+    } else if (score >= AUTO_ADJUST_THRESHOLDS.MEDIUM) {
+      const relaxIdx = Math.min(currentIdx + 1, floorIdx);
+      if (relaxIdx !== currentIdx) {
+        to = levels[relaxIdx];
+        direction = 'relax';
+        reason = `score ${score.toFixed(2)} (MEDIUM) — evidence weakening, relaxing one step`;
+      }
+    } else {
+      if (currentIdx < floorIdx) {
+        to = floor;
+        direction = 'relax';
+        reason = `score ${score.toFixed(2)} (LOW) — relaxing to floor`;
+      }
+    }
+
+    if (to && to !== currentLevel) {
+      adjustments.push({
+        field,
+        from: currentLevel,
+        to,
+        score,
+        reason,
+        direction,
+        ...(isSuppressed ? { suppressed: true } : {}),
+      });
+    }
+  }
+
+  const activeAdjustments = adjustments.filter(a => !a.suppressed);
+  let notification = '';
+  if (activeAdjustments.length > 0) {
+    const lines = activeAdjustments.map(a =>
+      `  - ${a.field}: ${a.from} → ${a.to} (score ${a.score.toFixed(2)}, ${a.reason})`
+    );
+    notification = `Assumption Engine auto-adjustment:\n${lines.join('\n')}\n  Floors guaranteed. Run /deep-assumptions for details.`;
+  }
+
+  return { adjustments, coldStart: false, notification };
+}
+
 // ─── CLI Entry ──────────────────────────────────────────────
 
 if (require.main === module) {
@@ -828,6 +1000,18 @@ if (require.main === module) {
           result = rebuildFromReceipts(workDir, options && options.receiptDirs);
           break;
         }
+        case 'auto-adjust': {
+          const registry = readRegistry(registryPath);
+          const history = readHistory(historyPath);
+          const config = parsed.config || {};
+          const adjustOptions = {
+            ...(options || {}),
+            registryPath,
+          };
+          result = autoAdjust(history.sessions, config, adjustOptions);
+          result.warnings = [...registry.warnings, ...history.warnings];
+          break;
+        }
         default:
           result = { error: `Unknown action: ${action}` };
       }
@@ -849,6 +1033,8 @@ module.exports = {
   CONFIDENCE_THRESHOLDS,
   DEFAULT_STALENESS_THRESHOLD,
   SIGNAL_EVALUATORS,
+  AUTO_ADJUST_MAP,
+  AUTO_ADJUST_THRESHOLDS,
   readRegistry,
   readHistory,
   isSessionDuplicate,
@@ -861,4 +1047,5 @@ module.exports = {
   generateReport,
   generateTimeline,
   exportBadge,
+  autoAdjust,
 };

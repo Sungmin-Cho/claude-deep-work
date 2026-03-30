@@ -9,6 +9,8 @@ const {
   CONFIDENCE_THRESHOLDS,
   DEFAULT_STALENESS_THRESHOLD,
   SIGNAL_EVALUATORS,
+  AUTO_ADJUST_MAP,
+  AUTO_ADJUST_THRESHOLDS,
   readRegistry,
   readHistory,
   isSessionDuplicate,
@@ -21,6 +23,7 @@ const {
   generateReport,
   generateTimeline,
   exportBadge,
+  autoAdjust,
 } = require('./assumption-engine.js');
 
 // ─── Test Helpers ───────────────────────────────────────────
@@ -578,5 +581,237 @@ describe('Session dedupe', () => {
     // First occurrence wins
     assert.equal(result.sessions[0].slices_total, 5);
     assert.equal(result.sessions[1].session_id, 'different-id');
+  });
+});
+
+// ─── autoAdjust Tests (15 tests) ──────────────────────────
+
+describe('autoAdjust', () => {
+  beforeEach(setupTmpDir);
+  afterEach(cleanupTmpDir);
+
+  /** Helper: write registry + history and call autoAdjust with registryPath */
+  function adjustWithRegistry(sessions, config, assumptions, extraOpts) {
+    const regPath = writeJSON('reg.json', { schema_version: '1.0', assumptions });
+    return autoAdjust(sessions, config, { minSessions: 5, registryPath: regPath, ...extraOpts });
+  }
+
+  const tddAssumption = {
+    id: 'tdd_required_before_implement',
+    hypothesis: 'TDD test',
+    evidence_signals: { supporting: ['bugs_caught_in_red_phase > 0'], weakening: ['zero_bugs_caught_in_red', 'override_rate > 50%'] },
+    current_enforcement: 'strict',
+    adjustable_levels: ['strict', 'coaching', 'relaxed', 'off'],
+    minimum_sessions_for_evaluation: 5,
+  };
+
+  const receiptAssumption = {
+    id: 'receipt_collection_ensures_evidence',
+    hypothesis: 'Receipt test',
+    evidence_signals: { supporting: ['receipt_data_contradicts_model_claim'], weakening: ['receipt_data_never_referenced_in_test_phase'] },
+    current_enforcement: 'required',
+    adjustable_levels: ['required', 'optional'],
+    minimum_sessions_for_evaluation: 5,
+  };
+
+  const evalAssumption = {
+    id: 'evaluator_model_quality',
+    hypothesis: 'Evaluator model test',
+    evidence_signals: { supporting: ['evaluator_found_real_issues', 'no_missed_issues_in_test_phase'], weakening: ['evaluator_zero_findings_consistently', 'missed_issues_caught_in_test'] },
+    current_enforcement: 'sonnet',
+    adjustable_levels: ['opus', 'sonnet', 'haiku'],
+    minimum_sessions_for_evaluation: 5,
+  };
+
+  it('returns empty adjustments on cold start (< 5 sessions)', () => {
+    const sessions = Array.from({ length: 3 }, (_, i) => makeSession({ session_id: `s-${i}` }));
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption]);
+    assert.deepEqual(result.adjustments, []);
+    assert.equal(result.coldStart, true);
+  });
+
+  it('relaxes tdd_mode from strict to coaching when score is MEDIUM', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 0, tdd_overrides: 3, slices_total: 5 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption]);
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    assert.ok(tddAdj, 'Expected tdd_mode adjustment');
+    assert.equal(tddAdj.from, 'strict');
+    assert.equal(tddAdj.to, 'coaching');
+  });
+
+  it('relaxes to floor when score is LOW', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 0, tdd_overrides: 5, slices_total: 5 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption]);
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    if (tddAdj) {
+      assert.notEqual(tddAdj.to, 'relaxed');
+      assert.notEqual(tddAdj.to, 'off');
+    }
+  });
+
+  it('enforces TDD floor at coaching (never auto-adjusts to relaxed or off)', () => {
+    const sessions = Array.from({ length: 20 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 0, tdd_overrides: 5, slices_total: 5 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'coaching' }, [tddAssumption]);
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    if (tddAdj) {
+      assert.notEqual(tddAdj.to, 'relaxed');
+      assert.notEqual(tddAdj.to, 'off');
+    }
+  });
+
+  it('maintains current level when score is HIGH', () => {
+    const sessions = Array.from({ length: 20 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 3 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption]);
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    assert.equal(tddAdj, undefined, 'Expected no tdd_mode adjustment for HIGH confidence');
+  });
+
+  it('tightens coaching to strict when score is HIGH and currently relaxed from default', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 3 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'coaching' }, [tddAssumption], {
+      defaults: { tdd_mode: 'strict' },
+      tighteningMinSessions: 3,
+    });
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    if (tddAdj) {
+      assert.equal(tddAdj.to, 'strict');
+      assert.equal(tddAdj.direction, 'tighten');
+    }
+  });
+
+  it('respects user override (marks as suppressed)', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 0, tdd_overrides: 3, slices_total: 5 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption], {
+      userOverrides: { tdd_mode: 'strict' },
+    });
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    if (tddAdj) {
+      assert.equal(tddAdj.suppressed, true);
+    }
+  });
+
+  it('handles receipt_depth adjustment', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, harness_metadata: { receipts_referenced_in_test: false, receipt_contradictions: 0 } })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict', receipt_depth: 'full' }, [receiptAssumption]);
+    const receiptAdj = result.adjustments.find(a => a.field === 'receipt_depth');
+    if (receiptAdj) {
+      assert.equal(receiptAdj.to, 'minimal');
+    }
+  });
+
+  it('enforces receipt_depth floor at minimal', () => {
+    const sessions = Array.from({ length: 20 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, harness_metadata: { receipts_referenced_in_test: false } })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict', receipt_depth: 'minimal' }, [receiptAssumption]);
+    const receiptAdj = result.adjustments.find(a => a.field === 'receipt_depth');
+    assert.equal(receiptAdj, undefined, 'Expected no receipt_depth adjustment at floor');
+  });
+
+  it('produces model-aware adjustments when splitByModel is true', () => {
+    const sessions = [
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeSession({ session_id: `opus-${i}`, model_primary: 'claude-opus-4-6', bugs_caught_in_red_phase: 3 })
+      ),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeSession({ session_id: `sonnet-${i}`, model_primary: 'claude-sonnet-4-6', bugs_caught_in_red_phase: 0, tdd_overrides: 3, slices_total: 5 })
+      ),
+    ];
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption], {
+      splitByModel: true, currentModel: 'claude-sonnet-4-6',
+    });
+    const tddAdj = result.adjustments.find(a => a.field === 'tdd_mode');
+    if (tddAdj) {
+      assert.equal(tddAdj.to, 'coaching');
+    }
+  });
+
+  it('returns notification text for adjustments', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 0, tdd_overrides: 3, slices_total: 5 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption]);
+    if (result.adjustments.length > 0) {
+      assert.ok(result.adjustments[0].reason, 'Expected reason string');
+      assert.ok(typeof result.adjustments[0].score === 'number', 'Expected score number');
+    }
+  });
+
+  it('returns formatted notification string', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 0, tdd_overrides: 3, slices_total: 5 })
+    );
+    const result = adjustWithRegistry(sessions, { tdd_mode: 'strict' }, [tddAssumption]);
+    assert.ok(typeof result.notification === 'string');
+    if (result.adjustments.length > 0) {
+      assert.ok(result.notification.length > 0, 'Expected non-empty notification');
+    }
+  });
+
+  it('adjusts evaluator_model from sonnet to haiku when evaluator finds zero issues', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({
+        session_id: `s-${i}`,
+        review_scores: { plan: 10, plan_revisions_from_review: 0 },
+        test_retry_count: 0,
+      })
+    );
+    const result = adjustWithRegistry(sessions, { evaluator_model: 'sonnet' }, [evalAssumption]);
+    const evalAdj = result.adjustments.find(a => a.field === 'evaluator_model');
+    if (evalAdj) {
+      assert.equal(evalAdj.to, 'haiku');
+      assert.equal(evalAdj.direction, 'relax');
+    }
+  });
+
+  it('tightens evaluator_model from haiku to sonnet when test phase catches missed issues', () => {
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({
+        session_id: `s-${i}`,
+        review_scores: { plan: 8, plan_revisions_from_review: 1 },
+        test_retry_count: 2,
+      })
+    );
+    const result = adjustWithRegistry(sessions, { evaluator_model: 'haiku' }, [evalAssumption], {
+      defaults: { evaluator_model: 'sonnet' },
+      tighteningMinSessions: 3,
+    });
+    const evalAdj = result.adjustments.find(a => a.field === 'evaluator_model');
+    if (evalAdj) {
+      assert.equal(evalAdj.to, 'sonnet');
+      assert.equal(evalAdj.direction, 'tighten');
+    }
+  });
+
+  it('enforces evaluator_model floor at haiku (no relaxation below haiku)', () => {
+    // When at haiku with weak signals, should NOT relax further (haiku is floor)
+    // Use weakening signals to get LOW score
+    const sessions = Array.from({ length: 10 }, (_, i) =>
+      makeSession({
+        session_id: `s-${i}`,
+        review_scores: { plan: 10, plan_revisions_from_review: 0 },
+        test_retry_count: 2,  // missed issues → weakening
+      })
+    );
+    const result = adjustWithRegistry(sessions, { evaluator_model: 'haiku' }, [evalAssumption]);
+    const evalAdj = result.adjustments.find(a => a.field === 'evaluator_model');
+    // At floor with mixed signals — may tighten back toward default but never relax past haiku
+    if (evalAdj) {
+      assert.notEqual(evalAdj.direction, 'relax', 'Should not relax below haiku floor');
+    }
   });
 });

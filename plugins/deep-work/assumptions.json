@@ -62,6 +62,18 @@
       "adjustable_levels": ["required", "optional"],
       "minimum_sessions_for_evaluation": 10,
       "_rationale_for_10": "Receipt utility is binary (used or not) — needs more sessions to distinguish signal from noise"
+    },
+    {
+      "id": "evaluator_model_quality",
+      "component": "deep-plan.md, deep-test.md",
+      "hypothesis": "Current evaluator model catches issues effectively relative to its cost",
+      "evidence_signals": {
+        "supporting": ["evaluator_found_real_issues", "no_missed_issues_in_test_phase"],
+        "weakening": ["evaluator_zero_findings_consistently", "missed_issues_caught_in_test"]
+      },
+      "current_enforcement": "sonnet",
+      "adjustable_levels": ["opus", "sonnet", "haiku"],
+      "minimum_sessions_for_evaluation": 5
     }
   ]
 }
