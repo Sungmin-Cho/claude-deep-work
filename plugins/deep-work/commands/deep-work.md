@@ -299,6 +299,54 @@ Store result in state file: `cross_model_enabled: {codex: true/false, gemini: tr
 Store tool info: `cross_model_tools: {codex: {available: bool, path: "..."}, gemini: {available: bool, path: "..."}}`
 
 
+### 2.6. Assumption health check (v5.0)
+
+Check if session history exists and display assumption health summary on init.
+
+1. **Locate history file**: Look for `$WORK_DIR/../harness-history/harness-sessions.jsonl` (shared across sessions in the `deep-work/` directory). If no history file exists, skip this step silently.
+
+2. **Run assumption engine** (report + detect-model):
+
+```bash
+# Get assumption health report
+echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":"deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+
+# Detect if current model is new
+echo '{"action":"detect-model","historyPath":"deep-work/harness-history/harness-sessions.jsonl","model":"<CURRENT_MODEL_ID>"}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+```
+
+Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumptions.json`).
+Where `<CURRENT_MODEL_ID>` is the model identifier for this session (e.g., `claude-opus-4-6`).
+
+3. **New model warning**: If `detect-model` returns `isNew: true` and `totalSessions > 0`:
+
+```
+⚠️ 새 모델 감지: [model_id]
+   이 모델에 대한 세션 기록이 없습니다.
+   기존 가정이 이 모델에 적용되지 않을 수 있습니다.
+   첫 [minimum_sessions_for_evaluation]회 세션은 기본 enforcement를 사용합니다.
+```
+
+4. **Health summary display**: If history has enough sessions (>= minimum for at least one assumption):
+
+```
+Assumption Health ([N] sessions)
+   phase_guard_blocks_edits:        HIGH (0.82) — KEEP
+   tdd_required_before_implement:   MEDIUM (0.56) — CONSIDER loosening
+   research_required_before_plan:   HIGH (0.75) — KEEP
+   cross_model_review:              INSUFFICIENT (3/5 sessions)
+   receipt_collection:              HIGH (0.90) — KEEP
+
+   제안: /deep-assumptions 로 상세 리포트를 확인하세요.
+```
+
+If report has proposed changes, add:
+```
+   ⚡ 제안된 변경: [count]건 — /deep-assumptions 에서 확인
+```
+
+5. **No history / insufficient data**: If `totalSessions == 0` or all assumptions show INSUFFICIENT, skip display entirely (no noise on cold start).
+
 ### 2-1. Git branch & worktree setup (git repository only)
 
 Check if the project is a git repository:
