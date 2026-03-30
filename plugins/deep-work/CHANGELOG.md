@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1] - 2026-03-30
+
+### Fixed
+- **CRITICAL: Phase guard fail-closed** — `phase-guard-core.js` catch block now blocks (not allows) on internal errors, preventing TDD/phase enforcement bypass
+- **CRITICAL: Receipt atomic writes** — Receipt JSON updates use temp-file + rename pattern to prevent data corruption from concurrent PostToolUse hooks
+- **HIGH: Command chain bypass** — `detectBashFileWrite` now splits chained commands (`&&`, `||`, `;`, `|`) and checks each sub-command independently; safe prefix no longer shields file-write suffixes
+- **HIGH: Bash TDD target extraction** — New `extractBashTargetFile()` extracts actual destination file from bash commands instead of matching test/exempt patterns against the entire command string
+- **HIGH: Skipped phases exact matching** — Substring match replaced with comma-delimited exact match to prevent false positives
+- **HIGH: Write/Edit fail-closed on missing file_path** — File editing tools now block (not allow) when file path cannot be extracted from tool input
+- **MEDIUM: JSONL history locking** — `session-end.sh` uses mkdir-based locking for concurrent JSONL appends
+- **MEDIUM: Cross-platform timestamp parsing** — Duration calculation replaced with Node.js `Date.parse` (removes macOS/GNU date branching)
+- **MEDIUM: Notification JSON escaping** — Webhook payloads use `JSON.stringify` for proper newline/unicode escaping
+- **MEDIUM: Path normalization** — `normalize_path` resolves `..` segments via `path.resolve` when present
+- **MEDIUM: YAML field extraction** — `read_frontmatter_field` uses literal prefix matching instead of regex interpolation
+- **MEDIUM: Receipt initial creation** — Heredoc replaced with `JSON.stringify` to prevent slice ID injection
+
+### Changed
+- `SIGNAL_EVALUATORS` in assumption engine now use `{ scope, fn }` format; session-scoped signals evaluate once per session, slice-scoped signals aggregate via any-true
+- `TEST_FILE_PATTERNS` extended with Rust, Java, C#, Kotlin, Swift patterns
+- New exports: `splitCommands`, `extractBashTargetFile` in phase-guard-core.js
+
 ## [5.1.0] - 2026-03-30
 
 ### Added

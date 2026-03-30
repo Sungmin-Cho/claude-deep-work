@@ -9,9 +9,9 @@ STATE_FILE="${1:-.claude/deep-work.local.md}"
 PHASE="${2:-unknown}"
 STATUS="${3:-completed}"
 MESSAGE="${4:-Deep Work: ${PHASE} ${STATUS}}"
-# Escape double quotes and backslashes for safe JSON interpolation
-MESSAGE="${MESSAGE//\\/\\\\}"
-MESSAGE="${MESSAGE//\"/\\\"}"
+# Proper JSON escaping via Node.js (fallback to manual escape)
+MESSAGE_ESCAPED=$(node -e "console.log(JSON.stringify(process.argv[1]).slice(1,-1))" "$MESSAGE" 2>/dev/null) \
+  || { MESSAGE_ESCAPED="${MESSAGE//\\/\\\\}"; MESSAGE_ESCAPED="${MESSAGE_ESCAPED//\"/\\\"}"; }
 TITLE="Deep Work"
 
 # ─── 설정 읽기 ───────────────────────────────────────────
@@ -58,7 +58,7 @@ send_slack() {
 
   curl -sS -X POST "$webhook_url" \
     -H 'Content-Type: application/json' \
-    -d "{\"text\":\"${emoji} *[Deep Work]* ${MESSAGE}\",\"unfurl_links\":false}" \
+    -d "{\"text\":\"${emoji} *[Deep Work]* ${MESSAGE_ESCAPED}\",\"unfurl_links\":false}" \
     --max-time 5 2>/dev/null || true
 }
 
@@ -68,7 +68,7 @@ send_discord() {
   local webhook_url="$1"
   curl -sS -X POST "$webhook_url" \
     -H 'Content-Type: application/json' \
-    -d "{\"content\":\"**[Deep Work]** ${MESSAGE}\"}" \
+    -d "{\"content\":\"**[Deep Work]** ${MESSAGE_ESCAPED}\"}" \
     --max-time 5 2>/dev/null || true
 }
 
@@ -98,13 +98,13 @@ send_webhook() {
   local body="$body_template"
   body="${body//\{\{phase\}\}/$PHASE}"
   body="${body//\{\{status\}\}/$STATUS}"
-  body="${body//\{\{message\}\}/$MESSAGE}"
+  body="${body//\{\{message\}\}/$MESSAGE_ESCAPED}"
   body="${body//\{\{timestamp\}\}/$timestamp}"
   body="${body//\{\{task\}\}/$TASK_DESC}"
 
   # body_template이 비어있으면 기본 JSON 생성
   if [[ -z "$body" ]]; then
-    body="{\"phase\":\"${PHASE}\",\"status\":\"${STATUS}\",\"message\":\"${MESSAGE}\",\"timestamp\":\"${timestamp}\"}"
+    body="{\"phase\":\"${PHASE}\",\"status\":\"${STATUS}\",\"message\":\"${MESSAGE_ESCAPED}\",\"timestamp\":\"${timestamp}\"}"
   fi
 
   # curl 명령어 조립

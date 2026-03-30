@@ -815,3 +815,154 @@ describe('autoAdjust', () => {
     }
   });
 });
+
+// ─── Signal Scope Separation Tests (8 tests) ──────────────
+
+describe('Signal scope separation', () => {
+  it('session-scoped signal evaluates once even when slices exist', () => {
+    const assumption = makeAssumption({
+      evidence_signals: {
+        supporting: ['high_override_rate'],
+        weakening: [],
+      },
+    });
+    // Session with slices array — session-scoped signal should read from session, not slices
+    const session = makeSession({
+      slices_total: 5,
+      tdd_overrides: 4, // 4/5 = 0.8 > 0.5 → true
+      slices: [
+        { slice_id: 'S1', tdd_overrides: 0, slices_total: 1 },
+        { slice_id: 'S2', tdd_overrides: 0, slices_total: 1 },
+        { slice_id: 'S3', tdd_overrides: 0, slices_total: 1 },
+      ],
+    });
+    const result = evaluateSignals(assumption, session);
+    // Should evaluate once against session (true), not per-slice (all false)
+    assert.equal(result.supporting, 1, 'Session-scoped should evaluate once, got supporting != 1');
+  });
+
+  it('slice-scoped signal aggregates across slices (any-true)', () => {
+    const assumption = makeAssumption({
+      evidence_signals: {
+        supporting: ['bugs_caught_in_red_phase > 0'],
+        weakening: [],
+      },
+    });
+    const session = makeSession({
+      bugs_caught_in_red_phase: 0, // session-level is 0
+      slices: [
+        { slice_id: 'S1', bugs_caught_in_red_phase: 0 },
+        { slice_id: 'S2', bugs_caught_in_red_phase: 3 }, // this one is true
+        { slice_id: 'S3', bugs_caught_in_red_phase: 0 },
+      ],
+    });
+    const result = evaluateSignals(assumption, session);
+    // any-true: at least one slice has bugs > 0
+    assert.equal(result.supporting, 1, 'Slice-scoped any-true should count 1');
+  });
+
+  it('slice-scoped signal does not double-count across multiple slices', () => {
+    const assumption = makeAssumption({
+      evidence_signals: {
+        supporting: ['bugs_caught_in_red_phase > 0'],
+        weakening: [],
+      },
+    });
+    const session = makeSession({
+      slices: [
+        { slice_id: 'S1', bugs_caught_in_red_phase: 2 },
+        { slice_id: 'S2', bugs_caught_in_red_phase: 5 },
+        { slice_id: 'S3', bugs_caught_in_red_phase: 1 },
+      ],
+    });
+    const result = evaluateSignals(assumption, session);
+    // All slices are true, but any-true should count at most 1
+    assert.equal(result.supporting, 1, 'Should count at most 1 per signal even with multiple true slices');
+  });
+
+  it('session-scoped signal with tdd_mode works when slices lack tdd_mode', () => {
+    const assumption = makeAssumption({
+      evidence_signals: {
+        supporting: ['rework_count_strict < rework_count_relaxed'],
+        weakening: [],
+      },
+    });
+    const session = makeSession({
+      tdd_mode: 'strict',
+      test_retry_count: 0,
+      slices: [
+        { slice_id: 'S1' }, // no tdd_mode on slices
+        { slice_id: 'S2' },
+      ],
+    });
+    const result = evaluateSignals(assumption, session);
+    // Session-scoped: reads tdd_mode from session object, not slices
+    assert.equal(result.supporting, 1, 'Should read tdd_mode from session, not slices');
+  });
+
+  it('mixed session and slice scoped signals evaluate correctly together', () => {
+    const assumption = makeAssumption({
+      evidence_signals: {
+        supporting: ['bugs_caught_in_red_phase > 0', 'high_override_rate'],
+        weakening: ['zero_bugs_caught_in_red'],
+      },
+    });
+    const session = makeSession({
+      slices_total: 5,
+      tdd_overrides: 4, // 0.8 > 0.5 → high_override_rate true
+      slices: [
+        { slice_id: 'S1', bugs_caught_in_red_phase: 2 }, // bugs > 0 true
+        { slice_id: 'S2', bugs_caught_in_red_phase: 0 }, // zero_bugs true
+      ],
+    });
+    const result = evaluateSignals(assumption, session);
+    // bugs_caught_in_red_phase > 0 (slice): any-true from S1 → 1 supporting
+    // high_override_rate (session): true → 1 supporting
+    // zero_bugs_caught_in_red (slice): any-true from S2 → 1 weakening
+    assert.equal(result.supporting, 2, 'Expected 2 supporting (1 slice + 1 session)');
+    assert.equal(result.weakening, 1, 'Expected 1 weakening (slice any-true)');
+  });
+
+  it('session-scoped relaxed_mode_same_quality reads tdd_mode from session', () => {
+    const assumption = makeAssumption({
+      evidence_signals: {
+        supporting: ['relaxed_mode_same_quality'],
+        weakening: [],
+      },
+    });
+    const session = makeSession({
+      tdd_mode: 'relaxed',
+      final_outcome: 'pass',
+      slices: [
+        { slice_id: 'S1', tdd_mode: 'strict' }, // slice has different tdd_mode
+        { slice_id: 'S2' },
+      ],
+    });
+    const result = evaluateSignals(assumption, session);
+    // Session-scoped: should read tdd_mode='relaxed' from session
+    assert.equal(result.supporting, 1, 'Should read tdd_mode from session, not slices');
+  });
+
+  it('all evaluators have scope and fn properties (structure test)', () => {
+    for (const [signal, entry] of Object.entries(SIGNAL_EVALUATORS)) {
+      if (typeof entry === 'function') {
+        // Legacy bare function — still valid via _resolveEvaluator
+        continue;
+      }
+      assert.ok(entry.scope, `Signal "${signal}" missing scope property`);
+      assert.ok(typeof entry.fn === 'function', `Signal "${signal}" fn is not a function`);
+      assert.ok(['session', 'slice'].includes(entry.scope),
+        `Signal "${signal}" has invalid scope "${entry.scope}"`);
+    }
+  });
+
+  it('slice-scoped evaluators are exactly the 2 expected signals (structure test)', () => {
+    const sliceScoped = Object.entries(SIGNAL_EVALUATORS)
+      .filter(([, entry]) => typeof entry === 'object' && entry.scope === 'slice')
+      .map(([signal]) => signal)
+      .sort();
+    const expected = ['bugs_caught_in_red_phase > 0', 'zero_bugs_caught_in_red'].sort();
+    assert.deepEqual(sliceScoped, expected,
+      `Expected exactly 2 slice-scoped signals, got: ${sliceScoped.join(', ')}`);
+  });
+});

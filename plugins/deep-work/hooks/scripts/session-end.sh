@@ -113,19 +113,11 @@ append_session_history() {
 
   # ── Calculate total_duration_minutes from started_at to now
   local duration_minutes=0
-  if command -v date >/dev/null 2>&1; then
-    local start_epoch now_epoch
-    # macOS date -j vs GNU date
-    if date -j -f "%Y-%m-%dT%H:%M:%S" "$(echo "$session_id" | cut -c1-19)" +%s >/dev/null 2>&1; then
-      start_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$(echo "$session_id" | cut -c1-19)" +%s 2>/dev/null || echo 0)
-    else
-      start_epoch=$(date -d "$session_id" +%s 2>/dev/null || echo 0)
-    fi
-    now_epoch=$(date +%s)
-    if [[ "$start_epoch" -gt 0 ]]; then
-      duration_minutes=$(( (now_epoch - start_epoch) / 60 ))
-    fi
-  fi
+  duration_minutes=$(node -e "
+    const start = Date.parse(process.argv[1]);
+    if (isNaN(start)) { console.log(0); process.exit(0); }
+    console.log(Math.floor((Date.now() - start) / 60000));
+  " "$session_id" 2>/dev/null || echo 0)
 
   # ── Aggregate receipt data from SLICE-*.json files
   local receipts_dir="$work_dir/receipts"
@@ -218,9 +210,24 @@ append_session_history() {
   local entry
   entry="{\"session_id\":\"${session_id}\",\"model_primary\":\"${model_primary}\",\"slices\":${slices_json},\"phases_used\":${phases_json},\"slices_total\":${slices_total},\"slices_passed_first_try\":${slices_passed_first_try},\"tdd_mode\":\"${tdd_mode}\",\"tdd_overrides\":${tdd_overrides},\"bugs_caught_in_red_phase\":${bugs_caught_in_red_phase},\"research_references_used\":${research_references_used},\"test_retry_count\":${test_retry_count},\"review_scores\":${review_scores},\"cross_model_unique_findings\":${cross_model_unique_findings},\"total_duration_minutes\":${duration_minutes},\"final_outcome\":\"${final_outcome}\"}"
 
-  # ── Write to JSONL file
+  # ── Write to JSONL file with lock
+  _append_with_lock() {
+    local target="$1" data="$2"
+    local lockdir="${target}.lock.d"
+    local retries=3
+    while [ "$retries" -gt 0 ]; do
+      if mkdir "$lockdir" 2>/dev/null; then
+        echo "$data" >> "$target" 2>/dev/null
+        rmdir "$lockdir" 2>/dev/null
+        return 0
+      fi
+      retries=$((retries - 1)); sleep 0.1
+    done
+    echo "$data" >> "$target" 2>/dev/null
+  }
+
   mkdir -p "$history_dir" 2>/dev/null || return 0
-  echo "$entry" >> "$jsonl_file" 2>/dev/null || return 0
+  _append_with_lock "$jsonl_file" "$entry"
 }
 
 # Run in subshell — errors must never block session close

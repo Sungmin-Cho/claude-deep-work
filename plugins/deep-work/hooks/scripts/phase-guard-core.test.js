@@ -6,6 +6,8 @@ const {
   isValidTransition,
   checkTddEnforcement,
   detectBashFileWrite,
+  splitCommands,
+  extractBashTargetFile,
   checkSliceScope,
   validateReceipt,
   isTestFilePath,
@@ -415,5 +417,222 @@ describe('TDD Override', () => {
       },
     });
     assert.equal(result.decision, 'block');
+  });
+});
+
+// ─── CLI Fail-Closed Tests (A-1) ───────────────────────────
+
+describe('CLI fail-closed behavior', () => {
+  const { execFileSync } = require('child_process');
+  const scriptPath = require('path').join(__dirname, 'phase-guard-core.js');
+
+  it('exits non-zero on invalid JSON input', () => {
+    let exitCode = 0;
+    let stdout = '';
+    try {
+      stdout = execFileSync('node', [scriptPath], {
+        input: 'INVALID JSON',
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      exitCode = err.status;
+      stdout = err.stdout || '';
+    }
+    assert.notEqual(exitCode, 0);
+    assert.ok(stdout.includes('block'), `expected stdout to contain "block", got: ${stdout}`);
+  });
+
+  it('exits non-zero on empty input', () => {
+    let exitCode = 0;
+    let stdout = '';
+    try {
+      stdout = execFileSync('node', [scriptPath], {
+        input: '',
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      exitCode = err.status;
+      stdout = err.stdout || '';
+    }
+    assert.notEqual(exitCode, 0);
+    assert.ok(stdout.includes('block'), `expected stdout to contain "block", got: ${stdout}`);
+  });
+});
+
+// ─── extractBashTargetFile Tests (A-3) ─────────────────────
+
+describe('extractBashTargetFile', () => {
+  it('extracts file from sed -i', () => {
+    assert.equal(extractBashTargetFile("sed -i 's/old/new/' src/app.ts"), 'src/app.ts');
+  });
+
+  it('extracts file from sed -i with backup extension', () => {
+    assert.equal(extractBashTargetFile("sed -i.bak 's/old/new/' config.ts"), 'config.ts');
+  });
+
+  it('extracts file from tee', () => {
+    assert.equal(extractBashTargetFile('echo hello | tee output.txt'), 'output.txt');
+  });
+
+  it('extracts file from tee -a (append)', () => {
+    assert.equal(extractBashTargetFile('echo hello | tee -a log.txt'), 'log.txt');
+  });
+
+  it('extracts file from cp', () => {
+    assert.equal(extractBashTargetFile('cp src/old.ts src/new.ts'), 'src/new.ts');
+  });
+
+  it('extracts file from mv', () => {
+    assert.equal(extractBashTargetFile('mv temp.ts src/final.ts'), 'src/final.ts');
+  });
+
+  it('extracts file from redirect >', () => {
+    assert.equal(extractBashTargetFile("echo 'data' > output.ts"), 'output.ts');
+  });
+
+  it('extracts file from redirect >>', () => {
+    assert.equal(extractBashTargetFile("echo 'data' >> output.ts"), 'output.ts');
+  });
+
+  it('extracts file from dd of=', () => {
+    assert.equal(extractBashTargetFile('dd if=/dev/zero of=output.bin bs=1024 count=1'), 'output.bin');
+  });
+
+  it('returns empty string for unrecognized command', () => {
+    assert.equal(extractBashTargetFile('some-unknown-command'), '');
+  });
+
+  it('returns empty string for null/undefined', () => {
+    assert.equal(extractBashTargetFile(null), '');
+    assert.equal(extractBashTargetFile(undefined), '');
+  });
+});
+
+// ─── splitCommands Tests (A-5) ─────────────────────────────
+
+describe('splitCommands', () => {
+  it('splits on &&', () => {
+    assert.deepEqual(splitCommands('npm test && echo done'), ['npm test', 'echo done']);
+  });
+
+  it('splits on ||', () => {
+    assert.deepEqual(splitCommands('npm test || echo fail'), ['npm test', 'echo fail']);
+  });
+
+  it('splits on ;', () => {
+    assert.deepEqual(splitCommands('echo a; echo b'), ['echo a', 'echo b']);
+  });
+
+  it('splits on |', () => {
+    assert.deepEqual(splitCommands('cat file.txt | grep test'), ['cat file.txt', 'grep test']);
+  });
+
+  it('respects single quotes', () => {
+    assert.deepEqual(splitCommands("echo 'a && b'; echo c"), ["echo 'a && b'", 'echo c']);
+  });
+
+  it('respects double quotes', () => {
+    assert.deepEqual(splitCommands('echo "a && b" && echo c'), ['echo "a && b"', 'echo c']);
+  });
+
+  it('handles multiple operators', () => {
+    const result = splitCommands('a && b || c; d');
+    assert.deepEqual(result, ['a', 'b', 'c', 'd']);
+  });
+
+  it('returns empty array for null/undefined', () => {
+    assert.deepEqual(splitCommands(null), []);
+    assert.deepEqual(splitCommands(undefined), []);
+  });
+});
+
+// ─── detectBashFileWrite chained commands (A-5) ────────────
+
+describe('detectBashFileWrite chained commands', () => {
+  it('detects file write after safe command with &&', () => {
+    const result = detectBashFileWrite("npm test && echo 'x' > evil.js");
+    assert.ok(result.isFileWrite);
+  });
+
+  it('detects file write after safe command with ;', () => {
+    const result = detectBashFileWrite("npm test; echo 'x' > evil.js");
+    assert.ok(result.isFileWrite);
+  });
+
+  it('detects file write after safe command with ||', () => {
+    const result = detectBashFileWrite("npm test || sed -i 's/a/b/' src/app.ts");
+    assert.ok(result.isFileWrite);
+  });
+
+  it('allows pure safe chain', () => {
+    const result = detectBashFileWrite('npm test && echo "done"');
+    assert.ok(!result.isFileWrite);
+  });
+
+  it('detects file write piped after safe command', () => {
+    const result = detectBashFileWrite('npm test | tee output.log');
+    assert.ok(result.isFileWrite);
+  });
+});
+
+// ─── Additional language test file patterns (A-6) ──────────
+
+describe('Additional language test file patterns', () => {
+  it('detects Rust test files', () => {
+    assert.ok(isTestFilePath('src/parser_test.rs'));
+  });
+
+  it('detects Java test files', () => {
+    assert.ok(isTestFilePath('src/main/java/AppTest.java'));
+    assert.ok(isTestFilePath('src/test/java/AppTests.java'));
+  });
+
+  it('detects C# test files', () => {
+    assert.ok(isTestFilePath('Tests/AppTest.cs'));
+    assert.ok(isTestFilePath('Tests/AppTests.cs'));
+  });
+
+  it('detects Kotlin test files', () => {
+    assert.ok(isTestFilePath('src/test/kotlin/AppTest.kt'));
+  });
+
+  it('detects Swift test files', () => {
+    assert.ok(isTestFilePath('Tests/AppTest.swift'));
+    assert.ok(isTestFilePath('Tests/AppTests.swift'));
+  });
+});
+
+// ─── processHook regression: bash file write to production (A-3) ──
+
+describe('processHook regression: bash file write TDD target extraction', () => {
+  it('blocks bash write to production file even when command contains test keywords', () => {
+    // Before fix: `toolInput.command` was used as the "file path",
+    // so "npm test" in the command would match test patterns and allow.
+    // After fix: extractBashTargetFile extracts the actual target file.
+    const result = processHook({
+      action: 'pre', toolName: 'Bash',
+      toolInput: { command: "echo 'test result' > src/production.ts" },
+      state: {
+        current_phase: 'implement',
+        tdd_mode: 'strict',
+        tdd_state: 'PENDING',
+      },
+    });
+    assert.equal(result.decision, 'block');
+  });
+
+  it('allows bash write to test file in implement phase with PENDING state', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Bash',
+      toolInput: { command: "echo 'x' > src/app.test.ts" },
+      state: {
+        current_phase: 'implement',
+        tdd_mode: 'strict',
+        tdd_state: 'PENDING',
+      },
+    });
+    assert.equal(result.decision, 'allow');
   });
 });

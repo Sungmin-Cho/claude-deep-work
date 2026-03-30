@@ -112,24 +112,16 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
 
   # receipt 파일이 없으면 초기 생성
   if [[ ! -f "$RECEIPT_FILE" ]]; then
-    cat > "$RECEIPT_FILE" 2>/dev/null <<RECEIPT || true
-{
-  "slice_id": "${ACTIVE_SLICE}",
-  "status": "in_progress",
-  "tdd_state": "PENDING",
-  "tdd": {},
-  "changes": {
-    "files_modified": [],
-    "lines_added": 0,
-    "lines_removed": 0
-  },
-  "verification": {},
-  "spec_compliance": {},
-  "code_review": {},
-  "debug": null,
-  "timestamp": "${TIMESTAMP}"
-}
-RECEIPT
+    node -e "
+      const fs = require('fs');
+      const data = {
+        slice_id: process.argv[2], status: 'in_progress', tdd_state: 'PENDING',
+        tdd: {}, changes: { files_modified: [], lines_added: 0, lines_removed: 0 },
+        verification: {}, spec_compliance: {}, code_review: {}, debug: null,
+        timestamp: process.argv[3]
+      };
+      fs.writeFileSync(process.argv[4], JSON.stringify(data, null, 2));
+    " "$ACTIVE_SLICE" "$TIMESTAMP" "$RECEIPT_FILE" 2>/dev/null || true
   fi
 
   # 파일 변경을 receipt의 changes.files_modified에 추가 (best-effort)
@@ -144,8 +136,12 @@ RECEIPT
         if (!r.changes.files_modified) r.changes.files_modified = [];
         if (!r.changes.files_modified.includes(filePath)) r.changes.files_modified.push(filePath);
         r.timestamp = ts;
-        fs.writeFileSync(receiptFile, JSON.stringify(r, null, 2));
-      } catch(e) {}
+        const tmp = receiptFile + '.tmp.' + process.pid;
+        fs.writeFileSync(tmp, JSON.stringify(r, null, 2));
+        fs.renameSync(tmp, receiptFile);
+      } catch(e) {
+        try { fs.unlinkSync(receiptFile + '.tmp.' + process.pid); } catch(_) {}
+      }
     " "$RECEIPT_FILE" "$FILE_PATH" "$TIMESTAMP" 2>/dev/null || true
   fi
 fi

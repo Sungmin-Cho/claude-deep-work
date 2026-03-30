@@ -67,7 +67,7 @@ fi
 
 if [[ "$CURRENT_PHASE" != "implement" && "$TOOL_NAME" != "Bash" ]]; then
   # If current phase was skipped (v5.1 skip-to-implement), allow
-  if [[ -n "$SKIPPED_PHASES" && "$SKIPPED_PHASES" == *"$CURRENT_PHASE"* ]]; then
+  if [[ -n "$SKIPPED_PHASES" && ",${SKIPPED_PHASES}," == *",${CURRENT_PHASE},"* ]]; then
     exit 0
   fi
 
@@ -77,8 +77,14 @@ if [[ "$CURRENT_PHASE" != "implement" && "$TOOL_NAME" != "Bash" ]]; then
     FILE_PATH="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
   fi
 
-  # If no file_path, allow (safety)
+  # If no file_path: block for Write/Edit/MultiEdit (fail-closed), allow others
   if [[ -z "$FILE_PATH" ]]; then
+    if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
+      cat <<JSON
+{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${CURRENT_PHASE} 단계입니다. 파일 경로를 확인할 수 없어 차단되었습니다.\n\n다시 시도해주세요."}
+JSON
+      exit 2
+    fi
     exit 0
   fi
 

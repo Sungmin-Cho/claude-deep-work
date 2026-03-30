@@ -11,6 +11,10 @@ normalize_path() {
   while [[ "$p" == *"//"* ]]; do
     p="${p//\/\//\/}"
   done
+  # Resolve .. segments (only when present, keeps fast path)
+  if [[ "$p" == *"/.."* ]]; then
+    p=$(node -e "console.log(require('path').resolve(process.argv[1]))" "$p" 2>/dev/null || echo "$p")
+  fi
   printf '%s' "$p"
 }
 
@@ -47,8 +51,16 @@ read_frontmatter_field() {
       if $in_fm; then break; else in_fm=true; continue; fi
     fi
     if $in_fm; then
-      if [[ "$line" =~ ^${field}:[[:space:]]*(.+)$ ]]; then
-        value="${BASH_REMATCH[1]}"
+      local prefix="${field}: "
+      local prefix_nospace="${field}:"
+      if [[ "$line" == "${prefix}"* ]]; then
+        value="${line#"${prefix}"}"
+        value="${value%\"}" ; value="${value#\"}"
+        value="${value%\'}" ; value="${value#\'}"
+        break
+      elif [[ "$line" == "${prefix_nospace}"* ]]; then
+        value="${line#"${prefix_nospace}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
         value="${value%\"}" ; value="${value#\"}"
         value="${value%\'}" ; value="${value#\'}"
         break

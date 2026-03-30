@@ -164,7 +164,114 @@ const SAFE_COMMAND_PATTERNS = [
 ];
 
 /**
+ * Extracts the target file path from a bash command that writes files.
+ * Used to determine whether the target is a test file or production file
+ * for TDD enforcement on bash commands.
+ *
+ * @param {string} command - The bash command string
+ * @returns {string} extracted file path, or '' if not extractable (treated as production = fail-closed)
+ */
+function extractBashTargetFile(command) {
+  if (!command || typeof command !== 'string') return '';
+  const trimmed = command.trim();
+
+  // sed -i [flags] 's/...' FILE
+  const sedMatch = trimmed.match(/\bsed\s+(?:-[^i]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|\S+)\s+(\S+)/);
+  if (sedMatch) return sedMatch[1];
+
+  // tee [-a] FILE
+  const teeMatch = trimmed.match(/\btee\s+(?:-a\s+)?(\S+)/);
+  if (teeMatch) return teeMatch[1];
+
+  // cp SRC DEST — target is last argument
+  const cpMatch = trimmed.match(/\bcp\s+(?:-[^\s]+\s+)*\S+\s+(\S+)\s*$/);
+  if (cpMatch) return cpMatch[1];
+
+  // mv SRC DEST — target is last argument
+  const mvMatch = trimmed.match(/\bmv\s+(?:-[^\s]+\s+)*\S+\s+(\S+)\s*$/);
+  if (mvMatch) return mvMatch[1];
+
+  // dd of=FILE
+  const ddMatch = trimmed.match(/\bdd\s+.*\bof=(\S+)/);
+  if (ddMatch) return ddMatch[1];
+
+  // Redirect: ... > FILE or ... >> FILE
+  const redirectMatch = trimmed.match(/>{1,2}\s*(\S+)\s*$/);
+  if (redirectMatch) return redirectMatch[1];
+
+  // Could not extract — return empty string (fail-closed: treated as production)
+  return '';
+}
+
+/**
+ * Splits a shell command string on &&, ||, ;, and | operators,
+ * respecting single and double quotes.
+ * @param {string} command - The shell command string
+ * @returns {string[]} Array of individual sub-commands (trimmed)
+ */
+function splitCommands(command) {
+  if (!command || typeof command !== 'string') return [];
+
+  const parts = [];
+  let current = '';
+  let inSingle = false;
+  let inDouble = false;
+  let i = 0;
+
+  while (i < command.length) {
+    const ch = command[i];
+
+    // Handle escape inside double quotes
+    if (ch === '\\' && inDouble && i + 1 < command.length) {
+      current += ch + command[i + 1];
+      i += 2;
+      continue;
+    }
+
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      current += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      current += ch;
+      i++;
+      continue;
+    }
+
+    if (!inSingle && !inDouble) {
+      // Check for && or ||
+      if ((ch === '&' && command[i + 1] === '&') || (ch === '|' && command[i + 1] === '|')) {
+        parts.push(current.trim());
+        current = '';
+        i += 2;
+        continue;
+      }
+      // Check for ; or single |
+      if (ch === ';' || ch === '|') {
+        parts.push(current.trim());
+        current = '';
+        i++;
+        continue;
+      }
+    }
+
+    current += ch;
+    i++;
+  }
+
+  const last = current.trim();
+  if (last) parts.push(last);
+
+  return parts.filter(p => p.length > 0);
+}
+
+/**
  * Checks if a bash command attempts to write files.
+ * Splits chained commands and checks each sub-command independently.
  * @param {string} command - The bash command string
  * @returns {{ isFileWrite: boolean, pattern?: string }}
  */
@@ -173,19 +280,24 @@ function detectBashFileWrite(command) {
     return { isFileWrite: false };
   }
 
-  const trimmed = command.trim();
+  const subCommands = splitCommands(command);
 
-  // Check safe patterns first — if a command is clearly safe, allow
-  for (const safe of SAFE_COMMAND_PATTERNS) {
-    if (safe.test(trimmed)) {
-      return { isFileWrite: false };
+  for (const sub of subCommands) {
+    // Check safe patterns — if this sub-command is safe, skip it
+    let isSafe = false;
+    for (const safe of SAFE_COMMAND_PATTERNS) {
+      if (safe.test(sub)) {
+        isSafe = true;
+        break;
+      }
     }
-  }
+    if (isSafe) continue;
 
-  // Check file-write patterns
-  for (const { pattern, desc } of FILE_WRITE_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      return { isFileWrite: true, pattern: desc };
+    // Check file-write patterns on this sub-command
+    for (const { pattern, desc } of FILE_WRITE_PATTERNS) {
+      if (pattern.test(sub)) {
+        return { isFileWrite: true, pattern: desc };
+      }
     }
   }
 
@@ -285,6 +397,12 @@ const TEST_FILE_PATTERNS = [
   /.*_test\.rb$/,
   /.*\.test\.rb$/,
   /spec\/.*_spec\.rb$/,
+  /.*_test\.rs$/,           // Rust
+  /.*Test\.java$/,          // Java
+  /.*Tests\.java$/,         // Java (plural)
+  /.*Tests?\.cs$/,          // C#
+  /.*Test\.kt$/,            // Kotlin
+  /.*Tests?\.swift$/,       // Swift
   /tests?\//,
   /__tests__\//,
 ];
@@ -374,7 +492,7 @@ function processHook(input) {
         // Apply TDD enforcement to bash file writes too
         const tddResult = checkTddEnforcement(
           state.tdd_state || TDD_STATES.PENDING,
-          toolInput.command,  // use command as "path" for TDD check
+          extractBashTargetFile(toolInput.command),  // extract actual target file
           state.tdd_mode || 'strict',
           state.exempt_patterns,
           !!state.tdd_override,
@@ -436,11 +554,14 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify(result));
       process.exit(0);
     } catch (err) {
-      // On any error, output allow (fail-open for robustness)
-      // But log to stderr for debugging
+      // On any error, block (fail-closed for security)
+      // Log to stderr for debugging
       process.stderr.write(`phase-guard-core error: ${err.message}\n`);
-      process.stdout.write(JSON.stringify({ decision: 'allow' }));
-      process.exit(0);
+      process.stdout.write(JSON.stringify({
+        decision: 'block',
+        reason: '⛔ Deep Work Guard: hook 검증 중 내부 오류가 발생했습니다. 다시 시도해주세요.'
+      }));
+      process.exit(2);
     }
   });
 }
@@ -496,6 +617,8 @@ module.exports = {
   isValidTransition,
   checkTddEnforcement,
   detectBashFileWrite,
+  splitCommands,
+  extractBashTargetFile,
   checkSliceScope,
   validateReceipt,
   isTestFilePath,

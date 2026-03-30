@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1] - 2026-03-30
+
+### 수정
+- **CRITICAL: Phase guard fail-closed** — `phase-guard-core.js`의 catch 블록이 내부 오류 시 allow 대신 block을 반환하도록 변경, TDD/단계 강제 우회 방지
+- **CRITICAL: Receipt 원자적 쓰기** — Receipt JSON 업데이트가 temp 파일 + rename 패턴을 사용하여 동시 PostToolUse 훅의 데이터 손상 방지
+- **HIGH: 명령어 체인 우회** — `detectBashFileWrite`가 체인된 명령어(`&&`, `||`, `;`, `|`)를 분리하여 각 하위 명령어를 독립 검증; safe prefix가 file-write suffix를 가리지 않음
+- **HIGH: Bash TDD 대상 추출** — 새 `extractBashTargetFile()` 함수가 bash 명령어에서 실제 대상 파일을 추출하여 전체 명령어 문자열 대신 정확한 test/exempt 패턴 매칭
+- **HIGH: Skipped phases 정확한 매칭** — 서브스트링 매칭을 쉼표 구분 정확 매칭으로 교체하여 오탐 방지
+- **HIGH: Write/Edit file_path 미추출 시 차단** — 파일 경로를 추출할 수 없을 때 allow 대신 block으로 변경
+- **MEDIUM: JSONL 히스토리 잠금** — `session-end.sh`가 동시 JSONL append에 mkdir 기반 잠금 사용
+- **MEDIUM: 크로스 플랫폼 타임스탬프 파싱** — 기간 계산을 Node.js `Date.parse`로 교체 (macOS/GNU date 분기 제거)
+- **MEDIUM: 알림 JSON 이스케이프** — 웹훅 페이로드가 `JSON.stringify`로 줄바꿈/유니코드 정상 이스케이프
+- **MEDIUM: 경로 정규화** — `normalize_path`가 `..` 세그먼트를 `path.resolve`로 해결
+- **MEDIUM: YAML 필드 추출** — `read_frontmatter_field`가 regex 인젝션 대신 리터럴 prefix 매칭 사용
+- **MEDIUM: Receipt 초기 생성** — Heredoc을 `JSON.stringify`로 교체하여 slice ID 인젝션 방지
+
+### 변경
+- Assumption engine의 `SIGNAL_EVALUATORS`가 `{ scope, fn }` 형식 사용; session-scoped 신호는 세션당 1회, slice-scoped 신호는 any-true 집계
+- `TEST_FILE_PATTERNS`에 Rust, Java, C#, Kotlin, Swift 패턴 추가
+- phase-guard-core.js에 `splitCommands`, `extractBashTargetFile` 새 export 추가
+
 ## [5.1.0] - 2026-03-30
 
 ### 추가

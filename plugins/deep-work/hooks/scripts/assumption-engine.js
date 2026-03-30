@@ -365,128 +365,222 @@ function detectNewModel(currentModel, sessions) {
 // ─── Signal Evaluation ──────────────────────────────────────
 
 /**
- * Signal evaluation map: maps signal labels to computation functions.
- * Each function takes a session object and returns a boolean.
+ * Signal evaluation map: maps signal labels to { scope, fn } objects.
+ * - scope: 'session' — evaluate once against the session object
+ * - scope: 'slice'   — evaluate per slice, aggregate with any-true
+ * Each fn takes (data, session) and returns a boolean or null.
  * Unmapped signals are silently ignored.
+ *
+ * Legacy compatibility: bare functions are treated as { scope: 'session', fn }.
  */
 const SIGNAL_EVALUATORS = {
   // Phase Guard signals
-  'test_pass_rate_with_guard > test_pass_rate_without': (session) => {
-    if (!session.slices_total) return null;
-    return session.slices_passed_first_try / session.slices_total > 0.8;
+  'test_pass_rate_with_guard > test_pass_rate_without': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.slices_total) return null;
+      return session.slices_passed_first_try / session.slices_total > 0.8;
+    },
   },
-  'high_override_rate': (session) => {
-    if (!session.slices_total) return null;
-    return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+  'high_override_rate': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.slices_total) return null;
+      return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+    },
   },
-  'zero_rework_after_override': (session) => {
-    if (session.tdd_overrides === undefined || session.tdd_overrides === 0) return null;
-    return (session.test_retry_count || 0) === 0;
+  'zero_rework_after_override': {
+    scope: 'session',
+    fn: (session) => {
+      if (session.tdd_overrides === undefined || session.tdd_overrides === 0) return null;
+      return (session.test_retry_count || 0) === 0;
+    },
   },
-  'model_passes_all_tests_first_try': (session) => {
-    if (!session.slices_total) return null;
-    return session.slices_passed_first_try === session.slices_total;
+  'model_passes_all_tests_first_try': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.slices_total) return null;
+      return session.slices_passed_first_try === session.slices_total;
+    },
   },
 
-  // TDD signals
-  'bugs_caught_in_red_phase > 0': (session) => {
-    return (session.bugs_caught_in_red_phase || 0) > 0;
+  // TDD signals — slice-scoped (per-slice bugs data)
+  'bugs_caught_in_red_phase > 0': {
+    scope: 'slice',
+    fn: (slice, _session) => {
+      return (slice.bugs_caught_in_red_phase || 0) > 0;
+    },
   },
-  'rework_count_strict < rework_count_relaxed': (session) => {
-    // Can only evaluate if mode is strict and we have rework data
-    if (session.tdd_mode !== 'strict') return null;
-    return (session.test_retry_count || 0) === 0;
+  'rework_count_strict < rework_count_relaxed': {
+    scope: 'session',
+    fn: (session) => {
+      // Can only evaluate if mode is strict and we have rework data
+      if (session.tdd_mode !== 'strict') return null;
+      return (session.test_retry_count || 0) === 0;
+    },
   },
-  'override_rate > 50%': (session) => {
-    if (!session.slices_total) return null;
-    return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+  'override_rate > 50%': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.slices_total) return null;
+      return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+    },
   },
-  'zero_bugs_caught_in_red': (session) => {
-    return (session.bugs_caught_in_red_phase || 0) === 0;
+  'zero_bugs_caught_in_red': {
+    scope: 'slice',
+    fn: (slice, _session) => {
+      return (slice.bugs_caught_in_red_phase || 0) === 0;
+    },
   },
-  'relaxed_mode_same_quality': (session) => {
-    if (session.tdd_mode !== 'relaxed') return null;
-    return session.final_outcome === 'pass';
+  'relaxed_mode_same_quality': {
+    scope: 'session',
+    fn: (session) => {
+      if (session.tdd_mode !== 'relaxed') return null;
+      return session.final_outcome === 'pass';
+    },
   },
 
   // Research signals
-  'plan_review_score_with_research > plan_review_score_without': (session) => {
-    if (!session.review_scores || !session.phases_used) return null;
-    const hasResearch = session.phases_used.includes('research');
-    if (!hasResearch) return null;
-    return (session.review_scores.plan || 0) >= 7;
+  'plan_review_score_with_research > plan_review_score_without': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.review_scores || !session.phases_used) return null;
+      const hasResearch = session.phases_used.includes('research');
+      if (!hasResearch) return null;
+      return (session.review_scores.plan || 0) >= 7;
+    },
   },
-  'research_findings_not_referenced_in_plan': (session) => {
-    if (!session.phases_used) return null;
-    const hasResearch = session.phases_used.includes('research');
-    if (!hasResearch) return null;
-    return (session.research_references_used || 0) === 0;
+  'research_findings_not_referenced_in_plan': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.phases_used) return null;
+      const hasResearch = session.phases_used.includes('research');
+      if (!hasResearch) return null;
+      return (session.research_references_used || 0) === 0;
+    },
   },
-  'plan_score_high_despite_shallow_research': (session) => {
-    if (!session.review_scores || !session.phases_used) return null;
-    const hasResearch = session.phases_used.includes('research');
-    if (hasResearch) return null; // Only for sessions without research
-    return (session.review_scores.plan || 0) >= 7;
+  'plan_score_high_despite_shallow_research': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.review_scores || !session.phases_used) return null;
+      const hasResearch = session.phases_used.includes('research');
+      if (hasResearch) return null; // Only for sessions without research
+      return (session.review_scores.plan || 0) >= 7;
+    },
   },
 
   // Cross-model review signals
-  'cross_model_found_unique_issues > 0': (session) => {
-    return (session.cross_model_unique_findings || 0) > 0;
+  'cross_model_found_unique_issues > 0': {
+    scope: 'session',
+    fn: (session) => {
+      return (session.cross_model_unique_findings || 0) > 0;
+    },
   },
-  'plan_revision_after_cross_review': (session) => {
-    // Approximation: cross model findings led to action
-    return (session.cross_model_unique_findings || 0) > 0;
+  'plan_revision_after_cross_review': {
+    scope: 'session',
+    fn: (session) => {
+      // Approximation: cross model findings led to action
+      return (session.cross_model_unique_findings || 0) > 0;
+    },
   },
-  'cross_model_agrees_with_claude_always': (session) => {
-    return (session.cross_model_unique_findings || 0) === 0;
+  'cross_model_agrees_with_claude_always': {
+    scope: 'session',
+    fn: (session) => {
+      return (session.cross_model_unique_findings || 0) === 0;
+    },
   },
-  'zero_actionable_findings': (session) => {
-    return (session.cross_model_unique_findings || 0) === 0;
+  'zero_actionable_findings': {
+    scope: 'session',
+    fn: (session) => {
+      return (session.cross_model_unique_findings || 0) === 0;
+    },
   },
 
   // Receipt signals
-  'receipt_data_contradicts_model_claim': (session) => {
-    // Can only be detected from detailed receipt analysis
-    const meta = session.harness_metadata || {};
-    return meta.receipt_contradictions ? meta.receipt_contradictions > 0 : null;
+  'receipt_data_contradicts_model_claim': {
+    scope: 'session',
+    fn: (session) => {
+      // Can only be detected from detailed receipt analysis
+      const meta = session.harness_metadata || {};
+      return meta.receipt_contradictions ? meta.receipt_contradictions > 0 : null;
+    },
   },
-  'test_phase_catches_receipt_gap': (session) => {
-    const meta = session.harness_metadata || {};
-    return meta.receipt_gaps_caught ? meta.receipt_gaps_caught > 0 : null;
+  'test_phase_catches_receipt_gap': {
+    scope: 'session',
+    fn: (session) => {
+      const meta = session.harness_metadata || {};
+      return meta.receipt_gaps_caught ? meta.receipt_gaps_caught > 0 : null;
+    },
   },
-  'receipts_always_match_model_claims': (session) => {
-    const meta = session.harness_metadata || {};
-    if (meta.receipt_contradictions === undefined) return null;
-    return meta.receipt_contradictions === 0;
+  'receipts_always_match_model_claims': {
+    scope: 'session',
+    fn: (session) => {
+      const meta = session.harness_metadata || {};
+      if (meta.receipt_contradictions === undefined) return null;
+      return meta.receipt_contradictions === 0;
+    },
   },
-  'receipt_data_never_referenced_in_test_phase': (session) => {
-    const meta = session.harness_metadata || {};
-    return meta.receipts_referenced_in_test === false;
+  'receipt_data_never_referenced_in_test_phase': {
+    scope: 'session',
+    fn: (session) => {
+      const meta = session.harness_metadata || {};
+      return meta.receipts_referenced_in_test === false;
+    },
   },
 
   // Evaluator model signals (v5.1)
-  'evaluator_found_real_issues': (session) => {
-    if (!session.review_scores) return null;
-    return (session.review_scores.plan_revisions_from_review || 0) > 0;
+  'evaluator_found_real_issues': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.review_scores) return null;
+      return (session.review_scores.plan_revisions_from_review || 0) > 0;
+    },
   },
-  'no_missed_issues_in_test_phase': (session) => {
-    return (session.test_retry_count || 0) === 0;
+  'no_missed_issues_in_test_phase': {
+    scope: 'session',
+    fn: (session) => {
+      return (session.test_retry_count || 0) === 0;
+    },
   },
-  'evaluator_zero_findings_consistently': (session) => {
-    if (!session.review_scores) return null;
-    return (session.review_scores.plan || 10) >= 9 &&
-      (session.review_scores.plan_revisions_from_review || 0) === 0;
+  'evaluator_zero_findings_consistently': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.review_scores) return null;
+      return (session.review_scores.plan || 10) >= 9 &&
+        (session.review_scores.plan_revisions_from_review || 0) === 0;
+    },
   },
-  'missed_issues_caught_in_test': (session) => {
-    if (!session.review_scores) return null;
-    return (session.test_retry_count || 0) > 0 &&
-      (session.review_scores.plan || 0) >= 7;
+  'missed_issues_caught_in_test': {
+    scope: 'session',
+    fn: (session) => {
+      if (!session.review_scores) return null;
+      return (session.test_retry_count || 0) > 0 &&
+        (session.review_scores.plan || 0) >= 7;
+    },
   },
 };
 
 /**
+ * Resolves a SIGNAL_EVALUATORS entry to a normalized { scope, fn } object.
+ * Supports both legacy bare functions and new { scope, fn } format.
+ * @param {string} signal - Signal label key
+ * @returns {{ scope: string, fn: Function }|null}
+ */
+function _resolveEvaluator(signal) {
+  const entry = SIGNAL_EVALUATORS[signal];
+  if (!entry) return null;
+  if (typeof entry === 'function') return { scope: 'session', fn: entry };
+  return entry;
+}
+
+/**
  * Evaluates evidence signals for an assumption against a single session.
- * Per-slice analysis: if session has slices array, evaluate per slice and aggregate.
+ *
+ * Scope-aware evaluation:
+ * - Session-scoped signals: evaluate once against the session object.
+ * - Slice-scoped signals: evaluate per slice using session.slices || [session],
+ *   aggregate with any-true (count at most 1 per signal).
+ *
  * @param {object} assumption - Assumption from registry
  * @param {object} session - Single session from history
  * @returns {{ supporting: number, weakening: number, neutral: number, details: object[] }}
@@ -500,42 +594,57 @@ function evaluateSignals(assumption, session) {
   let supporting = 0;
   let weakening = 0;
 
-  // If session has per-slice data, evaluate each slice
   const slices = session.slices || [session];
 
-  for (const slice of slices) {
-    // Evaluate supporting signals
-    for (const signal of (assumption.evidence_signals.supporting || [])) {
-      const evaluator = SIGNAL_EVALUATORS[signal];
-      if (!evaluator) {
-        // Unmapped signal — skip silently
-        continue;
+  /**
+   * Evaluate a single signal against the session/slices based on its scope.
+   * @param {string} signal - Signal label
+   * @param {string} type - 'supporting' or 'weakening'
+   */
+  function evalSignal(signal, type) {
+    const resolved = _resolveEvaluator(signal);
+    if (!resolved) return; // Unmapped signal — skip silently
+
+    if (resolved.scope === 'slice') {
+      // Slice-scoped: evaluate per slice, any-true aggregation (count at most 1)
+      let anyTrue = false;
+      for (const slice of slices) {
+        const result = resolved.fn(slice, session);
+        if (result === true) {
+          anyTrue = true;
+          details.push({ signal, type, value: true, slice_id: slice.slice_id });
+          break; // any-true: stop at first true
+        } else if (result === false) {
+          details.push({ signal, type, value: false, slice_id: slice.slice_id });
+        }
+        // result === null means not applicable
       }
-      const result = evaluator(slice);
+      if (anyTrue) {
+        if (type === 'supporting') supporting++;
+        else weakening++;
+      }
+    } else {
+      // Session-scoped: evaluate once against the session object
+      const result = resolved.fn(session);
       if (result === true) {
-        supporting++;
-        details.push({ signal, type: 'supporting', value: true, slice_id: slice.slice_id });
+        if (type === 'supporting') supporting++;
+        else weakening++;
+        details.push({ signal, type, value: true });
       } else if (result === false) {
-        // Supporting signal returned false — not a weakening signal, just not supporting
-        details.push({ signal, type: 'supporting', value: false, slice_id: slice.slice_id });
+        details.push({ signal, type, value: false });
       }
       // result === null means not applicable for this session
     }
+  }
 
-    // Evaluate weakening signals
-    for (const signal of (assumption.evidence_signals.weakening || [])) {
-      const evaluator = SIGNAL_EVALUATORS[signal];
-      if (!evaluator) {
-        continue;
-      }
-      const result = evaluator(slice);
-      if (result === true) {
-        weakening++;
-        details.push({ signal, type: 'weakening', value: true, slice_id: slice.slice_id });
-      } else if (result === false) {
-        details.push({ signal, type: 'weakening', value: false, slice_id: slice.slice_id });
-      }
-    }
+  // Evaluate supporting signals
+  for (const signal of (assumption.evidence_signals.supporting || [])) {
+    evalSignal(signal, 'supporting');
+  }
+
+  // Evaluate weakening signals
+  for (const signal of (assumption.evidence_signals.weakening || [])) {
+    evalSignal(signal, 'weakening');
   }
 
   const neutral = (supporting === 0 && weakening === 0) ? 1 : 0;
