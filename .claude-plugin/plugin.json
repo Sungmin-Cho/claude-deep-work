@@ -1,0 +1,11 @@
+{
+  "name": "deep-work",
+  "version": "5.0.0",
+  "description": "Evidence-Driven Development Protocol — self-evolving harness with assumption engine, adversarial multi-model review, worktree isolation, model auto-routing, TDD enforcement, receipt validation",
+  "author": {
+    "name": "sungmin"
+  },
+  "repository": "https://github.com/Sungmin-Cho/claude-deep-work",
+  "license": "MIT",
+  "source": "./plugins/deep-work"
+}
