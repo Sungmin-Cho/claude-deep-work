@@ -8,8 +8,8 @@
   "plugins": [
     {
       "name": "deep-work",
-      "description": "Evidence-Driven Development Protocol — self-evolving harness with assumption engine, adversarial multi-model review, worktree isolation, model auto-routing, TDD enforcement, receipt validation",
-      "version": "5.0.0",
+      "description": "Evidence-Driven Development Protocol — self-evolving harness with auto-loop evaluation, contract negotiation, adaptive defaults, assumption engine auto-apply, adversarial multi-model review, worktree isolation, model auto-routing, TDD enforcement, receipt validation",
+      "version": "5.1.0",
       "source": "./plugins/deep-work"
     }
   ]

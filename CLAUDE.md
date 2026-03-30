@@ -69,10 +69,10 @@ deep-work/
 ## Testing
 
 ```bash
-# 98 unit tests — v4.0 added node:test, v5.0 added assumption engine tests
+# 113 unit tests — v4.0 added node:test, v5.0 added assumption engine, v5.1 added autoAdjust
 cd plugins/deep-work/hooks/scripts
 node --test phase-guard-core.test.js    # Phase guard tests (56 tests)
-node --test assumption-engine.test.js   # Assumption engine tests (42 tests, v5.0)
+node --test assumption-engine.test.js   # Assumption engine tests (57 tests, v5.1)
 ```
 
 ## Conventions
