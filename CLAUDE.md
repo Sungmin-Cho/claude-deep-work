@@ -86,4 +86,4 @@ node --test assumption-engine.test.js   # Assumption engine tests (42 tests, v5.
 
 ## Version
 
-Current: 5.0.0 (Self-Evolving Harness — Assumption Engine with Wilson Score, model-aware analysis, per-slice evidence)
+Current: 5.1.0 (Self-Evolving Harness II — Auto-Loop, Contract, Adaptive Defaults, Evaluator Model)

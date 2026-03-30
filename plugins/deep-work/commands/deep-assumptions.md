@@ -135,8 +135,20 @@ PROPOSED CONFIG CHANGES (for manual application):
   tdd_required_before_implement: strict -> coaching
   (no other changes recommended at this time)
 
-To apply: update enforcement in /deep-work session init or .claude/deep-work.local.md
-(Auto-application is a Phase 2 feature — MVP is report-only)
+Auto-adjustment is active (v5.1). Adjustments are applied at session start.
+To override: /deep-work --tdd=strict [task]
+```
+
+After displaying the engine report text, check the state file for `assumption_adjustments`:
+
+If `assumption_adjustments` is non-empty, display:
+```
+ACTIVE AUTO-ADJUSTMENTS (this session):
+  - tdd_mode: strict → coaching (score 0.42)
+  - receipt_depth: full → minimal (score 0.28)
+
+These adjustments were applied at session start based on accumulated evidence.
+User override (--tdd=X) takes precedence over auto-adjustments.
 ```
 
 ### Step 4: Verbose details (if `--verbose`)

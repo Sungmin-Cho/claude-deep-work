@@ -67,7 +67,7 @@ Read `references/review-gate.md` from the skill directory. Follow its protocol e
 
 1. Check document size. If < 500 characters, skip with warning per protocol.
 2. Determine the review dimensions for the target phase (see review-gate.md Section 2).
-3. Spawn a haiku Agent to review the document on those dimensions.
+3. Read `evaluator_model` from state file (default: "sonnet"). Spawn an Agent with the resolved evaluator model to review the document on those dimensions.
 4. Parse the Agent's JSON response.
 5. Write results to:
    - `$WORK_DIR/${phase}-review.json`
@@ -90,6 +90,11 @@ Structural Review 결과: ${phase}
 
   상세: $WORK_DIR/${phase}-review.json
 ```
+
+**Auto-loop context (v5.1)**: If `plan_review_retries` > 0 in state file:
+- Display: `(자동 수정 시도 [N]/[max] 후 수동 리뷰)`
+- Manual review results reset the auto-loop counter (manual intervention is more targeted)
+- Update state: `plan_review_retries: 0` after manual review completes
 
 If score < 5 (FAIL), inform the user that review gate is blocking:
 ```

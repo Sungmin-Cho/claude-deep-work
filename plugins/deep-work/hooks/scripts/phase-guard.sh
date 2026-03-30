@@ -29,6 +29,7 @@ TDD_MODE="$(read_frontmatter_field "$STATE_FILE" "tdd_mode")"
 ACTIVE_SLICE="$(read_frontmatter_field "$STATE_FILE" "active_slice")"
 TDD_STATE="$(read_frontmatter_field "$STATE_FILE" "tdd_state")"
 TDD_OVERRIDE="$(read_frontmatter_field "$STATE_FILE" "tdd_override")"
+SKIPPED_PHASES="$(read_frontmatter_field "$STATE_FILE" "skipped_phases")"
 
 # ─── FAST PATH: idle or empty phase → allow ──────────────────
 
@@ -65,6 +66,11 @@ fi
 # (research, plan, test, brainstorm) — same logic as v3.3.3
 
 if [[ "$CURRENT_PHASE" != "implement" && "$TOOL_NAME" != "Bash" ]]; then
+  # If current phase was skipped (v5.1 skip-to-implement), allow
+  if [[ -n "$SKIPPED_PHASES" && "$SKIPPED_PHASES" == *"$CURRENT_PHASE"* ]]; then
+    exit 0
+  fi
+
   # Extract file_path for block message
   FILE_PATH=""
   if echo "$TOOL_INPUT" | grep -q '"file_path"'; then

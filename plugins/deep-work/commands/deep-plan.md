@@ -202,6 +202,8 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
   - spec_checklist: [requirement 1, requirement 2]
+  - contract: [testable criterion 1, testable criterion 2]
+  - acceptance_threshold: all
   - size: S/M/L
 
 - [ ] SLICE-002: [Goal]
@@ -209,6 +211,8 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
   - spec_checklist: [requirement 1, requirement 2]
+  - contract: [testable criterion 1, testable criterion 2]
+  - acceptance_threshold: all
   - size: S/M/L
 
 ...
@@ -260,6 +264,8 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
   - spec_checklist: [requirement 1]
+  - contract: [testable criterion 1, testable criterion 2]
+  - acceptance_threshold: all
   - size: S/M/L
 
 ...
@@ -282,16 +288,52 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
 - **이전 버전**: plan.v{N}.md
 ```
 
-### 3.5. Structural Review
+**Contract guidelines** (v5.1):
+- `contract`: Testable input→output pairs defining "done" precisely. Each item should be verifiable (e.g., "POST /login → 200 + { token: string }"). Required for M/L/XL slices. Optional for S-size slices.
+- `acceptance_threshold`: `all` (every contract item must pass, default) or `majority` (for exploratory work).
+- `spec_checklist` remains for high-level requirements. `contract` supplements it with precise verification criteria.
+
+### 3.4. Contract Negotiation (v5.1)
+
+After writing plan.md with slice definitions (including contracts), validate each slice's contract:
+
+1. For each M/L/XL slice, check if `contract` field exists and is non-empty. If missing, add a reminder comment to plan.md:
+   ```
+   <!-- CONTRACT MISSING: SLICE-NNN is size [M/L/XL] — add testable contract items -->
+   ```
+
+2. Read `evaluator_model` from state file (default: "sonnet"). Spawn an Agent (contract-validator) with:
+   - **Input**: The plan.md Slice Checklist section
+   - **Prompt**: "For each slice with a contract, evaluate:
+     a) Are any items ambiguous? ('works correctly' is bad, 'returns 200 with token' is good)
+     b) Can each item be expressed as input→output?
+     c) Are obvious edge cases missing?
+     Return JSON: { slices: [{ slice_id, issues: [{ type: 'ambiguous'|'untestable'|'missing_edge_case', item, suggestion }] }] }"
+   - **Model**: evaluator_model from state (default: "sonnet")
+
+3. If the evaluator returns any issues:
+   - Auto-fix each issue in plan.md (rewrite the contract items)
+   - Display: `Contract 검증: [N]개 항목 수정됨`
+   - Re-run the evaluator (max 2 iterations)
+
+4. If no issues after fix or on first pass:
+   - Display: `Contract 검증: ✅ 통과`
+   - Proceed to Structural Review (Section 3.5)
+
+This step is integrated into the Plan Auto-Loop — contract negotiation failures count toward `plan_review_retries`.
+
+### 3.5. Structural Review + Auto-Loop (v5.1)
 
 Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
+
+Read `evaluator_model` from state file (default: "sonnet").
 
 Follow the **Structural Review Protocol** with these settings:
 - **Phase**: plan
 - **Document**: `$WORK_DIR/plan.md`
 - **Dimensions**: architecture_fit, slice_executability, testability, rollback_completeness, risk_coverage
 - **Output**: `$WORK_DIR/plan-review.json` + `$WORK_DIR/plan-review.md`
-- **Model**: "haiku"
+- **Model**: evaluator_model from state (default: "sonnet")
 - **Max iterations**: 2
 
 If `--skip-review` flag was set (check state file `review_state: skipped`), skip sections 3.5 and 3.6 entirely and proceed to Section 4.
@@ -299,14 +341,40 @@ If `--skip-review` flag was set (check state file `review_state: skipped`), skip
 Update state file when starting review:
 - `review_state: in_progress`
 
-After structural review completes:
-- Update `review_results.plan.spec_score` in state file
-- If score < 5: display warning but do NOT block yet (blocking happens at approval)
+**Auto-Loop (v5.1)**:
 
-Display:
+Read `plan_review_retries` from state file (default: 0). Read `plan_review_max_retries` (default: 3).
+
 ```
-Plan Structural Review: [score]/10 ([iterations]회 반복)
+plan.md + structural review
+    ↓
+score >= 5? ──YES──→ proceed to Section 3.6 (cross-model) or Section 4
+    │
+    NO
+    ↓
+plan_review_retries < plan_review_max_retries?
+    ├─ YES:
+    │   1. Extract failed dimensions and issues from review JSON
+    │   2. Auto-fix plan.md based on feedback:
+    │      - For each issue, apply the suggested fix
+    │      - Append context: "<!-- Auto-fix attempt [N]: [issue summary] -->"
+    │   3. Increment plan_review_retries in state file
+    │   4. Display: "Plan 자동 수정 (시도 [N]/[max]): [issues fixed]"
+    │   5. Re-run structural review (loop back)
+    │
+    └─ NO:
+        1. Display:
+           "⛔ Plan 자동 수정 실패 (3회 시도).
+            남은 문제: [issue list]
+            수동으로 plan.md를 수정한 후 /deep-review를 실행하세요."
+        2. Set review_state: "auto_loop_failed"
+        3. Proceed to Section 4 (user can manually fix and approve)
 ```
+
+After structural review completes (whether by auto-loop or direct pass):
+- Update `review_results.plan.spec_score` in state file
+- If score < 5 and auto-loop exhausted: display warning but allow manual override at approval
+- Display: `Plan Structural Review: [score]/10 ([retries] auto-fix, [iterations] review iterations)`
 
 ### 3.6. Adversarial Cross-Model Review
 

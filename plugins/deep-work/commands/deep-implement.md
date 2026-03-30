@@ -47,6 +47,11 @@ Read `$WORK_DIR/plan.md` and parse the **Slice Checklist** section. Each slice h
 
 Build a list of slices with their metadata.
 
+**Inline slice handling (v5.1)**: If the plan was generated inline (state file `skipped_phases` includes "plan"):
+- The plan will have a single SLICE-001 with potentially empty `failing_test`
+- `failing_test` can be determined during implementation — the TDD cycle will prompt for it
+- Contract and spec_checklist may be minimal — proceed without contract negotiation
+
 ### 3. Resume detection
 
 Check for already completed slices (`- [x]`). If any exist:
@@ -134,6 +139,7 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
    🔷 SLICE-NNN 시작: [Goal]
       파일: [file1, file2]
       TDD 모드: [strict/relaxed/coaching/spike]
+      Contract: [N]개 항목 (threshold: [all/majority])
    ```
 
 ### Step B: TDD Cycle (RED → GREEN → REFACTOR)
@@ -209,6 +215,23 @@ Spec Checklist:
 ```
 
 If any spec item fails: fix it (another RED→GREEN cycle if in strict mode).
+
+### Step C-1: Contract Verification (v5.1)
+
+If the active slice has a `contract` field:
+
+1. Go through each contract item
+2. Verify each item is satisfied by the implementation
+3. Update receipt: `contract_compliance.items` with true/false per item
+4. Display:
+   ```
+   Contract:
+      ✅ "POST /login → 200 + { token: string }" — PASS
+      ✅ "invalid token → 401" — PASS
+      ❌ "expired token → 401" — FAIL (returns 500)
+   ```
+5. If `acceptance_threshold` is `all` and any item fails: fix it (another RED→GREEN cycle)
+6. If `acceptance_threshold` is `majority` and > 50% pass: proceed with warning
 
 ### Step D: Collect Receipt
 

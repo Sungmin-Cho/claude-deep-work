@@ -81,6 +81,7 @@ Parse `$ARGUMENTS` for the following flags. Remove matched flags from the string
 | `--tdd=MODE` | Set TDD mode: `strict` (default), `relaxed`, `coaching`, `spike` |
 | `--skip-review` | Set `review_state` to `"skipped"` for this session |
 | `--no-branch` | Override `git_branch` to `false` for this session only |
+| `--skip-to-implement` | Skip brainstorm + research + plan, start at implement with inline slice |
 | `--profile=X` | Use preset named `X` directly (skip interactive selection) |
 
 After removing flags, trim whitespace. The remainder is the task description.
@@ -327,25 +328,43 @@ Where `<CURRENT_MODEL_ID>` is the model identifier for this session (e.g., `clau
    첫 [minimum_sessions_for_evaluation]회 세션은 기본 enforcement를 사용합니다.
 ```
 
-4. **Health summary display**: If history has enough sessions (>= minimum for at least one assumption):
+4. **Auto-adjustment (v5.1)**: If history has enough sessions (>= 5):
 
-```
-Assumption Health ([N] sessions)
-   phase_guard_blocks_edits:        HIGH (0.82) — KEEP
-   tdd_required_before_implement:   MEDIUM (0.56) — CONSIDER loosening
-   research_required_before_plan:   HIGH (0.75) — KEEP
-   cross_model_review:              INSUFFICIENT (3/5 sessions)
-   receipt_collection:              HIGH (0.90) — KEEP
+   Run auto-adjust via the assumption engine:
+   ```bash
+   echo '{"action":"auto-adjust","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>","config":{"tdd_mode":"<CURRENT_TDD_MODE>","receipt_depth":"full","evaluator_model":"sonnet"},"options":{"minSessions":5,"splitByModel":true,"currentModel":"<CURRENT_MODEL_ID>"}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+   ```
 
-   제안: /deep-assumptions 로 상세 리포트를 확인하세요.
-```
+   Parse the result:
+   - If `coldStart` is true: skip auto-adjustment, use defaults
+   - If `adjustments` array is non-empty:
+     a. Apply each non-suppressed adjustment to the session config (will be written in Step 7)
+     b. Display the `notification` string:
+        ```
+        📊 Assumption Engine 자동 조정:
+           - tdd_mode: strict → coaching (score 0.42, 80% override in last 5 sessions)
+           Floors guaranteed. /deep-assumptions 로 상세 확인 가능
+        ```
+     c. Store adjustments in state file: `assumption_adjustments: [{ field, from, to, score }]`
+   - If `adjustments` is empty: display health summary as before (v5.0 behavior)
 
-If report has proposed changes, add:
-```
-   ⚡ 제안된 변경: [count]건 — /deep-assumptions 에서 확인
-```
+   **User override precedence**: If the user specified `--tdd=strict` flag, it overrides auto-adjustment. Pass user flags as `userOverrides` in the engine call.
 
 5. **No history / insufficient data**: If `totalSessions == 0` or all assumptions show INSUFFICIENT, skip display entirely (no noise on cold start).
+
+6. **Phase skip suggestion (v5.1)**: If `auto_loop_enabled` is true and history has enough sessions:
+
+   Run auto-adjust to check `phase_sequence` assumption score (if available from session signals).
+
+   If assumption engine has data suggesting skips are safe (e.g., previous skip sessions had good outcomes):
+   ```
+   📊 작업 분석 제안:
+      최근 세션에서 brainstorm/research 스킵 후에도 품질이 유지되었습니다.
+      brainstorm, research 스킵 → plan부터 시작할까요? (Y/n)
+   ```
+
+   Use AskUserQuestion. If accepted, set `current_phase` to `plan` and `skipped_phases` accordingly.
+   **This is always a suggestion, never automatic** — user confirmation required.
 
 ### 2-1. Git branch & worktree setup (git repository only)
 
@@ -566,6 +585,61 @@ If the user chooses option 3:
 - Skip research.md placeholder creation
 - The starting phase guidance will tell the user to run `/deep-plan`
 
+If `--skip-to-implement` flag is set:
+- Set `current_phase` to `implement`
+- Set `research_complete` to `true`
+- Set `plan_approved` to `true`
+- Set `skipped_phases` to `["brainstorm", "research", "plan"]`
+- Proceed to inline slice generation (Section 6.5)
+
+If `--skip-research` flag is set: auto-select option 3 (Plan).
+
+### 6.5. Inline Slice Generation (v5.1 — skip-to-implement only)
+
+If `--skip-to-implement` was used:
+
+1. Generate a minimal inline slice from the task description:
+
+```yaml
+slices:
+  - id: SLICE-001
+    goal: "$ARGUMENTS"
+    files: []
+    verification_cmd: ""
+    contract: []
+    size: S
+```
+
+2. Ask user to fill in required fields using AskUserQuestion:
+   ```
+   빠른 시작: 최소 정보가 필요합니다.
+
+   수정할 파일 목록 (쉼표 구분):
+   ```
+
+3. Ask for verification command:
+   ```
+   검증 명령어 (예: npm test, pytest):
+   ```
+
+4. Write the inline slice to `$WORK_DIR/plan.md` as a minimal plan:
+   ```markdown
+   # Implementation Plan: $ARGUMENTS (Inline)
+
+   ## Slice Checklist
+
+   - [ ] SLICE-001: $ARGUMENTS
+     - files: [user-provided files]
+     - failing_test: [to be determined during implementation]
+     - verification_cmd: [user-provided command]
+     - spec_checklist: [$ARGUMENTS]
+     - contract: []
+     - acceptance_threshold: all
+     - size: S
+   ```
+
+5. Display: `인라인 slice 생성 완료. implement 단계로 진행합니다.`
+
 ### 6-1. Select TDD mode
 
 Ask the user using AskUserQuestion:
@@ -609,6 +683,12 @@ started_at: "<current ISO timestamp>"
 git_branch: "<branch name or empty>"
 test_retry_count: 0
 max_test_retries: 3
+plan_review_retries: 0
+plan_review_max_retries: 3
+auto_loop_enabled: true
+skipped_phases: []
+evaluator_model: "sonnet"
+assumption_adjustments: []
 test_passed: false
 tdd_mode: "<selected tdd_mode or 'strict'>"
 active_slice: ""
@@ -784,6 +864,25 @@ Git 브랜치: [branch name or "없음"]
    - 코드 파일 수정이 차단됩니다
 
 다음 단계: /deep-plan 명령을 실행하여 구현 계획을 작성하세요.
+```
+
+**If starting from Implement (skip-to-implement):**
+
+```
+✅ Deep Work 세션이 시작되었습니다! (빠른 시작 — Plan까지 생략)
+
+작업: $ARGUMENTS
+작업 폴더: $WORK_DIR
+TDD 모드: [tdd_mode]
+
+워크플로우:
+  Phase 0-2: 건너뜀 (인라인 slice 사용)
+  Phase 3: /deep-implement  ← 현재 단계
+  Phase 4: /deep-test (구현 완료 시 자동 실행)
+
+⚠️ 인라인 모드: plan 리뷰와 contract 검증이 생략됩니다.
+
+다음 단계: 자동으로 구현을 시작합니다.
 ```
 
 If `PROFILE_LOADED` is false, omit the 프리셋 line.

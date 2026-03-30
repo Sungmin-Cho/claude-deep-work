@@ -7,6 +7,26 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-03-30
+
+### Added
+- **Auto-Loop Evaluation**: Plan review and test phase auto-retry with max retries and user escalation
+- **Contract Negotiation**: Testable `contract` and `acceptance_threshold` fields in slice definitions
+- **Assumption Engine Auto-Apply**: Automatic rule adjustment at session start based on Wilson Score evidence
+- **Adaptive Evaluator Model**: All evaluator subagents use configurable model (default: sonnet), auto-adjustable by Assumption Engine
+- **Phase Skip Flexibility**: `--skip-to-implement` flag for quick fixes, inline slice generation
+- **Bidirectional adjustment**: Assumption Engine can tighten rules back when evidence supports it
+
+### Changed
+- Structural review now auto-loops on failure (up to 3 attempts) before escalating
+- Test phase auto-returns to implement for targeted slice re-execution
+- Assumption health report shows active auto-adjustments
+- Slice format now includes `contract` and `acceptance_threshold` fields
+- Default evaluator model changed from haiku to sonnet
+
+### Fixed
+- Assumption Engine report no longer says "Auto-application is a Phase 2 feature"
+
 ## [5.0.0] - 2026-03-30
 
 ### Added

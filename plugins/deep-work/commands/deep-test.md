@@ -36,11 +36,12 @@ Set `WORK_DIR` to the value of `work_dir`.
 ### 1-1. Model Routing Check
 
 Read `model_routing` from the state file. Default: `{research: "sonnet", plan: "main", implement: "sonnet", test: "haiku"}`.
+Read `evaluator_model` from the state file (default: "sonnet"). This is used for test subagents in Sections 4-2, 4-3.
 
 If `model_routing.test` is NOT "main":
   - Use the Agent tool to spawn a test agent:
     - `model`: value of `model_routing.test` (e.g., "haiku")
-    - `prompt`: Include ALL test instructions (Sections 2, 3, 4), the WORK_DIR path, and test_retry_count info
+    - `prompt`: Include ALL test instructions (Sections 2, 3, 4), the WORK_DIR path, test_retry_count info, and `evaluator_model` value
     - `description`: "Deep test verification"
   - Wait for Agent to complete (it will write test results)
   - Read Agent's output to determine pass/fail
@@ -231,38 +232,42 @@ Quality Gate 결과:
   ⚠️ [Gate 3]: 72% (≥80% 권고) — 경고만, 차단 없음
 ```
 
-### 4-2. Built-in Required Gate: Spec Compliance Review (v4.0)
+### 4-2. Built-in Required Gate: Spec Compliance Review (v4.0, updated v5.1)
 
 After all test/lint gates pass, run spec compliance review using a subagent.
 
 **Steps**:
-1. Read plan.md's Slice Checklist to get all spec_checklist items per slice
-2. Read each receipt's `spec_compliance.checklist` results
-3. Spawn a fresh Agent (spec-compliance-reviewer):
+1. Read plan.md's Slice Checklist to get all spec_checklist and contract items per slice
+2. Read each receipt's `spec_compliance.checklist` and `contract_compliance.items` results
+3. Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (spec-compliance-reviewer):
    - **Input**: plan.md + all receipt JSON files
-   - **Prompt**: "For each slice, verify that every spec_checklist item is implemented correctly. Compare the plan's requirements against the actual code changes (from receipt git_diff). Return JSON: { result: 'PASS'|'FAIL', per_slice: [{ slice_id, checklist_pass: bool, missing: [...] }] }"
-   - **Model**: Use model_routing.test or "haiku"
+   - **Prompt**: "For each slice, verify:
+     1. Every spec_checklist item is implemented correctly
+     2. Every contract item (if present) is satisfied — check receipt contract_compliance.items
+     Compare the plan's requirements against the actual code changes (from receipt git_diff).
+     Return JSON: { result: 'PASS'|'FAIL', per_slice: [{ slice_id, checklist_pass: bool, contract_pass: bool, missing_checklist: [...], missing_contract: [...] }] }"
+   - **Model**: evaluator_model from state (default: "sonnet")
 4. Parse reviewer result:
-   - All slices pass → **PASS**
+   - All slices pass (both checklist and contract) → **PASS**
    - Any slice fails → **FAIL** (Required Gate)
 5. Update each receipt: `spec_compliance.reviewer_result`
 6. Display:
    ```
    Spec Compliance Review:
-      SLICE-001: ✅ 3/3 requirements met
-      SLICE-002: ❌ 2/3 — missing: [requirement]
+      SLICE-001: ✅ checklist 3/3, contract 4/4
+      SLICE-002: ❌ checklist 2/3 — missing: [requirement], contract 3/4 — missing: [item]
    ```
 
-### 4-3. Built-in Advisory Gate: Code Quality Review (v4.0)
+### 4-3. Built-in Advisory Gate: Code Quality Review (v4.0, updated v5.1)
 
 Run code quality review using a subagent. This is advisory — does NOT block.
 
 **Steps**:
 1. Get the full git diff for this session
-2. Spawn a fresh Agent (code-quality-reviewer):
+2. Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (code-quality-reviewer):
    - **Input**: git diff + plan.md
    - **Prompt**: "Review this code diff for quality issues. Check: error handling, naming, DRY violations, type safety, test coverage quality. Return JSON: { result: 'PASS'|'WARN', findings: [{ severity: 'critical'|'important'|'suggestion', file, issue, fix }] }"
-   - **Model**: Use model_routing.test or "haiku"
+   - **Model**: evaluator_model from state (default: "sonnet")
 3. Parse reviewer result:
    - No critical findings → **PASS**
    - Any critical findings → **WARN** (Advisory, does not block)
@@ -354,47 +359,68 @@ Also check `quality_gates_passed` if Quality Gates were defined:
    ```
    If user agrees, create the commit. If not, skip.
 
-#### Some tests fail (retry available)
+#### Some tests fail (retry available) — Auto-Loop (v5.1)
 
 If any verification fails and `test_retry_count` < `max_test_retries`:
 
 1. Increment `test_retry_count` in state file
-2. Update state file: Set `current_phase: implement`
-3. Display:
+2. Analyze which gate failed and what needs fixing:
+   - **Receipt missing**: Identify which slices lack receipts
+   - **Drift detected**: Extract the diff list from drift-report.md
+   - **Spec/contract not met**: Extract unmet items per slice
+   - **Test failing**: Extract failure output and affected files
+
+3. Update state file: Set `current_phase: implement`
+
+4. Display:
    ```
-   ❌ 검증 실패 (시도 [N]/[max]):
+   ❌ 검증 실패 (시도 [N]/[max]) — 자동 수정 시작:
 
    실패 항목:
-     - [Type Check] src/auth.ts:42 — Type 'string' is not assignable to 'number'
-     - [Test] auth.test.ts — "should validate token" FAILED
+     - [Gate]: [specific failure description]
 
-   Implement 단계로 복귀합니다. 위 이슈를 수정한 후 /deep-test 명령을 실행하세요.
+   대상 slice: [SLICE-NNN, SLICE-MMM] (전체가 아닌 실패 slice만 재실행)
    ```
 
-4. **Send notification**:
+5. **Auto-fix**: Re-enter the implementation loop targeting only the failed slices:
+   - For each failed slice:
+     a. Set `active_slice` to the failed slice ID
+     b. Set `tdd_state` to the appropriate state (RED if new test needed, GREEN_ELIGIBLE if test exists but implementation wrong)
+     c. Execute the fix following the TDD cycle from deep-implement
+     d. Collect updated receipt
+
+6. After all failed slices are fixed:
+   - Update state file: Set `current_phase: test`
+   - Display: `자동 수정 완료 — 테스트 재실행 중...`
+   - **Re-run all test gates** (loop back to Section 1-2)
+
+7. **Send notification**:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "failed" "❌ 테스트 실패 — Implement 복귀 (시도 $test_retry_count/$max_test_retries)" 2>/dev/null || true
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "auto_retry" "🔄 테스트 자동 재시도 (시도 $test_retry_count/$max_test_retries)" 2>/dev/null || true
    ```
 
-5. The user can now modify code (Phase Guard allows edits in implement phase) and then run `/deep-test` when ready.
-
-#### Some tests fail (retry exhausted)
+#### Some tests fail (retry exhausted) — Escalation (v5.1)
 
 If `test_retry_count` >= `max_test_retries`:
 
 1. Display:
    ```
-   ⛔ 테스트 재시도 횟수 초과 ([max]회).
-   자동 수정 루프를 중단합니다.
+   ⛔ 자동 수정 루프 종료 ([max]회 시도).
 
-   누적 실패 내용은 $WORK_DIR/test-results.md를 참조하세요.
+   누적 실패 이력:
+     시도 1: [gate] — [failure summary]
+     시도 2: [gate] — [failure summary]
+     시도 3: [gate] — [failure summary]
+
+   상세: $WORK_DIR/test-results.md
+
    수동으로 수정한 후 /deep-test를 실행하거나,
    /deep-report로 현재까지의 결과를 정리할 수 있습니다.
    ```
 
 2. **Send notification**:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "failed_final" "⛔ 테스트 재시도 횟수 초과" 2>/dev/null || true
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "failed_final" "⛔ 자동 수정 루프 종료 — 수동 개입 필요" 2>/dev/null || true
    ```
 
 3. Keep `current_phase: implement` so the user can continue fixing manually.

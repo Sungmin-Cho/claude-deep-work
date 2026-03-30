@@ -7,6 +7,26 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-03-30
+
+### 추가
+- **자동 루프 검증**: Plan 리뷰와 테스트 단계에서 실패 시 자동 수정 + 재검증 (최대 3회)
+- **계약 협상**: Slice에 테스트 가능한 `contract`와 `acceptance_threshold` 필드 추가
+- **Assumption Engine 자동 적용**: 세션 시작 시 Wilson Score 기반 규칙 자동 조정
+- **적응형 Evaluator 모델**: 모든 검증 subagent가 설정 가능한 모델 사용 (기본: sonnet), Assumption Engine으로 자동 조정
+- **Phase 스킵 유연화**: `--skip-to-implement` 플래그, 인라인 slice 생성
+- **양방향 조정**: Assumption Engine이 증거 기반으로 규칙 강화도 자동 수행
+
+### 변경
+- Structural review가 실패 시 자동으로 수정 루프 실행 (최대 3회)
+- 테스트 단계가 실패 slice만 대상으로 자동 implement 복귀
+- Assumption health 보고서에 현재 세션의 자동 조정 내역 표시
+- Slice 형식에 `contract`와 `acceptance_threshold` 필드 추가
+- 기본 evaluator 모델이 haiku에서 sonnet으로 변경
+
+### 수정
+- Assumption Engine 보고서의 "Auto-application is a Phase 2 feature" 문구 제거
+
 ## [5.0.0] - 2026-03-30
 
 ### 추가

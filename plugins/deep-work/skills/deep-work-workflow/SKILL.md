@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "4.2.1"
+version: "5.1.0"
 description: |
   This skill should be used when the user wants to follow an evidence-driven development
   protocol with TDD enforcement, slice-based execution, and receipt-based evidence collection.
@@ -14,11 +14,24 @@ description: |
   "receipt validation", "CI/CD", "session lifecycle", "세션 완료",
   "cross-model review", "크로스 모델", "adversarial review", "리뷰 게이트",
   "review gate", "deep-review", "structural review", "구조적 리뷰",
+  "auto-loop", "자동 루프", "contract", "계약 검증", "adaptive defaults", "자동 조정",
+  "assumption auto-adjust", "skip-to-implement", "phase skip", "evaluator model",
   or when the user describes a complex, multi-file task that would benefit from
   structured planning before implementation.
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+
+## v5.1 Self-Evolving Harness II — Auto-Loop, Contract, Adaptive Defaults
+
+v5.1 applies Anthropic's harness design philosophy ("every component encodes an assumption"):
+
+- **Auto-Loop Evaluation**: Plan review and test phase auto-retry — fails auto-fix and re-verify up to 3 times, escalates to user on exhaustion
+- **Contract Negotiation**: Slices gain `contract` (testable input→output pairs) and `acceptance_threshold` fields. Evaluator validates contracts before implementation. Test phase uses contracts for precise spec compliance
+- **Assumption Engine Auto-Apply**: Session start reads Wilson Score data and auto-adjusts TDD mode, receipt depth, evaluator model. Bidirectional (relaxes AND tightens). Model-aware. Hardcoded floors (TDD >= coaching, receipt >= minimal, evaluator >= haiku)
+- **Adaptive Evaluator Model**: All evaluator subagents use configurable `evaluator_model` (default: sonnet, was haiku). Auto-adjustable by Assumption Engine based on issue detection rate
+- **Phase Skip Flexibility**: `--skip-to-implement` for quick fixes, `--skip-research` for familiar codebases. Assumption Engine suggests skips based on history. implement + test never skippable
+- **Invariants**: Phase guard (code edit blocking) never auto-adjusted. implement→test ordering always enforced. Slice structure always present.
 
 ## v4.2 Adversarial Multi-Model Review Gate
 
