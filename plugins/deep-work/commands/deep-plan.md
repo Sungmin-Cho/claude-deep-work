@@ -122,7 +122,10 @@ Read `$WORK_DIR/plan.md` if it already exists — the user may have added feedba
 - `<!-- HUMAN: ... -->` comments
 - Inline comments or strikethroughs
 
-If feedback exists, incorporate it into the updated plan.
+If feedback exists, incorporate it into the updated plan. After incorporating, apply the Document Refinement Protocol:
+1. **Deduplicate** — Remove duplicate content across sections.
+2. **Prune** — Remove invalidated content and empty sections.
+3. Append refinement log: `<!-- v[N]: [feedback source] — deduped: [N], pruned: [M] -->`
 
 ### 3. Create the implementation plan
 
@@ -450,7 +453,15 @@ When the user provides chat-based feedback instead of approval:
 
 1. Read the current `$WORK_DIR/plan.md`
 2. Apply the user's feedback to modify plan.md
-3. Highlight what was changed:
+3. **Refine the document** (Document Refinement Protocol):
+   a. **Deduplicate** — Scan plan.md for duplicate or near-duplicate content across sections (e.g., same file mentioned in multiple tasks with identical changes, overlapping design decisions). Keep each piece of information in one canonical location only.
+   b. **Prune** — Remove content invalidated by the feedback (e.g., tasks that are no longer relevant, outdated estimates, superseded design decisions). Delete empty sections.
+   c. Append a refinement log at the end of the document:
+      ```
+      <!-- Refinement Log -->
+      <!-- v[N]: [feedback summary] — deduped: [N] items, pruned: [M] sections -->
+      ```
+4. Highlight what was changed:
    ```
    plan.md가 수정되었습니다:
      - [변경된 부분 요약 1]
@@ -458,7 +469,7 @@ When the user provides chat-based feedback instead of approval:
 
    계속 피드백을 주시거나, "승인"을 입력하여 다음 단계로 진행하세요.
    ```
-4. Wait for the next feedback or approval
+5. Wait for the next feedback or approval
 
 Repeat this loop until the user approves.
 
