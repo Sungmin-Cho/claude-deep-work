@@ -83,6 +83,81 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
 }
 ```
 
+### 2-1. Calculate Session Quality Score (v5.3)
+
+Calculate a quality score (0-100) based on three core outcome metrics.
+
+**Data collection** — read these values from the state file and session artifacts:
+
+1. **Test Pass Rate**: Read `test_retry_count` from state. If 0 retries (passed first try) → 100. If 1 retry → 70. If 2 retries → 40. If 3+ retries → 10.
+2. **Rework Cycles**: Same as test_retry_count for this metric. Score: 0 retries → 100, 1 → 75, 2 → 50, 3+ → 20.
+3. **Plan Fidelity**: Read `fidelity_score` from state file (written by deep-test drift-check). If not present, default to 80 (assume reasonable fidelity when drift-check wasn't run).
+
+**Core Score formula**:
+```
+core_score = (test_pass_rate * 0.35) + (rework_score * 0.30) + (fidelity_score * 0.35)
+```
+
+Round to the nearest integer. Clamp to 0-100.
+
+**Diagnostic Metrics** (informational only — NOT included in core score):
+
+1. **Code Efficiency**: Read `$WORK_DIR/file-changes.log` to count total lines changed. Count total plan items from plan.md. Ratio = lines_changed / plan_items. Score: <50 lines/item → 100, 50-100 → 80, 100-200 → 60, 200+ → 40.
+2. **Phase Balance**: Calculate (research_duration + plan_duration) / total_session_duration. Score: 20-50% → 100, 10-20% or 50-70% → 70, <10% or >70% → 40.
+
+**Display**:
+```
+📈 Session Quality Score: [score]/100
+   Test Pass Rate:  [N]/100 ([detail])
+   Rework Cycles:   [N]/100 ([detail])
+   Plan Fidelity:   [N]/100
+
+   Diagnostics (참고용):
+     Code Efficiency: [N]/100 ([detail])
+     Phase Balance:   [N]/100 ([detail])
+```
+
+**Persist to session receipt**: Add `quality_score`, `quality_breakdown` (object with all 5 metric scores), and `quality_diagnostics` (the 2 diagnostic metrics) to the `session-receipt.json` generated in Section 2.
+
+**Authoritative JSONL write**: After calculating the quality score, write the finalized session record to `harness-sessions.jsonl`. This is the authoritative write — it includes the `quality_score` field and `status: "finalized"`.
+
+**Read assumption snapshot**: Read `assumption_snapshot` from the state file (written at session init by deep-work.md — see Task 7). Include it in the JSONL entry.
+
+**JSONL path**: Use the shared path `deep-work/harness-history/harness-sessions.jsonl` (NOT the per-session folder). This matches all consumers (deep-status, deep-assumptions, deep-report).
+
+**Upsert logic** — use Bash to perform atomic upsert with lock:
+
+```bash
+# Variables: SESSION_ID, ENTRY (the full JSON line), JSONL_FILE
+JSONL_FILE="deep-work/harness-history/harness-sessions.jsonl"
+LOCKDIR="${JSONL_FILE}.lock.d"
+
+# Acquire lock (consistent with session-end.sh pattern)
+RETRIES=3
+while [ "$RETRIES" -gt 0 ]; do
+  if mkdir "$LOCKDIR" 2>/dev/null; then
+    break
+  fi
+  RETRIES=$((RETRIES - 1)); sleep 0.1
+done
+
+# Upsert: remove provisional line if exists, then append finalized
+if [ -f "$JSONL_FILE" ] && grep -qF "\"session_id\":\"$SESSION_ID\"" "$JSONL_FILE" 2>/dev/null; then
+  # Replace: filter out old line, append new
+  grep -vF "\"session_id\":\"$SESSION_ID\"" "$JSONL_FILE" > "${JSONL_FILE}.tmp" 2>/dev/null
+  echo "$ENTRY" >> "${JSONL_FILE}.tmp"
+  mv "${JSONL_FILE}.tmp" "$JSONL_FILE"
+else
+  # Append new
+  echo "$ENTRY" >> "$JSONL_FILE"
+fi
+
+# Release lock
+rmdir "$LOCKDIR" 2>/dev/null || true
+```
+
+The entry JSON includes all existing fields from session-end.sh PLUS: `quality_score`, `quality_breakdown`, `status: "finalized"`, and `assumption_snapshot`.
+
 ### 3. Display session summary
 
 ```
@@ -93,6 +168,7 @@ Deep Work 세션 요약
    TDD: [strict_count] strict, [override_count] override, [spike_count] spike
    Model: haiku×[n] sonnet×[n] opus×[n]
    Quality gates: [PASS/FAIL summary]
+   Quality Score: [score]/100
 ```
 
 ### 4. Partial session check
