@@ -573,6 +573,44 @@ function _resolveEvaluator(signal) {
   return entry;
 }
 
+// ─── Quality Cohort Helpers (v5.3) ─────────────────────────
+
+/**
+ * Partitions sessions into active/inactive cohorts for a given assumption.
+ * Uses the assumption_snapshot field from each session record.
+ * Active = enforcement is the default/strongest level; Inactive = weakened/off/skipped.
+ * @param {string} assumptionId - The assumption ID
+ * @param {object[]} sessions - Session history entries
+ * @returns {{ active: object[], inactive: object[] }}
+ */
+function partitionByAssumption(assumptionId, sessions) {
+  const active = [];
+  const inactive = [];
+
+  for (const session of sessions) {
+    if (!session.assumption_snapshot || session.quality_score == null) continue;
+    const level = session.assumption_snapshot[assumptionId];
+    if (!level) continue;
+
+    // Determine if this level counts as "active" (full enforcement) or "inactive" (weakened)
+    const inactiveLevels = ['off', 'relaxed', 'optional', 'skipped', 'spike'];
+    if (inactiveLevels.includes(level)) {
+      inactive.push(session);
+    } else {
+      active.push(session);
+    }
+  }
+
+  return { active, inactive };
+}
+
+function average(arr) {
+  if (arr.length === 0) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ─── Signal Evaluation ─────────────────────────────────────
+
 /**
  * Evaluates evidence signals for an assumption against a single session.
  *
@@ -750,6 +788,25 @@ function generateReport(assumptions, sessions, options) {
 
     if (staleness.stale) {
       lines.push(`   WARNING:    Stale — no signal in ${staleness.sessionsSinceLastSignal} sessions`);
+    }
+
+    // Quality Impact (v5.3)
+    const cohorts = partitionByAssumption(assumption.id, sessions);
+    if (cohorts.active.length >= 3 && cohorts.inactive.length >= 3) {
+      const activeAvg = average(cohorts.active.map(s => s.quality_score).filter(q => q != null));
+      const inactiveAvg = average(cohorts.inactive.map(s => s.quality_score).filter(q => q != null));
+      const delta = Math.round(activeAvg - inactiveAvg);
+      const sign = delta >= 0 ? '+' : '';
+      lines.push(`   Quality Impact: ${sign}${delta}pts`);
+      lines.push(`   Active: ${cohorts.active.length} sessions (avg ${Math.round(activeAvg)}) vs Inactive: ${cohorts.inactive.length} sessions (avg ${Math.round(inactiveAvg)})`);
+    } else {
+      const totalNeeded = 3;
+      const activeGap = Math.max(0, totalNeeded - cohorts.active.length);
+      const inactiveGap = Math.max(0, totalNeeded - cohorts.inactive.length);
+      let gapMsg = 'collecting data';
+      if (activeGap > 0) gapMsg += ` — need ${activeGap} more active sessions`;
+      if (inactiveGap > 0) gapMsg += ` — need ${inactiveGap} more inactive sessions`;
+      lines.push(`   Quality Impact: ${gapMsg}`);
     }
 
     // Model-aware breakdown
