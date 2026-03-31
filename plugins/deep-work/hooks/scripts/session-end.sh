@@ -69,7 +69,9 @@ append_session_history() {
   fi
 
   local work_dir="$PROJECT_ROOT/$work_dir_rel"
-  local history_dir="$work_dir/harness-history"
+  # Write to shared harness-history at the deep-work root level (one level up from session folder)
+  # Consumers (deep-status, deep-work, deep-report, deep-assumptions) all read from this path
+  local history_dir="$(dirname "$work_dir")/harness-history"
   local jsonl_file="$history_dir/harness-sessions.jsonl"
 
   # ── session_id: started_at timestamp (unique per session)
@@ -79,10 +81,15 @@ append_session_history() {
     return 0  # No started_at → cannot identify session
   fi
 
-  # ── Dedupe: check last 5 lines for existing session_id
+  # ── Check if finalized record already exists (deep-finish wrote it)
   if [[ -f "$jsonl_file" ]]; then
-    if tail -n 5 "$jsonl_file" 2>/dev/null | grep -qF "\"session_id\":\"$session_id\""; then
-      return 0  # Already recorded
+    if grep -qF "\"session_id\":\"$session_id\"" "$jsonl_file" 2>/dev/null; then
+      # Check if the existing record is finalized
+      if grep "\"session_id\":\"$session_id\"" "$jsonl_file" 2>/dev/null | grep -qF '"status":"finalized"'; then
+        return 0  # Finalized record exists — do not overwrite
+      fi
+      # Provisional record exists — also skip (deep-finish will upsert later if needed)
+      return 0
     fi
   fi
 
@@ -208,7 +215,7 @@ append_session_history() {
 
   # ── Build the JSONL entry (single line, no jq dependency)
   local entry
-  entry="{\"session_id\":\"${session_id}\",\"model_primary\":\"${model_primary}\",\"slices\":${slices_json},\"phases_used\":${phases_json},\"slices_total\":${slices_total},\"slices_passed_first_try\":${slices_passed_first_try},\"tdd_mode\":\"${tdd_mode}\",\"tdd_overrides\":${tdd_overrides},\"bugs_caught_in_red_phase\":${bugs_caught_in_red_phase},\"research_references_used\":${research_references_used},\"test_retry_count\":${test_retry_count},\"review_scores\":${review_scores},\"cross_model_unique_findings\":${cross_model_unique_findings},\"total_duration_minutes\":${duration_minutes},\"final_outcome\":\"${final_outcome}\"}"
+  entry="{\"session_id\":\"${session_id}\",\"status\":\"provisional\",\"quality_score\":null,\"model_primary\":\"${model_primary}\",\"slices\":${slices_json},\"phases_used\":${phases_json},\"slices_total\":${slices_total},\"slices_passed_first_try\":${slices_passed_first_try},\"tdd_mode\":\"${tdd_mode}\",\"tdd_overrides\":${tdd_overrides},\"bugs_caught_in_red_phase\":${bugs_caught_in_red_phase},\"research_references_used\":${research_references_used},\"test_retry_count\":${test_retry_count},\"review_scores\":${review_scores},\"cross_model_unique_findings\":${cross_model_unique_findings},\"total_duration_minutes\":${duration_minutes},\"final_outcome\":\"${final_outcome}\"}"
 
   # ── Write to JSONL file with lock
   _append_with_lock() {
