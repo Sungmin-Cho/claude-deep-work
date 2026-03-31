@@ -451,6 +451,29 @@ Display:
 
 When the user provides chat-based feedback instead of approval:
 
+**0. Scope Check** — Before applying feedback, evaluate whether it falls within the current session scope:
+
+Read `task_description` from `.claude/deep-work.local.md`. Compare the user's feedback against:
+- The `task_description` — is the feedback semantically related to this task?
+- The files/modules listed in plan.md — does the feedback reference files or modules already in scope?
+- The nature of the change — is this a modification to existing requirements, or an entirely new requirement?
+
+If the feedback introduces a clearly unrelated requirement (e.g., current task is "Add JWT auth" and feedback is "Also fix the sidebar CSS layout"), use AskUserQuestion:
+
+```
+💡 이 피드백은 현재 세션("[task_description]")의 범위 밖으로 보입니다.
+
+1. 현재 세션에 포함 — plan에 추가
+2. 새 세션으로 분리 — 현재 세션 완료 후 진행
+3. 백로그에 저장 — deep-work/backlog.md에 기록
+```
+
+- If option 1: proceed with applying feedback as normal.
+- If option 2: inform user the current session continues unchanged, suggest finishing this session first.
+- If option 3: append the feedback to `deep-work/backlog.md` with timestamp and source session ID. Continue current session unchanged.
+
+If the feedback is clearly related to the current task, skip the AskUserQuestion and proceed directly to applying it.
+
 1. Read the current `$WORK_DIR/plan.md`
 2. Apply the user's feedback to modify plan.md
 3. **Refine the document** (Document Refinement Protocol):

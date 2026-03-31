@@ -937,6 +937,8 @@ If `team_mode` is `team`, add the following after the mode line:
 
 After displaying the session confirmation (Step 8), automatically begin the workflow based on `current_phase`. This is the core auto-flow logic.
 
+**Scope Check (all phases)**: When the user provides input during any auto-flow phase, evaluate whether it relates to the current `task_description`. If the input is clearly out of scope, present the scope check dialog (same as Section 4-1's Scope Check in deep-plan.md) before proceeding. This prevents scope drift during auto-flow execution.
+
 **IMPORTANT**: Instead of telling the user to run the next command, execute it directly by reading the command file and following its steps.
 
 #### 9-1. Determine starting point

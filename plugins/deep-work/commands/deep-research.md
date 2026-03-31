@@ -122,6 +122,26 @@ After refinement, append a log entry at the end of the document:
 
 Where `[N]` is the revision number (increment from previous log entries, starting at 2).
 
+### 1-5. Session Relevance Detection
+
+When the user provides additional direction or feedback during the research phase, evaluate whether it falls within the current session scope before incorporating it.
+
+Read `task_description` from `.claude/deep-work.local.md`. If the user's input introduces a clearly unrelated topic (not a refinement of the current research task), use AskUserQuestion:
+
+```
+💡 이 요청은 현재 세션("[task_description]")의 범위 밖으로 보입니다.
+
+1. 현재 세션에 포함 — 리서치 범위 확장
+2. 새 세션으로 분리 — 현재 세션 완료 후 진행
+3. 백로그에 저장 — deep-work/backlog.md에 기록
+```
+
+- Option 1: expand research scope.
+- Option 2: continue current research unchanged.
+- Option 3: append to `deep-work/backlog.md` with timestamp.
+
+If the input is related to the current task, proceed without interruption.
+
 ### 2. Branch by mode and project type
 
 - **`project_type: zero-base`** → Continue with [Zero-Base Research](#zero-base-research)
