@@ -2,11 +2,11 @@
 
 # Deep Work Plugin
 
-A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a single-command auto-flow orchestration (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
+<!-- Badges (populated after sessions) -->
+<!-- ![Deep Work Quality](https://img.shields.io/badge/deep--work-quality-lightgrey) -->
+<!-- ![Sessions](https://img.shields.io/badge/sessions-0-blue) -->
 
-<p align="center">
-  <img src="./demo-en.gif" alt="Deep Work Plugin Demo — 4-Phase Workflow with 3-Tier Quality Gates" width="800">
-</p>
+A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a single-command auto-flow orchestration (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
 
 ## The Problem
 
@@ -29,7 +29,7 @@ The **Brainstorm → Research → Plan → Implement → Test** workflow enforce
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
-## Usage (v5.2 Auto-Flow)
+## Usage (v5.3 Auto-Flow)
 
 ```bash
 # Just one command — the entire workflow runs automatically
@@ -520,7 +520,33 @@ deep-work v5.2 consolidates the entire workflow into a single `/deep-work` comma
 ### Migration from v5.1
 No action needed. Your existing presets and session state are fully compatible. Deprecated commands still work — they just invoke the same logic that the auto-flow would.
 
-## Installation (v5.2.0)
+## Quality Measurement (v5.3)
+
+Every session produces a **Session Quality Score** (0-100) based on three core outcome metrics:
+
+| Metric | Weight | What it measures |
+|--------|--------|-----------------|
+| Test Pass Rate | 35% | How often tests pass on the first try |
+| Rework Cycles | 30% | How many implement→test loops were needed |
+| Plan Fidelity | 35% | How closely the implementation matches the approved plan |
+
+Additional diagnostic metrics (Code Efficiency, Phase Balance) are tracked for informational purposes.
+
+### Quality Trend
+Use `/deep-status --history` to see your quality score trend across sessions. The trend helps identify whether your workflow is improving over time.
+
+### Quality Badge
+Use `/deep-status --badge` to generate a shield badge reflecting your recent quality trend (last 5 sessions). Badge levels: Excellent (90+), Good (75-89), Improving (60-74), Developing (<60).
+
+## Self-Evolving Rules (v5.3)
+
+The **Assumption Engine** tracks whether each enforcement rule (phase guard, TDD, research requirement, etc.) actually improves your outcomes. At each session start, it captures an **assumption snapshot** — the enforcement level of every rule. At session end, the quality score is recorded alongside the snapshot.
+
+Over time, the engine compares quality scores between sessions where a rule was active vs. inactive. If the evidence shows a rule isn't helping (or is hurting), it suggests relaxing or removing it. If a rule consistently correlates with higher quality, it suggests strengthening enforcement.
+
+This creates a feedback loop: rules that prove their value survive; rules that don't get adjusted. Your workflow evolves based on evidence, not dogma.
+
+## Installation (v5.3.0)
 
 Add the marketplace to your Claude Code settings:
 

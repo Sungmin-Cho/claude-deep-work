@@ -59,6 +59,7 @@ Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, exec
 | `--assumptions` | Show assumption health report |
 | `--assumptions --verbose` | Per-signal per-session breakdown |
 | `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
+| `--badge` | Generate shields.io badge markdown |
 | `--all` | Show default view + all flags |
 | `--compare` | Compare two sessions (existing, handled in Section 0) |
 
@@ -238,6 +239,28 @@ If insufficient session data (fewer than 2 completed sessions in `deep-work/harn
    /deep-work로 세션을 시작하고 완료하면 이력이 기록됩니다.
 ```
 
+**Quality Score Trend (v5.3)**: After displaying the existing session history, also show the quality score trend:
+
+1. Read `deep-work/harness-history/harness-sessions.jsonl` (shared path)
+2. Filter to entries with `status: "finalized"` and `quality_score` not null
+3. If fewer than 2 qualifying sessions, display: `ℹ️ Quality trend는 2개 이상의 완료 세션이 필요합니다.`
+4. Otherwise, invoke the assumption engine and display the ASCII quality trend chart:
+
+```
+📈 Quality Trend (최근 [N] 세션)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+100|
+ 80|    *  *     *  *  *
+ 60| *        *
+ 40|
+ 20|
+   +──────────────────
+    #1 #2 #3 #4 #5 #6 #7
+
+Average: [N]/100  Trend: [↑/↓] ([+/-N])
+Best: #[N] ([score])  Worst: #[N] ([score])
+```
+
 ### 8. --report: Session Report
 
 If `$ARGUMENTS` contains `--report`:
@@ -261,4 +284,32 @@ Sub-flags:
 
 If `$ARGUMENTS` contains `--all`:
 
-Execute Steps 4 (default view), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions) in sequence.
+Execute Steps 4 (default view), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions), 11 (badge) in sequence.
+
+### 11. --badge: Quality Badge (v5.3)
+
+If `$ARGUMENTS` contains `--badge`:
+
+1. Read `harness-sessions.jsonl` from `deep-work/harness-history/` (shared path)
+2. Calculate average quality score, session count, and average fidelity from finalized sessions
+3. Generate shields.io badge markdown:
+
+```
+📛 Badges (copy to README.md):
+
+![Deep Work Quality](https://img.shields.io/badge/deep--work-quality%20[score]%2F100-[color])
+![Sessions](https://img.shields.io/badge/sessions-[count]-blue)
+![Plan Fidelity](https://img.shields.io/badge/plan%20fidelity-[pct]%25-[color])
+```
+
+Color thresholds:
+- 80+: brightgreen
+- 60-79: green
+- 40-59: yellow
+- <40: red
+
+If no finalized sessions exist:
+```
+ℹ️ Badge 생성을 위해 최소 1개의 완료된 세션이 필요합니다.
+   /deep-work로 세션을 시작하고 완료하면 badge가 생성됩니다.
+```

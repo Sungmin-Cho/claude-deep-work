@@ -122,7 +122,10 @@ Read `$WORK_DIR/plan.md` if it already exists — the user may have added feedba
 - `<!-- HUMAN: ... -->` comments
 - Inline comments or strikethroughs
 
-If feedback exists, incorporate it into the updated plan.
+If feedback exists, incorporate it into the updated plan. After incorporating, apply the Document Refinement Protocol:
+1. **Deduplicate** — Remove duplicate content across sections.
+2. **Prune** — Remove invalidated content and empty sections.
+3. Append refinement log: `<!-- v[N]: [feedback source] — deduped: [N], pruned: [M] -->`
 
 ### 3. Create the implementation plan
 
@@ -448,9 +451,40 @@ Display:
 
 When the user provides chat-based feedback instead of approval:
 
+**0. Scope Check** — Before applying feedback, evaluate whether it falls within the current session scope:
+
+Read `task_description` from `.claude/deep-work.local.md`. Compare the user's feedback against:
+- The `task_description` — is the feedback semantically related to this task?
+- The files/modules listed in plan.md — does the feedback reference files or modules already in scope?
+- The nature of the change — is this a modification to existing requirements, or an entirely new requirement?
+
+If the feedback introduces a clearly unrelated requirement (e.g., current task is "Add JWT auth" and feedback is "Also fix the sidebar CSS layout"), use AskUserQuestion:
+
+```
+💡 이 피드백은 현재 세션("[task_description]")의 범위 밖으로 보입니다.
+
+1. 현재 세션에 포함 — plan에 추가
+2. 새 세션으로 분리 — 현재 세션 완료 후 진행
+3. 백로그에 저장 — deep-work/backlog.md에 기록
+```
+
+- If option 1: proceed with applying feedback as normal.
+- If option 2: inform user the current session continues unchanged, suggest finishing this session first.
+- If option 3: append the feedback to `deep-work/backlog.md` with timestamp and source session ID. Continue current session unchanged.
+
+If the feedback is clearly related to the current task, skip the AskUserQuestion and proceed directly to applying it.
+
 1. Read the current `$WORK_DIR/plan.md`
 2. Apply the user's feedback to modify plan.md
-3. Highlight what was changed:
+3. **Refine the document** (Document Refinement Protocol):
+   a. **Deduplicate** — Scan plan.md for duplicate or near-duplicate content across sections (e.g., same file mentioned in multiple tasks with identical changes, overlapping design decisions). Keep each piece of information in one canonical location only.
+   b. **Prune** — Remove content invalidated by the feedback (e.g., tasks that are no longer relevant, outdated estimates, superseded design decisions). Delete empty sections.
+   c. Append a refinement log at the end of the document:
+      ```
+      <!-- Refinement Log -->
+      <!-- v[N]: [feedback summary] — deduped: [N] items, pruned: [M] sections -->
+      ```
+4. Highlight what was changed:
    ```
    plan.md가 수정되었습니다:
      - [변경된 부분 요약 1]
@@ -458,7 +492,7 @@ When the user provides chat-based feedback instead of approval:
 
    계속 피드백을 주시거나, "승인"을 입력하여 다음 단계로 진행하세요.
    ```
-4. Wait for the next feedback or approval
+5. Wait for the next feedback or approval
 
 Repeat this loop until the user approves.
 

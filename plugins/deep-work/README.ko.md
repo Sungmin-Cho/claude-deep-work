@@ -2,11 +2,11 @@
 
 # Deep Work Plugin
 
-**Evidence-Driven Development Protocol** — 단일 커맨드 auto-flow 오케스트레이션, TDD 강제, slice/receipt 시스템으로 모든 코드 변경에 증거를 요구하는 플러그인.
+<!-- Badges (populated after sessions) -->
+<!-- ![Deep Work Quality](https://img.shields.io/badge/deep--work-quality-lightgrey) -->
+<!-- ![Sessions](https://img.shields.io/badge/sessions-0-blue) -->
 
-<p align="center">
-  <img src="./demo.gif" alt="Deep Work Plugin 데모 — Evidence-Driven Protocol" width="800">
-</p>
+**Evidence-Driven Development Protocol** — 단일 커맨드 auto-flow 오케스트레이션, TDD 강제, slice/receipt 시스템으로 모든 코드 변경에 증거를 요구하는 플러그인.
 
 ## 문제
 
@@ -29,7 +29,7 @@ AI 코딩 도구가 복잡한 작업을 수행할 때 흔히 발생하는 문제
 
 Phase 0, 1, 2, 4에서는 **코드 파일 수정이 물리적으로 차단**됩니다 (PreToolUse 훅). **Bash 파일 쓰기 명령**(`echo >`, `sed -i`, `cp`)도 차단됩니다. Phase 3에서는 **파일 변경과 receipt 데이터가 자동 수집**됩니다 (PostToolUse 훅).
 
-## 사용법 (v5.2 Auto-Flow)
+## 사용법 (v5.3 Auto-Flow)
 
 ```bash
 # 커맨드 하나로 전체 워크플로우가 자동 진행됩니다
@@ -525,7 +525,33 @@ deep-work v5.2는 전체 워크플로우를 단일 `/deep-work` 커맨드로 통
 ### v5.1에서 마이그레이션
 별도 작업 불필요. 기존 프리셋과 세션 상태는 완전히 호환됩니다. Deprecated 커맨드도 그대로 동작합니다 — auto-flow와 동일한 로직을 호출합니다.
 
-## 설치 (v5.2.0)
+## 품질 측정 (v5.3)
+
+모든 세션은 3가지 핵심 결과 메트릭을 기반으로 **세션 품질 점수** (0-100)를 산출합니다:
+
+| 메트릭 | 비중 | 측정 대상 |
+|--------|------|----------|
+| 테스트 통과율 | 35% | 첫 시도에 테스트가 통과하는 빈도 |
+| 재작업 사이클 | 30% | implement→test 루프 반복 횟수 |
+| Plan Fidelity | 35% | 구현이 승인된 Plan에 얼마나 부합하는지 |
+
+추가 진단 메트릭 (코드 효율성, Phase 밸런스)도 참고용으로 추적됩니다.
+
+### 품질 트렌드
+`/deep-status --history`로 세션 간 품질 점수 추세를 확인하세요. 워크플로우가 시간에 따라 개선되고 있는지 파악할 수 있습니다.
+
+### 품질 뱃지
+`/deep-status --badge`로 최근 품질 추세(최근 5세션)를 반영하는 shield 뱃지를 생성합니다. 뱃지 레벨: Excellent (90+), Good (75-89), Improving (60-74), Developing (<60).
+
+## 자기 진화 규칙 (v5.3)
+
+**Assumption Engine**은 각 강제 규칙(phase guard, TDD, research 요구 등)이 실제로 결과를 개선하는지 추적합니다. 각 세션 시작 시 **assumption snapshot**을 캡처합니다 — 모든 규칙의 강제 수준입니다. 세션 종료 시 품질 점수가 snapshot과 함께 기록됩니다.
+
+시간이 지나면서 엔진은 규칙이 활성화된 세션과 비활성화된 세션의 품질 점수를 비교합니다. 증거가 규칙이 도움이 되지 않거나 해가 된다면, 완화하거나 제거를 제안합니다. 규칙이 일관되게 높은 품질과 상관관계를 보이면, 강화를 제안합니다.
+
+이는 피드백 루프를 생성합니다: 가치를 증명한 규칙은 유지되고, 그렇지 않은 규칙은 조정됩니다. 워크플로우가 도그마가 아닌 증거를 기반으로 진화합니다.
+
+## 설치 (v5.3.0)
 
 Claude Code 설정에 마켓플레이스를 추가합니다:
 

@@ -573,6 +573,44 @@ function _resolveEvaluator(signal) {
   return entry;
 }
 
+// ─── Quality Cohort Helpers (v5.3) ─────────────────────────
+
+/**
+ * Partitions sessions into active/inactive cohorts for a given assumption.
+ * Uses the assumption_snapshot field from each session record.
+ * Active = enforcement is the default/strongest level; Inactive = weakened/off/skipped.
+ * @param {string} assumptionId - The assumption ID
+ * @param {object[]} sessions - Session history entries
+ * @returns {{ active: object[], inactive: object[] }}
+ */
+function partitionByAssumption(assumptionId, sessions) {
+  const active = [];
+  const inactive = [];
+
+  for (const session of sessions) {
+    if (!session.assumption_snapshot || session.quality_score == null) continue;
+    const level = session.assumption_snapshot[assumptionId];
+    if (!level) continue;
+
+    // Determine if this level counts as "active" (full enforcement) or "inactive" (weakened)
+    const inactiveLevels = ['off', 'relaxed', 'optional', 'skipped', 'spike'];
+    if (inactiveLevels.includes(level)) {
+      inactive.push(session);
+    } else {
+      active.push(session);
+    }
+  }
+
+  return { active, inactive };
+}
+
+function average(arr) {
+  if (arr.length === 0) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ─── Signal Evaluation ─────────────────────────────────────
+
 /**
  * Evaluates evidence signals for an assumption against a single session.
  *
@@ -752,6 +790,25 @@ function generateReport(assumptions, sessions, options) {
       lines.push(`   WARNING:    Stale — no signal in ${staleness.sessionsSinceLastSignal} sessions`);
     }
 
+    // Quality Impact (v5.3)
+    const cohorts = partitionByAssumption(assumption.id, sessions);
+    if (cohorts.active.length >= 3 && cohorts.inactive.length >= 3) {
+      const activeAvg = average(cohorts.active.map(s => s.quality_score).filter(q => q != null));
+      const inactiveAvg = average(cohorts.inactive.map(s => s.quality_score).filter(q => q != null));
+      const delta = Math.round(activeAvg - inactiveAvg);
+      const sign = delta >= 0 ? '+' : '';
+      lines.push(`   Quality Impact: ${sign}${delta}pts`);
+      lines.push(`   Active: ${cohorts.active.length} sessions (avg ${Math.round(activeAvg)}) vs Inactive: ${cohorts.inactive.length} sessions (avg ${Math.round(inactiveAvg)})`);
+    } else {
+      const totalNeeded = 3;
+      const activeGap = Math.max(0, totalNeeded - cohorts.active.length);
+      const inactiveGap = Math.max(0, totalNeeded - cohorts.inactive.length);
+      let gapMsg = 'collecting data';
+      if (activeGap > 0) gapMsg += ` — need ${activeGap} more active sessions`;
+      if (inactiveGap > 0) gapMsg += ` — need ${inactiveGap} more inactive sessions`;
+      lines.push(`   Quality Impact: ${gapMsg}`);
+    }
+
     // Model-aware breakdown
     if (opts.splitByModel && confidence.byModel) {
       for (const [model, mc] of Object.entries(confidence.byModel)) {
@@ -853,61 +910,178 @@ function generateTimeline(assumption, sessions, options) {
   return lines.join('\n');
 }
 
+// ─── Quality Timeline (v5.3) ───────────────────────────────
+
+/**
+ * Generates an ASCII trend chart showing quality score evolution over sessions.
+ * @param {object[]} sessions - Session history entries (ordered by time)
+ * @param {object} [options] - { width: number, height: number }
+ * @returns {string} ASCII chart + summary stats
+ */
+function generateQualityTimeline(sessions, options) {
+  const opts = options || {};
+  const width = opts.width || 40;
+  const height = opts.height || 8;
+
+  // Filter to finalized sessions with quality_score
+  const scored = sessions.filter(s => s.quality_score != null && s.status === 'finalized');
+
+  if (scored.length < 2) {
+    return 'Quality trend requires at least 2 completed sessions with quality scores.';
+  }
+
+  const scores = scored.map(s => s.quality_score);
+  const maxScore = 100;
+
+  // Render ASCII chart
+  const lines = [];
+  lines.push('Quality Trend (last ' + scored.length + ' sessions)');
+  lines.push('═'.repeat(width + 6));
+
+  for (let row = height; row >= 0; row--) {
+    const threshold = (row / height) * maxScore;
+    let label;
+    if (row === height) label = '100';
+    else if (row === 0) label = '  0';
+    else if (row === Math.round(height * 0.8)) label = ' 80';
+    else if (row === Math.round(height * 0.6)) label = ' 60';
+    else label = '   ';
+
+    let rowStr = label + '|';
+    const barWidth = Math.min(scored.length, width);
+    for (let col = 0; col < barWidth; col++) {
+      const scoreRow = Math.round((scores[col] / maxScore) * height);
+      if (scoreRow >= row && row > 0) {
+        rowStr += '*';
+      } else {
+        rowStr += ' ';
+      }
+    }
+    lines.push(rowStr);
+  }
+
+  lines.push('   +' + '─'.repeat(Math.min(scored.length, width)));
+
+  // Summary stats
+  const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  const best = Math.max(...scores);
+  const worst = Math.min(...scores);
+  const bestIdx = scores.indexOf(best);
+  const worstIdx = scores.indexOf(worst);
+
+  // Trend: compare last 3 avg vs first 3 avg
+  let trendStr = '';
+  if (scores.length >= 4) {
+    const recentAvg = average(scores.slice(-3));
+    const earlyAvg = average(scores.slice(0, 3));
+    const delta = Math.round(recentAvg - earlyAvg);
+    trendStr = delta >= 0 ? `↑ (+${delta})` : `↓ (${delta})`;
+  }
+
+  lines.push('');
+  lines.push(`Average: ${avg}/100  ${trendStr ? 'Trend: ' + trendStr : ''}`);
+  lines.push(`Best: #${bestIdx + 1} (${best})  Worst: #${worstIdx + 1} (${worst})`);
+
+  return lines.join('\n');
+}
+
 // ─── Badge Export ───────────────────────────────────────────
 
 /**
- * Exports a shields.io compatible JSON badge.
+ * Exports shields.io compatible badge data including quality scores.
  * @param {object[]} assumptions - Array of assumptions from registry
  * @param {object[]} sessions - Session history entries
- * @returns {object} shields.io endpoint badge JSON
+ * @returns {object} Object with badge data for harness health, quality score, sessions count, fidelity
  */
 function exportBadge(assumptions, sessions) {
+  // Harness health badge (existing logic)
+  let harnessResult;
   if (assumptions.length === 0 || sessions.length === 0) {
-    return {
+    harnessResult = {
       schemaVersion: 1,
       label: 'harness health',
       message: 'no data',
       color: 'lightgrey',
     };
-  }
+  } else {
+    let totalScore = 0;
+    let evaluated = 0;
 
-  let totalScore = 0;
-  let evaluated = 0;
+    for (const assumption of assumptions) {
+      const confidence = calculateConfidence(assumption, sessions);
+      if (!confidence.insufficient) {
+        totalScore += confidence.overall.score;
+        evaluated++;
+      }
+    }
 
-  for (const assumption of assumptions) {
-    const confidence = calculateConfidence(assumption, sessions);
-    if (!confidence.insufficient) {
-      totalScore += confidence.overall.score;
-      evaluated++;
+    if (evaluated === 0) {
+      harnessResult = {
+        schemaVersion: 1,
+        label: 'harness health',
+        message: 'insufficient data',
+        color: 'lightgrey',
+      };
+    } else {
+      const avgScore = totalScore / evaluated;
+      const pct = Math.round(avgScore * 100);
+
+      let color;
+      if (avgScore >= CONFIDENCE_THRESHOLDS.HIGH) {
+        color = 'brightgreen';
+      } else if (avgScore >= CONFIDENCE_THRESHOLDS.MEDIUM) {
+        color = 'yellow';
+      } else {
+        color = 'red';
+      }
+
+      harnessResult = {
+        schemaVersion: 1,
+        label: 'harness health',
+        message: `${pct}%`,
+        color,
+      };
     }
   }
 
-  if (evaluated === 0) {
-    return {
+  // Quality score badge (v5.3)
+  const finalized = sessions.filter(s => s.quality_score != null && s.status === 'finalized');
+  let qualityBadge, sessionsBadge, fidelityBadge;
+
+  if (finalized.length === 0) {
+    qualityBadge = { schemaVersion: 1, label: 'quality', message: 'no data', color: 'lightgrey' };
+    sessionsBadge = { schemaVersion: 1, label: 'sessions', message: '0', color: 'blue' };
+    fidelityBadge = { schemaVersion: 1, label: 'plan fidelity', message: 'no data', color: 'lightgrey' };
+  } else {
+    const avgQuality = Math.round(average(finalized.map(s => s.quality_score)));
+    const fidelityValues = finalized.map(s => s.quality_breakdown?.plan_fidelity).filter(f => f != null);
+    const avgFidelity = fidelityValues.length > 0 ? Math.round(average(fidelityValues)) : 0;
+
+    qualityBadge = {
       schemaVersion: 1,
-      label: 'harness health',
-      message: 'insufficient data',
-      color: 'lightgrey',
+      label: 'deep-work quality',
+      message: `${avgQuality}/100`,
+      color: avgQuality >= 80 ? 'brightgreen' : avgQuality >= 60 ? 'green' : avgQuality >= 40 ? 'yellow' : 'red',
+    };
+    sessionsBadge = {
+      schemaVersion: 1,
+      label: 'sessions',
+      message: String(finalized.length),
+      color: 'blue',
+    };
+    fidelityBadge = {
+      schemaVersion: 1,
+      label: 'plan fidelity',
+      message: avgFidelity > 0 ? `${avgFidelity}%` : 'no data',
+      color: avgFidelity >= 80 ? 'brightgreen' : avgFidelity >= 60 ? 'green' : avgFidelity >= 40 ? 'yellow' : avgFidelity > 0 ? 'red' : 'lightgrey',
     };
   }
 
-  const avgScore = totalScore / evaluated;
-  const pct = Math.round(avgScore * 100);
-
-  let color;
-  if (avgScore >= CONFIDENCE_THRESHOLDS.HIGH) {
-    color = 'brightgreen';
-  } else if (avgScore >= CONFIDENCE_THRESHOLDS.MEDIUM) {
-    color = 'yellow';
-  } else {
-    color = 'red';
-  }
-
   return {
-    schemaVersion: 1,
-    label: 'harness health',
-    message: `${pct}%`,
-    color,
+    harness: harnessResult,
+    quality: qualityBadge,
+    sessions: sessionsBadge,
+    fidelity: fidelityBadge,
   };
 }
 
@@ -1121,6 +1295,11 @@ if (require.main === module) {
           result.warnings = [...registry.warnings, ...history.warnings];
           break;
         }
+        case 'quality-timeline': {
+          const history = readHistory(input.historyPath);
+          result = { text: generateQualityTimeline(history.sessions, input.options), warnings: history.warnings };
+          break;
+        }
         default:
           result = { error: `Unknown action: ${action}` };
       }
@@ -1155,6 +1334,9 @@ module.exports = {
   evaluateSignals,
   generateReport,
   generateTimeline,
+  generateQualityTimeline,
+  partitionByAssumption,
+  average,
   exportBadge,
   autoAdjust,
 };

@@ -146,6 +146,41 @@ baseline-commit 결정:
 - "기존 UserService 수정 금지" — UserService.ts 미변경 확인
 ```
 
+### 5-1. Calculate Fidelity Score
+
+After classifying all plan items, calculate a numeric Fidelity Score (0-100):
+
+**Scoring rules**:
+- Each plan item has a base value of `100 / total_plan_items` points
+- Fully implemented item: full points
+- Partially implemented item: half points
+- Not implemented item: 0 points
+- Out of scope item: -2 points per item (capped — score cannot go below 0)
+
+**Formula**: `score = max(0, (full_items * full_points) + (partial_items * half_points) - (out_of_scope_items * 2))`
+
+Normalize to 0-100 scale.
+
+Add the Fidelity Score to the drift report output:
+
+```
+📊 Plan Fidelity Report
+━━━━━━━━━━━━━━━━━━━━━
+✅ 구현 완료: [N]/[total] items ([pct]%)
+⚠️ 부분 구현: [N]/[total] items
+[for each: └─ #[N]: "[description]" — [what's done], [what's missing]]
+❌ 미구현: [N]/[total] items
+[for each: └─ #[N]: "[description]"]
+🔀 범위 초과: [N] items
+[for each: └─ [file]: [description]]
+
+Fidelity Score: [score]/100
+```
+
+Write the numeric `fidelity_score` value to `$WORK_DIR/fidelity-score.txt` as a plain number (e.g., `85`) for consumption by the quality score calculator in deep-finish.
+
+Write `fidelity_score: [N]` to the state file `.claude/deep-work.local.md`.
+
 ### 6. Determine pass/fail
 
 ```
