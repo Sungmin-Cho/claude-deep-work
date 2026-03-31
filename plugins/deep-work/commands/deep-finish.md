@@ -3,6 +3,9 @@ allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
 description: "Finish a deep work session — merge, PR, keep, or discard the branch"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Deep Work Session Completion (v4.1)
 
 Finish the current Deep Work session with an explicit branch completion workflow.
@@ -76,7 +79,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "total_contracts": 0,
     "contracts_met": 0
   },
-  "deep_work_version": "5.1.2"
+  "deep_work_version": "5.2.0"
 }
 ```
 

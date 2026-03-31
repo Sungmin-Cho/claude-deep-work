@@ -101,7 +101,8 @@ function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns, tddOve
           `팁: 어떤 동작을 테스트해야 할지 생각해보세요.\n\n` +
           `TDD를 건너뛰려면:\n` +
           `  /deep-slice spike SLICE-NNN — 이 slice만 자유 코딩 (merge 불가)\n` +
-          `  /deep-slice reset SLICE-NNN — slice 리셋 후 재시작`,
+          `  /deep-slice reset SLICE-NNN — slice 리셋 후 재시작\n` +
+          `  (auto-flow 사용 시 /deep-implement 내에서 자동 관리됩니다)`,
       };
     }
     return {
@@ -112,7 +113,8 @@ function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns, tddOve
         `파일: ${filePath}\n\n` +
         `TDD를 건너뛰려면:\n` +
         `  /deep-slice spike SLICE-NNN — 이 slice만 자유 코딩 (merge 불가)\n` +
-        `  /deep-slice reset SLICE-NNN — slice 리셋 후 재시작`,
+        `  /deep-slice reset SLICE-NNN — slice 리셋 후 재시작\n` +
+        `  (auto-flow 사용 시 /deep-implement 내에서 자동 관리됩니다)`,
     };
   }
 

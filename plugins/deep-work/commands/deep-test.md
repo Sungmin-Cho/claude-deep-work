@@ -128,23 +128,22 @@ Present detected commands to the user for confirmation:
 
 If no commands are detected, ask the user to provide verification commands manually.
 
-### 2-1. Parse Quality Gates from plan.md
+### 2-1. Quality Gates configuration
 
-Read `$WORK_DIR/plan.md` and look for a `## Quality Gates` section containing a markdown table:
+**Default behavior (no Quality Gates table in plan.md):**
+All built-in gates run automatically:
+- Drift Check: Required gate (already handled in Section 1-3)
+- Spec Compliance Review: Required gate (Section 4-2)
+- Code Quality Review: Advisory gate (Section 4-3)
+- Verification Evidence: Required gate (Section 4-4)
+- SOLID Review: Advisory gate (Section 4-5a, new in v5.2)
+- Insight Analysis: Insight gate (Section 4-5b, new in v5.2)
+- Auto-detected test commands from Section 2 are used for test execution
 
-```markdown
-## Quality Gates
+**Override (Quality Gates table exists in plan.md):**
+Read `$WORK_DIR/plan.md` and look for a `## Quality Gates` section containing a markdown table.
 
-| Gate | 명령어 | 필수 | 임계값 |
-|------|--------|------|--------|
-| Type Check | `npx tsc --noEmit` | ✅ | — |
-| Lint | `npm run lint` | ✅ | — |
-| Unit Test | `npm test` | ✅ | — |
-| Coverage | `npm test -- --coverage` | ⚠️ | ≥80% |
-| Bundle Size | `npm run build && stat -f%z dist/main.js` | ⚠️ | ≤512000 |
-```
-
-If a Quality Gates section exists:
+If found:
 - Parse the table into a list of gates
 - Each gate has: name, command, type (✅=required, ⚠️=advisory, ℹ️=insight), threshold
 - **Use these gates instead of auto-detected commands** (Section 2 results are overridden)
@@ -152,9 +151,10 @@ If a Quality Gates section exists:
 - For required (✅) gates: failure triggers implement rollback (same as current test failure)
 - For advisory (⚠️) gates: failure records a warning only, does NOT trigger rollback
 - For insight (ℹ️) gates: results recorded for informational purposes only — always treated as pass
+- Built-in SOLID Review and Insight Analysis still run after user-defined gates
 
-If no Quality Gates section exists:
-- Use the auto-detected commands from Section 2 (existing behavior, backward compatible)
+If not found:
+- Use the auto-detected commands from Section 2 (default behavior)
 
 ### 3. Run verification
 
@@ -295,9 +295,33 @@ Verify that actual test execution evidence exists — not just claims of passing
    ```
 4. All evidence present → **PASS**
 
-### 4-5. Built-in Insight Analysis & Insight Gate Results
+### 4-5a. Built-in Advisory Gate: SOLID Review (v5.2)
 
-After all Required and Advisory gates complete (regardless of their results), run the built-in Insight analysis. Insight gates NEVER affect pass/fail determination.
+After Code Quality Review (Section 4-3), run SOLID analysis on changed files. This is advisory — does NOT block.
+
+**Steps**:
+1. Get the list of modified files from `$WORK_DIR/file-changes.log` or `git diff --name-only`
+2. Filter: source files only (exclude test files, configs, docs, generated files)
+3. For each file, evaluate against 5 SOLID principles:
+   - **SRP** (Single Responsibility): Does the file/class have one clear purpose?
+   - **OCP** (Open/Closed): Can behavior be extended without modifying existing code?
+   - **LSP** (Liskov Substitution): Are subtypes substitutable for their base types?
+   - **ISP** (Interface Segregation): Are interfaces focused and minimal?
+   - **DIP** (Dependency Inversion): Do modules depend on abstractions, not concretions?
+4. Generate summary scorecard
+5. Save to `$WORK_DIR/solid-review.md`
+6. Display inline:
+   ```
+   SOLID Review (advisory):
+     SRP: ✅ | OCP: ⚠️ | LSP: ✅ | ISP: ✅ | DIP: ✅
+     ⚠️ [finding summary]
+   ```
+
+For detailed evaluation criteria, see the `/solid-review` command.
+
+### 4-5b. Built-in Insight Analysis (v5.2)
+
+After SOLID Review, run Insight analysis. Insight gates NEVER affect pass/fail determination.
 
 **Steps**:
 

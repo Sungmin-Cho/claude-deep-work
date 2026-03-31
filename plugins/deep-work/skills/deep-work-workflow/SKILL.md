@@ -1,72 +1,31 @@
 ---
 name: deep-work-workflow
-version: "5.1.2"
+version: "5.2.0"
 description: |
-  This skill should be used when the user wants to follow an evidence-driven development
-  protocol with TDD enforcement, slice-based execution, and receipt-based evidence collection.
-  It applies when users say things like "deep work", "plan before code", "기획과 코딩 분리",
-  "분석 후 구현", "TDD", "test-driven", "evidence-driven", "receipt", "영수증",
-  "slice", "brainstorm", "브레인스톰", "제로베이스", "from scratch", "quality gate",
-  "SOLID review", "drift check", "deep-insight", "코드 메트릭", "preset", "프리셋",
-  "resume session", "세션 재개", "이어서", "프로필", "빠른 시작", "debug mode",
-  "systematic debugging", "코드 리뷰", "spec compliance", "worktree", "격리",
-  "deep-finish", "deep-history", "deep-cleanup", "model routing", "모델 라우팅",
-  "receipt validation", "CI/CD", "session lifecycle", "세션 완료",
-  "cross-model review", "크로스 모델", "adversarial review", "리뷰 게이트",
-  "review gate", "deep-review", "structural review", "구조적 리뷰",
-  "auto-loop", "자동 루프", "contract", "계약 검증", "adaptive defaults", "자동 조정",
-  "assumption auto-adjust", "skip-to-implement", "phase skip", "evaluator model",
-  or when the user describes a complex, multi-file task that would benefit from
-  structured planning before implementation.
+  Evidence-driven development protocol with auto-flow orchestration.
+  Use when: "deep work", "plan before code", "TDD", "evidence-driven",
+  "분석 후 구현", "structured workflow", or complex multi-file tasks
+  that benefit from structured planning before implementation.
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
 
-## v5.1 Self-Evolving Harness II — Auto-Loop, Contract, Adaptive Defaults
+## v5.2 Auto-Flow Orchestration
 
-v5.1 applies Anthropic's harness design philosophy ("every component encodes an assumption"):
+`/deep-work "task"` 하나로 전체 워크플로우가 자동 진행됩니다.
+Plan 승인이 유일한 필수 인터랙션입니다.
 
-- **Auto-Loop Evaluation**: Plan review and test phase auto-retry — fails auto-fix and re-verify up to 3 times, escalates to user on exhaustion
-- **Contract Negotiation**: Slices gain `contract` (testable input→output pairs) and `acceptance_threshold` fields. Evaluator validates contracts before implementation. Test phase uses contracts for precise spec compliance
-- **Assumption Engine Auto-Apply**: Session start reads Wilson Score data and auto-adjusts TDD mode, receipt depth, evaluator model. Bidirectional (relaxes AND tightens). Model-aware. Hardcoded floors (TDD >= coaching, receipt >= minimal, evaluator >= haiku)
-- **Adaptive Evaluator Model**: All evaluator subagents use configurable `evaluator_model` (default: sonnet, was haiku). Auto-adjustable by Assumption Engine based on issue detection rate
-- **Phase Skip Flexibility**: `--skip-to-implement` for quick fixes, `--skip-research` for familiar codebases. Assumption Engine suggests skips based on history. implement + test never skippable
-- **Invariants**: Phase guard (code edit blocking) never auto-adjusted. implement→test ordering always enforced. Slice structure always present.
+**Primary commands (7):** `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement`, `/deep-test`, `/deep-status`, `/deep-debug`
 
-## v4.2 Adversarial Multi-Model Review Gate
+**Deprecated commands (13):** 자동 흐름에 흡수됨. 수동 호출 가능하지만 불필요.
+- brainstorm, review, receipt, slice, insight, finish, cleanup, history, assumptions, resume, report, drift-check, solid-review
 
-v4.2 adds multi-model document verification:
-- **Structural Review**: All phase docs reviewed by haiku subagent with phase-specific dimensions
-- **Adversarial Review** (plan only): codex/gemini-cli independently review — conflicts shown to user
-- **Review Gate**: Low scores or critical consensus blocks auto-implement
-- **`/deep-review`**: Manual review trigger at any time
-- **`--skip-review`**: Skip reviews for spike/experimental work
-- **Cross-model auto-detection**: codex/gemini-cli detected at session init
-- **Profile persistence**: `cross_model_preference` saved in presets
-- **JSON normalization**: Review results stored as structured `{phase}-review.json`
-
-## v4.1 Backbone-First Integration
-
-v4.1 adds full session lifecycle management and cost optimization:
-- **Worktree isolation**: Sessions run in isolated git worktrees by default — main branch stays clean
-- **Model auto-routing**: Slice complexity (S/M/L/XL) drives model selection (haiku/sonnet/opus)
-- **Session lifecycle**: `/deep-finish` with merge/PR/keep/discard + `session-receipt.json`
-- **CI/CD validation**: `validate-receipt.sh` + GitHub Actions template for receipt chain checks
-- **Session history**: `/deep-history` cross-session trends: model usage, TDD compliance, cost
-- **Worktree cleanup**: `/deep-cleanup` for stale worktree management
-- **Receipt schema v1.0**: model_used, git_before/after, estimated_cost, schema versioning
-- **Shell utilities DRY**: Shared utils.sh eliminates hook script code duplication
-
-## v4.0 Evidence-Driven Development Protocol
-
-v4.0 introduced the **Evidence-Driven Protocol** — every code change must carry proof:
-- **Slice-based execution**: Plan tasks are "slices" with TDD cycles and spec checklists
-- **TDD enforcement**: Failing test required before production code (hook-enforced)
-- **Receipt system**: JSON evidence collected per slice (test output, git diff, spec check)
-- **Bash monitoring**: File-writing shell commands are also blocked during non-implement phases
-- **2-stage code review**: Spec compliance + code quality review in test phase
-- **Systematic debugging**: Root-cause investigation before fixes (/deep-debug)
-- **Phase 0 Brainstorm**: Optional design exploration before research (/deep-brainstorm)
+**Core mechanisms:**
+- Phase Guard (hook-enforced code blocking)
+- TDD Enforcement (state machine: PENDING → RED → GREEN → REFACTOR)
+- Slice-based Execution with Receipt Collection
+- Profile/Preset System (zero-question restart)
+- Auto-transition between phases
 
 ## Why This Workflow Exists
 
@@ -187,75 +146,25 @@ For detailed guidance, see [Testing Guide](references/testing-guide.md).
 
 ## Quality Gates & Utilities
 
-### Plan Alignment Check (`/drift-check`)
+### Plan Alignment Check (/drift-check) — *deprecated, auto-runs in /deep-test*
 
-**Goal**: Verify implementation matches the approved plan.
+Compares plan.md items with actual git diff. Reports implemented, missing, out-of-scope, and design drift.
+Standalone mode available: `/drift-check [plan-file]`.
 
-**What happens**:
-- Compares plan.md items with actual git diff
-- Reports: implemented, missing, out-of-scope, design drift
-- Saves results to `$WORK_DIR/drift-report.md`
+### SOLID Design Review (/solid-review) — *deprecated, auto-runs in /deep-test*
 
-**Built-in behavior**: Automatically runs as a Required gate during `/deep-test` when plan.md exists. No need to add to Quality Gates table.
+Evaluates code against the 5 SOLID design principles with a per-principle scorecard.
+Standalone mode available: `/solid-review [target]`. See [SOLID Guide](references/solid-guide.md).
 
-**Dual mode**:
-- **Standalone**: `/drift-check [plan-file]` — works without an active deep-work session
-- **Workflow**: Built-in Required gate in the Test phase (auto-runs before other gates)
+### Code Insight Analysis (/deep-insight) — *deprecated, auto-runs in /deep-test*
 
-**Key principle**: "When the plan becomes the verification standard, you write plans more carefully."
+Measures file metrics, complexity indicators, and dependency graphs. Never blocks workflow.
+Standalone mode available: `/deep-insight [target]`. See [Insight Guide](references/insight-guide.md).
 
-### SOLID Design Review (`/solid-review`)
+### Session Report (/deep-report) — *deprecated, use /deep-status --report*
 
-**Goal**: Evaluate code against the 5 SOLID design principles.
-
-**What happens**:
-- Analyzes target code for SRP, OCP, LSP, ISP, DIP compliance
-- Generates a scorecard with per-principle status
-- Provides concrete refactoring suggestions
-- Saves results to `$WORK_DIR/solid-review.md` (workflow mode) or outputs to terminal (standalone)
-
-**Dual mode**:
-- **Standalone**: `/solid-review [target]` — works without an active deep-work session
-- **Workflow**: Integrates as an Advisory Quality Gate in the Test phase
-
-**Key principle**: "Working code is not enough. Well-designed code is what survives change."
-
-For detailed guidance, see [SOLID Guide](references/solid-guide.md) or [SOLID Prompt Guide](references/solid-prompt-guide.md).
-
-### Code Insight Analysis (`/deep-insight`)
-
-**Goal**: Provide informational code metrics without blocking workflow.
-
-**What happens**:
-- Measures file metrics (lines, functions, exports)
-- Analyzes complexity indicators (nesting depth, long functions, large files)
-- Builds dependency graph (circular references, hub files, import depth)
-- Records change summary from PostToolUse file tracking
-- Saves results to `$WORK_DIR/insight-report.md`
-
-**Built-in behavior**: Automatically runs as an Insight gate during `/deep-test` after Required and Advisory gates. Never blocks workflow.
-
-**Dual mode**:
-- **Standalone**: `/deep-insight [target]` — works without an active deep-work session
-- **Workflow**: Built-in Insight gate in the Test phase (auto-runs after other gates)
-
-**Key principle**: "Numbers don't judge. They illuminate what words might miss."
-
-For detailed guidance, see [Insight Guide](references/insight-guide.md).
-
-### Session Report (`/deep-report`)
-
-**Goal**: Generate or view a comprehensive report of the entire session.
-
-**What happens**:
-- Summarizes research findings, planning decisions, implementation results, and test outcomes
-- Documents files changed, verification results, and issues encountered
-- **Includes phase duration tracking** — time spent in each phase
-- Saved as `$WORK_DIR/report.md`
-
-**When it runs**:
-- Automatically after all tests pass
-- Manually via `/deep-report` at any time (can regenerate with current state)
+Generates a comprehensive session report (research, plan, implementation, test outcomes, phase durations).
+Auto-generated after all tests pass. Manual: `/deep-report` or `/deep-status --report`.
 
 ## Phase Enforcement
 
@@ -270,19 +179,17 @@ This is not a suggestion — it's a hard gate. The AI literally cannot modify co
 ## Quick Start
 
 ```
-/deep-work "Add user authentication with JWT tokens"   # Initialize session
-/deep-research                                          # Phase 1: Analyze codebase
-# Review $WORK_DIR/research.md
-/deep-plan                                              # Phase 2: Create plan
-# Review plan, give chat feedback, iterate
-# Type "승인" when satisfied → Implementation starts automatically
-# → Phase 3 runs automatically
-# → Phase 4 (Test) runs automatically
-# → Report generated on success
-/deep-report                                            # View or regenerate report
-/deep-status                                            # Check status and history
-/deep-status --compare                                  # Compare two sessions
-/deep-resume                                            # Resume interrupted session
+/deep-work "Add user authentication with JWT tokens"
+# → Brainstorm (자동) → Research (자동) → Plan (승인 대기)
+# → 승인하면 → Implement (자동) → Test (자동) → Finish (선택)
+
+# 수동 오버라이드가 필요할 때:
+/deep-research                  # 리서치 다시 실행
+/deep-plan                      # 플랜 수정
+/deep-implement                 # 구현 재실행
+/deep-test                      # 테스트 재실행
+/deep-status                    # 상태 확인 (--receipts, --history, --report, --assumptions)
+/deep-debug                     # 디버깅 모드
 ```
 
 ### Session Options
@@ -315,29 +222,14 @@ Previous sessions are preserved when starting new ones. Use `/deep-status` to vi
 
 ## Profile System
 
-On the first `/deep-work` run, you answer setup questions (mode, model routing, notifications, etc.) as usual. Your answers are automatically saved to `.claude/deep-work-profile.yaml` as the `default` preset. On subsequent runs, the profile is loaded and **all setup questions are skipped** — you only provide the task description.
+First run saves setup answers to `.claude/deep-work-profile.yaml` as `default` preset. Subsequent runs skip all questions. Multi-preset support: `dev`, `quick`, `review` etc.
 
-**Multi-preset support (v3.3.3)**: Create named presets for different work styles (e.g., `dev`, `quick`, `review`). When multiple presets exist, you'll be asked to choose one at session start. All presets are stored in a single YAML file.
+**Flags**: `--profile=quick`, `--team`, `--zero-base`, `--skip-research`, `--no-branch`, `--setup`
 
-**Flags** override profile values for a single session:
-- `/deep-work --profile=quick "task"` — use a specific preset
-- `/deep-work --team "task"` — use Team mode this time
-- `/deep-work --zero-base "task"` — zero-base project this time
-- `/deep-work --skip-research "task"` — skip to Plan phase
-- `/deep-work --no-branch "task"` — no git branch this time
-- `/deep-work --setup` — manage presets (create, edit)
+## Session Resume — *deprecated, auto-detected in /deep-work*
 
-## Session Resume (`/deep-resume`)
-
-Resume an interrupted deep-work session. Detects the active session, restores AI context from artifacts (research.md, plan.md, test-results.md), and auto-continues from the current phase.
-
-**What it restores**:
-- Phase state and progress (which tasks are done, which remain)
-- Research findings (Executive Summary only — keeps token usage low)
-- Plan content (full plan.md for implement phase)
-- Test failure details (for retry attempts)
-
-**Usage**: Simply run `/deep-resume` in a new CLI session. No arguments needed.
+`/deep-work` 실행 시 기존 활성 세션이 감지되면 자동으로 resume 옵션을 제시합니다.
+`/deep-resume`는 여전히 수동으로 호출 가능합니다.
 
 ## State Management
 
@@ -381,81 +273,8 @@ Use `/deep-status` at any time to see the current state, progress, phase duratio
 
 ## Complementary Usage with Built-in Plan Mode
 
-Deep Work and Claude's built-in plan mode serve different purposes and can work together:
-
-- **Built-in plan mode**: Lightweight, good for quick task decomposition and initial design review
-- **Deep Work**: Heavyweight, enforces strict phase gates with documentation artifacts, automated testing, and session persistence
-
-**Combined usage pattern**: Use built-in plan mode for initial task decomposition, then Deep Work for complex subtasks that need thorough research and planning before implementation.
+Use built-in plan mode for quick task decomposition, Deep Work for complex subtasks needing thorough research and strict phase gates. They combine well: plan mode for initial design, Deep Work for implementation.
 
 ## Internationalization
 
-All commands detect the user's language from their messages or Claude Code's `language` setting, and output messages in that language. Command templates use Korean as the reference format; Claude translates naturally to the user's language while preserving emoji, formatting, and structure.
-
-## v3.3.0 Features
-
-### Insight Tier Quality Gate
-Third and final tier of the 3-tier Quality Gate system. Provides code metrics and analysis without blocking workflow.
-- `/deep-insight` command with standalone/workflow dual mode
-- Built-in: file metrics, complexity indicators, dependency graph, change summary
-- Custom: user-defined ℹ️ gates in plan.md Quality Gates table
-- Results saved to `$WORK_DIR/insight-report.md`
-
-### PostToolUse File Tracking
-Automatic tracking of file modifications during Implement phase.
-- PostToolUse hook logs every Write/Edit/MultiEdit to `$WORK_DIR/file-changes.log`
-- Used by `/deep-report` for accurate file change counts
-- Used by `/deep-insight` for change summary analysis
-
-### Stop Hook — Session End Handler
-Automatic session status check and notification on CLI session end.
-- Reminds about active sessions when closing CLI
-- Sends notification via configured channels (Slack, Discord, Telegram, etc.)
-- Non-blocking — never prevents session close
-
-## v3.3.2 Features
-
-### Profile System
-Automatic profile save/load for zero-question session initialization.
-- First run saves setup answers to `.claude/deep-work-profile.yaml`
-- Subsequent runs skip all questions, apply profile instantly
-- Override flags: `--team`, `--zero-base`, `--skip-research`, `--no-branch`
-- Re-setup: `/deep-work --setup`
-
-### Session Resume
-`/deep-resume` command for interrupted session continuation.
-- Auto-detects active session and current phase
-- Restores AI context from artifacts (research.md, plan.md, test-results.md)
-- Auto-continues from current phase with full checkpoint support
-- Implement phase uses checkpoint-based resume (bypasses model routing re-delegation)
-
-### Checkpoint Verification
-Post-agent implementation verification using `git diff` cross-reference.
-- Detects unmarked completed tasks and auto-corrects plan.md
-- Primary verification via `git diff`, secondary via `file-changes.log` when available
-
-## v3.3.3 Features
-
-### Multi-Preset Profile System
-Named presets for different work styles — quick setup, review-focused, etc.
-- Profile v2 format with `presets:` key (single YAML file)
-- Auto-migration from v1 (existing single profile → `default` preset)
-- `/deep-work --setup` for preset management (create, edit)
-- `/deep-work --profile=X "task"` for direct preset selection
-- Interactive preset selection via AskUserQuestion when multiple presets exist
-
-### Trigger Evaluation Optimization
-Expanded test cases and refined description for better trigger accuracy.
-- trigger-eval.json expanded from 20 to 31+ queries
-- Description keywords optimized (reduced false positives)
-- Coverage for v3.3.2 features (profile, resume, checkpoint, preset)
-
-## Compatibility & Requirements
-
-- **Solo mode**: Works with standard Claude Code installation
-- **Team mode**: Requires Agent Teams feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
-- **Phase enforcement**: Requires PreToolUse hook support
-- **File tracking**: Requires PostToolUse hook support
-- **Session end handler**: Requires Stop hook support
-
-For previous version features (v3.1 Model Routing, Notifications, Incremental Research, Quality Gates, Plan Diff; v3.2 3-Tier Quality Gates, Drift Detection, SOLID Review), see the [CHANGELOG](../../CHANGELOG.md).
+All commands auto-detect the user's language and output in that language. Korean is the reference format; Claude translates naturally while preserving structure.

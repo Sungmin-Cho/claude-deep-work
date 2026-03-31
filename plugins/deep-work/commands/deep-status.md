@@ -43,6 +43,28 @@ If `$ARGUMENTS` contains `--compare`:
    ```
 6. Stop here (do not proceed to regular status display).
 
+### 0-1. Parse flags
+
+Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, execute each in order.
+
+| Flag | Effect |
+|------|--------|
+| `--receipts` | Show receipt dashboard |
+| `--receipts SLICE-NNN` | Show specific slice receipt detail |
+| `--receipts --export=json` | Export all receipts as single JSON |
+| `--receipts --export=md` | Export as markdown (for PR descriptions) |
+| `--receipts --export=ci` | Export CI bundle |
+| `--history` | Show cross-session trends |
+| `--report` | Show/generate session report |
+| `--assumptions` | Show assumption health report |
+| `--assumptions --verbose` | Per-signal per-session breakdown |
+| `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
+| `--all` | Show default view + all flags |
+| `--compare` | Compare two sessions (existing, handled in Section 0) |
+
+If no flags are provided (and no `--compare`), show the default view only (Steps 1-5).
+If a flag is provided, execute the corresponding section after the default view.
+
 ### 1. Check if a session exists
 
 Look for `.claude/deep-work.local.md`. If it doesn't exist, display:
@@ -53,7 +75,11 @@ Look for `.claude/deep-work.local.md`. If it doesn't exist, display:
 새 세션을 시작하려면: /deep-work <작업 설명>
 ```
 
-Then skip to [Step 5: Show session history](#5-show-session-history).
+If flags were provided (`--history`, `--assumptions`, `--receipts`, `--report`, `--all`):
+- Skip the default view (Steps 2-4) but still execute the corresponding flag handler sections (Steps 6-10). These features can work without an active session by reading historical data from `deep-work/` directory.
+
+If no flags were provided:
+- Skip to [Step 5: Show session history](#5-show-session-history).
 
 ### 2. Read state and artifacts
 
@@ -151,12 +177,12 @@ Assumption 조정: [N]건 적용됨 (v5.1)
 ```
 
 Adjust the "다음 행동" based on the current phase:
-- **brainstorm**: `/deep-brainstorm 명령을 실행하세요`
-- **research**: `/deep-research 명령을 실행하세요`
-- **plan**: `/deep-plan 명령을 실행하세요` (or "plan.md를 검토하고 승인하세요" if plan exists)
-- **implement**: `/deep-implement 명령을 실행하세요`
-- **test**: `/deep-test 명령을 실행하세요` (or "코드를 수정한 후 /deep-test 명령을 다시 실행하세요" if test_retry_count > 0)
-- **idle**: `세션이 완료되었습니다. /deep-report 명령으로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
+- **brainstorm**: `자동 흐름이 brainstorm을 진행합니다. /deep-work로 시작하세요.`
+- **research**: `자동 흐름이 research를 진행 중입니다.`
+- **plan**: `plan 승인을 기다리고 있습니다.` (or "plan 수정이 필요하면 /deep-plan을 사용하세요" if plan exists)
+- **implement**: `자동 흐름이 구현을 진행 중입니다.`
+- **test**: `자동 흐름이 테스트를 진행 중입니다.` (or "자동 수정 루프가 진행 중입니다 (시도 N/3)" if test_retry_count > 0)
+- **idle**: `세션이 완료되었습니다. /deep-status --report로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
 
 ### 5. Show session history
 
@@ -182,3 +208,57 @@ For each folder, check if `report.md` exists and show:
 - `(산출물만 보존)` if report.md doesn't exist
 
 If no subdirectories exist and no flat files (research.md, plan.md) exist in `deep-work/`, skip the history section.
+
+### 6. --receipts: Receipt Dashboard
+
+If `$ARGUMENTS` contains `--receipts`:
+
+Read the `/deep-receipt` command file and follow its display logic inline.
+
+If a specific slice ID follows `--receipts` (e.g., `--receipts SLICE-001`):
+- Show detailed receipt for that slice (equivalent to `/deep-receipt view SLICE-NNN`)
+
+If `--export=FORMAT` is present:
+- `json`: Export all receipts as single JSON file (equivalent to `/deep-receipt export --format=json`)
+- `md`: Export as markdown for PR descriptions (equivalent to `/deep-receipt export --format=md`)
+- `ci`: Export CI bundle — session-receipt + all slice receipts (equivalent to `/deep-receipt export --format=ci`)
+
+Otherwise (bare `--receipts`):
+- Show the ASCII receipt dashboard (equivalent to `/deep-receipt dashboard`)
+
+### 7. --history: Cross-Session Trends
+
+If `$ARGUMENTS` contains `--history`:
+
+Read the `/deep-history` command file and follow its display logic inline.
+
+If insufficient session data (fewer than 2 completed sessions in `deep-work/harness-history/harness-sessions.jsonl`):
+```
+ℹ️ 세션 이력이 부족합니다 (최소 2개 완료된 세션 필요).
+   /deep-work로 세션을 시작하고 완료하면 이력이 기록됩니다.
+```
+
+### 8. --report: Session Report
+
+If `$ARGUMENTS` contains `--report`:
+
+Read the `/deep-report` command file and follow its logic:
+- If `$WORK_DIR/report.md` exists: display its contents
+- If not: generate the report following `/deep-report`'s structure, then display
+
+### 9. --assumptions: Assumption Health
+
+If `$ARGUMENTS` contains `--assumptions`:
+
+Read the `/deep-assumptions` command file and follow its logic.
+
+Sub-flags:
+- `--verbose`: Show per-signal per-session breakdown (equivalent to `/deep-assumptions report --verbose`)
+- `--rebuild`: Regenerate JSONL from receipt files, then show report (equivalent to `/deep-assumptions --rebuild`)
+- No sub-flag: Show default health report (equivalent to `/deep-assumptions report`)
+
+### 10. --all: Everything
+
+If `$ARGUMENTS` contains `--all`:
+
+Execute Steps 4 (default view), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions) in sequence.

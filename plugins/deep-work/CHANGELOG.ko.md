@@ -7,6 +7,36 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2026-03-31
+
+### 추가
+- **Auto-flow 오케스트레이션**: `/deep-work`이 이제 모든 단계를 자동으로 연결 (brainstorm → research → plan → implement → test → finish). Plan 승인만이 유일한 필수 인터랙션
+- **통합 `/deep-status`**: `--receipts`, `--history`, `--report`, `--assumptions`, `--all` 플래그로 5개 개별 커맨드를 하나로 통합
+- **테스트 게이트 자동 실행**: Drift Check (필수), SOLID Review (권고), Insight Analysis가 Quality Gates 테이블 설정 없이 `/deep-test`에서 자동 실행
+
+### 변경
+- 13개 보조 커맨드에 deprecated 표시 추가 (여전히 동작, deprecation notice 추가)
+- `/deep-work` Step 1: 세션 감지 시 이어서/새로/취소 선택지 제공 (기존: 덮어쓰기 경고만)
+- `/deep-test`: plan.md의 Quality Gates 테이블이 이제 선택적 오버라이드 (자동 감지가 기본)
+- `phase-guard-core.js`: TDD 차단 메시지에 auto-flow 대안 안내 추가
+- SKILL.md 461줄 → ~250줄로 축소 (버전별 히스토리 섹션 제거)
+- plugin.json 키워드 36개 → 12개로 축소
+
+### Deprecated
+- `/deep-brainstorm` — `/deep-work` 흐름에서 자동 실행
+- `/deep-review` — `/deep-plan`에서 자동 실행
+- `/deep-receipt` — `/deep-status --receipts` 사용
+- `/deep-slice` — `/deep-implement`에서 자동 관리
+- `/deep-insight` — `/deep-test`에서 자동 실행
+- `/deep-finish` — `/deep-work` 흐름 끝에서 자동 실행
+- `/deep-cleanup` — `/deep-work` init 시 자동 감지
+- `/deep-history` — `/deep-status --history` 사용
+- `/deep-assumptions` — `/deep-status --assumptions` 사용
+- `/deep-resume` — `/deep-work` init 시 자동 감지
+- `/deep-report` — `/deep-status --report` 사용
+- `/drift-check` — `/deep-test`에서 자동 실행
+- `/solid-review` — `/deep-test`에서 자동 실행
+
 ## [5.1.2] - 2026-03-30
 
 ### 추가
