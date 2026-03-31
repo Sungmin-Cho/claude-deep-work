@@ -10,10 +10,19 @@ description: |
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
 
-## v5.2 Auto-Flow Orchestration
+## v5.3 Precision + Evidence
 
 `/deep-work "task"` 하나로 전체 워크플로우가 자동 진행됩니다.
 Plan 승인이 유일한 필수 인터랙션입니다.
+
+**v5.3 신규 기능:**
+- **Document Intelligence**: 피드백 적용 시 중복/불필요 내용 자동 정리 (Apply → Deduplicate → Prune)
+- **Session Relevance Detection**: 현재 세션 범위 밖 피드백 감지 → 새 세션 분리 제안
+- **Plan Fidelity Score**: 구현 vs 플랜 충실도 0-100 점수 산출
+- **Session Quality Score**: 세션 종료 시 품질 점수 자동 계산 (Test Pass Rate, Rework Cycles, Plan Fidelity)
+- **Cross-Session Quality Trend**: `/deep-status --history`에서 세션 간 품질 추이 시각화
+- **Assumption Engine Quality Integration**: 품질 점수 기반 규칙 자가 최적화 (cohort 분석, 3세션 minimum gate)
+- **Quality Badge**: `/deep-status --badge`로 shields.io 뱃지 생성
 
 **Primary commands (7):** `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement`, `/deep-test`, `/deep-status`, `/deep-debug`
 

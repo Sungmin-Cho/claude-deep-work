@@ -21,7 +21,7 @@
     "skills/",
     "hooks/",
     "README.md",
-    "demo.gif",
-    "demo-en.gif"
+    "assumptions.json",
+    "templates/"
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.2 Auto-Flow Protocol)",
+  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.3 Precision + Evidence Protocol)",
   "hooks": {
     "SessionStart": [
       {

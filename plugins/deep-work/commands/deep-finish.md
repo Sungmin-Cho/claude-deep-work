@@ -79,7 +79,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "total_contracts": 0,
     "contracts_met": 0
   },
-  "deep_work_version": "5.2.0"
+  "deep_work_version": "5.3.0"
 }
 ```
 

@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] - 2026-03-31
+
+### Added
+- **Document Intelligence**: Automatic deduplication and pruning when feedback is applied to research.md/plan.md. 3-step protocol: Apply → Deduplicate → Prune with refinement log tracking.
+- **Session Relevance Detection**: Scope check before applying feedback — detects out-of-scope requests and offers to start a new session or save to backlog (`deep-work/backlog.md`).
+- **Plan Fidelity Score**: Numeric 0-100 score measuring implementation faithfulness to the approved plan. Integrated into drift-check and deep-test inline verification.
+- **Session Quality Score**: Automatic quality score (0-100) at session completion. Core metrics: Test Pass Rate (35%), Rework Cycles (30%), Plan Fidelity (35%). Diagnostic metrics (Code Efficiency, Phase Balance) shown for reference only.
+- **Assumption Snapshot**: Per-session capture of each assumption's enforcement level at session start. Enables accurate active/inactive cohort analysis.
+- **Assumption Engine Quality Integration**: Quality scores fed into assumption evaluation. Cohort analysis with 3-session minimum gate per cohort. Quality impact displayed in `/deep-status --assumptions`.
+- **Cross-Session Quality Trend**: ASCII chart showing quality score evolution over sessions. Available via `/deep-status --history`.
+- **Quality Badge**: shields.io badge generation for README display. Available via `/deep-status --badge`. Badges: quality score, session count, plan fidelity.
+- **Authoritative JSONL write**: `deep-finish` performs the authoritative write to `harness-sessions.jsonl` with atomic upsert (lock pattern). `session-end.sh` writes provisional records only.
+
+### Fixed
+- **JSONL path**: `session-end.sh` now writes to shared `deep-work/harness-history/` instead of per-session folder. Fixes bug where session data was invisible to trend/assumption commands.
+
+### Changed
+- **README renewal**: Removed demo GIFs. Restructured to problem-solution narrative. Added Quality Measurement and Self-Evolving Rules sections.
+- **exportBadge()**: Returns `{ harness, quality, sessions, fidelity }` object instead of flat badge. Breaking change for direct consumers — tests updated.
+- **hooks.json**: Description updated to "v5.3 Precision + Evidence Protocol".
+
 ## [5.2.0] - 2026-03-31
 
 ### Added

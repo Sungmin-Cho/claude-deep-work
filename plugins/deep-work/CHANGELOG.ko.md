@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] - 2026-03-31
+
+### 추가
+- **Document Intelligence**: research.md/plan.md 피드백 적용 시 자동 중복 제거 및 정리. 3단계 프로토콜: Apply → Deduplicate → Prune. Refinement log 추적.
+- **Session Relevance Detection**: 피드백 적용 전 범위 확인 — 현재 세션 범위 밖 요청 감지 시 새 세션 분리 또는 백로그(`deep-work/backlog.md`) 저장 제안.
+- **Plan Fidelity Score**: 구현 vs 플랜 충실도를 0-100 점수로 산출. drift-check 및 deep-test 인라인 검증에 통합.
+- **Session Quality Score**: 세션 완료 시 자동 품질 점수(0-100) 산출. Core 지표: Test Pass Rate(35%), Rework Cycles(30%), Plan Fidelity(35%). 진단 지표(Code Efficiency, Phase Balance)는 참고용으로만 표시.
+- **Assumption Snapshot**: 세션 시작 시 각 assumption의 enforcement level 기록. 정확한 active/inactive cohort 분석 가능.
+- **Assumption Engine 품질 연동**: 품질 점수를 assumption 평가에 반영. Cohort 분석(cohort당 최소 3세션 게이트). `/deep-status --assumptions`에서 Quality Impact 표시.
+- **Cross-Session Quality Trend**: 세션 간 품질 점수 추이를 ASCII 차트로 시각화. `/deep-status --history`에서 확인.
+- **Quality Badge**: README용 shields.io 뱃지 생성. `/deep-status --badge`에서 사용. 뱃지: 품질 점수, 세션 수, 플랜 충실도.
+- **Authoritative JSONL write**: `deep-finish`가 `harness-sessions.jsonl`에 atomic upsert(lock 패턴)로 확정 기록. `session-end.sh`는 provisional 레코드만 기록.
+
+### 수정
+- **JSONL 경로**: `session-end.sh`가 per-session 폴더 대신 공유 `deep-work/harness-history/`에 기록하도록 수정. trend/assumption 커맨드에서 세션 데이터가 보이지 않던 버그 해결.
+
+### 변경
+- **README 개편**: 데모 GIF 삭제. 문제→해결 중심 서술 구조로 전환. 품질 측정 및 자기 진화 규칙 섹션 추가.
+- **exportBadge()**: 단일 뱃지 대신 `{ harness, quality, sessions, fidelity }` 객체 반환. 직접 소비자에 대한 breaking change — 테스트 업데이트 완료.
+- **hooks.json**: 설명을 "v5.3 Precision + Evidence Protocol"로 업데이트.
+
 ## [5.2.0] - 2026-03-31
 
 ### 추가
