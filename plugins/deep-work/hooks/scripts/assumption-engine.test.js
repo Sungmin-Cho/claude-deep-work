@@ -532,19 +532,18 @@ describe('generateTimeline', () => {
 
 describe('exportBadge', () => {
   it('returns "no data" badge for empty inputs', () => {
-    const badge = exportBadge([], []);
-    assert.equal(badge.message, 'no data');
-    assert.equal(badge.color, 'lightgrey');
-    assert.equal(badge.schemaVersion, 1);
-    assert.equal(badge.label, 'harness health');
+    const result = exportBadge([], []);
+    assert.equal(result.harness.message, 'no data');
+    assert.equal(result.harness.color, 'lightgrey');
+    assert.equal(result.harness.schemaVersion, 1);
+    assert.equal(result.harness.label, 'harness health');
   });
 
   it('returns "insufficient data" badge when not enough sessions', () => {
     const assumptions = [makeAssumption({ minimum_sessions_for_evaluation: 100 })];
     const sessions = [makeSession({ session_id: 's1' })];
-    const badge = exportBadge(assumptions, sessions);
-    assert.equal(badge.message, 'insufficient data');
-    assert.equal(badge.color, 'lightgrey');
+    const result = exportBadge(assumptions, sessions);
+    assert.equal(result.harness.message, 'insufficient data');
   });
 
   it('returns percentage badge with color for sufficient data', () => {
@@ -558,9 +557,12 @@ describe('exportBadge', () => {
     const sessions = Array.from({ length: 5 }, (_, i) =>
       makeSession({ session_id: `s-${i}`, bugs_caught_in_red_phase: 2 })
     );
-    const badge = exportBadge(assumptions, sessions);
-    assert.ok(badge.message.includes('%'));
-    assert.ok(['brightgreen', 'yellow', 'red'].includes(badge.color));
+    const result = exportBadge(assumptions, sessions);
+    assert.ok(result.harness.message.includes('%'));
+    assert.ok(['brightgreen', 'yellow', 'red'].includes(result.harness.color));
+    assert.ok(result.quality);
+    assert.ok(result.sessions);
+    assert.ok(result.fidelity);
   });
 });
 

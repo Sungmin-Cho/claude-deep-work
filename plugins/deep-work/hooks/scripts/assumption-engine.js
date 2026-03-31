@@ -988,58 +988,100 @@ function generateQualityTimeline(sessions, options) {
 // ─── Badge Export ───────────────────────────────────────────
 
 /**
- * Exports a shields.io compatible JSON badge.
+ * Exports shields.io compatible badge data including quality scores.
  * @param {object[]} assumptions - Array of assumptions from registry
  * @param {object[]} sessions - Session history entries
- * @returns {object} shields.io endpoint badge JSON
+ * @returns {object} Object with badge data for harness health, quality score, sessions count, fidelity
  */
 function exportBadge(assumptions, sessions) {
+  // Harness health badge (existing logic)
+  let harnessResult;
   if (assumptions.length === 0 || sessions.length === 0) {
-    return {
+    harnessResult = {
       schemaVersion: 1,
       label: 'harness health',
       message: 'no data',
       color: 'lightgrey',
     };
-  }
+  } else {
+    let totalScore = 0;
+    let evaluated = 0;
 
-  let totalScore = 0;
-  let evaluated = 0;
+    for (const assumption of assumptions) {
+      const confidence = calculateConfidence(assumption, sessions);
+      if (!confidence.insufficient) {
+        totalScore += confidence.overall.score;
+        evaluated++;
+      }
+    }
 
-  for (const assumption of assumptions) {
-    const confidence = calculateConfidence(assumption, sessions);
-    if (!confidence.insufficient) {
-      totalScore += confidence.overall.score;
-      evaluated++;
+    if (evaluated === 0) {
+      harnessResult = {
+        schemaVersion: 1,
+        label: 'harness health',
+        message: 'insufficient data',
+        color: 'lightgrey',
+      };
+    } else {
+      const avgScore = totalScore / evaluated;
+      const pct = Math.round(avgScore * 100);
+
+      let color;
+      if (avgScore >= CONFIDENCE_THRESHOLDS.HIGH) {
+        color = 'brightgreen';
+      } else if (avgScore >= CONFIDENCE_THRESHOLDS.MEDIUM) {
+        color = 'yellow';
+      } else {
+        color = 'red';
+      }
+
+      harnessResult = {
+        schemaVersion: 1,
+        label: 'harness health',
+        message: `${pct}%`,
+        color,
+      };
     }
   }
 
-  if (evaluated === 0) {
-    return {
+  // Quality score badge (v5.3)
+  const finalized = sessions.filter(s => s.quality_score != null && s.status === 'finalized');
+  let qualityBadge, sessionsBadge, fidelityBadge;
+
+  if (finalized.length === 0) {
+    qualityBadge = { schemaVersion: 1, label: 'quality', message: 'no data', color: 'lightgrey' };
+    sessionsBadge = { schemaVersion: 1, label: 'sessions', message: '0', color: 'blue' };
+    fidelityBadge = { schemaVersion: 1, label: 'plan fidelity', message: 'no data', color: 'lightgrey' };
+  } else {
+    const avgQuality = Math.round(average(finalized.map(s => s.quality_score)));
+    const fidelityValues = finalized.map(s => s.quality_breakdown?.plan_fidelity).filter(f => f != null);
+    const avgFidelity = fidelityValues.length > 0 ? Math.round(average(fidelityValues)) : 0;
+
+    qualityBadge = {
       schemaVersion: 1,
-      label: 'harness health',
-      message: 'insufficient data',
-      color: 'lightgrey',
+      label: 'deep-work quality',
+      message: `${avgQuality}/100`,
+      color: avgQuality >= 80 ? 'brightgreen' : avgQuality >= 60 ? 'green' : avgQuality >= 40 ? 'yellow' : 'red',
+    };
+    sessionsBadge = {
+      schemaVersion: 1,
+      label: 'sessions',
+      message: String(finalized.length),
+      color: 'blue',
+    };
+    fidelityBadge = {
+      schemaVersion: 1,
+      label: 'plan fidelity',
+      message: avgFidelity > 0 ? `${avgFidelity}%` : 'no data',
+      color: avgFidelity >= 80 ? 'brightgreen' : avgFidelity >= 60 ? 'green' : avgFidelity >= 40 ? 'yellow' : avgFidelity > 0 ? 'red' : 'lightgrey',
     };
   }
 
-  const avgScore = totalScore / evaluated;
-  const pct = Math.round(avgScore * 100);
-
-  let color;
-  if (avgScore >= CONFIDENCE_THRESHOLDS.HIGH) {
-    color = 'brightgreen';
-  } else if (avgScore >= CONFIDENCE_THRESHOLDS.MEDIUM) {
-    color = 'yellow';
-  } else {
-    color = 'red';
-  }
-
   return {
-    schemaVersion: 1,
-    label: 'harness health',
-    message: `${pct}%`,
-    color,
+    harness: harnessResult,
+    quality: qualityBadge,
+    sessions: sessionsBadge,
+    fidelity: fidelityBadge,
   };
 }
 
