@@ -766,6 +766,13 @@ review_results:
   research: {score: 0, iterations: 0, timestamp: ""}
   plan: {spec_score: 0, model_scores: {}, conflicts: 0, waivers: 0, timestamp: ""}
 review_gate_overridden: false
+assumption_snapshot:
+  phase_guard_blocks_edits: <current_enforcement>
+  tdd_required_before_implement: <current_enforcement>
+  research_required_before_plan: <current_enforcement>
+  cross_model_review_improves_quality: <current_enforcement>
+  receipt_collection_ensures_evidence: <current_enforcement>
+  evaluator_model_quality: <current_enforcement>
 ---
 
 # Deep Work Session
@@ -777,6 +784,15 @@ $ARGUMENTS
 - [$(date)] Session initialized
 - [$(date)] Phase <0 (Brainstorm) or 1 (Research) or 2 (Plan)> started
 ```
+
+**Capture Assumption Snapshot (v5.3)**: Read `assumptions.json` from the plugin root (`${CLAUDE_PLUGIN_ROOT}/assumptions.json`). For each assumption in the registry, record its `current_enforcement` value. Apply any session-level overrides (e.g., `--tdd=relaxed` overrides `tdd_required_before_implement`). Write the snapshot to the state file's `assumption_snapshot` block shown above.
+
+Override mappings:
+- `--tdd=MODE` → `tdd_required_before_implement: MODE`
+- `--skip-research` → `research_required_before_plan: skipped`
+- `--skip-review` → `cross_model_review_improves_quality: skipped`
+
+This snapshot is consumed by `deep-finish.md` when writing the JSONL entry (Task 5) and by the assumption engine for quality-based evaluation (Task 8).
 
 If `--skip-review` flag was set: use `review_state: "skipped"` instead of `"pending"`.
 
