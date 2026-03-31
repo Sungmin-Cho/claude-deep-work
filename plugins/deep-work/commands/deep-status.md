@@ -238,6 +238,28 @@ If insufficient session data (fewer than 2 completed sessions in `deep-work/harn
    /deep-work로 세션을 시작하고 완료하면 이력이 기록됩니다.
 ```
 
+**Quality Score Trend (v5.3)**: After displaying the existing session history, also show the quality score trend:
+
+1. Read `deep-work/harness-history/harness-sessions.jsonl` (shared path)
+2. Filter to entries with `status: "finalized"` and `quality_score` not null
+3. If fewer than 2 qualifying sessions, display: `ℹ️ Quality trend는 2개 이상의 완료 세션이 필요합니다.`
+4. Otherwise, invoke the assumption engine and display the ASCII quality trend chart:
+
+```
+📈 Quality Trend (최근 [N] 세션)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+100|
+ 80|    *  *     *  *  *
+ 60| *        *
+ 40|
+ 20|
+   +──────────────────
+    #1 #2 #3 #4 #5 #6 #7
+
+Average: [N]/100  Trend: [↑/↓] ([+/-N])
+Best: #[N] ([score])  Worst: #[N] ([score])
+```
+
 ### 8. --report: Session Report
 
 If `$ARGUMENTS` contains `--report`:

@@ -910,6 +910,81 @@ function generateTimeline(assumption, sessions, options) {
   return lines.join('\n');
 }
 
+// ─── Quality Timeline (v5.3) ───────────────────────────────
+
+/**
+ * Generates an ASCII trend chart showing quality score evolution over sessions.
+ * @param {object[]} sessions - Session history entries (ordered by time)
+ * @param {object} [options] - { width: number, height: number }
+ * @returns {string} ASCII chart + summary stats
+ */
+function generateQualityTimeline(sessions, options) {
+  const opts = options || {};
+  const width = opts.width || 40;
+  const height = opts.height || 8;
+
+  // Filter to finalized sessions with quality_score
+  const scored = sessions.filter(s => s.quality_score != null && s.status === 'finalized');
+
+  if (scored.length < 2) {
+    return 'Quality trend requires at least 2 completed sessions with quality scores.';
+  }
+
+  const scores = scored.map(s => s.quality_score);
+  const maxScore = 100;
+
+  // Render ASCII chart
+  const lines = [];
+  lines.push('Quality Trend (last ' + scored.length + ' sessions)');
+  lines.push('═'.repeat(width + 6));
+
+  for (let row = height; row >= 0; row--) {
+    const threshold = (row / height) * maxScore;
+    let label;
+    if (row === height) label = '100';
+    else if (row === 0) label = '  0';
+    else if (row === Math.round(height * 0.8)) label = ' 80';
+    else if (row === Math.round(height * 0.6)) label = ' 60';
+    else label = '   ';
+
+    let rowStr = label + '|';
+    const barWidth = Math.min(scored.length, width);
+    for (let col = 0; col < barWidth; col++) {
+      const scoreRow = Math.round((scores[col] / maxScore) * height);
+      if (scoreRow >= row && row > 0) {
+        rowStr += '*';
+      } else {
+        rowStr += ' ';
+      }
+    }
+    lines.push(rowStr);
+  }
+
+  lines.push('   +' + '─'.repeat(Math.min(scored.length, width)));
+
+  // Summary stats
+  const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  const best = Math.max(...scores);
+  const worst = Math.min(...scores);
+  const bestIdx = scores.indexOf(best);
+  const worstIdx = scores.indexOf(worst);
+
+  // Trend: compare last 3 avg vs first 3 avg
+  let trendStr = '';
+  if (scores.length >= 4) {
+    const recentAvg = average(scores.slice(-3));
+    const earlyAvg = average(scores.slice(0, 3));
+    const delta = Math.round(recentAvg - earlyAvg);
+    trendStr = delta >= 0 ? `↑ (+${delta})` : `↓ (${delta})`;
+  }
+
+  lines.push('');
+  lines.push(`Average: ${avg}/100  ${trendStr ? 'Trend: ' + trendStr : ''}`);
+  lines.push(`Best: #${bestIdx + 1} (${best})  Worst: #${worstIdx + 1} (${worst})`);
+
+  return lines.join('\n');
+}
+
 // ─── Badge Export ───────────────────────────────────────────
 
 /**
@@ -1178,6 +1253,11 @@ if (require.main === module) {
           result.warnings = [...registry.warnings, ...history.warnings];
           break;
         }
+        case 'quality-timeline': {
+          const history = readHistory(input.historyPath);
+          result = { text: generateQualityTimeline(history.sessions, input.options), warnings: history.warnings };
+          break;
+        }
         default:
           result = { error: `Unknown action: ${action}` };
       }
@@ -1212,6 +1292,9 @@ module.exports = {
   evaluateSignals,
   generateReport,
   generateTimeline,
+  generateQualityTimeline,
+  partitionByAssumption,
+  average,
   exportBadge,
   autoAdjust,
 };
