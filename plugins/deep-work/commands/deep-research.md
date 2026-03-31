@@ -103,6 +103,25 @@ If `$ARGUMENTS` contains `--incremental`:
 
 **Note**: `--scope` takes priority over `--incremental`. If both are provided, `--scope` wins.
 
+### 1-4. Document Refinement Protocol
+
+**This protocol applies whenever research.md is updated** — whether via partial re-run (`--scope=`), incremental mode (`--incremental`), research cache reuse, or user feedback during the research phase.
+
+After incorporating new or updated content into `$WORK_DIR/research.md`, perform these 3 steps:
+
+1. **Apply** — Incorporate the new analysis content into the appropriate sections.
+2. **Deduplicate** — Scan the entire document for duplicate or near-duplicate information across sections. If the same finding, pattern, or dependency appears in multiple places, keep it only in the most appropriate section and remove it from others.
+3. **Prune** — Remove content that has been invalidated by the new analysis (e.g., old findings about files that no longer exist, patterns that have been refactored). Delete any sections that are now empty. Tighten verbose descriptions.
+
+After refinement, append a log entry at the end of the document:
+
+```
+<!-- Refinement Log -->
+<!-- v[N]: [summary of what changed] — deduped: [N] items, pruned: [M] sections -->
+```
+
+Where `[N]` is the revision number (increment from previous log entries, starting at 2).
+
 ### 2. Branch by mode and project type
 
 - **`project_type: zero-base`** → Continue with [Zero-Base Research](#zero-base-research)
