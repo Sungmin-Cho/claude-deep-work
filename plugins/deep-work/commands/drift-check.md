@@ -4,6 +4,9 @@ description: "Plan alignment verification — detects unimplemented items, out-o
 argument-hint: "plan file path (optional, defaults to active session's plan.md)"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Plan Alignment Check (Drift Detection)
 
 You are performing a **Plan Alignment Check** — comparing the approved plan against actual implementation to detect drift.

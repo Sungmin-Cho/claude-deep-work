@@ -3,6 +3,9 @@ allowed-tools: Read, Bash
 description: "Assumption health report — validate whether deep-work's enforcement rules are still justified by session evidence"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Assumption Health Report (v5.0)
 
 Analyze deep-work's enforcement assumptions against session history to determine which rules are justified by evidence and which should be loosened.

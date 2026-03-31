@@ -2,7 +2,7 @@
 
 **Stop Claude from coding before it thinks.**
 
-> AI coding tools are powerful but reckless — they skip analysis, ignore existing patterns, and start writing code before understanding the codebase. Deep Work fixes this with an **Evidence-Driven Development Protocol** — a **Brainstorm → Research → Plan → Implement → Test** pipeline where every code change must carry proof: failing test, passing test, spec compliance check, and code review receipt.
+> AI coding tools are powerful but reckless — they skip analysis, ignore existing patterns, and start writing code before understanding the codebase. Deep Work fixes this with an **Evidence-Driven Development Protocol** — a single `/deep-work` command that automatically flows through **Brainstorm → Research → Plan → Implement → Test**, with plan approval as the only required interaction.
 
 [English](./plugins/deep-work/README.md) | [한국어](./plugins/deep-work/README.ko.md)
 
@@ -20,44 +20,15 @@ Without structure, Claude Code will:
 | **Over-engineers** | Adds unrequested "improvements" that cause bugs | Plan must be **approved by you** before any code is written |
 | **No verification** | Marks work as done without testing | Auto-runs tests, lint, type-check — loops back on failure |
 
-## How It Works
+## How It Works (v5.2 Auto-Flow)
 
 ```
 /deep-work "Add JWT authentication"
 
-  🧠 Brainstorm ─→ 📖 Research ─→ 📋 Plan ─→ 🔨 Implement ─→ 🧪 Test
-     │                │              │            │                │
-  Why before       Analyze code   You review   TDD enforced     Receipt +
-  how (skip-able)  6 areas deep   & approve    per slice        2-stage review
-     │                │              │            │                │
-  🔒 Edits         🔒 Edits       🔒 Edits    ✅ Edits         🔒 Edits
-     BLOCKED          BLOCKED        BLOCKED    (with receipt)     BLOCKED
+  → Brainstorm (auto) → Research (auto) → Plan (you approve) → Implement (auto) → Test (auto) → Finish
+
+  One command. One approval. Everything else is automatic.
 ```
-
-**One command to start. Evidence-driven all the way through.**
-
-## Key Features
-
-- **Evidence-Driven Protocol** — Every code change carries a JSON receipt: failing test, passing test, git diff, spec compliance, code review
-- **TDD Enforcement** — Hook-enforced state machine blocks production code edits until a failing test exists (strict/relaxed/coaching/spike modes)
-- **Bash Monitoring** — PreToolUse hook also intercepts `echo >`, `sed -i`, `cp`, `tee` — no file-write bypass via shell
-- **Slice-Based Execution** — Plan tasks are "slices" with per-slice TDD cycles, spec checklists, and receipts
-- **2-Stage Code Review** — Spec Compliance (required) + Code Quality (advisory) via subagents
-- **Systematic Debugging** — 4-phase root-cause investigation, auto-triggers on unexpected failures (`/deep-debug`)
-- **Phase 0 Brainstorm** — Optional "why before how" design exploration (`/deep-brainstorm`, skip-able)
-- **Phase Guard** — Code edits physically blocked via PreToolUse hook during non-implementation phases
-- **3-Tier Quality Gates** — Required (blocking), Advisory (warning), Insight (informational)
-- **Receipt Dashboard** — ASCII progress visualization per slice (`/deep-slice`, `/deep-receipt`)
-- **Auto-Update Check** — Git-based update detection on session start with auto-upgrade option
-- **Model Auto-Routing** — Assigns optimal models per phase **and per slice** (S→haiku, M→sonnet, L→sonnet, XL→opus) — **30-40% token savings**
-- **Worktree Isolation** — Sessions run in isolated git worktrees by default — main branch stays clean
-- **Session Lifecycle** — `/deep-finish` with 4 completion options (merge/PR/keep/discard) + `session-receipt.json`
-- **CI/CD Receipt Validation** — `validate-receipt.sh` + GitHub Actions template for automated receipt chain checks
-- **Session History** — `/deep-history` cross-session trends: model usage, TDD compliance, cost tracking
-- **Solo & Team Modes** — Single agent or parallel agent teams with cross-review
-- **Adversarial Multi-Model Review** — codex/gemini independently review plan documents; conflicts shown transparently (`/deep-review`)
-- **Structural Review** — All phase documents reviewed by haiku subagent with phase-specific dimensions
-- **Review Gate** — Low review scores or critical consensus issues block auto-implement
 
 ## Quick Start
 
@@ -65,33 +36,63 @@ Without structure, Claude Code will:
 # Install
 claude plugin add claude-deep-work --from github.com/Sungmin-Cho/claude-deep-work
 
-# Start a session
+# Start a session — auto-flow handles the rest
 /deep-work "your task description"
 
-# That's it — follow the prompts
+# Check status anytime
+/deep-status
+/deep-status --receipts    # receipt dashboard
+/deep-status --history     # cross-session trends
+/deep-status --report      # session report
+/deep-status --assumptions # assumption health
 ```
 
 ## Commands
 
-| Command | Phase | What it does |
-|---------|-------|-------------|
-| `/deep-work <task>` | Init | Start session, configure options, update check |
-| `/deep-brainstorm` | 0 | Design exploration: problem → approaches → spec (skip-able) |
-| `/deep-research` | 1 | Analyze codebase → `research.md` |
-| `/deep-plan` | 2 | Create slice-based plan → `plan.md` → approve → auto-implement |
-| `/deep-test` | 4 | Verify → receipt check → spec review → quality gates |
-| `/deep-debug` | 3* | Systematic debugging: investigate → analyze → hypothesize → fix |
-| `/deep-slice` | 3* | Slice dashboard, activation, spike mode |
-| `/deep-receipt` | — | Receipt dashboard, view, export (JSON/MD/CI) |
-| `/deep-finish` | End | Finish session: merge, PR, keep, or discard (v4.1) |
-| `/deep-history` | — | Cross-session trends: models, TDD, cost (v4.1) |
-| `/deep-cleanup` | — | Clean up stale worktrees (v4.1) |
-| `/deep-review` | — | Manual structural/adversarial review trigger (v4.2) |
-| `/deep-resume` | — | Resume active session with worktree restore |
-| `/drift-check` | — | Plan-vs-implementation alignment check |
-| `/solid-review` | — | SOLID design principles review |
-| `/deep-status` | — | Progress, timing, session history |
-| `/deep-report` | — | Full session report |
+### Primary Commands (7)
+
+| Command | What it does |
+|---------|-------------|
+| `/deep-work <task>` | Start session + **auto-flow orchestration** (brainstorm → research → plan → implement → test → finish) |
+| `/deep-research` | Manual override: re-run research |
+| `/deep-plan` | Manual override: re-run planning |
+| `/deep-implement` | Manual override: re-run implementation |
+| `/deep-test` | Manual override: re-run testing |
+| `/deep-status` | Unified view: state, receipts, history, report, assumptions |
+| `/deep-debug` | Systematic debugging during implementation |
+
+### Deprecated Commands (13)
+
+These run automatically in the auto-flow. Manual invocation still works.
+
+| Command | Absorbed into |
+|---------|--------------|
+| `/deep-brainstorm` | `/deep-work` auto-flow first step |
+| `/deep-review` | `/deep-plan` auto-execution |
+| `/deep-receipt` | `/deep-status --receipts` |
+| `/deep-slice` | `/deep-implement` internal |
+| `/deep-insight` | `/deep-test` advisory gate |
+| `/deep-finish` | `/deep-work` auto-flow last step |
+| `/deep-cleanup` | `/deep-work` init auto-detect |
+| `/deep-history` | `/deep-status --history` |
+| `/deep-assumptions` | `/deep-status --assumptions` |
+| `/deep-resume` | `/deep-work` session detection |
+| `/deep-report` | `/deep-status --report` |
+| `/drift-check` | `/deep-test` required gate |
+| `/solid-review` | `/deep-test` advisory gate |
+
+## Key Features
+
+- **Auto-Flow Orchestration** — `/deep-work` chains all phases automatically; plan approval is the only gate
+- **Evidence-Driven Protocol** — Every code change carries a JSON receipt: failing test, passing test, git diff, spec compliance, code review
+- **TDD Enforcement** — Hook-enforced state machine (strict/relaxed/coaching/spike modes)
+- **Phase Guard** — Code edits physically blocked during non-implementation phases
+- **Unified Status** — `/deep-status` with `--receipts`, `--history`, `--report`, `--assumptions` flags
+- **Auto-Run Test Gates** — Drift check, SOLID review, insight analysis run automatically
+- **Slice-Based Execution** — Plan tasks are "slices" with per-slice TDD cycles and receipts
+- **Model Auto-Routing** — Optimal models per phase and per slice complexity
+- **Worktree Isolation** — Sessions run in isolated git worktrees by default
+- **Solo & Team Modes** — Single agent or parallel agent teams with cross-review
 
 ## Documentation
 

@@ -4,6 +4,9 @@ description: "Manually trigger structural review and/or cross-model adversarial 
 argument-hint: "[--structural] [--adversarial] [--phase=brainstorm|research|plan]"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Deep Review — Manual Review Gate Trigger (v4.2)
 
 Manually trigger structural review and/or cross-model adversarial review on the current phase document.

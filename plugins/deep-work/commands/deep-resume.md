@@ -3,6 +3,9 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, Team
 description: "Resume an active deep work session — restores context and continues from where you left off"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Deep Work Session Resume
 
 You are resuming an active **Deep Work** session — restoring context from previous artifacts and continuing from the current phase.

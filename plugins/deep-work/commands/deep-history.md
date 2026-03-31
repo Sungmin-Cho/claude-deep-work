@@ -3,6 +3,9 @@ allowed-tools: Read, Bash, Glob
 description: "View deep work session history — cross-session trends, model usage, TDD compliance"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Deep Work Session History (v4.1)
 
 View historical session data across all completed Deep Work sessions.

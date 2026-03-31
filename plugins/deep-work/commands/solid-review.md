@@ -4,6 +4,9 @@ description: "SOLID design principles code review — evaluates SRP, OCP, LSP, I
 argument-hint: "target file or directory (optional)"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # SOLID Design Review
 
 You are performing a **SOLID Design Review** — analyzing code against the 5 SOLID design principles to evaluate design quality and suggest improvements.

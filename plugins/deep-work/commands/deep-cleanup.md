@@ -3,6 +3,9 @@ allowed-tools: Read, Bash, AskUserQuestion
 description: "Clean up stale deep-work worktrees — scan and delete old worktrees"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Deep Work Worktree Cleanup (v4.1)
 
 Scan for stale deep-work worktrees and offer cleanup options.

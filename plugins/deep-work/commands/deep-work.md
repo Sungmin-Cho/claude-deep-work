@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion
 description: "Start a deep work session with Evidence-Driven Protocol (Brainstorm → Research → Plan → Implement → Test)"
 argument-hint: task description
 ---
@@ -51,7 +51,9 @@ The SessionStart hook runs `update-check.sh` and may output one of:
 
 ### 1. Check for existing active session
 
-Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle` and NOT empty, warn the user:
+Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle` and NOT empty:
+
+Use AskUserQuestion:
 
 ```
 ⚠️ 진행 중인 세션이 있습니다:
@@ -59,11 +61,26 @@ Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle`
    현재 단계: [current_phase]
    작업 폴더: [work_dir]
 
-계속하면 이전 세션 상태가 덮어쓰기됩니다.
-(산출물 파일은 보존됩니다)
+어떻게 하시겠습니까?
+  1. 이어서 진행 — 현재 단계부터 재개
+  2. 새로 시작 — 이전 세션 상태를 덮어쓰기 (산출물은 보존)
+  3. 취소
 ```
 
-Ask the user to confirm using AskUserQuestion before proceeding. If the user declines, stop.
+**If option 1 (resume)**:
+1. Read the state file to determine `current_phase`
+2. If `worktree_enabled` is true:
+   - Check if worktree path still exists: `[ -d "<worktree_path>" ]`
+   - If exists: set working directory to worktree path
+   - If not exists: warn user and offer to continue without worktree
+3. Restore context from artifacts:
+   - Read `$WORK_DIR/research.md` (Executive Summary section only) if it exists
+   - Read `$WORK_DIR/plan.md` (full content) if it exists
+   - Read `$WORK_DIR/test-results.md` (latest attempt) if it exists
+4. Display resume confirmation and skip to **Step 9: Auto-flow orchestration** with the current phase.
+
+**If option 2 (new session)**: Proceed to Step 1.5 as normal.
+**If option 3 (cancel)**: Stop.
 
 ### 1.5. Profile load & flag parsing
 
@@ -828,7 +845,7 @@ TDD 모드: strict / relaxed / coaching / spike
    - 코드 파일 수정이 차단됩니다
    - "왜 만드는가"를 먼저 탐색합니다
 
-다음 단계: /deep-brainstorm 명령을 실행하여 디자인 탐색을 시작하세요.
+자동 흐름을 시작합니다...
 ```
 
 **If starting from Research:**
@@ -857,7 +874,7 @@ TDD 모드: strict / relaxed / coaching / spike
    - 코드 파일 수정이 차단됩니다
    - $WORK_DIR/ 내 문서만 작성 가능합니다
 
-다음 단계: /deep-research 명령을 실행하여 코드베이스 분석을 시작하세요.
+자동 흐름을 시작합니다...
 ```
 
 **If starting from Plan (skip research):**
@@ -884,7 +901,7 @@ Git 브랜치: [branch name or "없음"]
 현재 상태: Plan 단계
    - 코드 파일 수정이 차단됩니다
 
-다음 단계: /deep-plan 명령을 실행하여 구현 계획을 작성하세요.
+자동 흐름을 시작합니다...
 ```
 
 **If starting from Implement (skip-to-implement):**
@@ -914,4 +931,73 @@ If `team_mode` is `team`, add the following after the mode line:
    - /deep-implement: 파일 소유권 기반으로 작업을 에이전트에게 분배
 ```
 
-**IMPORTANT**: Do NOT start researching or writing code automatically. Wait for the user to explicitly run the next command.
+**IMPORTANT**: After displaying the session confirmation, proceed directly to Step 9 (Auto-flow orchestration). Do NOT wait for the user to manually run the next command.
+
+### 9. Auto-flow orchestration
+
+After displaying the session confirmation (Step 8), automatically begin the workflow based on `current_phase`. This is the core auto-flow logic.
+
+**IMPORTANT**: Instead of telling the user to run the next command, execute it directly by reading the command file and following its steps.
+
+#### 9-1. Determine starting point
+
+Read `current_phase` from the state file:
+- `brainstorm` → Start from 9-2
+- `research` → Start from 9-3
+- `plan` → Start from 9-4
+- `implement` → Start from 9-5
+- `test` → Start from 9-6
+
+#### 9-2. Brainstorm phase
+
+If brainstorm is not skipped (check `skipped_phases` and preset's `start_phase`):
+
+Read the `/deep-brainstorm` command file and follow its steps.
+
+On completion (brainstorm.md written, `current_phase` transitions to `research`):
+- Proceed to 9-3.
+
+If brainstorm is skipped:
+- Proceed to 9-3 directly.
+
+#### 9-3. Research phase
+
+Read the `/deep-research` command file and follow its steps.
+
+On completion (research.md written, `current_phase` transitions to `plan`):
+- Proceed to 9-4.
+
+#### 9-4. Plan phase
+
+Read the `/deep-plan` command file and follow its steps.
+
+This phase requires **user approval**. The plan review loop in `/deep-plan` runs until:
+- User approves the plan → `current_phase` transitions to `implement` → Proceed to 9-5
+- User requests edits → `/deep-plan` handles the edit loop internally
+- User rejects / wants to restart research → Follow `/deep-plan`'s instructions
+
+#### 9-5. Implement phase
+
+Read the `/deep-implement` command file and follow its steps.
+
+On completion (all slices done, `current_phase` transitions to `test`):
+- Proceed to 9-6.
+
+#### 9-6. Test phase
+
+Read the `/deep-test` command file and follow its steps.
+
+`/deep-test` handles its own retry loop internally (implement → test, max 3 retries).
+
+On all tests pass (`current_phase` transitions to `idle`, `test_passed` is `true`):
+- Proceed to 9-7.
+
+On retry exhausted (escalation):
+- Stop auto-flow. The user has been informed by `/deep-test` of the failure and options.
+
+#### 9-7. Finish
+
+Read the `/deep-finish` command file and follow its steps.
+
+This presents the completion options: merge / PR / keep branch / discard.
+After user selection, the session is complete.

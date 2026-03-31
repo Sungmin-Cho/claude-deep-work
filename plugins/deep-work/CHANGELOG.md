@@ -7,6 +7,36 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2026-03-31
+
+### Added
+- **Auto-flow orchestration**: `/deep-work` now automatically chains all phases (brainstorm → research → plan → implement → test → finish). Plan approval is the only required user interaction
+- **Unified `/deep-status`**: New flags `--receipts`, `--history`, `--report`, `--assumptions`, `--all` consolidate 5 separate commands into one
+- **Auto-run test gates**: Drift Check (required), SOLID Review (advisory), and Insight Analysis run automatically during `/deep-test` without Quality Gates table configuration
+
+### Changed
+- 13 auxiliary commands marked as deprecated (still functional, deprecation notice added)
+- `/deep-work` Step 1: session detection now offers resume/new/cancel instead of overwrite warning
+- `/deep-test`: Quality Gates table in plan.md is now optional override (auto-detection is default)
+- `phase-guard-core.js`: TDD block messages now include auto-flow alternative note
+- SKILL.md trimmed from 461 to ~250 lines (version history sections removed)
+- plugin.json keywords reduced from 36 to 12
+
+### Deprecated
+- `/deep-brainstorm` — auto-runs in `/deep-work` flow
+- `/deep-review` — auto-runs in `/deep-plan`
+- `/deep-receipt` — use `/deep-status --receipts`
+- `/deep-slice` — auto-managed in `/deep-implement`
+- `/deep-insight` — auto-runs in `/deep-test`
+- `/deep-finish` — auto-runs at end of `/deep-work` flow
+- `/deep-cleanup` — auto-detected in `/deep-work` init
+- `/deep-history` — use `/deep-status --history`
+- `/deep-assumptions` — use `/deep-status --assumptions`
+- `/deep-resume` — auto-detected in `/deep-work` init
+- `/deep-report` — use `/deep-status --report`
+- `/drift-check` — auto-runs in `/deep-test`
+- `/solid-review` — auto-runs in `/deep-test`
+
 ## [5.1.2] - 2026-03-30
 
 ### Added

@@ -2,7 +2,7 @@
 
 # Deep Work Plugin
 
-A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a 5-phase workflow (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
+A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a single-command auto-flow orchestration (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
 
 <p align="center">
   <img src="./demo-en.gif" alt="Deep Work Plugin Demo — 4-Phase Workflow with 3-Tier Quality Gates" width="800">
@@ -29,33 +29,22 @@ The **Brainstorm → Research → Plan → Implement → Test** workflow enforce
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
-## Usage
+## Usage (v5.2 Auto-Flow)
 
 ```bash
-# 1. Start a session (Solo/Team, existing/greenfield, Research/Plan starting point)
+# Just one command — the entire workflow runs automatically
 /deep-work "Implement JWT-based user authentication"
 
-# 2. Analyze the codebase
-/deep-research
+# The auto-flow orchestrates: Brainstorm → Research → Plan → [user approves] → Implement → Test → Report
+# Plan approval is the ONLY required interaction
 
-# 3. Review research results and create a plan
-/deep-plan
-
-# 4. Review the plan → give feedback via chat → plan.md auto-updates → repeat
-#    When satisfied, type "approve" → implementation starts automatically
-#    → tests run automatically → report is generated
-
-# Partial research re-run (specific areas only)
-/deep-research --scope=api,data
-
-# Incremental research (re-analyze only changed parts)
-/deep-research --incremental
-
-# View or regenerate the report
-/deep-report
-
-# Check status and session history
-/deep-status
+# Check unified status (replaces /deep-report, /deep-receipt, /deep-history, /deep-assumptions)
+/deep-status              # current progress
+/deep-status --report     # session report
+/deep-status --receipts   # receipt dashboard
+/deep-status --history    # cross-session trends
+/deep-status --assumptions # assumption health
+/deep-status --all        # everything at once
 
 # Compare two sessions
 /deep-status --compare
@@ -63,27 +52,37 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 
 ## Commands
 
+### Primary Commands (7)
+
 | Command | Description |
 |---------|-------------|
-| `/deep-work <task>` | Initialize session, select preset, configure TDD mode, update check (`--skip-to-implement` flag) |
-| `/deep-brainstorm` | Phase 0: Design exploration — problem definition, approach comparison (skip-able) |
-| `/deep-research` | Phase 1: Codebase analysis → `research.md` |
-| `/deep-plan` | Phase 2: Slice-based implementation plan → `plan.md`, auto-loop review, auto-implement on approval |
-| `/deep-implement` | Phase 3: TDD-enforced slice execution with receipt collection |
-| `/deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates (auto-loop re-execution) |
+| `/deep-work <task>` | **Auto-flow orchestration** — runs the entire Brainstorm → Research → Plan → Implement → Test pipeline automatically. Plan approval is the only required interaction. |
+| `/deep-research` | Manual override for Phase 1 (Research) — deep codebase analysis |
+| `/deep-plan` | Manual override for Phase 2 (Plan) — slice-based implementation planning |
+| `/deep-implement` | Manual override for Phase 3 (Implement) — TDD-enforced slice execution |
+| `/deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates. Now auto-runs drift-check, SOLID review, and insight analysis. |
+| `/deep-status` | **Unified view** — current progress, report, receipts, history, assumptions. Flags: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
 | `/deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix (auto-triggers on failures) |
-| `/deep-slice` | Slice dashboard, manual activation, spike mode, reset |
-| `/deep-receipt` | Receipt dashboard, per-slice view, export (JSON/Markdown) |
-| `/drift-check` | Verify implementation matches the approved plan (standalone or built-in gate) |
-| `/solid-review` | SOLID design principles review (standalone or advisory gate) |
-| `/deep-insight` | Code metrics, complexity, dependency analysis (standalone or insight gate) |
-| `/deep-report` | Generate or view session report |
-| `/deep-status` | Current status, progress, phase durations, session history |
-| `/deep-resume` | Resume an active session — restores context and continues from current phase |
-| `/deep-finish` | Finish a session — merge, PR, keep, or discard the branch (v4.1) |
-| `/deep-assumptions` | Assumption health report, history timeline, badge export, JSONL rebuild (v5.0) |
-| `/deep-history` | View cross-session trends — model usage, TDD compliance, cost tracking (v4.1) |
-| `/deep-cleanup` | Clean up stale deep-work worktrees (v4.1) |
+
+### Deprecated Commands (13)
+
+These commands still work but are now absorbed into the auto-flow. You no longer need to call them manually.
+
+| Command | Absorbed into |
+|---------|---------------|
+| `/deep-brainstorm` | `/deep-work` auto-flow (Phase 0) |
+| `/deep-review` | `/deep-plan` (auto-runs during plan phase) |
+| `/deep-receipt` | `/deep-status --receipts` |
+| `/deep-slice` | `/deep-implement` (auto-managed internally) |
+| `/deep-insight` | `/deep-test` (auto-runs as advisory gate) |
+| `/deep-finish` | `/deep-work` (final stage of auto-flow) |
+| `/deep-cleanup` | `/deep-work` init (auto-runs at session start) |
+| `/deep-history` | `/deep-status --history` |
+| `/deep-assumptions` | `/deep-status --assumptions` |
+| `/deep-resume` | `/deep-work` (auto-detects active session) |
+| `/deep-report` | `/deep-status --report` |
+| `/drift-check` | `/deep-test` (auto-runs as required gate) |
+| `/solid-review` | `/deep-test` (auto-runs as advisory gate) |
 
 ## Output Files
 
@@ -500,7 +499,28 @@ At session start, the Assumption Engine automatically applies adjustments based 
 - **`--skip-to-implement`** flag on `/deep-work` — Skips brainstorm, research, and plan phases, jumping directly to implement. Requires an inline slice definition in the task description.
 - Skipped phases are recorded in `skipped_phases` for traceability in reports and receipts.
 
-## Installation (v3.3.3)
+## Auto-Flow Orchestration (v5.2)
+
+deep-work v5.2 consolidates the entire workflow into a single `/deep-work` command. Instead of manually invoking each phase, the auto-flow orchestrates the full pipeline automatically.
+
+### How it works
+1. `/deep-work "task description"` starts the session and begins the auto-flow
+2. Brainstorm → Research → Plan executes automatically
+3. **Plan approval is the only required user interaction** — review the plan, give feedback, and type "approve"
+4. After approval, Implement → Test → Report runs automatically
+5. `/deep-test` now auto-runs drift-check, SOLID review, and insight analysis as built-in gates
+6. `/deep-status` is the unified dashboard for all session information
+
+### What changed
+- **SKILL.md reduced**: 461 lines → 280 lines (clearer, less redundant)
+- **13 commands deprecated**: Still functional but absorbed into the auto-flow
+- **`/deep-status` expanded**: Replaces `/deep-report`, `/deep-receipt`, `/deep-history`, `/deep-assumptions` with flags
+- **`/deep-test` expanded**: Auto-runs drift-check, SOLID review, and insight analysis
+
+### Migration from v5.1
+No action needed. Your existing presets and session state are fully compatible. Deprecated commands still work — they just invoke the same logic that the auto-flow would.
+
+## Installation (v5.2.0)
 
 Add the marketplace to your Claude Code settings:
 

@@ -3,6 +3,9 @@ allowed-tools: Read, Write, Glob, Bash
 description: "Generate or view the deep work session report"
 ---
 
+> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
+> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+
 # Deep Work Session Report
 
 Generate or regenerate a comprehensive report for the current (or most recent) Deep Work session.
