@@ -94,6 +94,16 @@ If `$WORK_DIR/plan.md` exists, perform Plan Alignment check **before** any other
 
 5. Generate `$WORK_DIR/drift-report.md` with the full comparison report
 
+5-1. **Calculate Fidelity Score**: After classifying all plan items, calculate a Fidelity Score (0-100):
+   - Each plan item has a base value of `100 / total_plan_items` points
+   - Fully implemented: full points
+   - Partially implemented: half points
+   - Not implemented: 0 points
+   - Out of scope: -2 points per item (score cannot go below 0)
+   - Write the numeric fidelity_score to `$WORK_DIR/fidelity-score.txt`
+   - Write `fidelity_score: [N]` to the state file `.claude/deep-work.local.md`
+   - Include the Fidelity Score in the drift-report.md display
+
 6. **Determine result**:
    - If not-implemented = 0 AND design-drift = 0 → **PASS** (continue to other gates)
    - If not-implemented > 0 OR design-drift > 0 → **FAIL** (Required Gate failure)
