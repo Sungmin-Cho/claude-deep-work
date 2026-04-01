@@ -82,7 +82,7 @@ if [[ "$TOOL_NAME" != "Bash" ]]; then
     exit 0
   fi
   # 상태 파일 자체 제외
-  if [[ "$RESOLVED_PATH_NORM" == "$STATE_FILE_NORM" ]] || [[ "$RESOLVED_PATH_NORM" == *"/.claude/deep-work.local.md" ]]; then
+  if [[ "$RESOLVED_PATH_NORM" == "$STATE_FILE_NORM" ]] || [[ "$RESOLVED_PATH_NORM" == *"/.claude/deep-work."*".md" ]]; then
     exit 0
   fi
 fi
@@ -144,6 +144,38 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
       }
     " "$RECEIPT_FILE" "$FILE_PATH" "$TIMESTAMP" 2>/dev/null || true
   fi
+fi
+
+# ─── v5.4: File ownership registration ─────────────────────
+# Register edited files in the session registry for cross-session protection.
+# Errors are silenced — PostToolUse hooks must never block.
+
+if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
+  OWNERSHIP_PATH=""
+
+  if [[ "$TOOL_NAME" == "Bash" ]]; then
+    # Extract target file from bash command using phase-guard-core.js helpers
+    BASH_CMD="${FILE_PATH#\[bash\] }"
+    OWNERSHIP_PATH="$(echo "$BASH_CMD" | node -e "
+      const {detectBashFileWrite, extractBashTargetFile} = require('./phase-guard-core.js');
+      let d=''; process.stdin.on('data',c=>d+=c);
+      process.stdin.on('end',()=>{
+        if(detectBashFileWrite(d)){
+          const f=extractBashTargetFile(d);
+          if(f) console.log(f);
+        }
+      });
+    " 2>/dev/null || echo "")"
+  else
+    # Write/Edit/MultiEdit: use the already-resolved normalized path
+    OWNERSHIP_PATH="$RESOLVED_PATH_NORM"
+  fi
+
+  if [[ -n "$OWNERSHIP_PATH" ]]; then
+    (register_file_ownership "$DEEP_WORK_SESSION_ID" "$OWNERSHIP_PATH") 2>/dev/null || true
+  fi
+
+  (update_last_activity "$DEEP_WORK_SESSION_ID") 2>/dev/null || true
 fi
 
 exit 0

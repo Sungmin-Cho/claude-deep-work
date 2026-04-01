@@ -18,7 +18,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Verify session exists
 
-Read `.claude/deep-work.local.md`. If the file doesn't exist or `current_phase` is `idle` or empty:
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `.claude/deep-work.local.md`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE`. If the file doesn't exist or `current_phase` is `idle` or empty:
 
 ```
 ℹ️ 활성화된 Deep Work 세션이 없습니다.
@@ -311,9 +318,25 @@ Use AskUserQuestion:
 
 ### 8. Finalize state
 
-Update `.claude/deep-work.local.md`:
+Update `$STATE_FILE`:
 - `current_phase: "idle"`
 - `finished_at: [now ISO]`
+
+#### 8a. Unregister session from registry
+
+If the session has a `session_id` field in the state file:
+
+```bash
+unregister_session "$SESSION_ID"
+```
+
+Delete the pointer file if it points to this session:
+```bash
+CURRENT_POINTER=$(read_session_pointer)
+if [ "$CURRENT_POINTER" = "$SESSION_ID" ]; then
+  rm -f "$PROJECT_ROOT/.claude/deep-work-current-session"
+fi
+```
 
 Display:
 

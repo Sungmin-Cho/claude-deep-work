@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # notify.sh — 멀티채널 알림 디스패처
 # 사용법: bash notify.sh <state_file> <phase> <status> <message>
-# 예시:   bash notify.sh .claude/deep-work.local.md research completed "✅ Research 완료"
+# 예시:   bash notify.sh .claude/deep-work.s-a3f7b2c1.md research completed "✅ Research 완료"
 
 set -euo pipefail
 
-STATE_FILE="${1:-.claude/deep-work.local.md}"
+STATE_FILE="${1:-.claude/deep-work.local.md}"  # caller passes session-specific path; legacy default kept for backward compat
 PHASE="${2:-unknown}"
 STATUS="${3:-completed}"
 MESSAGE="${4:-Deep Work: ${PHASE} ${STATUS}}"

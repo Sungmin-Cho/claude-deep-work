@@ -103,7 +103,7 @@ Always prefer `git stash` over destructive operations to preserve work.
 
 When all tasks are done:
 
-1. Update `.claude/deep-work.local.md` to `current_phase: test`
+1. Update the session state file (`$STATE_FILE`) to `current_phase: test`
 2. Present a summary showing:
    - Tasks completed vs total
    - Files modified/created

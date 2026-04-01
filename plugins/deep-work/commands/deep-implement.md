@@ -23,7 +23,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Verify prerequisites
 
-Read `.claude/deep-work.local.md` and verify:
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `$STATE_FILE`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` and verify:
 - `current_phase` is "implement"
 - `plan_approved` is true
 
@@ -129,7 +136,7 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 ### Step A: Activate Slice
 
 1. Capture `git_before` hash: `git rev-parse HEAD 2>/dev/null`
-2. Update `.claude/deep-work.local.md`:
+2. Update `$STATE_FILE`:
    - `active_slice: SLICE-NNN`
    - `tdd_state: PENDING`
 3. Read worktree state: if `worktree_enabled` is true, set `worktree_branch` for receipt
@@ -365,7 +372,7 @@ TDD 상태: [현재 tdd_state]
 
 **B/C/D) TDD 건너뛰기**:
 
-1. `.claude/deep-work.local.md`의 `tdd_override` 필드를 현재 `active_slice` 값으로 설정:
+1. `$STATE_FILE`의 `tdd_override` 필드를 현재 `active_slice` 값으로 설정:
    ```yaml
    tdd_override: "SLICE-NNN"
    ```
@@ -454,7 +461,7 @@ If the result is `not_set` or empty:
 ```
 ⚠️ Agent Teams 환경변수가 비활성화되었습니다. Solo 모드로 전환합니다.
 ```
-- Update `team_mode: solo` in `.claude/deep-work.local.md`
+- Update `team_mode: solo` in `$STATE_FILE`
 - Fall back to the Solo implementation flow above
 - Do NOT proceed to Team Mode Implementation below
 

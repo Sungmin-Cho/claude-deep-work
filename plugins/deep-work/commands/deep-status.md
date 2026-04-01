@@ -60,15 +60,21 @@ Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, exec
 | `--assumptions --verbose` | Per-signal per-session breakdown |
 | `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
 | `--badge` | Generate shields.io badge markdown |
-| `--all` | Show default view + all flags |
+| `--all` | Show all sessions dashboard (multi-session) + all flags |
 | `--compare` | Compare two sessions (existing, handled in Section 0) |
 
 If no flags are provided (and no `--compare`), show the default view only (Steps 1-5).
 If a flag is provided, execute the corresponding section after the default view.
 
-### 1. Check if a session exists
+### 1. Check if a session exists (multi-session aware)
 
-Look for `.claude/deep-work.local.md`. If it doesn't exist, display:
+Resolve the current session using the following priority:
+
+1. **Environment variable**: If `DEEP_WORK_SESSION_ID` is set → read `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. **Pointer file**: If `.claude/deep-work-current-session` exists → read session ID → read `.claude/deep-work.${SESSION_ID}.md`
+3. **Legacy fallback**: Read `.claude/deep-work.local.md`
+
+If none of the above resolves to an existing state file, display:
 
 ```
 ℹ️ 활성화된 Deep Work 세션이 없습니다.
@@ -84,7 +90,7 @@ If no flags were provided:
 
 ### 2. Read state and artifacts
 
-Read `.claude/deep-work.local.md` to get session state.
+Read the resolved state file (from Step 1) to get session state.
 
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
@@ -280,11 +286,46 @@ Sub-flags:
 - `--rebuild`: Regenerate JSONL from receipt files, then show report (equivalent to `/deep-assumptions --rebuild`)
 - No sub-flag: Show default health report (equivalent to `/deep-assumptions report`)
 
-### 10. --all: Everything
+### 10. --all: All Sessions Dashboard + Everything
 
 If `$ARGUMENTS` contains `--all`:
 
-Execute Steps 4 (default view), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions), 11 (badge) in sequence.
+#### 10a. Multi-session dashboard
+
+Read the registry (`.claude/deep-work-sessions.json`). If the registry exists and has sessions:
+
+Display a table of all registered sessions:
+
+```
+📋 전체 세션 대시보드
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+| 세션 ID | 작업 | Phase | 최근 활동 | 상태 | 소유 파일 |
+|---------|------|-------|----------|------|----------|
+| s-a3f7b2c1 | JWT 인증 구현 | implement | 5분 전 | ✅ 활성 | src/auth/**, src/middleware/jwt.ts |
+| s-b8e2d4f0 | API 리팩토링 | plan | 2시간 전 | ⚠️ stale? | src/api/** |
+| s-c1d3e5f7 | 테스트 추가 | idle | 1일 전 | 💤 완료 | — |
+
+현재 세션: [current SESSION_ID or "없음"]
+총 활성: [N]개 / 총 등록: [M]개
+```
+
+For each session:
+- **상태**: Check PID liveness (`kill -0 PID 2>/dev/null`)
+  - PID alive → `✅ 활성`
+  - PID dead → `⚠️ stale?`
+  - Phase is `idle` → `💤 완료`
+- **최근 활동**: Relative time from `last_activity` field
+- **소유 파일**: Abbreviated `file_ownership` list (max 3 items, then `+N more`)
+
+If registry doesn't exist or has no sessions:
+```
+ℹ️ 등록된 세션이 없습니다.
+```
+
+#### 10b. Standard views
+
+Then execute Steps 4 (default view for current session), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions), 11 (badge) in sequence.
 
 ### 11. --badge: Quality Badge (v5.3)
 

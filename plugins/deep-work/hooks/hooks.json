@@ -1,5 +1,5 @@
 {
-  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.3 Precision + Evidence Protocol)",
+  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.4 Multi-Session Support)",
   "hooks": {
     "SessionStart": [
       {
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh",
+            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh",
             "timeout": 5
           }
         ]
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
+            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
             "timeout": 3
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh",
+            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh",
             "timeout": 5
           }
         ]

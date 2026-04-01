@@ -242,7 +242,7 @@ First run saves setup answers to `.claude/deep-work-profile.yaml` as `default` p
 
 ## State Management
 
-Session state is stored in `.claude/deep-work.local.md` with YAML frontmatter tracking:
+Session state is stored in `.claude/deep-work.{SESSION_ID}.md` (e.g., `.claude/deep-work.s-a3f7b2c1.md`) with YAML frontmatter tracking. Legacy single-session path `.claude/deep-work.local.md` is auto-migrated on first use.
 - Current phase (research / plan / implement / test / idle)
 - Task description
 - Work directory

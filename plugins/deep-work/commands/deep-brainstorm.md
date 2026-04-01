@@ -31,7 +31,14 @@ If the user started the session with `--skip-brainstorm` or `--start-phase=resea
 
 ### 1. Verify prerequisites
 
-Read `.claude/deep-work.local.md` and verify:
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `.claude/deep-work.local.md`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` and verify:
 - `current_phase` is "brainstorm"
 
 Extract `work_dir` and `task_description` from the state file.
