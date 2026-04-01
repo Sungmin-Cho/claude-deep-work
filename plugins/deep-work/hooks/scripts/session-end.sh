@@ -240,4 +240,9 @@ append_session_history() {
 # Run in subshell — errors must never block session close
 (append_session_history) 2>/dev/null || true
 
+# v5.4: Update last_activity on CLI stop (do NOT unregister)
+if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
+  (update_last_activity "$DEEP_WORK_SESSION_ID") 2>/dev/null || true
+fi
+
 exit 0

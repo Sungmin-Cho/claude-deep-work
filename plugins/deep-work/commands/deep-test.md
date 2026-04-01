@@ -22,7 +22,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Verify prerequisites
 
-Read `.claude/deep-work.local.md` and verify:
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `$STATE_FILE`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` and verify:
 - `current_phase` is `test`
 - plan.md's Slice Checklist has all items marked as `[x]`
 
@@ -101,7 +108,7 @@ If `$WORK_DIR/plan.md` exists, perform Plan Alignment check **before** any other
    - Not implemented: 0 points
    - Out of scope: -2 points per item (score cannot go below 0)
    - Write the numeric fidelity_score to `$WORK_DIR/fidelity-score.txt`
-   - Write `fidelity_score: [N]` to the state file `.claude/deep-work.local.md`
+   - Write `fidelity_score: [N]` to the state file `$STATE_FILE`
    - Include the Fidelity Score in the drift-report.md display
 
 6. **Determine result**:
@@ -377,7 +384,7 @@ Also check `quality_gates_passed` if Quality Gates were defined:
 
 3. **Send notification**:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "passed" "✅ 모든 테스트 통과 — 세션 완료" 2>/dev/null || true
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "test" "passed" "✅ 모든 테스트 통과 — 세션 완료" 2>/dev/null || true
    ```
 
 4. **Automatically generate session report**: Read the `/deep-report` command file and generate `$WORK_DIR/report.md` following its structure. Include test results in the Verification Results section.
@@ -430,7 +437,7 @@ If any verification fails and `test_retry_count` < `max_test_retries`:
 
 7. **Send notification**:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "auto_retry" "🔄 테스트 자동 재시도 (시도 $test_retry_count/$max_test_retries)" 2>/dev/null || true
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "test" "auto_retry" "🔄 테스트 자동 재시도 (시도 $test_retry_count/$max_test_retries)" 2>/dev/null || true
    ```
 
 #### Some tests fail (retry exhausted) — Escalation (v5.1)
@@ -454,7 +461,7 @@ If `test_retry_count` >= `max_test_retries`:
 
 2. **Send notification**:
    ```bash
-   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "test" "failed_final" "⛔ 자동 수정 루프 종료 — 수동 개입 필요" 2>/dev/null || true
+   bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "test" "failed_final" "⛔ 자동 수정 루프 종료 — 수동 개입 필요" 2>/dev/null || true
    ```
 
 3. Keep `current_phase: implement` so the user can continue fixing manually.

@@ -55,5 +55,5 @@ curl -X POST "https://hooks.slack.com/services/..." -H 'Content-Type: applicatio
 ```
 
 ## 보안
-- `.claude/deep-work.local.md`는 `.gitignore`에 포함
+- `.claude/deep-work.*.md` 세션 상태 파일은 `.gitignore`에 포함
 - Webhook URL과 토큰은 커밋되지 않음

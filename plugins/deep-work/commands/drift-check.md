@@ -25,7 +25,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Determine operating mode and load plan
 
-Check if `.claude/deep-work.local.md` exists and has an active session (`current_phase` is not `idle`).
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `$STATE_FILE`
+
+Set `$STATE_FILE` to the resolved path.
+
+Check if `$STATE_FILE` exists and has an active session (`current_phase` is not `idle`).
 
 **Workflow Mode** (active deep-work session):
 - Read `work_dir` from the state file
@@ -179,7 +186,7 @@ Fidelity Score: [score]/100
 
 Write the numeric `fidelity_score` value to `$WORK_DIR/fidelity-score.txt` as a plain number (e.g., `85`) for consumption by the quality score calculator in deep-finish.
 
-Write `fidelity_score: [N]` to the state file `.claude/deep-work.local.md`.
+Write `fidelity_score: [N]` to the state file `$STATE_FILE`.
 
 ### 6. Determine pass/fail
 

@@ -27,7 +27,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Read state and paths
 
-Read `.claude/deep-work.local.md` and extract `work_dir`. If the state file doesn't exist, default `work_dir` to `deep-work`.
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `.claude/deep-work.local.md`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` and extract `work_dir`. If the state file doesn't exist, default `work_dir` to `deep-work`.
 
 Set paths:
 ```

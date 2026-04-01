@@ -826,7 +826,7 @@ function generateReport(assumptions, sessions, options) {
       lines.push(`  ${change.id}: ${change.from} -> ${change.to}`);
     }
     lines.push('');
-    lines.push('To apply: update enforcement in /deep-work session init or .claude/deep-work.local.md');
+    lines.push('To apply: update enforcement in /deep-work session init or the session state file (.claude/deep-work.{SESSION_ID}.md)');
     lines.push('(Auto-application is a Phase 2 feature — MVP is report-only)');
   } else {
     lines.push('No changes recommended at this time.');

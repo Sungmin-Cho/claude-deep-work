@@ -37,7 +37,7 @@ For each deep-work worktree:
 1. Get the worktree path and branch name
 2. Check age: `stat -f "%Sm" -t "%Y-%m-%d" [path]` (macOS) or `stat -c "%y" [path]` (Linux)
 3. Check if it has an active session:
-   - Read `.claude/deep-work.local.md` in the current project root
+   - Read the current session's state file (`$STATE_FILE`, resolved via env var → pointer → legacy)
    - If `worktree_path` matches this worktree AND `current_phase` is not `idle` → **active**
 4. Check for uncommitted changes: `git -C [path] status --porcelain`
 

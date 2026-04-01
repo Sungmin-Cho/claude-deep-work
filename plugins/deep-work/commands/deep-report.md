@@ -18,7 +18,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Read state file
 
-Read `.claude/deep-work.local.md` to get session metadata.
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `$STATE_FILE`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` to get session metadata.
 
 If the file doesn't exist, inform the user:
 ```
@@ -49,7 +56,7 @@ Check if `$WORK_DIR/report.md` exists.
 ### 3. Read session artifacts
 
 Read all available session artifacts:
-- `.claude/deep-work.local.md` — session state, timestamps, metadata
+- `$STATE_FILE` — session state, timestamps, metadata
 - `$WORK_DIR/research.md` — research findings (if exists)
 - `$WORK_DIR/plan.md` — plan and implementation checklist (if exists)
 - `$WORK_DIR/test-results.md` — test results (if exists)

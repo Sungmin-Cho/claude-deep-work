@@ -16,21 +16,63 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ## Instructions
 
-### 1. Detect active session & extract WORK_DIR
+### 1. Detect active session & extract WORK_DIR (multi-session aware)
 
-Read `.claude/deep-work.local.md`. Extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, `preset`, `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `auto_loop_enabled` from the YAML frontmatter.
+Resolve the session to resume using the following priority:
+
+#### 1a. Direct session ID (env var)
+
+If `DEEP_WORK_SESSION_ID` environment variable is set:
+- Read `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md` directly
+- If the file exists and `current_phase` is not `idle`: proceed to Step 1.5 with this session
+- If the file doesn't exist or phase is `idle`: fall through to 1b
+
+#### 1b. Registry-based session discovery
+
+Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where `current_phase` is NOT `idle`.
+
+**If no active sessions in registry:**
+- Check for legacy fallback: read `.claude/deep-work.local.md`
+  - If exists and `current_phase` is NOT `idle` and NOT empty: use this file as the state file. Display:
+    ```
+    ℹ️ 레거시 세션을 감지했습니다. 이 세션을 재개합니다.
+    ```
+    Proceed to Step 1.5.
+  - Otherwise:
+    ```
+    ℹ️ 활성 세션이 없습니다.
+
+    새 세션을 시작하려면: /deep-work <작업 설명>
+    ```
+    Stop here.
+
+**If exactly 1 active session in registry:**
+- Auto-select this session
+- Update the pointer file: `write_session_pointer SESSION_ID`
+- Read `.claude/deep-work.${SESSION_ID}.md`
+- Proceed to Step 1.5
+
+**If 2+ active sessions in registry:**
+- Present selection UI using AskUserQuestion:
+
+```
+재개할 세션을 선택하세요:
+
+  1. [SESSION_ID] [task_description] ([current_phase], [last_activity])
+  2. [SESSION_ID] [task_description] ([current_phase], [last_activity])
+  ...
+```
+
+- After user selects a session:
+  - Update the pointer file: `write_session_pointer SELECTED_SESSION_ID`
+  - Read `.claude/deep-work.${SELECTED_SESSION_ID}.md`
+  - Proceed to Step 1.5
+
+#### 1c. Extract state
+
+From the resolved state file, extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, `preset`, `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `auto_loop_enabled` from the YAML frontmatter.
 
 Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
-
-**If the file doesn't exist:**
-
-```
-ℹ️ 활성 세션이 없습니다.
-
-새 세션을 시작하려면: /deep-work <작업 설명>
-```
-
-Stop here.
 
 **If `current_phase` is `idle` or empty:**
 

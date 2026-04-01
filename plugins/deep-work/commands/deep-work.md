@@ -49,38 +49,99 @@ The SessionStart hook runs `update-check.sh` and may output one of:
    - C) 나중에 → Write snooze state to `~/.claude/.deep-work-update-snoozed` (escalating backoff: 24h → 48h → 1 week)
    - D) 다시 묻지 않기 → Set `update_check: false` in profile
 
-### 1. Check for existing active session
+### 1. Check for existing sessions (multi-session aware)
 
-Read `.claude/deep-work.local.md` if it exists. If `current_phase` is NOT `idle` and NOT empty:
+#### 1a. Legacy migration
 
-Use AskUserQuestion:
+Check if legacy `.claude/deep-work.local.md` exists and has `current_phase` that is NOT `idle` and NOT empty:
+
+```bash
+source "$(dirname "$0")/hooks/scripts/utils.sh"
+migrate_legacy_state
+```
+
+If migration occurred, display:
+```
+ℹ️ 기존 세션을 멀티세션 형식으로 마이그레이션했습니다.
+```
+
+#### 1b. Stale session detection
+
+Scan the registry for stale sessions:
+
+```bash
+STALE_SESSIONS=$(detect_stale_sessions)
+```
+
+If stale sessions found, for each stale session display and ask using AskUserQuestion:
 
 ```
-⚠️ 진행 중인 세션이 있습니다:
-   작업: [task_description]
-   현재 단계: [current_phase]
-   작업 폴더: [work_dir]
+⚠️ 비정상 종료된 세션이 감지되었습니다:
 
-어떻게 하시겠습니까?
-  1. 이어서 진행 — 현재 단계부터 재개
-  2. 새로 시작 — 이전 세션 상태를 덮어쓰기 (산출물은 보존)
-  3. 취소
+  1. [SESSION_ID] [task_description] ([current_phase] phase, [time_ago] 전 중단)
+     소유 파일: [file_ownership list]
+
+선택:
+  1) 이 세션을 이어서 진행
+  2) 이 세션을 종료 처리 (산출물 보존, 영역 해제)
+  3) 무시하고 새 세션 시작
 ```
 
 **If option 1 (resume)**:
-1. Read the state file to determine `current_phase`
-2. If `worktree_enabled` is true:
+1. Read the stale session's state file to determine `current_phase`
+2. Update the session pointer: `write_session_pointer SESSION_ID`
+3. Set `DEEP_WORK_SESSION_ID` to the session ID
+4. If `worktree_enabled` is true:
    - Check if worktree path still exists: `[ -d "<worktree_path>" ]`
    - If exists: set working directory to worktree path
    - If not exists: warn user and offer to continue without worktree
-3. Restore context from artifacts:
+5. Restore context from artifacts:
    - Read `$WORK_DIR/research.md` (Executive Summary section only) if it exists
    - Read `$WORK_DIR/plan.md` (full content) if it exists
    - Read `$WORK_DIR/test-results.md` (latest attempt) if it exists
-4. Display resume confirmation and skip to **Step 9: Auto-flow orchestration** with the current phase.
+6. Display resume confirmation and skip to **Step 9: Auto-flow orchestration** with the current phase.
 
-**If option 2 (new session)**: Proceed to Step 1.5 as normal.
-**If option 3 (cancel)**: Stop.
+**If option 2 (terminate)**:
+1. Record session history (JSONL) — must happen before setting idle
+2. Set `current_phase: idle` in the stale session's state file
+3. Unregister from registry: `unregister_session SESSION_ID`
+4. Delete pointer file if it points to this session
+5. Display: `세션 [SESSION_ID]이(가) 종료 처리되었습니다. 산출물은 보존됩니다.`
+6. Continue to check next stale session or proceed to Step 1c.
+
+**If option 3 (ignore)**: Continue to Step 1c.
+
+#### 1c. Active session listing
+
+Read the registry and list all active (non-stale) sessions:
+
+```bash
+REGISTRY=$(read_registry)
+```
+
+If active sessions exist, display:
+
+```
+📋 활성 세션 목록:
+  [SESSION_ID] [task_description] ([current_phase], [last_activity])
+  ...
+```
+
+If 5 or more active sessions exist, display warning:
+```
+⚠️ 활성 세션이 [N]개입니다. 동시 세션이 많으면 파일 영역 충돌이 늘어날 수 있습니다.
+```
+
+#### 1d. Generate session ID and register
+
+Generate a new session ID for this session:
+
+```bash
+SESSION_ID=$(generate_session_id)
+write_session_pointer "$SESSION_ID"
+```
+
+Set `DEEP_WORK_SESSION_ID` to the generated session ID. This ID will be used for the state file name and registry entry. The session will be registered in the registry after the state file is created (Step 7).
 
 ### 1.5. Profile load & flag parsing
 
@@ -560,7 +621,7 @@ If the user chooses option 2:
 
 ### 4-2. Configure notifications
 
-Check if a previous session's `.claude/deep-work.local.md` has a `notifications:` block with configured channels.
+Check if a previous session's state file (`.claude/deep-work.${SESSION_ID}.md` or legacy `.claude/deep-work.local.md`) has a `notifications:` block with configured channels.
 
 If previous notification settings exist:
 ```
@@ -704,10 +765,14 @@ If `--tdd=MODE` flag is set: auto-select the specified mode.
 - If `start_phase` is `"research"` (from profile or `--skip-brainstorm` flag): set `current_phase: research`
 - If `start_phase` is `"plan"` (from profile or `--skip-research` flag): set `current_phase: plan` and `research_complete: true`
 
-Create or overwrite `.claude/deep-work.local.md` with the following content. Use the current timestamp and the determined values.
+Set `STATE_FILE` to `.claude/deep-work.${SESSION_ID}.md` (where `SESSION_ID` is the value generated in Step 1d).
+
+Create or overwrite `$STATE_FILE` with the following content. Use the current timestamp and the determined values.
 
 ```markdown
 ---
+session_id: "${SESSION_ID}"
+pid: <current process PID>
 current_phase: <brainstorm or research or plan>
 task_description: "$ARGUMENTS"
 work_dir: "$WORK_DIR"
@@ -795,6 +860,25 @@ Override mappings:
 This snapshot is consumed by `deep-finish.md` when writing the JSONL entry (Task 5) and by the assumption engine for quality-based evaluation (Task 8).
 
 If `--skip-review` flag was set: use `review_state: "skipped"` instead of `"pending"`.
+
+#### 7a. Register session in registry
+
+After the state file is created, register this session in the central registry:
+
+```bash
+register_session "$SESSION_ID" "$WORK_DIR" "$ARGUMENTS" "<current_phase>"
+```
+
+This adds the session to `.claude/deep-work-sessions.json` with:
+- `pid`: current process PID
+- `current_phase`: the starting phase
+- `task_description`: the task description
+- `work_dir`: the output directory
+- `started_at`: current ISO timestamp
+- `last_activity`: current ISO timestamp
+- `file_ownership`: [] (empty, will be populated during implement phase)
+- `worktree_path`: null (or worktree path if git worktree is used)
+- `git_branch`: branch name or null
 
 ### 7.5. Save profile
 
@@ -983,7 +1067,20 @@ If brainstorm is skipped:
 Read the `/deep-research` command file and follow its steps.
 
 On completion (research.md written, `current_phase` transitions to `plan`):
-- Proceed to 9-4.
+
+**User feedback gate**: Do NOT proceed to 9-4 immediately. Use AskUserQuestion to ask:
+
+```
+📋 리서치가 완료되었습니다. $WORK_DIR/research.md를 확인해주세요.
+
+1. Plan 단계로 진행 — 리서치 결과에 만족합니다
+2. 피드백 제공 — 리서치 내용을 보완하고 싶습니다
+3. 특정 영역 재분석 — /deep-research --scope=<area>로 추가 조사
+```
+
+- If option 1: Proceed to 9-4.
+- If option 2: Apply user feedback to research.md, re-display the updated summary, then ask again (loop until option 1 or 3).
+- If option 3: Re-run `/deep-research` with the specified scope, then return to this gate.
 
 #### 9-4. Plan phase
 

@@ -22,7 +22,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Verify prerequisites
 
-Read `.claude/deep-work.local.md` and verify:
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `$STATE_FILE`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` and verify:
 - `current_phase` is "plan"
 - `research_complete` is true
 
@@ -453,7 +460,7 @@ When the user provides chat-based feedback instead of approval:
 
 **0. Scope Check** — Before applying feedback, evaluate whether it falls within the current session scope:
 
-Read `task_description` from `.claude/deep-work.local.md`. Compare the user's feedback against:
+Read `task_description` from `$STATE_FILE`. Compare the user's feedback against:
 - The `task_description` — is the feedback semantically related to this task?
 - The files/modules listed in plan.md — does the feedback reference files or modules already in scope?
 - The nature of the change — is this a modification to existing requirements, or an entirely new requirement?
@@ -484,17 +491,21 @@ If the feedback is clearly related to the current task, skip the AskUserQuestion
       <!-- Refinement Log -->
       <!-- v[N]: [feedback summary] — deduped: [N] items, pruned: [M] sections -->
       ```
-4. Highlight what was changed:
+4. **Re-present the updated plan**: After applying feedback, display the full updated plan to the user so they can review all changes in context:
    ```
-   plan.md가 수정되었습니다:
+   📝 plan.md가 수정되었습니다:
      - [변경된 부분 요약 1]
      - [변경된 부분 요약 2]
+
+   --- 수정된 Plan 전체 ---
+   [Display the full content of the updated $WORK_DIR/plan.md]
+   --- End ---
 
    계속 피드백을 주시거나, "승인"을 입력하여 다음 단계로 진행하세요.
    ```
 5. Wait for the next feedback or approval
 
-Repeat this loop until the user approves.
+Repeat this loop until the user approves. **IMPORTANT**: Always re-display the full plan after each modification so the user can review the complete document before approving.
 
 ### 5. Handle approval
 
@@ -541,7 +552,7 @@ If the result is `not_set` or empty:
 ```
 ⚠️ Agent Teams 환경변수가 비활성화되었습니다. Solo 모드로 자동 전환합니다.
 ```
-- Update `team_mode: solo` in `.claude/deep-work.local.md`
+- Update `team_mode: solo` in `$STATE_FILE`
 - Skip the Team → Solo re-evaluation below (already switched)
 - Proceed directly to 5b (state update)
 
@@ -599,7 +610,7 @@ If user declines: keep Solo mode.
 
 #### 5b. Update state
 
-Update `.claude/deep-work.local.md`:
+Update `$STATE_FILE`:
 - Set `plan_approved: true`
 - Set `current_phase: implement`
 - Set `plan_completed_at` to the current ISO timestamp
@@ -608,7 +619,7 @@ Update `.claude/deep-work.local.md`:
 
 **Send notification**:
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "plan" "approved" "✅ Plan 승인됨 — Implement 시작" 2>/dev/null || true
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "plan" "approved" "✅ Plan 승인됨 — Implement 시작" 2>/dev/null || true
 ```
 
 Display:

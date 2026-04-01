@@ -25,7 +25,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Determine operating mode
 
-Check if `.claude/deep-work.local.md` exists and has an active session (`current_phase` is not `idle` and not empty).
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `.claude/deep-work.local.md`
+
+Set `$STATE_FILE` to the resolved path.
+
+Check if `$STATE_FILE` exists and has an active session (`current_phase` is not `idle` and not empty).
 
 **Workflow Mode** (active deep-work session):
 - Read `work_dir` from the state file

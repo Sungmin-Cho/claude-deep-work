@@ -22,7 +22,14 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Read the state file
 
-Read `.claude/deep-work.local.md` to get the task description, `team_mode`, `work_dir`, and `project_type`.
+Resolve the current session's state file:
+1. If `DEEP_WORK_SESSION_ID` env var is set → `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md`
+2. If `.claude/deep-work-current-session` pointer file exists → read session ID → `.claude/deep-work.${SESSION_ID}.md`
+3. Legacy fallback → `$STATE_FILE`
+
+Set `$STATE_FILE` to the resolved path.
+
+Read `$STATE_FILE` to get the task description, `team_mode`, `work_dir`, and `project_type`.
 
 If the file doesn't exist or phase is not "research", inform the user they need to run `/deep-work <task>` first.
 
@@ -126,7 +133,7 @@ Where `[N]` is the revision number (increment from previous log entries, startin
 
 When the user provides additional direction or feedback during the research phase, evaluate whether it falls within the current session scope before incorporating it.
 
-Read `task_description` from `.claude/deep-work.local.md`. If the user's input introduces a clearly unrelated topic (not a refinement of the current research task), use AskUserQuestion:
+Read `task_description` from `$STATE_FILE`. If the user's input introduces a clearly unrelated topic (not a refinement of the current research task), use AskUserQuestion:
 
 ```
 💡 이 요청은 현재 세션("[task_description]")의 범위 밖으로 보입니다.
@@ -355,7 +362,7 @@ If the result is `not_set` or empty:
 ```
 ⚠️ Agent Teams 환경변수가 비활성화되었습니다. Solo 모드로 전환합니다.
 ```
-- Update `team_mode: solo` in `.claude/deep-work.local.md`
+- Update `team_mode: solo` in `$STATE_FILE`
 - Fall back to the Solo research flow above (Step 1 through Step 4)
 - Do NOT proceed to Team Mode Research below
 
@@ -445,7 +452,7 @@ Continue to [Step 4: Update state file](#4-update-state-file) below, with additi
 
 ## 4. Update state file
 
-When research is complete, update `.claude/deep-work.local.md`:
+When research is complete, update `$STATE_FILE`:
 - Set `research_complete: true`
 - Set `current_phase: plan`
 - Set `research_completed_at` to the current ISO timestamp
@@ -480,6 +487,8 @@ Structural Review 결과: [score]/10 ([iterations]회 반복)
 
 ## 5. Guide the user
 
+**IMPORTANT**: Do NOT auto-proceed to plan phase. Present the research results and wait for user feedback.
+
 Display:
 
 ```
@@ -492,12 +501,20 @@ Display:
 
 현재 상태: Plan 단계로 전환됨
    - 여전히 코드 파일 수정이 차단됩니다
-
-다음 단계:
-  1. $WORK_DIR/research.md 를 검토하세요
-  2. 특정 영역만 재분석하려면: /deep-research --scope=api,data
-  3. 준비되면 /deep-plan 을 실행하세요
 ```
+
+Then use AskUserQuestion:
+```
+리서치 결과를 검토해주세요:
+
+1. Plan 단계로 진행 — 리서치 결과에 만족합니다
+2. 피드백 제공 — 리서치 내용을 수정/보완하고 싶습니다
+3. 특정 영역 재분석 — 추가 조사가 필요합니다
+```
+
+- If option 1: proceed (auto-flow or manual /deep-plan).
+- If option 2: apply feedback to research.md, re-display updated summary, ask again.
+- If option 3: inform user to run `/deep-research --scope=<area>`.
 
 If Team mode was used, also display:
 ```
@@ -512,7 +529,7 @@ If Team mode was used, also display:
 
 Run the following command to notify phase completion. If it fails, ignore and continue:
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$PROJECT_ROOT/.claude/deep-work.local.md" "research" "completed" "✅ Research 완료 — Plan 준비됨" 2>/dev/null || true
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "research" "completed" "✅ Research 완료 — Plan 준비됨" 2>/dev/null || true
 ```
 
 ## Research Quality Checklist
