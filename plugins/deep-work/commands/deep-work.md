@@ -1067,7 +1067,20 @@ If brainstorm is skipped:
 Read the `/deep-research` command file and follow its steps.
 
 On completion (research.md written, `current_phase` transitions to `plan`):
-- Proceed to 9-4.
+
+**User feedback gate**: Do NOT proceed to 9-4 immediately. Use AskUserQuestion to ask:
+
+```
+📋 리서치가 완료되었습니다. $WORK_DIR/research.md를 확인해주세요.
+
+1. Plan 단계로 진행 — 리서치 결과에 만족합니다
+2. 피드백 제공 — 리서치 내용을 보완하고 싶습니다
+3. 특정 영역 재분석 — /deep-research --scope=<area>로 추가 조사
+```
+
+- If option 1: Proceed to 9-4.
+- If option 2: Apply user feedback to research.md, re-display the updated summary, then ask again (loop until option 1 or 3).
+- If option 3: Re-run `/deep-research` with the specified scope, then return to this gate.
 
 #### 9-4. Plan phase
 

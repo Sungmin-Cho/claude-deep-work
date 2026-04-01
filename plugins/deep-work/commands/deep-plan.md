@@ -491,17 +491,21 @@ If the feedback is clearly related to the current task, skip the AskUserQuestion
       <!-- Refinement Log -->
       <!-- v[N]: [feedback summary] — deduped: [N] items, pruned: [M] sections -->
       ```
-4. Highlight what was changed:
+4. **Re-present the updated plan**: After applying feedback, display the full updated plan to the user so they can review all changes in context:
    ```
-   plan.md가 수정되었습니다:
+   📝 plan.md가 수정되었습니다:
      - [변경된 부분 요약 1]
      - [변경된 부분 요약 2]
+
+   --- 수정된 Plan 전체 ---
+   [Display the full content of the updated $WORK_DIR/plan.md]
+   --- End ---
 
    계속 피드백을 주시거나, "승인"을 입력하여 다음 단계로 진행하세요.
    ```
 5. Wait for the next feedback or approval
 
-Repeat this loop until the user approves.
+Repeat this loop until the user approves. **IMPORTANT**: Always re-display the full plan after each modification so the user can review the complete document before approving.
 
 ### 5. Handle approval
 

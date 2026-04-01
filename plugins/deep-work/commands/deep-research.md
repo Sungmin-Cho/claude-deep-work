@@ -487,6 +487,8 @@ Structural Review 결과: [score]/10 ([iterations]회 반복)
 
 ## 5. Guide the user
 
+**IMPORTANT**: Do NOT auto-proceed to plan phase. Present the research results and wait for user feedback.
+
 Display:
 
 ```
@@ -499,12 +501,20 @@ Display:
 
 현재 상태: Plan 단계로 전환됨
    - 여전히 코드 파일 수정이 차단됩니다
-
-다음 단계:
-  1. $WORK_DIR/research.md 를 검토하세요
-  2. 특정 영역만 재분석하려면: /deep-research --scope=api,data
-  3. 준비되면 /deep-plan 을 실행하세요
 ```
+
+Then use AskUserQuestion:
+```
+리서치 결과를 검토해주세요:
+
+1. Plan 단계로 진행 — 리서치 결과에 만족합니다
+2. 피드백 제공 — 리서치 내용을 수정/보완하고 싶습니다
+3. 특정 영역 재분석 — 추가 조사가 필요합니다
+```
+
+- If option 1: proceed (auto-flow or manual /deep-plan).
+- If option 2: apply feedback to research.md, re-display updated summary, ask again.
+- If option 3: inform user to run `/deep-research --scope=<area>`.
 
 If Team mode was used, also display:
 ```
