@@ -29,7 +29,7 @@ The **Brainstorm → Research → Plan → Implement → Test** workflow enforce
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
-## Usage (v5.3 Auto-Flow)
+## Usage (v5.5 Auto-Flow)
 
 ```bash
 # Just one command — the entire workflow runs automatically
