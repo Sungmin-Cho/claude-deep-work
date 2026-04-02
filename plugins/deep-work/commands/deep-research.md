@@ -459,7 +459,7 @@ When research is complete, update `$STATE_FILE`:
 - Update `last_research_commit` to the current git HEAD: run `git rev-parse HEAD 2>/dev/null` and store the result
 - Add a progress log entry for research completion
 
-### 4.5. Structural Review
+### 4.5. Structural Review (강화)
 
 Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
 
@@ -469,25 +469,103 @@ Follow the **Structural Review Protocol** with these settings:
 - **Dimensions**: completeness, accuracy, relevance, depth, actionability
 - **Output**: `$WORK_DIR/research-review.json` + `$WORK_DIR/research-review.md`
 - **Model**: "haiku"
-- **Max iterations**: 2
+- **Max iterations**: 3
 
-If `--skip-review` flag was set during session init (check state file `review_state: skipped`), skip this step entirely and proceed.
+If `--skip-review` flag was set during session init (check state file `review_state: skipped`), skip this step and all subsequent review steps (4.6, 4.7) entirely and proceed to Step 5.
 
 Update state file when starting review:
 - `review_state: in_progress`
 
-After review completes, update state file:
-- `review_state: completed`
-- `review_results.research`: `{score: N, iterations: N, timestamp: "ISO"}`
+**Auto-Loop (score < 7):**
 
-Display:
+Read `research_review_retries` from state file (default: 0). Max retries: 3.
+
 ```
-Structural Review 결과: [score]/10 ([iterations]회 반복)
+research.md + structural review
+    ↓
+score >= 7? ──YES──→ proceed to Step 4.6 (cross-model)
+    │
+    NO
+    ↓
+research_review_retries < 3?
+    ├─ YES:
+    │   1. Snapshot: copy research.md to $WORK_DIR/research.v{N}.md
+    │   2. Extract failed dimensions and issues from review JSON
+    │   3. Auto-fix research.md — 이슈가 지적한 특정 섹션만 수정 (전체 재작성 금지)
+    │   4. Re-run structural review
+    │   5. Score 하락 시: revert to snapshot, 사용자 수동 수정 요청
+    │   6. Increment research_review_retries in state file
+    │   7. Display: "Research 자동 수정 (시도 [N]/3): [issues fixed]"
+    │   8. Loop back
+    │
+    └─ NO:
+        1. Display:
+           "⛔ Research 자동 수정 실패 (3회 시도).
+            남은 문제: [issue list]
+            수동으로 research.md를 수정해주세요."
+        2. Set review_state: "auto_loop_failed"
+        3. Proceed to Step 4.6 (user can review manually)
 ```
+
+After structural review completes:
+- Update `review_results.research.score` in state file
+- Display: `Research Structural Review: [score]/10 ([retries] auto-fix, [iterations] review iterations)`
+
+### 4.6. Cross-Model Review (신규)
+
+**Prerequisites**: Structural review (Step 4.5) must have completed.
+
+Read state file `cross_model_enabled` field.
+- If `{codex: false, gemini: false}` or field missing: skip this section, proceed to Step 4.7 with structural review results only.
+- If at least one model enabled: proceed.
+
+If `--skip-review` flag was set (check state file `review_state: skipped`), skip this step entirely.
+
+Read `references/review-gate.md` and follow the **Adversarial Review Protocol** with:
+- **Phase**: research
+- **Document**: `$WORK_DIR/research.md`
+- **Rubric**: Research Rubric (completeness, accuracy, relevance, risk_identification, actionability)
+
+**Progress display during execution:**
+```
+크로스 모델 리뷰 진행 중...
+   ⏳ [Model] 리뷰 중... (예상 30-60초)
+```
+
+Each model completion:
+```
+   ✅ [Model] 리뷰 완료 ([N]초)
+```
+
+**리뷰어 실패 시**: `review-gate.md`의 Degraded Mode 프로토콜을 따른다. UI에 실패 사유를 표시하고, 성공한 리뷰어 결과만으로 진행.
+
+Save results: `$WORK_DIR/research-cross-review.json`
+Update state: `review_results.research.model_scores`, `review_results.research.reviewer_status`
+
+### 4.7. Claude 종합 판단 + 사용자 확인 (신규)
+
+Read `references/review-gate.md`의 **종합 판단 + 일괄 확인 프로토콜** (Section 4-1)을 따른다.
+
+**Phase**: research
+**Document**: `$WORK_DIR/research.md`
+**Inputs**: Step 4.5의 structural review 결과 + Step 4.6의 cross-model review 결과 (있을 경우)
+
+종합 판단 + 사용자 확인 결과에 따라:
+- 옵션 1 (동의): 판단대로 research.md 수정 후 Plan 진행 → Step 5로 이동
+- 옵션 2 (항목별 조정): 조정 완료 후 research.md 수정 → Step 5로 이동
+- 옵션 3 (전부 스킵): research.md 그대로 Plan 진행 → Step 5로 이동
+- 옵션 4 (특정 영역 재분석): **재귀적 `/deep-research` 호출이 아닌 내부 분기로 처리:**
+  1. `research_review_retries`를 0으로 리셋
+  2. `review_state`를 `in_progress`로 리셋
+  3. 기존 review 아티팩트(`research-review.json`, `research-cross-review.json`) 삭제
+  4. 지정된 scope 영역만 재분석하여 research.md 업데이트 (Document Refinement Protocol 적용)
+  5. Step 4.5(Structural Review)부터 다시 진행
+
+Update state: `review_results.research.judgments`, `review_results.research.judgments_timestamp`, `review_state: completed`
 
 ## 5. Guide the user
 
-**IMPORTANT**: Do NOT auto-proceed to plan phase. Present the research results and wait for user feedback.
+**IMPORTANT**: Step 4.7에서 이미 사용자 확인을 받았으므로, 별도의 feedback gate 없이 결과만 표시한다.
 
 Display:
 
@@ -503,19 +581,6 @@ Display:
    - 여전히 코드 파일 수정이 차단됩니다
 ```
 
-Then use AskUserQuestion:
-```
-리서치 결과를 검토해주세요:
-
-1. Plan 단계로 진행 — 리서치 결과에 만족합니다
-2. 피드백 제공 — 리서치 내용을 수정/보완하고 싶습니다
-3. 특정 영역 재분석 — 추가 조사가 필요합니다
-```
-
-- If option 1: proceed (auto-flow or manual /deep-plan).
-- If option 2: apply feedback to research.md, re-display updated summary, ask again.
-- If option 3: inform user to run `/deep-research --scope=<area>`.
-
 If Team mode was used, also display:
 ```
 팀 리서치 결과:
@@ -524,6 +589,8 @@ If Team mode was used, also display:
   - risk-analyst: $WORK_DIR/research-dependencies.md
   - 통합 결과: $WORK_DIR/research.md
 ```
+
+Proceed to plan phase (auto-flow or manual `/deep-plan`).
 
 ### 6. Send notification
 
