@@ -554,7 +554,7 @@ Over time, the engine compares quality scores between sessions where a rule was 
 
 This creates a feedback loop: rules that prove their value survive; rules that don't get adjusted. Your workflow evolves based on evidence, not dogma.
 
-## Installation (v5.3.0)
+## Installation (v5.5.0)
 
 Add the marketplace to your Claude Code settings:
 
