@@ -116,14 +116,14 @@ If score < 5 (FAIL), inform the user that review gate is blocking:
 
 **Condition**: Run if ALL of the following are true:
 - `--adversarial` flag is present, OR no flags were specified
-- Target phase is `plan`
+- Target phase is `plan` or `research`
 - `cross_model_enabled` is `true` in the state file
 
 If conditions are not met and `--adversarial` was explicitly requested:
 ```
 ⚠️ Adversarial review를 실행할 수 없습니다.
    조건:
-   - Phase가 plan이어야 합니다 (현재: ${phase})
+   - Phase가 plan 또는 research여야 합니다 (현재: ${phase})
    - cross_model_enabled가 true여야 합니다 (현재: ${cross_model_enabled})
 ```
 
@@ -146,36 +146,36 @@ If conditions are met:
 
 4. Parse results per review-gate.md JSON parsing strategy.
 
-5. Synthesize results — identify consensus, conflicts, waivers.
+5. Synthesize results — identify consensus, conflicts, single-reviewer issues.
 
-6. For each conflict, run conflict resolution UX per review-gate.md Section 4.
-
-7. Write aggregated results to `$WORK_DIR/adversarial-review.json`.
+6. Write aggregated results to `$WORK_DIR/adversarial-review.json`.
    If disk write fails, output to console.
 
-8. Display summary:
+7. Display summary:
    ```
    Adversarial Review 결과:
 
      Models: ${modelList}
      Consensus Issues: ${consensusCount}개
-     Conflicts: ${conflictCount}개 (${resolvedCount} resolved)
-     Waivers: ${waiverCount}개
-
-     Gate Status: ${gateStatus}
+     Conflicts: ${conflictCount}개
+     단독 이슈: ${singleCount}개
 
      상세: $WORK_DIR/adversarial-review.json
    ```
 
-### 6. Apply review gate blocking
+### 6. 종합 판단 + 일괄 확인
 
-Per review-gate.md Section 5:
-- If structural review score < 5 OR critical consensus issues exist → gate status is BLOCKED
-- Inform the user and require explicit override or document fixes
+Cross-model review 완료 후 (또는 structural review만 완료된 경우), `review-gate.md`의 **종합 판단 + 일괄 확인 프로토콜** (Section 4-1)을 따른다.
+
+**Phase**: 현재 review 대상 phase (`research` 또는 `plan`)
+**Document**: 대상 문서 (`$WORK_DIR/research.md` 또는 `$WORK_DIR/plan.md`)
+**Inputs**: structural review 결과 + cross-model review 결과 (있는 경우)
+
+사용자 확인 후 문서 수정, 항목별 조정(Section 4 호출), 또는 스킵을 Section 4-1에 따라 처리한다.
 
 ### 7. Handle re-review loop
 
-If conflict resolution modified plan.md:
+If document modification from Section 6 is significant:
 - Evaluate change scope per review-gate.md Section 6
 - Ask user if re-review is desired
 - Max 2 re-review loops
@@ -183,7 +183,10 @@ If conflict resolution modified plan.md:
 ### 8. Update state file
 
 Update `$STATE_FILE`:
-- Add or update `review_results` with:
+- Add or update `review_results.{phase}` (where `{phase}` is the target phase — `research` or `plan`) with:
+  - `judgments`: Claude 종합 판단 결과 array
+  - `judgments_timestamp`: 종합 판단 완료 시각 (ISO timestamp)
+  - `reviewer_status`: 각 리뷰어 실행 결과 (`{ claude, codex?, gemini? }`)
   - `structural_score`: overall score
   - `structural_grade`: PASS / WARNING / FAIL
   - `adversarial_gate`: PASS / WARNING / FAIL / BLOCKED (if adversarial ran)
