@@ -1068,19 +1068,10 @@ Read the `/deep-research` command file and follow its steps.
 
 On completion (research.md written, `current_phase` transitions to `plan`):
 
-**User feedback gate**: Do NOT proceed to 9-4 immediately. Use AskUserQuestion to ask:
+**Note**: `/deep-research`의 Step 4.7 (Claude 종합 판단 + 사용자 확인)에서 이미 사용자 피드백을 받았으므로, auto-flow에서 별도의 user feedback gate를 실행하지 않는다.
 
-```
-📋 리서치가 완료되었습니다. $WORK_DIR/research.md를 확인해주세요.
-
-1. Plan 단계로 진행 — 리서치 결과에 만족합니다
-2. 피드백 제공 — 리서치 내용을 보완하고 싶습니다
-3. 특정 영역 재분석 — /deep-research --scope=<area>로 추가 조사
-```
-
-- If option 1: Proceed to 9-4.
-- If option 2: Apply user feedback to research.md, re-display the updated summary, then ask again (loop until option 1 or 3).
-- If option 3: Re-run `/deep-research` with the specified scope, then return to this gate.
+- `/deep-research` Step 4.7에서 사용자가 "동의" 또는 "수정 후 진행" → Proceed to 9-4.
+- `/deep-research` Step 4.7에서 사용자가 "특정 영역 재분석" → `/deep-research`가 내부적으로 재분석 + 리뷰 루프를 실행. 완료 후 자동으로 9-4로 진행.
 
 #### 9-4. Plan phase
 

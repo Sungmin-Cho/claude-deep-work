@@ -29,7 +29,7 @@ The **Brainstorm → Research → Plan → Implement → Test** workflow enforce
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
-## Usage (v5.3 Auto-Flow)
+## Usage (v5.5 Auto-Flow)
 
 ```bash
 # Just one command — the entire workflow runs automatically
@@ -170,6 +170,10 @@ Systematically analyzes the codebase across 6 areas:
 - **Incremental research** — Re-analyze only changed areas based on git diff with `/deep-research --incremental` (60-80% time savings)
 - **Model routing** — Delegate Research Phase to a sonnet model Agent for token savings
 
+**v5.5 features:**
+- **Cross-Model Review** — codex/gemini independently review research findings with dedicated rubric
+- **Consolidated Judgment** — Claude synthesizes all review results; user confirms in bulk before proceeding
+
 ### Phase 2: Plan
 
 Creates a concrete implementation plan based on research results:
@@ -188,6 +192,10 @@ Creates a concrete implementation plan based on research results:
 
 **v3.1 features:**
 - **Plan Diff visualization** — Automatically compares task/file/architecture/risk changes in `plan-diff.md` when a plan is rewritten
+
+**v5.5 features:**
+- **Claude Self-Review** — Automatic quality check before structural review — placeholders, consistency, research alignment
+- **Consolidated Judgment** — Cross-review results synthesized with Claude's assessment; user confirms before plan modification
 
 ### Phase 3: Implement (v4.0 Evidence-Driven)
 
@@ -546,7 +554,7 @@ Over time, the engine compares quality scores between sessions where a rule was 
 
 This creates a feedback loop: rules that prove their value survive; rules that don't get adjusted. Your workflow evolves based on evidence, not dogma.
 
-## Installation (v5.3.0)
+## Installation (v5.5.0)
 
 Add the marketplace to your Claude Code settings:
 

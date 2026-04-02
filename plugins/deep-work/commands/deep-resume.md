@@ -138,6 +138,8 @@ Based on the current phase, load the relevant artifacts to restore AI context:
 - Set `phase_context` to "리뷰 대기" if plan.md exists, "작성 대기" if not
 - Read `review_state` from state file
   - If `"in_progress"`: note "리뷰 진행 중이었음"
+    - If `review_results.plan.judgments_timestamp` exists: note "종합 판단 완료, 사용자 확인 대기"
+    - Otherwise: note "리뷰 진행 중"
   - If `"completed"`: note "리뷰 완료됨"
   - Read `$WORK_DIR/plan-review.json` and `$WORK_DIR/plan-cross-review.json` if they exist
 
@@ -192,12 +194,32 @@ Execute the appropriate action based on the current phase:
 
 #### `research`
 
-Read the `/deep-research` command file (located at the same directory level as this command) and follow all its steps. If research.md already has partial content, the research command's cache/incremental logic will handle it.
+- If `review_state` is `"in_progress"`:
+  Resume using the review-aware flow below, then return to normal research flow.
+
+  1. Check if `review_results.research.judgments_timestamp` exists in state file
+  2. **If exists**: Compare with `$WORK_DIR/research.md` file modification time
+     - If `research.md` was modified **after** `judgments_timestamp` → judgments are invalidated. Clear `review_results.research.judgments` and `judgments_timestamp`. Read the `/deep-research` command file and resume from its review flow start (Step 4.5).
+     - If `research.md` was **not** modified after timestamp → existing judgments are valid. Read the `/deep-research` command file and resume from user confirmation step (Step 4.7).
+  3. **If not exists**: No prior judgments. Read the `/deep-research` command file and resume from its review flow start (Step 4.5).
+
+  **IMPORTANT**: Route to `/deep-research`'s review flow, NOT to `/deep-review`.
+
+- Otherwise:
+  Read the `/deep-research` command file (located at the same directory level as this command) and follow all its steps. If research.md already has partial content, the research command's cache/incremental logic will handle it.
 
 #### `plan`
 
-- If `review_state` is `"in_progress"` and phase is `plan`:
-  Read the `/deep-review` command file and follow its steps to resume the review.
+- If `review_state` is `"in_progress"`:
+  Resume using the review-aware flow below, then return to normal plan flow.
+
+  1. Check if `review_results.plan.judgments_timestamp` exists in state file
+  2. **If exists**: Compare with `$WORK_DIR/plan.md` file modification time
+     - If `plan.md` was modified **after** `judgments_timestamp` → judgments are invalidated. Clear `review_results.plan.judgments` and `judgments_timestamp`. Read the `/deep-plan` command file and resume from its review flow start (Step 3.5).
+     - If `plan.md` was **not** modified after timestamp → existing judgments are valid. Read the `/deep-plan` command file and resume from user confirmation step (Step 3.8).
+  3. **If not exists**: No prior judgments. Read the `/deep-plan` command file and resume from its review flow start (Step 3.5).
+
+  **IMPORTANT**: Route to `/deep-plan`'s review flow, NOT to `/deep-review`.
 
 - If `$WORK_DIR/plan.md` does **not** exist:
   Read the `/deep-plan` command file and follow all its steps.

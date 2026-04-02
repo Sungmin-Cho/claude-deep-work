@@ -7,6 +7,22 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.0] - 2026-04-02
+
+### Added
+- **Research Cross-Model Review**: codex/gemini adversarial review now applies to research phase (previously plan-only). Uses dedicated research rubric (completeness, accuracy, relevance, risk_identification, actionability).
+- **Claude Self-Review for Plan**: Automatic quality check after plan creation — scans for placeholders, internal inconsistencies, research alignment, scope creep, and missing rollback coverage. Auto-fixes obvious defects before structural review.
+- **Consolidated Judgment Protocol**: Replaces per-conflict AskUserQuestion with Claude's synthesized judgment + user bulk confirmation. Applied to both research and plan cross-model reviews.
+- **Auto-fix Snapshot Contract**: Mandatory snapshots before each auto-fix iteration with score-regression rollback. Research: `research.v{N}.md`, Plan: `plan.autofix-v{N}.md`.
+- **Degraded Mode for Reviewers**: Failed cross-model reviewers are explicitly tracked (`reviewer_status` field). Consensus/conflict classification requires 2+ successful reviewers; single-reviewer results classified as standalone issues only.
+- **State Schema Migration (v5.5)**: New fields `review_results.{phase}.judgments`, `judgments_timestamp`, `reviewer_status`. Auto-initialization for old state files. Resume validation compares document mtime vs judgments_timestamp.
+
+### Changed
+- **Structural Review threshold**: Auto-fix trigger raised from score < 5 to score < 7 for both research and plan phases. Max iterations increased to 3 for research.
+- **Research user feedback gate**: Integrated into consolidated judgment step (Step 4.7). Removed duplicate AskUserQuestion from Step 5 and auto-flow Step 9-3.
+- **deep-review.md**: Updated to use consolidated judgment protocol instead of per-conflict UX.
+- **deep-resume.md**: Resume with `review_state: in_progress` now routes to new review flow with judgments_timestamp validation.
+
 ## [5.3.0] - 2026-03-31
 
 ### Added

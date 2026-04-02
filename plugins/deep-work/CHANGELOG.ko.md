@@ -7,6 +7,22 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.0] - 2026-04-02
+
+### 추가
+- **Research Cross-Model Review**: codex/gemini adversarial review가 research 단계에도 적용 (기존: plan만 해당). Research 전용 rubric 사용 (completeness, accuracy, relevance, risk_identification, actionability).
+- **Plan Claude 자체 재검토**: plan 작성 직후 자동 품질 점검 — placeholder, 내부 일관성, research 정합성, scope creep, 누락된 rollback 커버리지 탐색. 명백한 결함은 structural review 전에 자동 수정.
+- **종합 판단 프로토콜**: 개별 conflict AskUserQuestion을 Claude 종합 판단 + 사용자 일괄 확인으로 대체. Research와 plan cross-model review 양쪽에 적용.
+- **Auto-fix 스냅샷 계약**: 매 auto-fix 반복 전 스냅샷 필수, score 하락 시 rollback. Research: `research.v{N}.md`, Plan: `plan.autofix-v{N}.md`.
+- **Degraded Mode**: cross-model 리뷰어 실패 시 `reviewer_status` 필드로 명시적 추적. Consensus/conflict 분류는 2개 이상 성공한 리뷰어 필요; 단독 결과는 "단독 이슈"로만 분류.
+- **State 스키마 마이그레이션 (v5.5)**: 신규 필드 `review_results.{phase}.judgments`, `judgments_timestamp`, `reviewer_status`. 기존 state file 자동 초기화. Resume 시 문서 수정 시각 vs judgments_timestamp 비교 검증.
+
+### 변경
+- **Structural Review 기준 강화**: auto-fix 트리거를 score < 5에서 score < 7로 상향 (research, plan 양쪽). Research max iterations 3으로 증가.
+- **Research 사용자 피드백 게이트**: 종합 판단 단계(Step 4.7)에 통합. Step 5와 auto-flow Step 9-3의 중복 AskUserQuestion 제거.
+- **deep-review.md**: 개별 conflict UX 대신 종합 판단 프로토콜 사용으로 업데이트.
+- **deep-resume.md**: `review_state: in_progress`로 resume 시 judgments_timestamp 검증 기반 새 리뷰 흐름으로 라우팅.
+
 ## [5.3.0] - 2026-03-31
 
 ### 추가
