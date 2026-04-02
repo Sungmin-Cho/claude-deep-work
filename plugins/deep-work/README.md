@@ -170,6 +170,10 @@ Systematically analyzes the codebase across 6 areas:
 - **Incremental research** — Re-analyze only changed areas based on git diff with `/deep-research --incremental` (60-80% time savings)
 - **Model routing** — Delegate Research Phase to a sonnet model Agent for token savings
 
+**v5.5 features:**
+- **Cross-Model Review** — codex/gemini independently review research findings with dedicated rubric
+- **Consolidated Judgment** — Claude synthesizes all review results; user confirms in bulk before proceeding
+
 ### Phase 2: Plan
 
 Creates a concrete implementation plan based on research results:
@@ -188,6 +192,10 @@ Creates a concrete implementation plan based on research results:
 
 **v3.1 features:**
 - **Plan Diff visualization** — Automatically compares task/file/architecture/risk changes in `plan-diff.md` when a plan is rewritten
+
+**v5.5 features:**
+- **Claude Self-Review** — Automatic quality check before structural review — placeholders, consistency, research alignment
+- **Consolidated Judgment** — Cross-review results synthesized with Claude's assessment; user confirms before plan modification
 
 ### Phase 3: Implement (v4.0 Evidence-Driven)
 
