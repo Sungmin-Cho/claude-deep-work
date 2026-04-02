@@ -332,6 +332,45 @@ After writing plan.md with slice definitions (including contracts), validate eac
 
 This step is integrated into the Plan Auto-Loop — contract negotiation failures count toward `plan_review_retries`.
 
+### 3.4.5. Claude 자체 재검토 (신규)
+
+plan.md 작성 및 contract negotiation 완료 직후, subagent에게 넘기기 전에 Claude가 직접 점검한다.
+
+**점검 항목:**
+
+1. **Placeholder 스캔**: plan.md에서 "TBD", "TODO", 빈 섹션, 미완성 코드 스케치를 탐색. 발견 시 해당 내용을 구체적으로 채운다.
+
+2. **내부 일관성**: Slice Checklist의 `files` 목록과 "Files to Modify" 섹션의 파일 목록을 비교. 불일치 시 수정. Execution Order와 Slice 순서가 충돌하는지 확인.
+
+3. **Research 정합성**: `$WORK_DIR/research.md`의 Key Findings와 Constraints를 읽고, plan.md의 Architecture Decision과 모순되는지 확인. 모순 시 plan을 research에 맞게 수정.
+
+4. **범위 점검**: state file의 `task_description`과 plan.md의 전체 scope를 비교. plan이 task_description 범위를 명백히 초과하면 사용자에게 알림.
+
+5. **누락 점검**: `$WORK_DIR/research.md`의 Risk Assessment에서 식별된 리스크가 plan.md의 Rollback Strategy에 반영되었는지 확인. 누락 시 추가.
+
+**자동 수정 원칙:**
+- 명백한 결함 (placeholder, 일관성 오류, 누락): 사용자 확인 없이 자동 수정
+- 판단이 필요한 항목 (scope 문제, 아키텍처 선택): AskUserQuestion으로 사용자 판단 요청
+
+**표시:**
+
+수정 완료 후:
+```
+🔍 Plan 자체 재검토 완료:
+   수정: [N]건 (placeholder [N]건, 일관성 [N]건, 누락 [N]건)
+   미수정: 0건
+```
+
+판단 필요 항목이 있을 경우 (AskUserQuestion으로 대기):
+```
+⚠️ 판단 필요: [항목 설명]
+
+  1. 수정 — plan.md에서 해당 부분을 수정합니다
+  2. 유지 — 현재 상태 그대로 진행합니다
+```
+
+사용자 응답을 받은 후 다음 단계 (Structural Review)로 진행한다.
+
 ### 3.5. Structural Review + Auto-Loop (v5.1)
 
 Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
@@ -358,19 +397,21 @@ Read `plan_review_retries` from state file (default: 0). Read `plan_review_max_r
 ```
 plan.md + structural review
     ↓
-score >= 5? ──YES──→ proceed to Section 3.6 (cross-model) or Section 4
+score >= 7? ──YES──→ proceed to Section 3.6 (cross-model) or Section 4
     │
     NO
     ↓
 plan_review_retries < plan_review_max_retries?
     ├─ YES:
-    │   1. Extract failed dimensions and issues from review JSON
-    │   2. Auto-fix plan.md based on feedback:
-    │      - For each issue, apply the suggested fix
+    │   1. Snapshot: copy plan.md to $WORK_DIR/plan.autofix-v{N}.md
+    │   2. Extract failed dimensions and issues from review JSON
+    │   3. Auto-fix plan.md — 이슈가 지적한 특정 섹션만 수정 (전체 재작성 금지)
     │      - Append context: "<!-- Auto-fix attempt [N]: [issue summary] -->"
-    │   3. Increment plan_review_retries in state file
-    │   4. Display: "Plan 자동 수정 (시도 [N]/[max]): [issues fixed]"
-    │   5. Re-run structural review (loop back)
+    │   4. Re-run structural review
+    │   5. Score 하락 시: revert to plan.autofix-v{N}.md, 사용자 수동 수정 요청
+    │   6. Increment plan_review_retries in state file
+    │   7. Display: "Plan 자동 수정 (시도 [N]/[max]): [issues fixed]"
+    │   8. Re-run structural review (loop back)
     │
     └─ NO:
         1. Display:
@@ -409,24 +450,41 @@ Each model completion:
 
 After all models complete, Claude synthesizes results following the protocol's synthesis rules.
 
-**Display conflict resolution UX** per the protocol. Each conflict gets its own AskUserQuestion.
-
-**After conflict resolution**, check if plan.md was modified:
-- If modified (user accepted external model's opinion or made manual edits):
-  - Count modified sections (markdown ## headings)
-  - Display re-review recommendation:
-    ```
-    plan.md가 수정되었습니다.
-
-    크로스 리뷰를 한번 더 진행할까요?
-      1. ✅ 네, 수정 사항 검증 (추천 — [N]개+ 섹션 수정됨)
-      2. ❌ 아니요, 이대로 진행
-      3. Structural review만 다시 실행 (빠름)
-    ```
-  - Max 2 re-review loops
+**Do NOT display individual conflict AskUserQuestion.** Instead, proceed to Step 3.7.
 
 Save results: `$WORK_DIR/plan-cross-review.json`
-Update state: `review_results.plan.model_scores`, `review_results.plan.conflicts`, `review_results.plan.waivers`, `review_state: completed`
+Update state: `review_results.plan.model_scores`, `review_results.plan.reviewer_status`
+
+### 3.7. Claude 종합 판단 (신규)
+
+Read `references/review-gate.md`의 **종합 판단 + 일괄 확인 프로토콜** (Section 4-1)을 따른다.
+
+**Phase**: plan
+**Document**: `$WORK_DIR/plan.md`
+**Inputs**: Step 3.5의 structural review 결과 + Step 3.6의 cross-model review 결과 (있을 경우)
+
+Claude가 모든 리뷰 결과를 종합 분석하여 각 이슈에 대해 `accept`/`reject`/`partial` 판단을 생성한다.
+
+### 3.8. 전체 요약 + 사용자 일괄 확인 (신규)
+
+`review-gate.md` Section 4-1의 표시 형식에 따라 종합 판단 결과를 사용자에게 제시한다.
+
+사용자 확인 결과에 따라:
+- 옵션 1 (동의): 판단대로 plan.md 수정 → Step 3.9로 이동
+- 옵션 2 (항목별 조정): Section 4 (Conflict Resolution UX)의 4지선다로 해당 항목 재질문 → 조정 완료 후 Step 3.9로 이동
+- 옵션 3 (전부 스킵): plan.md 그대로 Section 4 (Present for interactive review)로 이동
+
+### 3.9. 확인된 항목만 plan 수정 (변경)
+
+사용자가 동의(옵션 1) 또는 항목별 조정(옵션 2) 완료 후:
+1. `accept` 또는 `partial`로 판정된 이슈만 plan.md에 반영
+2. 수정 후 변경 규모에 따라 re-review 권장:
+   - 3개 이상 섹션 변경: Full re-review (structural + cross-model) 권장
+   - 1-2개 섹션 변경: Structural review only 권장
+   - 50줄 미만 변경: Skip re-review
+3. Max 2회 re-review loop
+
+Update state: `review_results.plan.judgments`, `review_results.plan.conflicts`, `review_results.plan.waivers`, `review_state: completed`
 
 ### 4. Present for interactive review
 
