@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "5.3.0"
+version: "5.5.0"
 description: |
   Evidence-driven development protocol with auto-flow orchestration.
   Use when: "deep work", "plan before code", "TDD", "evidence-driven",
@@ -9,6 +9,16 @@ description: |
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+
+## v5.5 Review Flow Enhancement
+
+**v5.5 신규 기능:**
+- **Research Cross-Model Review**: research 단계에도 codex/gemini 크로스 리뷰 적용
+- **Claude 자체 재검토**: plan 작성 직후 자동 품질 점검 (placeholder, 일관성, 누락)
+- **종합 판단 프로토콜**: cross-review 후 Claude 판단 + 사용자 일괄 확인 (개별 conflict 질문 대체)
+- **Structural Review 강화**: auto-fix 기준 score < 5 → score < 7, 스냅샷 기반 rollback
+- **Degraded Mode**: cross-model 리뷰어 실패 시 명시적 상태 표시 + graceful fallback
+- **State 스키마 마이그레이션**: 신규 필드 자동 초기화, resume 시 문서-판단 시각 검증
 
 ## v5.3 Precision + Evidence
 
@@ -82,6 +92,9 @@ The Deep Work workflow prevents these by **strictly separating brainstorming, an
 - **Partial re-run**: `/deep-research --scope=api,data` re-analyzes specific areas only
 - **Research caching**: Reuses previous session's research as baseline, updating only changed areas
 - **Team mode**: 3 specialist agents (arch-analyst, pattern-analyst, risk-analyst) analyze in parallel with progress notifications
+- **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
+- **Cross-Model Review**: codex/gemini가 research.md를 독립 평가 (plan과 동일 패턴)
+- **종합 판단**: Claude가 모든 리뷰 결과를 분석, 사용자 일괄 확인 후 수정
 
 For detailed guidance, see [Research Guide](references/research-guide.md) or [Zero-Base Guide](references/zero-base-guide.md).
 
@@ -105,6 +118,9 @@ For detailed guidance, see [Research Guide](references/research-guide.md) or [Ze
 - **Version history**: Previous plans backed up as `plan.v1.md`, `plan.v2.md` with change logs
 - **Mode re-evaluation**: Suggests Team↔Solo switching based on plan complexity
 - **Auto-implementation**: When approved ("승인"), implementation starts automatically
+- **Claude 자체 재검토**: plan 작성 직후 placeholder/일관성/누락 자동 점검 및 수정
+- **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
+- **종합 판단**: cross-review 후 Claude 판단 + 사용자 일괄 확인 (개별 conflict 질문 대체)
 
 **Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
 
