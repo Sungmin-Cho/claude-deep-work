@@ -1,5 +1,6 @@
 .claude/
 deep-work/
+deep-work-workflow-workspace/
 docs/
 *.local.md
 .DS_Store
