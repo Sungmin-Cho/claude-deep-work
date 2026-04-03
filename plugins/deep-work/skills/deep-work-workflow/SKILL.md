@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "5.5.0"
+version: "5.5.1"
 description: |
   Evidence-driven development protocol with auto-flow orchestration.
   Use when: "deep work", "plan before code", "TDD", "evidence-driven",

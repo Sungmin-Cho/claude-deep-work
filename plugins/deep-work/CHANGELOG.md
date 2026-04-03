@@ -7,6 +7,11 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.1] - 2026-04-03
+
+### Changed
+- **Plan phase team research cross-verification**: When `team_mode: team`, the plan phase now loads partial research files (`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`) as supplementary references. Claude self-review (Section 3.4.5) cross-checks plan decisions against these specialized analyses to catch details lost during synthesis.
+
 ## [5.5.0] - 2026-04-02
 
 ### Added
