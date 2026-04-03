@@ -7,6 +7,11 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.1] - 2026-04-03
+
+### 변경
+- **Plan 단계 team research 교차 검증**: `team_mode: team`일 때 plan 단계에서 부분 리서치 파일(`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`)을 보조 참조로 로드. Claude 자체 재검토(Section 3.4.5)에서 합성 과정 누락 세부 사항을 교차 확인하여 plan 정확도 향상.
+
 ## [5.5.0] - 2026-04-02
 
 ### 추가

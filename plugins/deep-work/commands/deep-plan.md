@@ -42,6 +42,17 @@ Set `WORK_DIR` to this value.
 
 Also read `$WORK_DIR/research.md` to load the research findings (if it exists — it may not exist if research was skipped via A-1 phase skip).
 
+#### 1-0a. Team research partials 로드 (보조 참조)
+
+`team_mode`가 "team"인 경우, 다음 3개 부분 리서치 파일을 **보조 참조**로 읽는다:
+- `$WORK_DIR/research-architecture.md` (아키텍처, 구조, 데이터 레이어, API)
+- `$WORK_DIR/research-patterns.md` (패턴, 컨벤션, 공유 인프라, 테스팅)
+- `$WORK_DIR/research-dependencies.md` (의존성, 리스크, 외부 통합, 보안)
+
+이 파일들은 합성 과정에서 축약되거나 누락된 전문 분석 세부 사항을 포함할 수 있다. `research.md`가 주 참조이며, 부분 파일은 교차 검증 용도로만 사용한다.
+
+파일이 존재하지 않으면 무시한다 (solo 모드이거나 정리된 경우). 에러나 경고를 표시하지 않는다.
+
 ### 1-1. Backup previous plan (if iteration_count > 0)
 
 If a previous `$WORK_DIR/plan.md` exists and `iteration_count` > 0:
@@ -344,9 +355,19 @@ plan.md 작성 및 contract negotiation 완료 직후, subagent에게 넘기기 
 
 3. **Research 정합성**: `$WORK_DIR/research.md`의 Key Findings와 Constraints를 읽고, plan.md의 Architecture Decision과 모순되는지 확인. 모순 시 plan을 research에 맞게 수정.
 
+   **팀 모드 교차 검증** (team_mode: team이고 partial 파일 로드된 경우):
+   - `research-architecture.md`의 아키텍처 분석이 plan의 Architecture Decision과 일관되는지 확인
+   - `research-patterns.md`의 패턴/컨벤션이 plan의 코드 스케치에 반영되었는지 확인
+   - `research-dependencies.md`의 리스크가 plan의 Risk/Rollback에 반영되었는지 확인
+
+   partial에서 `research.md`에 누락된 세부 사항 발견 시, plan.md에 직접 반영. "누락" 카운트에 포함.
+
 4. **범위 점검**: state file의 `task_description`과 plan.md의 전체 scope를 비교. plan이 task_description 범위를 명백히 초과하면 사용자에게 알림.
 
 5. **누락 점검**: `$WORK_DIR/research.md`의 Risk Assessment에서 식별된 리스크가 plan.md의 Rollback Strategy에 반영되었는지 확인. 누락 시 추가.
+
+   **팀 모드 보충** (team_mode: team이고 partial 파일 로드된 경우):
+   `research-dependencies.md`의 상세 리스크 목록을 추가 확인. `research.md`에 포함되지 않은 리스크가 있으면 plan.md의 Rollback Strategy 또는 Risk 섹션에 추가.
 
 **자동 수정 원칙:**
 - 명백한 결함 (placeholder, 일관성 오류, 누락): 사용자 확인 없이 자동 수정
