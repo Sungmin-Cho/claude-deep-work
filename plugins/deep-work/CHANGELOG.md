@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Plan phase team research cross-verification**: When `team_mode: team`, the plan phase now loads partial research files (`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`) as supplementary references. Claude self-review (Section 3.4.5) cross-checks plan decisions against these specialized analyses to catch details lost during synthesis.
+- **TDD state update enforcement**: B-1 (RED_VERIFIED) and B-2 (GREEN) state file updates in `deep-implement.md` are now marked as mandatory with explicit phase guard blocking warnings.
+
+### Fixed
+- **phase-guard.sh input parsing**: Switched JSON input building from `process.argv` to stdin pipe to avoid `set -e` failures on large tool inputs.
 
 ## [5.5.0] - 2026-04-02
 

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 변경
 - **Plan 단계 team research 교차 검증**: `team_mode: team`일 때 plan 단계에서 부분 리서치 파일(`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`)을 보조 참조로 로드. Claude 자체 재검토(Section 3.4.5)에서 합성 과정 누락 세부 사항을 교차 확인하여 plan 정확도 향상.
+- **TDD state 업데이트 필수화**: `deep-implement.md`의 B-1 (RED_VERIFIED), B-2 (GREEN) state file 업데이트를 필수로 표시하고 phase guard 차단 경고 추가.
+
+### 수정
+- **phase-guard.sh 입력 파싱 안정화**: JSON 입력 빌드를 `process.argv`에서 stdin pipe 방식으로 변경하여 대용량 tool input에서 `set -e` 실패 방지.
 
 ## [5.5.0] - 2026-04-02
 
