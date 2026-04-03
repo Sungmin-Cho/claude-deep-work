@@ -160,7 +160,9 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 3. Run the test: execute `verification_cmd`
 4. **Verify it fails for the RIGHT reason** (feature missing, not syntax error)
 5. Capture the failing test output (last 200 lines)
-6. Update state: `tdd_state: RED_VERIFIED`
+6. **[필수] State file 업데이트**: `tdd_state: RED_VERIFIED`
+   ⚠️ 이 업데이트를 수행하지 않으면 phase guard가 이후 모든 production 코드 편집을 차단한다.
+   State file(`.claude/deep-work.*.md`)은 `.md` 파일이므로 phase guard의 config 파일 예외에 해당하여 항상 편집 가능하다.
 7. Update receipt: `tdd.failing_test_output` + `tdd.failing_test_timestamp`
 
 ```
@@ -183,7 +185,8 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 3. Run `verification_cmd` again
 4. **Verify ALL tests pass** (not just the new one)
 5. Capture passing test output
-6. Update state: `tdd_state: GREEN`
+6. **[필수] State file 업데이트**: `tdd_state: GREEN`
+   ⚠️ 이 업데이트를 수행하지 않으면 다음 slice 시작 시 phase guard가 차단한다.
 7. Update receipt: `tdd.passing_test_output` + `tdd.passing_test_timestamp`
 
 ```

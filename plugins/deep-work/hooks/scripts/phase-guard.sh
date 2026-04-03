@@ -213,12 +213,24 @@ fi
 # - Bash tool in any non-idle phase (file write detection)
 # - implement phase with strict/coaching TDD mode (TDD state machine)
 
-# Build JSON input for Node.js using node itself to avoid shell injection
-NODE_INPUT=$(node -e "
-  const input = JSON.parse(process.argv[1]);
-  const state = { current_phase: process.argv[2], tdd_mode: process.argv[3], active_slice: process.argv[4], tdd_state: process.argv[5], tdd_override: process.argv[7] === process.argv[4] && process.argv[7] !== '' };
-  console.log(JSON.stringify({ action: 'pre', toolName: process.argv[6], toolInput: input, state: state }));
-" "$TOOL_INPUT" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" "${TDD_OVERRIDE:-}" 2>/dev/null)
+# Build JSON input for Node.js using stdin pipe (safe: avoids set -e failure on argv approach)
+NODE_INPUT=$(printf '%s' "$TOOL_INPUT" | node -e "
+  process.stdin.setEncoding('utf8');
+  let d = '';
+  process.stdin.on('data', c => d += c);
+  process.stdin.on('end', () => {
+    try {
+      const input = JSON.parse(d);
+      const a = process.argv;
+      const tdd_override = a[6] === a[3] && a[6] !== '';
+      const state = { current_phase: a[1], tdd_mode: a[2], active_slice: a[3], tdd_state: a[4], tdd_override: tdd_override };
+      console.log(JSON.stringify({ action: 'pre', toolName: a[5], toolInput: input, state: state }));
+    } catch(e) {
+      const a = process.argv;
+      console.log(JSON.stringify({ action: 'pre', toolName: a[5] || 'unknown', toolInput: {}, state: { current_phase: a[1], tdd_mode: a[2] || 'strict', active_slice: a[3] || '', tdd_state: a[4] || 'PENDING', tdd_override: false } }));
+    }
+  });
+" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" "${TDD_OVERRIDE:-}" 2>/dev/null || true)
 
 # Call Node.js with timeout protection
 NODE_RESULT=""
