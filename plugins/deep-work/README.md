@@ -197,6 +197,9 @@ Creates a concrete implementation plan based on research results:
 - **Claude Self-Review** — Automatic quality check before structural review — placeholders, consistency, research alignment
 - **Consolidated Judgment** — Cross-review results synthesized with Claude's assessment; user confirms before plan modification
 
+**v5.5.1 features:**
+- **Team research cross-verification** — When `team_mode: team`, plan phase loads partial research files (`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`) as supplementary references for cross-checking against synthesized `research.md`
+
 ### Phase 3: Implement (v4.0 Evidence-Driven)
 
 Slice-based TDD-enforced execution:
@@ -209,6 +212,7 @@ Slice-based TDD-enforced execution:
 - **Coaching mode**: Educational TDD guidance instead of hard blocks
 - **TDD Override**: When TDD blocks a production edit, Claude asks the user whether to write a test first or skip TDD for this slice (merge-eligible with warning in receipt)
 - Block messages include escape hatch guidance (`/deep-slice spike`, `/deep-slice reset`)
+- **Mandatory TDD state updates** (v5.5.1) — B-1 (RED_VERIFIED) and B-2 (GREEN) state file updates are explicitly marked as mandatory with phase guard blocking warnings
 - **Automatically enters Test phase after implementation completes**
 
 **v3.0 features:**

@@ -121,6 +121,7 @@ For detailed guidance, see [Research Guide](references/research-guide.md) or [Ze
 - **Claude 자체 재검토**: plan 작성 직후 placeholder/일관성/누락 자동 점검 및 수정
 - **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
 - **종합 판단**: cross-review 후 Claude 판단 + 사용자 일괄 확인 (개별 conflict 질문 대체)
+- **Team research 교차 검증** (v5.5.1): team_mode: team일 때 부분 리서치 파일(research-architecture/patterns/dependencies.md)을 보조 참조로 로드하여 합성 누락 세부 사항 교차 확인
 
 **Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
 
@@ -144,6 +145,7 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 - **Checkpoint support**: If interrupted, resumes from the last incomplete task
 - **Team mode**: Tasks clustered by file ownership, distributed to parallel agents with cross-review and progress notifications
 - **Auto-test**: After all tasks complete, transitions to Test phase automatically
+- **TDD state 업데이트 필수화** (v5.5.1): B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
 
 For detailed guidance, see [Implementation Guide](references/implementation-guide.md).
 
