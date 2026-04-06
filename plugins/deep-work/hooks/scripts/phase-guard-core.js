@@ -128,7 +128,7 @@ function checkTddEnforcement(tddState, filePath, tddMode, exemptPatterns, tddOve
  * Each pattern has a regex and a description.
  */
 const FILE_WRITE_PATTERNS = [
-  { pattern: /(?:^|\|)\s*(?:>\s*|>>)\s*\S+/, desc: 'output redirection (> or >>)' },
+  { pattern: /(?:^|[|;]|\s)(?:>{1,2})\s*\S+/, desc: 'output redirection (> or >>)' },
   { pattern: /\btee\s+(?:-a\s+)?\S+/, desc: 'tee command' },
   { pattern: /\bsed\s+-i/, desc: 'sed in-place edit' },
   { pattern: /\bcp\s+/, desc: 'cp (file copy)' },
@@ -141,6 +141,23 @@ const FILE_WRITE_PATTERNS = [
   { pattern: /\bpatch\s+/, desc: 'patch command' },
   { pattern: /\bchmod\s+/, desc: 'chmod (permission change)' },
   { pattern: /\bchown\s+/, desc: 'chown (ownership change)' },
+  { pattern: /\bperl\s+.*-[^\s]*i/, desc: 'perl in-place edit' },
+  { pattern: /\bnode\s+-e\s+.*(?:writeFile|appendFile|createWriteStream|fs\.)/, desc: 'node -e file system write' },
+  { pattern: /\bawk\s+.*-i\s+inplace\b/, desc: 'awk in-place edit' },
+  { pattern: /\bpython[23]?\s+-c\s+.*(?:open\s*\(|write|\.dump)/, desc: 'python -c file write' },
+  { pattern: /\bruby\s+-e\s+.*(?:File\.|IO\.|open\s*\()/, desc: 'ruby -e file write' },
+  { pattern: /\bswift\s+-e\s+.*(?:write|FileManager|contentsOf)/, desc: 'swift -e file write' },
+  { pattern: /\btruncate\s+/, desc: 'truncate command' },
+  { pattern: /\bsponge\s+/, desc: 'sponge (moreutils) write' },
+  { pattern: /\bgit\s+(push|reset\s+--hard|checkout\s+--\s|clean\s+-f)/, desc: 'destructive git operation' },
+  { pattern: /\bcurl\s+.*-[^\s]*o\s/, desc: 'curl output to file' },
+  { pattern: /\bwget\s+.*-[^\s]*O\s/, desc: 'wget output to file' },
+  { pattern: /\bln\s+(?:-[^\s]*\s+)*\S+\s+\S+/, desc: 'ln (link creation)' },
+  { pattern: /\btar\s+.*x/, desc: 'tar extract (file creation)' },
+  { pattern: /\bunzip\s+/, desc: 'unzip (file extraction)' },
+  { pattern: /\bcpio\s+/, desc: 'cpio archive extraction' },
+  { pattern: /\brsync\s+/, desc: 'rsync (file sync)' },
+  { pattern: /\bwriteFile\b/, desc: 'Node.js writeFile API call' },
 ];
 
 /**
@@ -150,19 +167,25 @@ const FILE_WRITE_PATTERNS = [
 const SAFE_COMMAND_PATTERNS = [
   /\bnpm\s+test\b/, /\bnpm\s+run\s+test\b/, /\byarn\s+test\b/,
   /\bnpx\s+/, /\bbun\s+test\b/, /\bcargo\s+test\b/,
-  /\bpytest\b/, /\bpython\s+-m\s+pytest\b/,
+  /\bpytest\b/, /\bpython\s+-m\s+pytest\b/, /\bpython\s+-m\s+unittest\b/,
   /\bgo\s+test\b/, /\bmake\s+test\b/,
   /\bgit\s+(status|log|diff|branch|show|stash|fetch)\b/,
   /\bgit\s+add\b/, /\bgit\s+commit\b/,
-  /\bls\b/, /\bpwd\b/, /\bwhich\b/, /\bcat\s+[^>]/, /\bhead\b/, /\btail\b/,
-  /\bgrep\b/, /\bfind\b/, /\bwc\b/, /\bsort\b/, /\buniq\b/,
-  /\bnode\s+--test\b/, /\bnode\s+-e\b/,
-  /\bmkdir\s/, /\brm\s/,  // directory operations, not file writes to source
+  /\bls\b/, /\bpwd\b/, /\bwhich\b/, /\bcat\s+[^<>]/, /\bhead\b/, /\btail\b/,
+  /\bgrep\b/, /\bfind\b/, /\bwc\b/, /\bsort\b/, /\buniq\b/, /\bdiff\b/, /\bfile\b/,
+  /\bnode\s+--test\b/,
+  /\bmkdir\s/, /\brm\s/, /\brmdir\s/,  // directory operations, not file writes to source
   // v4.2: cross-model review tools (adversarial review in plan phase)
   /\bcodex\s+exec\b/, /\bcodex\s+--version\b/,
   /\bgemini\s+exec\b/, /\bgemini\s+-p\b/, /\bgemini\s+--version\b/,
   /\btimeout\s+\d+\s+codex\b/, /\btimeout\s+\d+\s+gemini\b/,
   /\bmktemp\b/,
+  /\bdocker\s+(ps|images|inspect|logs)\b/, /\bkubectl\s+(get|describe|logs)\b/,
+  /\bcargo\s+(build|check|clippy|fmt\s+--check|bench)\b/, /\bgo\s+(build|vet|fmt)\b/,
+  /\bdeno\s+(test|check|lint|fmt\s+--check)\b/, /\bbun\s+(run|x)\b/,
+  /\benv\b/, /\bprintenv\b/, /\btype\s/, /\bcommand\s+-v\b/,
+  /\bstat\s/, /\bdu\s/, /\bdf\s/, /\bfree\s/, /\buname\b/, /\bhostname\b/,
+  /\btsc\s+--noEmit\b/, /\bpython\s+-m\s+py_compile\b/,
 ];
 
 /**
@@ -197,6 +220,10 @@ function extractBashTargetFile(command) {
   const ddMatch = trimmed.match(/\bdd\s+.*\bof=(\S+)/);
   if (ddMatch) return ddMatch[1];
 
+  // perl -pi -e '...' FILE
+  const perlMatch = trimmed.match(/\bperl\s+.*-[^\s]*i[^\s]*\s+(?:-e\s+)?(?:'[^']*'|"[^"]*"|\S+)\s+(\S+)/);
+  if (perlMatch) return perlMatch[1];
+
   // Redirect: ... > FILE or ... >> FILE
   const redirectMatch = trimmed.match(/>{1,2}\s*(\S+)\s*$/);
   if (redirectMatch) return redirectMatch[1];
@@ -218,6 +245,8 @@ function splitCommands(command) {
   let current = '';
   let inSingle = false;
   let inDouble = false;
+  let inBacktick = false;
+  let parenDepth = 0;
   let i = 0;
 
   while (i < command.length) {
@@ -237,14 +266,35 @@ function splitCommands(command) {
       continue;
     }
 
-    if (ch === '"' && !inSingle) {
+    if (ch === '"' && !inSingle && !inBacktick) {
       inDouble = !inDouble;
       current += ch;
       i++;
       continue;
     }
 
-    if (!inSingle && !inDouble) {
+    if (ch === '`' && !inSingle && !inDouble) {
+      inBacktick = !inBacktick;
+      current += ch;
+      i++;
+      continue;
+    }
+
+    // Track $() subshell depth
+    if (ch === '(' && !inSingle && !inDouble && !inBacktick) {
+      parenDepth++;
+      current += ch;
+      i++;
+      continue;
+    }
+    if (ch === ')' && !inSingle && !inDouble && !inBacktick && parenDepth > 0) {
+      parenDepth--;
+      current += ch;
+      i++;
+      continue;
+    }
+
+    if (!inSingle && !inDouble && !inBacktick && parenDepth === 0) {
       // Check for && or ||
       if ((ch === '&' && command[i + 1] === '&') || (ch === '|' && command[i + 1] === '|')) {
         parts.push(current.trim());
@@ -285,7 +335,21 @@ function detectBashFileWrite(command) {
   const subCommands = splitCommands(command);
 
   for (const sub of subCommands) {
-    // Check safe patterns — if this sub-command is safe, skip it
+    // Check file-write patterns FIRST (security-critical)
+    let writeMatch = null;
+    for (const { pattern, desc } of FILE_WRITE_PATTERNS) {
+      if (pattern.test(sub)) {
+        writeMatch = desc;
+        break;
+      }
+    }
+
+    // If file-write detected, return immediately (safe patterns cannot override)
+    if (writeMatch) {
+      return { isFileWrite: true, pattern: writeMatch };
+    }
+
+    // Check safe patterns — if no write detected and command is safe, skip it
     let isSafe = false;
     for (const safe of SAFE_COMMAND_PATTERNS) {
       if (safe.test(sub)) {
@@ -294,13 +358,6 @@ function detectBashFileWrite(command) {
       }
     }
     if (isSafe) continue;
-
-    // Check file-write patterns on this sub-command
-    for (const { pattern, desc } of FILE_WRITE_PATTERNS) {
-      if (pattern.test(sub)) {
-        return { isFileWrite: true, pattern: desc };
-      }
-    }
   }
 
   return { isFileWrite: false };
@@ -361,6 +418,11 @@ function validateReceipt(receipt) {
     return { valid: false, errors: ['Receipt is null or undefined'] };
   }
 
+  // Schema version check
+  if (receipt.schema_version && receipt.schema_version !== '1.0') {
+    errors.push(`Unknown schema_version: ${receipt.schema_version}. Expected: 1.0`);
+  }
+
   // Required fields
   if (!receipt.slice_id) errors.push('Missing slice_id');
   if (!receipt.status) errors.push('Missing status');
@@ -405,8 +467,17 @@ const TEST_FILE_PATTERNS = [
   /.*Tests?\.cs$/,          // C#
   /.*Test\.kt$/,            // Kotlin
   /.*Tests?\.swift$/,       // Swift
+  /.*_test\.exs?$/,         // Elixir
+  /.*\.test\.lua$/,         // Lua
+  /.*\.test\.dart$/,        // Dart/Flutter
+  /.*_test\.dart$/,         // Dart (alt)
+  /.*\.test\.vue$/,         // Vue
   /tests?\//,
   /__tests__\//,
+  /spec\//,                 // RSpec, etc.
+  /fixtures?\//,            // Test fixtures
+  /__fixtures__\//,         // Jest fixtures
+  /__mocks__\//,            // Jest mocks
 ];
 
 function isTestFilePath(filePath) {
@@ -417,6 +488,15 @@ function isTestFilePath(filePath) {
 const DEFAULT_EXEMPT_PATTERNS = [
   /\.ya?ml$/,
   /\.json$/,
+  /\.toml$/,
+  /\.ini$/,
+  /\.cfg$/,
+  /\.lock$/,
+  /\.editorconfig$/,
+  /\.svg$/,
+  /\.png$/,
+  /\.jpg$/,
+  /\.gif$/,
   /\.md$/,
   /\.txt$/,
   /\.env/,
@@ -487,6 +567,16 @@ function processHook(input) {
 
   // ─── Implement phase: TDD + Slice enforcement ──────────
   if (phase === 'implement') {
+    // Validate TDD state is a known value (defensive)
+    const knownState = state.tdd_state || TDD_STATES.PENDING;
+    if (!Object.values(TDD_STATES).includes(knownState)) {
+      return {
+        decision: 'block',
+        reason: `⛔ Deep Work Guard: 알 수 없는 TDD 상태입니다: ${knownState}\n` +
+          `/deep-status로 현재 상태를 확인하세요.`,
+      };
+    }
+
     // Bash tool: check for file writes
     if (toolName === 'Bash') {
       const { isFileWrite, pattern } = detectBashFileWrite(toolInput.command);
@@ -539,7 +629,15 @@ function processHook(input) {
     return { decision: 'allow' };
   }
 
-  // idle or unknown phase: allow
+  // Unknown phase (not idle): warn but allow
+  if (phase !== 'idle') {
+    return {
+      decision: 'allow',
+      reason: `⚠️ Deep Work Guard: 알 수 없는 phase '${phase}'. 기본 허용합니다.`,
+    };
+  }
+
+  // idle phase: allow
   return { decision: 'allow' };
 }
 
@@ -587,7 +685,7 @@ const VALID_MODELS = ['haiku', 'sonnet', 'opus', 'main', 'auto'];
  */
 function lookupModel(size, customTable) {
   const table = { ...DEFAULT_ROUTING_TABLE, ...(customTable || {}) };
-  const normalizedSize = (size || 'M').toUpperCase();
+  const normalizedSize = (size || 'M').toString().toUpperCase().trim();
   const model = table[normalizedSize];
   if (!model) {
     return { model: table['M'] || 'sonnet', valid: false };
@@ -604,7 +702,7 @@ function validateModelName(model) {
   if (!model || typeof model !== 'string') {
     return { valid: false, fallback: 'sonnet' };
   }
-  const normalized = model.toLowerCase().trim();
+  const normalized = model.toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
   if (VALID_MODELS.includes(normalized)) {
     return { valid: true, fallback: normalized };
   }

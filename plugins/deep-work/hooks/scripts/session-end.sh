@@ -78,7 +78,11 @@ append_session_history() {
   local session_id
   session_id="$(read_frontmatter_field "$STATE_FILE" "started_at")"
   if [[ -z "$session_id" ]]; then
-    return 0  # No started_at → cannot identify session
+    # Fallback: use session ID from env or pointer file
+    session_id="${DEEP_WORK_SESSION_ID:-}"
+    if [[ -z "$session_id" ]]; then
+      return 0  # No identifier available
+    fi
   fi
 
   # ── Check if finalized record already exists (deep-finish wrote it)
@@ -234,11 +238,19 @@ append_session_history() {
   }
 
   mkdir -p "$history_dir" 2>/dev/null || return 0
+
+  # Validate JSON before writing (defensive)
+  if command -v node &>/dev/null; then
+    if ! echo "$entry" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{JSON.parse(d);process.exit(0)}catch(e){process.exit(1)}})" 2>/dev/null; then
+      return 0  # skip malformed entry
+    fi
+  fi
+
   _append_with_lock "$jsonl_file" "$entry"
 }
 
 # Run in subshell — errors must never block session close
-(append_session_history) 2>/dev/null || true
+(append_session_history) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
 
 # v5.4: Update last_activity on CLI stop (do NOT unregister)
 if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then

@@ -7,6 +7,39 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.2] - 2026-04-06
+
+### 추가
+- **확장된 bash 파일 쓰기 감지**: 20+ 신규 FILE_WRITE_PATTERNS — perl in-place (`perl -pi -e`), 런타임 언어 쓰기 (node -e `fs.writeFileSync`, python -c `open().write()`, ruby -e `File.write`), awk in-place, swift, truncate, sponge, git 파괴 연산 (`reset --hard`, `clean -f`), curl/wget 출력, ln, tar/unzip/cpio 추출, rsync, 범용 `writeFile` 감지.
+- **확장된 safe command 패턴**: docker/kubectl 읽기 전용, cargo build/check/bench, go build/vet, deno test/check, bun run/x, python unittest, tsc --noEmit, stat/du/df/free/uname/hostname, diff/file, env/printenv, rmdir.
+- **확장된 테스트 파일 패턴**: Dart (`.test.dart`, `_test.dart`), Elixir (`_test.exs`), Lua (`.test.lua`), Vue (`.test.vue`), `fixtures/`, `__fixtures__/`, `__mocks__/`, `spec/` 디렉토리.
+- **확장된 TDD exempt 패턴**: `.toml`, `.ini`, `.cfg`, `.lock`, `.editorconfig`, `.svg`, `.png`, `.jpg`, `.gif`.
+- **TDD state 검증**: 알 수 없는 TDD 상태값을 processHook에서 차단하고 안내 메시지 제공.
+- **Backtick 및 subshell 처리**: `splitCommands`가 backtick 인용과 `$()` subshell 깊이를 추적하여 중첩 표현식 내부의 잘못된 분할 방지.
+- **Perl 타겟 파일 추출**: `extractBashTargetFile`이 `perl -pi -e` 명령에서 타겟 파일을 추출하여 정확한 TDD 적용.
+
+### 수정
+- **보안: file-write-first 감지 순서**: FILE_WRITE_PATTERNS를 SAFE_COMMAND_PATTERNS보다 먼저 검사하여, safe 패턴이 파일 쓰기를 은폐하는 것을 방지 (예: `node -e`의 `fs.writeFileSync` 우회 차단).
+- **file-tracker.sh Node.js 25 argv 호환성**: Node.js 25에서 `[eval]` 마커가 제거되어 receipt 생성이 무음 실패하던 문제 수정. `process.argv.filter(a => a !== '[eval]')`로 크로스 버전 호환.
+- **assumption-engine.js quality-timeline CLI**: 파싱된 `parsed` 객체 대신 raw `input` 문자열을 참조하던 버그 수정.
+- **assumption-engine.js evalSignal threshold 전달**: 시그널 평가자의 `threshold` 필드가 `fn()`에 올바르게 전달되도록 수정.
+- **assumption-engine.js readHistory dedup 순서**: `session_id` 중복 시 first→latest로 변경하여 finalized 레코드가 무시되는 문제 해결.
+- **assumption-engine.js 입력 가드**: `isSessionDuplicate`, `detectStaleness`, `detectNewModel`, `generateReport`에 `Array.isArray` 검사 추가.
+- **session-end.sh JSON 검증**: JSONL append 전 JSON 유효성 검증으로 malformed entry 방지.
+- **session-end.sh session ID fallback**: state file에 `started_at` 누락 시 `DEEP_WORK_SESSION_ID` 환경변수로 폴백.
+- **session-end.sh 에러 로깅**: 에러를 `/dev/null` 대신 `.claude/deep-work-guard-errors.log`에 기록.
+- **phase-guard.sh 에러 로깅**: Node.js 에러를 `.claude/deep-work-guard-errors.log`에 기록.
+- **utils.sh matchGlob trailing slash**: 정확한 경로 비교에서 trailing slash 정규화.
+- **utils.sh session pointer 안전성**: 세션 포인터 파일 쓰기 전 `mkdir -p` 추가.
+- **utils.sh session ID 생성**: `/dev/urandom` hex 생성에서 탭 문자 제거.
+
+### 변경
+- **Redirect 감지 범위 확대**: 일반 출력 리다이렉트 패턴을 `(?:^|\|)` 접두사에서 `(?:^|[|;]|\s)`로 변경하여 명령 중간 리다이렉트 감지 (예: `cat << EOF > file`).
+- **`node -e` safe 패턴 제거**: 이전에 safe로 처리되던 `node -e`를 다른 명령과 동일하게 file-write 패턴으로 평가.
+- **모델 이름 살균**: `validateModelName`이 비알파벳 문자 제거; `lookupModel`에 `toString().trim()` 추가.
+- **시그널 평가 threshold 설정 가능**: 평가자 정의의 `threshold` 필드로 설정 가능 (이전: 하드코딩된 기본 파라미터).
+- **광범위 리다이렉트 패턴**: 명령 중간 리다이렉트 (heredoc, 공백 후) 올바르게 감지.
+
 ## [5.5.1] - 2026-04-03
 
 ### 변경

@@ -580,8 +580,8 @@ describe('Session dedupe', () => {
     ]);
     const result = readHistory(filepath);
     assert.equal(result.sessions.length, 2);
-    // First occurrence wins
-    assert.equal(result.sessions[0].slices_total, 5);
+    // v5.5.2: Latest occurrence wins (keeps finalized over active)
+    assert.equal(result.sessions[0].slices_total, 10);
     assert.equal(result.sessions[1].session_id, 'different-id');
   });
 });
@@ -966,5 +966,67 @@ describe('Signal scope separation', () => {
     const expected = ['bugs_caught_in_red_phase > 0', 'zero_bugs_caught_in_red'].sort();
     assert.deepEqual(sliceScoped, expected,
       `Expected exactly 2 slice-scoped signals, got: ${sliceScoped.join(', ')}`);
+  });
+});
+
+// ─── v5.5.2: readHistory keeps latest on dedup ──────────────
+
+describe('v5.5.2: readHistory dedup order', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ae-dedup-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('keeps latest entry when session_id is duplicated', () => {
+    const file = path.join(tmpDir, 'history.jsonl');
+    fs.writeFileSync(file, [
+      '{"session_id":"s1","status":"active"}',
+      '{"session_id":"s1","status":"finalized"}',
+    ].join('\n') + '\n');
+    const result = readHistory(file);
+    assert.equal(result.sessions.length, 1);
+    assert.equal(result.sessions[0].status, 'finalized');
+  });
+});
+
+// ─── v5.5.2: Array.isArray guards ───────────────────────────
+
+describe('v5.5.2: Input guards', () => {
+  it('isSessionDuplicate handles non-array gracefully', () => {
+    assert.equal(isSessionDuplicate(null, 's1'), false);
+    assert.equal(isSessionDuplicate('not-array', 's1'), false);
+  });
+
+  it('detectStaleness handles null assumption', () => {
+    const result = detectStaleness(null, []);
+    assert.equal(result.stale, false);
+  });
+
+  it('detectNewModel handles non-array sessions', () => {
+    const result = detectNewModel('sonnet', null);
+    assert.equal(result.isNew, true);
+  });
+
+  it('generateReport handles non-array inputs', () => {
+    const result = generateReport(null, null);
+    assert.ok(result.text.includes('No session history'));
+  });
+});
+
+// ─── v5.5.2: evalSignal threshold passing ───────────────────
+
+describe('v5.5.2: Signal threshold passing', () => {
+  it('evaluateSignals passes threshold to fn', () => {
+    const sig = 'test_pass_rate_with_guard > test_pass_rate_without';
+    const ev = SIGNAL_EVALUATORS[sig];
+    const origThresh = ev.threshold;
+
+    // Session: 6/10 = 0.6 pass rate
+    ev.threshold = 0.5;
+    const assumption = { id: 'test', evidence_signals: { supporting: [sig], weakening: [] } };
+    const result = evaluateSignals(assumption, { slices_total: 10, slices_passed_first_try: 6 });
+    ev.threshold = origThresh;
+
+    // 0.6 > 0.5 = true → supporting = 1
+    assert.equal(result.supporting, 1);
   });
 });

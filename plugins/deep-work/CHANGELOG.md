@@ -7,6 +7,39 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.5.2] - 2026-04-06
+
+### Added
+- **Extended bash file-write detection**: 20+ new FILE_WRITE_PATTERNS including perl in-place (`perl -pi -e`), runtime language writes (node -e `fs.writeFileSync`, python -c `open().write()`, ruby -e `File.write`), awk in-place, swift, truncate, sponge, destructive git operations (`reset --hard`, `clean -f`), curl/wget output, ln, tar/unzip/cpio extraction, rsync, and generic `writeFile` detection.
+- **Extended safe command patterns**: docker/kubectl read-only, cargo build/check/bench, go build/vet, deno test/check, bun run/x, python unittest, tsc --noEmit, stat/du/df/free/uname/hostname, diff/file, env/printenv, rmdir.
+- **Extended test file patterns**: Dart (`.test.dart`, `_test.dart`), Elixir (`_test.exs`), Lua (`.test.lua`), Vue (`.test.vue`), `fixtures/`, `__fixtures__/`, `__mocks__/`, `spec/` directories.
+- **Extended TDD exempt patterns**: `.toml`, `.ini`, `.cfg`, `.lock`, `.editorconfig`, `.svg`, `.png`, `.jpg`, `.gif`.
+- **TDD state validation**: Unknown TDD states are now blocked with actionable error message in processHook.
+- **Backtick and subshell handling**: `splitCommands` now correctly handles backtick quoting and `$()` subshell depth tracking, preventing false splits inside nested expressions.
+- **Perl target file extraction**: `extractBashTargetFile` now extracts target files from `perl -pi -e` commands for accurate TDD enforcement.
+
+### Fixed
+- **Security: file-write-first detection order**: FILE_WRITE_PATTERNS are now checked before SAFE_COMMAND_PATTERNS, preventing safe patterns from masking file writes (e.g., `node -e` with `fs.writeFileSync` was previously bypassed).
+- **file-tracker.sh Node.js 25 argv compatibility**: Fixed `process.argv` indexing — Node.js 25 no longer includes `[eval]` marker, causing receipt creation to silently fail. Now uses `process.argv.filter(a => a !== '[eval]')` for cross-version compatibility.
+- **assumption-engine.js quality-timeline CLI**: Fixed reference to raw `input` string instead of parsed `parsed` object, causing the CLI action to always return empty results.
+- **assumption-engine.js evalSignal threshold passing**: Signal evaluator `threshold` field is now correctly passed to `fn()` instead of relying on hardcoded default parameters.
+- **assumption-engine.js readHistory dedup order**: Changed from keep-first to keep-latest when deduplicating by `session_id`, preventing finalized records from being ignored in favor of earlier active records.
+- **assumption-engine.js input guards**: Added `Array.isArray` checks in `isSessionDuplicate`, `detectStaleness`, `detectNewModel`, and `generateReport` to prevent crashes on non-array inputs.
+- **session-end.sh JSON validation**: Added JSON validation before JSONL append to prevent malformed entries from corrupting harness-sessions.jsonl.
+- **session-end.sh session ID fallback**: Falls back to `DEEP_WORK_SESSION_ID` env var when `started_at` field is missing from state file.
+- **session-end.sh error logging**: Errors now logged to `.claude/deep-work-guard-errors.log` instead of suppressed via `/dev/null`.
+- **phase-guard.sh error logging**: Node.js errors now appended to `.claude/deep-work-guard-errors.log` instead of discarded.
+- **utils.sh matchGlob trailing slash**: Normalized trailing slashes in exact path comparison.
+- **utils.sh session pointer safety**: Added `mkdir -p` before writing session pointer file.
+- **utils.sh session ID generation**: Fixed tab character stripping in hex generation from `/dev/urandom`.
+
+### Changed
+- **Redirect detection broadened**: General output redirection pattern changed from `(?:^|\|)` prefix to `(?:^|[|;]|\s)` to catch mid-command redirects (e.g., `cat << EOF > file`).
+- **`node -e` removed from safe patterns**: Previously treated as safe, now evaluated against file-write patterns like any other command.
+- **Model name sanitization**: `validateModelName` now strips non-alphanumeric characters; `lookupModel` adds `toString().trim()` for robust size normalization.
+- **Signal evaluator thresholds**: Made configurable via `threshold` field on evaluator definitions (previously hardcoded as default parameters).
+- **Broader redirect pattern**: Mid-command redirects (heredoc, after whitespace) now correctly detected.
+
 ## [5.5.1] - 2026-04-03
 
 ### Changed
