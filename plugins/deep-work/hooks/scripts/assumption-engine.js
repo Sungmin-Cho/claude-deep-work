@@ -45,6 +45,7 @@ const CONFIDENCE_THRESHOLDS = {
 };
 
 const DEFAULT_STALENESS_THRESHOLD = 10;
+const MIN_CONFIDENCE_SESSIONS = 3;
 
 // ─── Registry ───────────────────────────────────────────────
 
@@ -99,17 +100,20 @@ function readHistory(historyPath) {
     const raw = fs.readFileSync(historyPath, 'utf8');
     const lines = raw.split('\n').filter(line => line.trim().length > 0);
     const sessions = [];
-    const seenIds = new Set();
+    const seenIds = new Map(); // session_id → index in sessions array
 
     for (let i = 0; i < lines.length; i++) {
       try {
         const session = JSON.parse(lines[i]);
         if (session.session_id && seenIds.has(session.session_id)) {
-          warnings.push(`Duplicate session_id "${session.session_id}" at line ${i + 1}, skipping.`);
+          // Keep latest: replace the earlier entry with this one
+          const prevIdx = seenIds.get(session.session_id);
+          sessions[prevIdx] = session;
+          warnings.push(`Duplicate session_id "${session.session_id}" at line ${i + 1}, keeping latest.`);
           continue;
         }
         if (session.session_id) {
-          seenIds.add(session.session_id);
+          seenIds.set(session.session_id, sessions.length);
         }
         sessions.push(session);
       } catch (parseErr) {
@@ -134,7 +138,7 @@ function readHistory(historyPath) {
  * @returns {boolean}
  */
 function isSessionDuplicate(sessions, sessionId) {
-  if (!sessionId) return false;
+  if (!sessionId || !Array.isArray(sessions)) return false;
   return sessions.some(s => s.session_id === sessionId);
 }
 
@@ -213,7 +217,8 @@ function wilsonScore(positive, total, z) {
   if (typeof z === 'undefined') z = 1.96;
 
   // Guard: division by zero or no data
-  if (total === 0) return 0;
+  if (!Number.isFinite(total) || total === 0) return 0;
+  if (!Number.isFinite(positive)) positive = 0;
   if (positive < 0) positive = 0;
   if (positive > total) positive = total;
 
@@ -311,6 +316,9 @@ function _computeConfidenceFromEvaluated(evaluated, minSessions) {
  * @returns {{ stale: boolean, sessionsSinceLastSignal: number, threshold: number }}
  */
 function detectStaleness(assumption, sessions, threshold) {
+  if (!assumption || !Array.isArray(sessions)) {
+    return { stale: false, sessionsSinceLastSignal: 0, threshold: DEFAULT_STALENESS_THRESHOLD, reason: 'invalid_input' };
+  }
   const thresh = threshold ||
     assumption.staleness_threshold ||
     DEFAULT_STALENESS_THRESHOLD;
@@ -350,8 +358,8 @@ function detectStaleness(assumption, sessions, threshold) {
  * @returns {{ isNew: boolean, sessionsWithModel: number, totalSessions: number }}
  */
 function detectNewModel(currentModel, sessions) {
-  if (!currentModel || sessions.length === 0) {
-    return { isNew: true, sessionsWithModel: 0, totalSessions: sessions.length };
+  if (!currentModel || !Array.isArray(sessions) || sessions.length === 0) {
+    return { isNew: true, sessionsWithModel: 0, totalSessions: Array.isArray(sessions) ? sessions.length : 0 };
   }
 
   const sessionsWithModel = sessions.filter(s => s.model_primary === currentModel).length;
@@ -377,16 +385,18 @@ const SIGNAL_EVALUATORS = {
   // Phase Guard signals
   'test_pass_rate_with_guard > test_pass_rate_without': {
     scope: 'session',
-    fn: (session) => {
+    threshold: 0.8,
+    fn: (session, _ctx, threshold = 0.8) => {
       if (!session.slices_total) return null;
-      return session.slices_passed_first_try / session.slices_total > 0.8;
+      return session.slices_passed_first_try / session.slices_total > threshold;
     },
   },
   'high_override_rate': {
     scope: 'session',
-    fn: (session) => {
+    threshold: 0.5,
+    fn: (session, _ctx, threshold = 0.5) => {
       if (!session.slices_total) return null;
-      return (session.tdd_overrides || 0) / session.slices_total > 0.5;
+      return (session.tdd_overrides || 0) / session.slices_total > threshold;
     },
   },
   'zero_rework_after_override': {
@@ -453,7 +463,7 @@ const SIGNAL_EVALUATORS = {
   'research_findings_not_referenced_in_plan': {
     scope: 'session',
     fn: (session) => {
-      if (!session.phases_used) return null;
+      if (!session.phases_used || !Array.isArray(session.phases_used)) return null;
       const hasResearch = session.phases_used.includes('research');
       if (!hasResearch) return null;
       return (session.research_references_used || 0) === 0;
@@ -647,7 +657,7 @@ function evaluateSignals(assumption, session) {
       // Slice-scoped: evaluate per slice, any-true aggregation (count at most 1)
       let anyTrue = false;
       for (const slice of slices) {
-        const result = resolved.fn(slice, session);
+        const result = resolved.fn(slice, session, resolved.threshold);
         if (result === true) {
           anyTrue = true;
           details.push({ signal, type, value: true, slice_id: slice.slice_id });
@@ -663,7 +673,7 @@ function evaluateSignals(assumption, session) {
       }
     } else {
       // Session-scoped: evaluate once against the session object
-      const result = resolved.fn(session);
+      const result = resolved.fn(session, null, resolved.threshold);
       if (result === true) {
         if (type === 'supporting') supporting++;
         else weakening++;
@@ -703,6 +713,8 @@ function generateReport(assumptions, sessions, options) {
   const opts = options || {};
   const data = [];
   const lines = [];
+  if (!Array.isArray(assumptions)) assumptions = [];
+  if (!Array.isArray(sessions)) sessions = [];
 
   lines.push(`ASSUMPTION HEALTH REPORT (${sessions.length} sessions analyzed)`);
   lines.push('='.repeat(56));
@@ -1296,8 +1308,8 @@ if (require.main === module) {
           break;
         }
         case 'quality-timeline': {
-          const history = readHistory(input.historyPath);
-          result = { text: generateQualityTimeline(history.sessions, input.options), warnings: history.warnings };
+          const history = readHistory(parsed.historyPath);
+          result = { text: generateQualityTimeline(history.sessions, parsed.options), warnings: history.warnings };
           break;
         }
         default:

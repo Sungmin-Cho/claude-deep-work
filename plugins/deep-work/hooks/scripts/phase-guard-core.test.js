@@ -636,3 +636,111 @@ describe('processHook regression: bash file write TDD target extraction', () => 
     assert.equal(result.decision, 'allow');
   });
 });
+
+// ─── v5.5.2: Runtime language file write detection ──────────
+
+describe('v5.5.2: Runtime language file writes', () => {
+  it('detects perl -pi -e in-place edit', () => {
+    assert.ok(detectBashFileWrite("perl -pi -e 's/old/new/' file.ts").isFileWrite);
+  });
+
+  it('detects node -e fs.writeFileSync', () => {
+    assert.ok(detectBashFileWrite("node -e \"require('fs').writeFileSync('f.ts','x')\"").isFileWrite);
+  });
+
+  it('detects python3 -c file write', () => {
+    assert.ok(detectBashFileWrite("python3 -c \"open('f.ts','w').write('x')\"").isFileWrite);
+  });
+
+  it('detects ruby -e File.write', () => {
+    assert.ok(detectBashFileWrite("ruby -e \"File.write('f.ts','x')\"").isFileWrite);
+  });
+});
+
+// ─── v5.5.2: File-write-first detection order ───────────────
+
+describe('v5.5.2: File-write patterns checked before safe patterns', () => {
+  it('detects cat heredoc redirect despite cat being safe', () => {
+    assert.ok(detectBashFileWrite("cat << 'EOF' > file.ts\ncontent\nEOF").isFileWrite);
+  });
+
+  it('still allows pure safe commands', () => {
+    assert.ok(!detectBashFileWrite('npm test').isFileWrite);
+    assert.ok(!detectBashFileWrite('git status').isFileWrite);
+  });
+});
+
+// ─── v5.5.2: Extended test/exempt file patterns ─────────────
+
+describe('v5.5.2: Extended test file patterns', () => {
+  it('detects Dart test files', () => {
+    assert.ok(isTestFilePath('test/widget_test.dart'));
+    assert.ok(isTestFilePath('test/app.test.dart'));
+  });
+
+  it('detects Elixir test files', () => {
+    assert.ok(isTestFilePath('test/app_test.exs'));
+  });
+
+  it('detects files in fixtures/ and __mocks__/', () => {
+    assert.ok(isTestFilePath('fixtures/data.json'));
+    assert.ok(isTestFilePath('__mocks__/api.js'));
+  });
+});
+
+describe('v5.5.2: Extended exempt file patterns', () => {
+  it('exempts .toml files', () => {
+    assert.ok(isExemptFile('pyproject.toml'));
+  });
+
+  it('exempts .lock files', () => {
+    assert.ok(isExemptFile('package-lock.json'));
+    assert.ok(isExemptFile('yarn.lock'));
+  });
+
+  it('exempts image files', () => {
+    assert.ok(isExemptFile('logo.svg'));
+    assert.ok(isExemptFile('photo.png'));
+  });
+});
+
+// ─── v5.5.2: TDD state validation ──────────────────────────
+
+describe('v5.5.2: TDD state validation in processHook', () => {
+  it('blocks unknown TDD state', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Edit',
+      toolInput: { file_path: 'src/main.ts' },
+      state: { current_phase: 'implement', tdd_mode: 'strict', tdd_state: 'INVALID_STATE' },
+    });
+    assert.equal(result.decision, 'block');
+  });
+});
+
+// ─── v5.5.2: Backtick and subshell handling ─────────────────
+
+describe('v5.5.2: splitCommands backtick/subshell', () => {
+  it('does not split inside backticks', () => {
+    const parts = splitCommands('echo `a && b`');
+    assert.equal(parts.length, 1);
+  });
+
+  it('does not split inside $() subshell', () => {
+    const parts = splitCommands('echo $(a && b)');
+    assert.equal(parts.length, 1);
+  });
+
+  it('handles nested $() correctly', () => {
+    const parts = splitCommands('echo $(echo $(echo ok))');
+    assert.equal(parts.length, 1);
+  });
+});
+
+// ─── v5.5.2: Perl target extraction ────────────────────────
+
+describe('v5.5.2: extractBashTargetFile perl', () => {
+  it('extracts target from perl -pi -e', () => {
+    const target = extractBashTargetFile("perl -pi -e 's/old/new/' src/main.ts");
+    assert.equal(target, 'src/main.ts');
+  });
+});

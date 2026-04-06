@@ -235,7 +235,8 @@ NODE_INPUT=$(printf '%s' "$TOOL_INPUT" | node -e "
 # Call Node.js with timeout protection
 NODE_RESULT=""
 # Note: macOS has no `timeout` command. Use node's own setTimeout or rely on hook timeout (5s).
-if NODE_RESULT=$(echo "$NODE_INPUT" | node "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null); then
+NODE_ERR_LOG="$PROJECT_ROOT/.claude/deep-work-guard-errors.log"
+if NODE_RESULT=$(echo "$NODE_INPUT" | node "$SCRIPT_DIR/phase-guard-core.js" 2>>"$NODE_ERR_LOG"); then
   # Parse decision from Node.js output
   DECISION=$(echo "$NODE_RESULT" | grep -o '"decision"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
 

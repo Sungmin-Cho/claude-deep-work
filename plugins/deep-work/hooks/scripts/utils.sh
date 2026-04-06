@@ -77,7 +77,7 @@ read_frontmatter_field() {
 generate_session_id() {
   local hex
   if [[ -r /dev/urandom ]]; then
-    hex=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n')
+    hex=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n\t')
   fi
   if [[ -z "$hex" || ${#hex} -ne 8 ]]; then
     printf -v hex '%04x%04x' "$RANDOM" "$RANDOM"
@@ -122,6 +122,7 @@ init_deep_work_state() {
 
 write_session_pointer() {
   local session_id="$1"
+  mkdir -p "$PROJECT_ROOT/.claude" 2>/dev/null
   printf '%s' "$session_id" > "$PROJECT_ROOT/.claude/deep-work-current-session"
 }
 
@@ -252,7 +253,8 @@ check_file_ownership() {
         );
         return re.test(fp);
       }
-      return pattern === fp;
+      // Normalize trailing slashes for directory comparison
+      return pattern.replace(/\/+$/, "") === fp.replace(/\/+$/, "");
     }
 
     // Shared files are always allowed

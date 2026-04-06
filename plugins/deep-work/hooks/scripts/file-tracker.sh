@@ -114,13 +114,15 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
   if [[ ! -f "$RECEIPT_FILE" ]]; then
     node -e "
       const fs = require('fs');
+      const args = process.argv.filter(a => a !== '[eval]');
+      const sliceId = args[1], ts = args[2], receiptPath = args[3];
       const data = {
-        slice_id: process.argv[2], status: 'in_progress', tdd_state: 'PENDING',
+        slice_id: sliceId, status: 'in_progress', tdd_state: 'PENDING',
         tdd: {}, changes: { files_modified: [], lines_added: 0, lines_removed: 0 },
         verification: {}, spec_compliance: {}, code_review: {}, debug: null,
-        timestamp: process.argv[3]
+        timestamp: ts
       };
-      fs.writeFileSync(process.argv[4], JSON.stringify(data, null, 2));
+      fs.writeFileSync(receiptPath, JSON.stringify(data, null, 2));
     " "$ACTIVE_SLICE" "$TIMESTAMP" "$RECEIPT_FILE" 2>/dev/null || true
   fi
 
@@ -129,7 +131,8 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
   if command -v node &>/dev/null; then
     node -e "
       const fs = require('fs');
-      const [,, receiptFile, filePath, ts] = process.argv;
+      const args = process.argv.filter(a => a !== '[eval]');
+      const [, receiptFile, filePath, ts] = args;
       try {
         const r = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
         if (!r.changes) r.changes = { files_modified: [] };
@@ -140,6 +143,7 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
         fs.writeFileSync(tmp, JSON.stringify(r, null, 2));
         fs.renameSync(tmp, receiptFile);
       } catch(e) {
+        process.stderr.write('file-tracker receipt update error: ' + e.message + '\\n');
         try { fs.unlinkSync(receiptFile + '.tmp.' + process.pid); } catch(_) {}
       }
     " "$RECEIPT_FILE" "$FILE_PATH" "$TIMESTAMP" 2>/dev/null || true

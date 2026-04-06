@@ -1,5 +1,5 @@
 {
-  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.5 Review Flow Enhancement)",
+  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.5.2 Robust Detection & Signal Processing)",
   "hooks": {
     "SessionStart": [
       {

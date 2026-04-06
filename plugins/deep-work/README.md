@@ -200,6 +200,15 @@ Creates a concrete implementation plan based on research results:
 **v5.5.1 features:**
 - **Team research cross-verification** — When `team_mode: team`, plan phase loads partial research files (`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`) as supplementary references for cross-checking against synthesized `research.md`
 
+**v5.5.2 features:**
+- **Extended bash file-write detection** — 20+ new patterns: perl in-place, node -e `fs.writeFileSync`, python -c, ruby -e, awk, swift, git destructive ops, curl/wget output, ln, tar/unzip/cpio, rsync
+- **File-write-first detection order** — FILE_WRITE patterns now checked before SAFE_COMMAND patterns, preventing safe patterns from masking file writes
+- **Extended test file patterns** — Dart, Elixir, Lua, Vue, `fixtures/`, `__mocks__/`, `spec/` directories
+- **Extended TDD exempt patterns** — `.toml`, `.ini`, `.cfg`, `.lock`, `.editorconfig`, image files (`.svg`, `.png`, `.jpg`, `.gif`)
+- **TDD state validation** — Unknown TDD states blocked with actionable error message
+- **Backtick/subshell handling** — `splitCommands` correctly handles backtick quoting and `$()` depth tracking
+- **Error logging** — Hook errors logged to `.claude/deep-work-guard-errors.log` instead of suppressed
+
 ### Phase 3: Implement (v4.0 Evidence-Driven)
 
 Slice-based TDD-enforced execution:
@@ -558,7 +567,7 @@ Over time, the engine compares quality scores between sessions where a rule was 
 
 This creates a feedback loop: rules that prove their value survive; rules that don't get adjusted. Your workflow evolves based on evidence, not dogma.
 
-## Installation (v5.5.1)
+## Installation (v5.5.2)
 
 Add the marketplace to your Claude Code settings:
 
