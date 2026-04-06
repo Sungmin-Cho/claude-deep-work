@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "5.5.1"
+version: "5.5.2"
 description: |
   Evidence-driven development protocol with auto-flow orchestration.
   Use when: "deep work", "plan before code", "TDD", "evidence-driven",
@@ -9,6 +9,19 @@ description: |
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+
+## v5.5.2 Robust Detection & Signal Processing
+
+**v5.5.2 신규 기능:**
+- **확장된 bash 파일 쓰기 감지**: perl, node -e, python -c, ruby -e, swift, awk, git destructive ops 등 20+ 패턴 추가
+- **보안: file-write-first 감지 순서**: FILE_WRITE 패턴을 SAFE 패턴보다 먼저 검사하여 우회 방지
+- **확장된 언어 지원**: Dart, Elixir, Lua, Vue 테스트 패턴 + fixtures/mocks 디렉토리 인식
+- **TDD exempt 확장**: .toml, .ini, .cfg, .lock, .editorconfig, 이미지 파일 면제
+- **splitCommands 개선**: backtick, $() subshell 깊이 추적으로 중첩 표현식 내부 잘못된 분할 방지
+- **TDD state 검증**: 알 수 없는 상태값 차단 + 안내 메시지
+- **에러 로깅**: /dev/null → `.claude/deep-work-guard-errors.log` 파일 기록
+- **Node.js 25 호환**: file-tracker.sh argv 인덱싱 수정 (receipt 생성 무음 실패 해결)
+- **Assumption Engine 수정**: CLI 버그, threshold 전달, dedup 순서 (keep-latest), 입력 가드
 
 ## v5.5 Review Flow Enhancement
 
