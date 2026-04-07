@@ -450,3 +450,140 @@ migrate_legacy_state() {
 
   printf '%s' "$new_id"
 }
+
+# ─── Fork utilities ───────────────────────────────────────────
+# Session fork support (v5.6)
+
+validate_fork_target() {
+  local state_file="$1"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "State file not found: 상태 파일이 존재하지 않습니다." >&2
+    return 1
+  fi
+
+  local phase
+  phase="$(read_frontmatter_field "$state_file" "current_phase")"
+
+  if [[ -z "$phase" || "$phase" == "idle" ]]; then
+    echo "Cannot fork idle session: idle 세션은 fork할 수 없습니다." >&2
+    return 1
+  fi
+
+  printf 'valid'
+}
+
+get_fork_generation() {
+  local session_id="$1"
+
+  local registry
+  registry="$(read_registry)"
+
+  node -e '
+    const data = JSON.parse(process.argv[1]);
+    const sid = process.argv[2];
+    const sess = data.sessions[sid];
+    if (!sess) { console.log("0"); process.exit(0); }
+    const gen = sess.fork_generation || 0;
+    console.log(String(gen));
+  ' "$registry" "$session_id"
+}
+
+update_parent_fork_children() {
+  local parent_state_file="$1"
+  local child_id="$2"
+  local restart_phase="$3"
+
+  local now
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S%z)"
+
+  node -e '
+    const fs = require("fs");
+    const stateFile = process.argv[1];
+    const childId = process.argv[2];
+    const restartPhase = process.argv[3];
+    const now = process.argv[4];
+
+    let content = fs.readFileSync(stateFile, "utf8");
+
+    // Check if fork_children already exists in frontmatter
+    const fmEnd = content.indexOf("\n---", 4);
+    if (fmEnd === -1) process.exit(0);
+
+    const fmSection = content.substring(0, fmEnd);
+    const afterFm = content.substring(fmEnd);
+
+    if (fmSection.includes("fork_children:")) {
+      // Append to existing fork_children
+      const entry = `\n  - session_id: ${childId}\n    forked_at: ${now}\n    restart_phase: ${restartPhase}`;
+      // Find last entry under fork_children and append after it
+      const lines = content.split("\n");
+      let insertIdx = -1;
+      let inForkChildren = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].match(/^fork_children:/)) { inForkChildren = true; continue; }
+        if (inForkChildren) {
+          if (lines[i].match(/^  - /) || lines[i].match(/^    /)) {
+            insertIdx = i;
+          } else {
+            break;
+          }
+        }
+      }
+      if (insertIdx >= 0) {
+        lines.splice(insertIdx + 1, 0, `  - session_id: ${childId}`, `    forked_at: ${now}`, `    restart_phase: ${restartPhase}`);
+      }
+      fs.writeFileSync(stateFile, lines.join("\n"));
+    } else {
+      // Add fork_children before closing ---
+      const insertion = `fork_children:\n  - session_id: ${childId}\n    forked_at: ${now}\n    restart_phase: ${restartPhase}\n`;
+      content = fmSection + "\n" + insertion + afterFm;
+      fs.writeFileSync(stateFile, content);
+    }
+  ' "$parent_state_file" "$child_id" "$restart_phase" "$now"
+}
+
+register_fork_session() {
+  local session_id="$1"
+  local parent_id="$2"
+  local fork_generation="$3"
+  local task_desc="$4"
+  local work_dir="$5"
+  local restart_phase="${6:-plan}"
+
+  # 원자적 등록: 레지스트리 lock 내에서 fork 등록 + 부모 업데이트를 모두 수행
+  # session ID 기반 suffix이므로 번호 할당 race condition 없음
+  local current
+  current="$(read_registry)"
+
+  local updated
+  updated=$(node -e '
+    const data = JSON.parse(process.argv[1]);
+    const sid = process.argv[2];
+    const parentId = process.argv[3];
+    const gen = parseInt(process.argv[4], 10);
+    const now = new Date().toISOString();
+    data.sessions[sid] = {
+      pid: null,
+      current_phase: process.argv[7] || "plan",
+      task_description: process.argv[5],
+      work_dir: process.argv[6],
+      started_at: now,
+      last_activity: now,
+      file_ownership: [],
+      fork_parent: parentId,
+      fork_generation: gen,
+      worktree_path: null,
+      git_branch: null
+    };
+    console.log(JSON.stringify(data));
+  ' "$current" "$session_id" "$parent_id" "$fork_generation" "$task_desc" "$work_dir" "$restart_phase")
+
+  write_registry "$updated"
+
+  # 부모 상태 파일 업데이트도 같은 호출 내에서 수행
+  local parent_state="$PROJECT_ROOT/.claude/deep-work.${parent_id}.md"
+  if [[ -f "$parent_state" ]]; then
+    update_parent_fork_children "$parent_state" "$session_id" "$restart_phase"
+  fi
+}

@@ -1,4 +1,4 @@
-# deep-work v5.5.2
+# deep-work v5.6.0
 
 Auto-flow orchestration plugin. `/deep-work "task"` 하나로 전체 워크플로우 자동 진행.
 

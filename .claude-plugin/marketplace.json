@@ -9,7 +9,7 @@
     {
       "name": "deep-work",
       "description": "Evidence-Driven Development Protocol — auto-flow orchestration with TDD enforcement, slice-based execution, and receipt validation",
-      "version": "5.5.2",
+      "version": "5.6.0",
       "source": "./plugins/deep-work"
     }
   ]

@@ -744,3 +744,54 @@ describe('v5.5.2: extractBashTargetFile perl', () => {
     assert.equal(target, 'src/main.ts');
   });
 });
+
+// ─── v5.6: Artifacts-only fork phase restriction ──────────
+
+describe('artifacts-only fork phase restriction', () => {
+  it('should block implement phase for artifacts-only fork', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Write',
+      toolInput: { file_path: 'src/main.js' },
+      state: { current_phase: 'implement', tdd_mode: 'relaxed', tdd_state: 'RED_VERIFIED', fork_mode: 'artifacts-only' },
+    });
+    assert.equal(result.decision, 'block');
+    assert.match(result.reason, /Non-git fork|plan/);
+  });
+
+  it('should block test phase for artifacts-only fork', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Bash',
+      toolInput: { command: 'npm test' },
+      state: { current_phase: 'test', fork_mode: 'artifacts-only' },
+    });
+    assert.equal(result.decision, 'block');
+    assert.match(result.reason, /Non-git fork|plan/);
+  });
+
+  it('should allow plan phase for artifacts-only fork', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Write',
+      toolInput: { file_path: 'deep-work/plan.md' },
+      state: { current_phase: 'plan', fork_mode: 'artifacts-only' },
+    });
+    assert.notEqual(result.reason?.includes('Non-git fork'), true);
+  });
+
+  it('should allow implement phase for worktree fork', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Write',
+      toolInput: { file_path: 'src/main.js' },
+      state: { current_phase: 'implement', tdd_mode: 'relaxed', tdd_state: 'RED_VERIFIED', fork_mode: 'worktree' },
+    });
+    assert.equal(result.decision, 'allow');
+  });
+
+  it('should allow implement phase when fork_mode is not set', () => {
+    const result = processHook({
+      action: 'pre', toolName: 'Write',
+      toolInput: { file_path: 'src/main.js' },
+      state: { current_phase: 'implement', tdd_mode: 'relaxed', tdd_state: 'RED_VERIFIED' },
+    });
+    assert.equal(result.decision, 'allow');
+  });
+});

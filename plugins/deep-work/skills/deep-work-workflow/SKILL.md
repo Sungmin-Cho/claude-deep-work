@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "5.5.2"
+version: "5.6.0"
 description: |
   Evidence-driven development protocol with auto-flow orchestration.
   Use when: "deep work", "plan before code", "TDD", "evidence-driven",
@@ -9,6 +9,29 @@ description: |
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+
+## v5.6.0 Session Fork
+
+**v5.6.0 신규 기능:**
+
+### `/deep-fork [session-id] [--from-phase=PHASE]`
+
+현재 세션을 fork하여 다른 접근법을 탐색합니다. 원래 세션은 보존됩니다.
+
+- **Git 환경**: worktree 기반 전체 복제. implement/test까지 진행 가능.
+  - Dirty 상태 검증: clean/commit/stash 중 선택
+  - Session ID 기반 branch suffix (race condition 방지)
+  - Worktree 컨텍스트 자동 전환 (`FORK_PROJECT_ROOT`)
+- **Non-git 환경**: 산출물만 복제. plan phase까지만 진행 가능.
+  - Phase guard가 implement/test 진입 차단
+- **Fork 관계 추적**:
+  - `fork_info`: fork된 세션의 상태 파일에 부모 관계 기록
+  - `fork_children`: 부모 세션의 상태 파일에 자식 목록 기록
+  - `fork-snapshot.yaml`: fork 시점 상태 스냅샷 (비교 기준점)
+- **비교 & 시각화**:
+  - `/deep-status --tree`: fork 관계 트리 시각화
+  - `/deep-status --compare`: fork 관계 자동 감지 비교
+- **Edge cases**: 최대 3세대 fork (경고), idle 세션 fork 금지, stale 부모 검증
 
 ## v5.5.2 Robust Detection & Signal Processing
 
