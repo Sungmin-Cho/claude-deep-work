@@ -343,3 +343,121 @@ describe('Fork registration with custom restart_phase', () => {
     assert.match(parentState, /restart_phase: research/);
   });
 });
+
+// ─── Git worktree fork ─────────────────────────────────────
+
+describe('Git worktree fork', () => {
+  let gitDir;
+
+  before(() => {
+    // Create a real git repo for worktree tests
+    gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-wt-integ-'));
+    execFileSync('git', ['init', gitDir], { encoding: 'utf8' });
+    execFileSync('git', ['-C', gitDir, 'config', 'user.email', 'test@test.com'], { encoding: 'utf8' });
+    execFileSync('git', ['-C', gitDir, 'config', 'user.name', 'Test'], { encoding: 'utf8' });
+    // Create initial commit
+    fs.writeFileSync(path.join(gitDir, 'README.md'), '# Test\n');
+    execFileSync('git', ['-C', gitDir, 'add', '.'], { encoding: 'utf8' });
+    execFileSync('git', ['-C', gitDir, 'commit', '-m', 'initial'], { encoding: 'utf8' });
+    // Create .claude directory for state files
+    fs.mkdirSync(path.join(gitDir, '.claude'), { recursive: true });
+  });
+
+  after(() => {
+    // Clean up worktrees before removing the directory
+    try {
+      const wtList = execFileSync('git', ['-C', gitDir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
+      const worktrees = wtList.split('\n')
+        .filter(l => l.startsWith('worktree '))
+        .map(l => l.replace('worktree ', ''))
+        .filter(p => p !== gitDir);
+      for (const wt of worktrees) {
+        execFileSync('git', ['-C', gitDir, 'worktree', 'remove', wt, '--force'], { encoding: 'utf8', stdio: 'pipe' });
+      }
+    } catch { /* ignore cleanup errors */ }
+    fs.rmSync(gitDir, { recursive: true, force: true });
+  });
+
+  it('should create worktree with session-based branch at current commit', () => {
+    const currentCommit = execFileSync(
+      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8' },
+    ).trim();
+
+    const forkBranch = 'deep-work/fork/s-wt000001';
+    const worktreePath = path.join(gitDir, '.deep-work-worktrees', 's-wt000001');
+
+    execFileSync('git', [
+      '-C', gitDir, 'worktree', 'add', worktreePath, '-b', forkBranch, currentCommit,
+    ], { encoding: 'utf8' });
+
+    // Verify worktree exists
+    assert.ok(fs.existsSync(worktreePath), 'worktree directory should exist');
+    assert.ok(fs.existsSync(path.join(worktreePath, 'README.md')), 'worktree should contain repo files');
+
+    // Verify branch points to same commit
+    const wtCommit = execFileSync(
+      'git', ['-C', worktreePath, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8' },
+    ).trim();
+    assert.equal(wtCommit, currentCommit, 'worktree branch should point to same commit');
+
+    // Verify branch name
+    const wtBranch = execFileSync(
+      'git', ['-C', worktreePath, 'branch', '--show-current'],
+      { encoding: 'utf8' },
+    ).trim();
+    assert.equal(wtBranch, forkBranch);
+  });
+
+  it('should allow independent commits in worktree without affecting main', () => {
+    const worktreePath = path.join(gitDir, '.deep-work-worktrees', 's-wt000001');
+    const mainCommit = execFileSync(
+      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8' },
+    ).trim();
+
+    // Make a commit in the worktree
+    fs.writeFileSync(path.join(worktreePath, 'new-file.js'), 'console.log("fork");\n');
+    execFileSync('git', ['-C', worktreePath, 'add', 'new-file.js'], { encoding: 'utf8' });
+    execFileSync('git', ['-C', worktreePath, 'commit', '-m', 'fork commit'], { encoding: 'utf8' });
+
+    // Main branch should still be at original commit
+    const mainAfter = execFileSync(
+      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8' },
+    ).trim();
+    assert.equal(mainAfter, mainCommit, 'main branch should not be affected by worktree commit');
+
+    // Worktree should have advanced
+    const wtCommit = execFileSync(
+      'git', ['-C', worktreePath, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8' },
+    ).trim();
+    assert.notEqual(wtCommit, mainCommit, 'worktree should have a new commit');
+  });
+
+  it('should support multiple worktree forks from same repo', () => {
+    const currentCommit = execFileSync(
+      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8' },
+    ).trim();
+
+    const forkBranch2 = 'deep-work/fork/s-wt000002';
+    const worktreePath2 = path.join(gitDir, '.deep-work-worktrees', 's-wt000002');
+
+    execFileSync('git', [
+      '-C', gitDir, 'worktree', 'add', worktreePath2, '-b', forkBranch2, currentCommit,
+    ], { encoding: 'utf8' });
+
+    assert.ok(fs.existsSync(worktreePath2), 'second worktree should exist');
+
+    // Both worktrees should be independent
+    const wtList = execFileSync(
+      'git', ['-C', gitDir, 'worktree', 'list'],
+      { encoding: 'utf8' },
+    );
+    assert.match(wtList, /s-wt000001/);
+    assert.match(wtList, /s-wt000002/);
+  });
+});
