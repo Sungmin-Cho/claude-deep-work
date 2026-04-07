@@ -1,36 +1,15 @@
 # deep-work v5.6.0
 
-Auto-flow orchestration plugin. `/deep-work "task"` 하나로 전체 워크플로우 자동 진행.
+Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인.
 
-## Where to look
+## Structure
 
-| What | Where |
-|------|-------|
-| Plugin manifest | `plugins/deep-work/.claude-plugin/plugin.json` |
-| Commands (7 primary + 13 deprecated) | `plugins/deep-work/commands/` |
-| Hook scripts (phase-guard, file-tracker, etc.) | `plugins/deep-work/hooks/scripts/` |
-| Hook config | `plugins/deep-work/hooks/hooks.json` |
-| SKILL.md (trigger, phase docs, references) | `plugins/deep-work/skills/deep-work-workflow/SKILL.md` |
-| Reference guides (12 files) | `plugins/deep-work/skills/deep-work-workflow/references/` |
-| Tests | `plugins/deep-work/hooks/scripts/*test.js` |
-| Changelog | `plugins/deep-work/CHANGELOG.md` |
-| Full docs (EN / KO) | `plugins/deep-work/README.md` / `README.ko.md` |
-
-## Testing
-
-```bash
-cd plugins/deep-work/hooks/scripts
-node --test phase-guard-core.test.js
-node --test assumption-engine.test.js
-node --test multi-session.test.js
 ```
-
-## Conventions
-
-- Hook exit codes: 0 (allow), 2 (block with JSON reason)
-- Hook timeouts: PreToolUse 5s, PostToolUse 3s, Stop 5s
-- Commands output in user's detected language
-- State file: `.claude/deep-work.{SESSION_ID}.md` (YAML frontmatter, per-session)
-- Session registry: `.claude/deep-work-sessions.json` (central index)
-- Session pointer: `.claude/deep-work-current-session` (env var fallback)
-- File paths: cross-platform normalized (POSIX)
+.claude-plugin/plugin.json        # 플러그인 매니페스트
+commands/                          # 슬래시 커맨드 (21개)
+hooks/hooks.json                   # 훅 설정
+hooks/scripts/                     # 훅 스크립트 및 테스트
+skills/deep-work-workflow/SKILL.md # 메인 스킬
+skills/deep-work-workflow/references/ # 레퍼런스 가이드 (12개)
+templates/                         # CI 템플릿
+```
