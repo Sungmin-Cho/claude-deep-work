@@ -7,6 +7,29 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.0] - 2026-04-07
+
+### 추가
+- **`/deep-fork` 커맨드**: deep-work 세션을 fork하여 다른 접근법을 탐색하면서 원래 세션을 보존
+  - Git 환경: worktree 기반 전체 복제, dirty 상태 검증 (`git stash --include-untracked`), session ID 기반 branch suffix (race condition 방지), worktree 컨텍스트 자동 전환 (`FORK_PROJECT_ROOT`)
+  - Non-git 환경: 산출물만 복제, plan phase 제한 (implement/test는 phase guard가 차단)
+  - 부모-자식 관계 추적: 상태 파일의 `fork_info`/`fork_children`
+  - `fork-snapshot.yaml`: fork 시점 상태 스냅샷 (비교 기준점)
+  - Stale 부모 검증 (git: commit 존재 확인, non-git: 작업 디렉토리 존재 확인)
+  - Fork 세대 제한: 최대 3세대, 초과 시 경고
+- **`/deep-status --tree`**: fork 관계 트리 시각화 (UTF-8 트리 문자)
+- **`/deep-status --compare` 자동 감지**: 인자 없이 호출 시 fork 관계 자동 감지 비교
+- **`/deep-status` fork 정보 표시**: 기본 출력에 `fork_info`/`fork_children` 표시
+- **`/deep-cleanup` fork 지원**: idle fork 세션 스캔, 부모+자식 전체 idle 시 일괄 정리 제안
+- **Phase guard**: artifacts-only fork 세션의 implement/test phase 차단
+- **Fork 유틸 함수**: `validate_fork_target`, `get_fork_generation`, `update_parent_fork_children`, `register_fork_session` (원자적 레지스트리 + 부모 업데이트)
+- **`session-end.sh`**: fork 세션 종료 시 부모의 `fork_children` 상태를 idle로 업데이트
+- **Fork 통합 테스트**: 원자적 등록, 다중 fork, phase-guard 통합, edge cases, git worktree fork 등 18개 테스트
+
+### 변경
+- `deep-work-sessions.json` 레지스트리: 세션별 `fork_parent`, `fork_generation` 필드 추가
+- 상태 파일 YAML frontmatter: `fork_info` (부모 관계), `fork_children` (자식 목록) 섹션 추가
+
 ## [5.5.2] - 2026-04-06
 
 ### 추가

@@ -7,6 +7,29 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.0] - 2026-04-07
+
+### Added
+- **`/deep-fork` command**: Fork a deep-work session to explore different approaches while preserving the original session.
+  - Git environment: worktree-based full replication with dirty state validation (`git stash --include-untracked`), session-ID-based branch suffix (race-condition-free), automatic worktree context switch (`FORK_PROJECT_ROOT`).
+  - Non-git environment: artifacts-only replication with plan phase limit (implement/test blocked by phase guard).
+  - Parent-child relationship tracking via `fork_info` and `fork_children` in state files.
+  - `fork-snapshot.yaml` for comparison baseline at fork point.
+  - Stale parent validation (commit existence for git, work_dir existence for non-git).
+  - Fork generation limit: max 3 generations with warning.
+- **`/deep-status --tree`**: Visualize fork relationship tree with UTF-8 tree characters.
+- **`/deep-status --compare` auto-detection**: Auto-detect fork relationships when no session IDs given (parent↔child comparison).
+- **`/deep-status` fork info display**: Show `fork_info` and `fork_children` in default status output.
+- **`/deep-cleanup` fork support**: Scan for idle fork sessions, batch cleanup when parent + all children are idle.
+- **Phase guard**: Block implement/test phases for `artifacts-only` fork sessions with actionable error message.
+- **Fork utility functions** in `utils.sh`: `validate_fork_target`, `get_fork_generation`, `update_parent_fork_children`, `register_fork_session` (atomic registry + parent update).
+- **`session-end.sh`**: Update parent's `fork_children` status to idle when fork session ends.
+- **Fork integration tests**: 18 integration tests covering atomic registration, multi-fork, phase-guard integration, edge cases, and git worktree fork.
+
+### Changed
+- `deep-work-sessions.json` registry: Added `fork_parent` and `fork_generation` fields per session entry.
+- State file YAML frontmatter: Added `fork_info` (parent relationship) and `fork_children` (child list) sections.
+
 ## [5.5.2] - 2026-04-06
 
 ### Added
