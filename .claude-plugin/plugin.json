@@ -7,5 +7,19 @@
   },
   "repository": "https://github.com/Sungmin-Cho/claude-deep-work",
   "license": "MIT",
-  "source": "./plugins/deep-work"
+  "keywords": [
+    "workflow",
+    "deep-work",
+    "evidence-driven",
+    "tdd",
+    "auto-flow",
+    "slice",
+    "receipt",
+    "quality-gate",
+    "structured-development",
+    "agent-team",
+    "code-review",
+    "session-lifecycle"
+  ],
+  "category": "productivity"
 }
