@@ -548,6 +548,15 @@ function processHook(input) {
 
   const phase = state.current_phase;
 
+  // ─── Artifacts-only fork restriction (v5.6) ───────────
+  if (state.fork_mode === 'artifacts-only' && ['implement', 'test'].includes(phase)) {
+    return {
+      decision: 'block',
+      reason: `🚫 Non-git fork는 plan phase까지만 진행 가능합니다.\n` +
+        `구현을 진행하려면 git 환경에서 /deep-fork를 사용하세요.`,
+    };
+  }
+
   // ─── Non-implement phases: block all writes ────────────
   if (['research', 'plan', 'test', 'brainstorm'].includes(phase)) {
     if (toolName === 'Bash') {
