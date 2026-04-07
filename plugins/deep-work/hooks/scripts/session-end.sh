@@ -257,4 +257,44 @@ if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
   (update_last_activity "$DEEP_WORK_SESSION_ID") 2>/dev/null || true
 fi
 
+# v5.6: Update parent's fork_children status when fork session ends
+if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
+  (
+    local_registry="$(read_registry)"
+    fork_parent=$(node -e '
+      const data = JSON.parse(process.argv[1]);
+      const sid = process.argv[2];
+      const sess = data.sessions[sid];
+      if (sess && sess.fork_parent) console.log(sess.fork_parent);
+    ' "$local_registry" "$DEEP_WORK_SESSION_ID" 2>/dev/null || true)
+
+    if [[ -n "$fork_parent" ]]; then
+      parent_state="$PROJECT_ROOT/.claude/deep-work.${fork_parent}.md"
+      if [[ -f "$parent_state" ]]; then
+        # Mark this child as idle in parent's fork_children (best-effort)
+        node -e '
+          const fs = require("fs");
+          const stateFile = process.argv[1];
+          const childId = process.argv[2];
+          let content = fs.readFileSync(stateFile, "utf8");
+          // Add status: idle after the matching session_id line
+          const lines = content.split("\n");
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes("session_id: " + childId)) {
+              // Check if status line already exists
+              if (i + 3 < lines.length && lines[i + 3] && lines[i + 3].includes("status:")) {
+                lines[i + 3] = "    status: idle";
+              } else {
+                lines.splice(i + 3, 0, "    status: idle");
+              }
+              break;
+            }
+          }
+          fs.writeFileSync(stateFile, lines.join("\n"));
+        ' "$parent_state" "$DEEP_WORK_SESSION_ID" 2>/dev/null || true
+      fi
+    fi
+  ) 2>/dev/null || true
+fi
+
 exit 0
