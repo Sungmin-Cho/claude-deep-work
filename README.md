@@ -567,42 +567,31 @@ Over time, the engine compares quality scores between sessions where a rule was 
 
 This creates a feedback loop: rules that prove their value survive; rules that don't get adjusted. Your workflow evolves based on evidence, not dogma.
 
-## Installation (v5.6.0)
+## Installation
 
-Add the marketplace to your Claude Code settings:
+### Prerequisites
 
-```json
-// ~/.claude/settings.json
-{
-  "extraKnownMarketplaces": {
-    "claude-deep-work": {
-      "source": {
-        "source": "git",
-        "url": "https://github.com/Sungmin-Cho/claude-deep-work.git"
-      }
-    }
-  }
-}
-```
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and configured
 
-Then install:
+### Via Deep Suite marketplace (recommended)
 
 ```bash
-claude plugin install deep-work
+# 1. Add the marketplace
+/plugin marketplace add Sungmin-Cho/claude-deep-suite
+
+# 2. Install the plugin
+/plugin install deep-work@Sungmin-Cho-claude-deep-suite
 ```
 
-### Other Installation Methods
-
-#### npm
+### Standalone
 
 ```bash
-npm install @claude-deep-work/deep-work
+# 1. Add this repo as a marketplace
+/plugin marketplace add Sungmin-Cho/claude-deep-work
+
+# 2. Install
+/plugin install deep-work@Sungmin-Cho-claude-deep-work
 ```
-
-#### Local (development)
-
-Clone this repository to `~/.claude/plugins/deep-work/`.
-Claude Code will automatically detect the plugin.
 
 ## License
 

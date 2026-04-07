@@ -572,42 +572,31 @@ deep-work v5.2는 전체 워크플로우를 단일 `/deep-work` 커맨드로 통
 
 이는 피드백 루프를 생성합니다: 가치를 증명한 규칙은 유지되고, 그렇지 않은 규칙은 조정됩니다. 워크플로우가 도그마가 아닌 증거를 기반으로 진화합니다.
 
-## 설치 (v5.6.0)
+## 설치
 
-Claude Code 설정에 마켓플레이스를 추가합니다:
+### 사전 요구사항
 
-```json
-// ~/.claude/settings.json
-{
-  "extraKnownMarketplaces": {
-    "claude-deep-work": {
-      "source": {
-        "source": "git",
-        "url": "https://github.com/Sungmin-Cho/claude-deep-work.git"
-      }
-    }
-  }
-}
-```
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 설치 및 설정 완료
 
-그 후 설치:
+### Deep Suite 마켓플레이스 (권장)
 
 ```bash
-claude plugin install deep-work
+# 1. 마켓플레이스 추가
+/plugin marketplace add Sungmin-Cho/claude-deep-suite
+
+# 2. 플러그인 설치
+/plugin install deep-work@Sungmin-Cho-claude-deep-suite
 ```
 
-### 기타 설치 방법
-
-#### npm
+### 단독 설치
 
 ```bash
-npm install @claude-deep-work/deep-work
+# 1. 이 레포를 마켓플레이스로 추가
+/plugin marketplace add Sungmin-Cho/claude-deep-work
+
+# 2. 설치
+/plugin install deep-work@Sungmin-Cho-claude-deep-work
 ```
-
-#### 로컬 (개발용)
-
-이 저장소를 `~/.claude/plugins/deep-work/`에 클론합니다.
-Claude Code가 자동으로 플러그인을 감지합니다.
 
 ## 라이선스
 
