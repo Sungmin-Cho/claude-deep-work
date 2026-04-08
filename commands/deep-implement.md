@@ -326,7 +326,14 @@ Populate `harness_metadata` by aggregating data from the current slice execution
 
 #### deep-review 슬라이스 리뷰 제안 (선택적)
 
-deep-review 플러그인이 설치되어 있고, `.deep-review/contracts/SLICE-{현재 슬라이스 NNN}.yaml`이 존재하면:
+deep-review 플러그인 설치 확인:
+```bash
+ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null || \
+  ls "$HOME/.claude/plugins/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null
+```
+설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
+
+**설치된 경우:** `.deep-review/contracts/SLICE-{현재 슬라이스 NNN}.yaml`이 존재하면:
 - 사용자에게 제안: "✅ SLICE-{NNN} 완료. 독립 리뷰를 실행할까요? (/deep-review --contract SLICE-{NNN})"
 - 수락 시: `/deep-review --contract SLICE-{NNN}` 실행
 - 거부 시: 다음 슬라이스로 진행

@@ -78,11 +78,17 @@ Check that all slices have receipt files before proceeding.
 
 ### 1-3. deep-review 전체 리뷰 제안 (선택적)
 
-deep-review 플러그인이 설치되어 있으면:
+deep-review 플러그인 설치 확인:
+```bash
+ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null || \
+  ls "$HOME/.claude/plugins/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null
+```
+설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
+
+**설치된 경우:**
 - 사용자에게 제안: "전체 변경사항에 대해 /deep-review를 실행할까요?"
 - 수락 시: `/deep-review` 실행 (Sprint Contract가 있으면 자동으로 전체 contract 검증)
 - 거부 시: 기존 Quality Gate만 실행
-- deep-review 미설치: 건너뜀 (silent skip)
 - deep-review 리포트가 생성되면 `$WORK_DIR/report.md`에 링크 참조 추가
 
 ### 1-4. Built-in Required Gate: Plan Alignment (Drift Detection)
@@ -400,11 +406,17 @@ Also check `quality_gates_passed` if Quality Gates were defined:
 
 5. **deep-wiki 연동 (선택적)**
 
-   deep-wiki 플러그인이 설치되어 있으면:
+   deep-wiki 플러그인 설치 확인:
+   ```bash
+   ls "$HOME/.claude/plugins/cache/"*/deep-wiki/.claude-plugin/plugin.json 2>/dev/null || \
+     ls "$HOME/.claude/plugins/"*/deep-wiki/.claude-plugin/plugin.json 2>/dev/null
+   ```
+   설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
+
+   **설치된 경우:**
    - 사용자에게 제안: "이 세션의 리서치/설계 결과를 위키에 기록할까요? (/wiki-ingest)"
    - 수락 시: `/wiki-ingest $WORK_DIR/report.md` 실행
    - 거부 시: 건너뜀
-   - deep-wiki 미설치: 건너뜀 (silent skip)
 
 6. **Git commit suggestion** (if `git_branch` is set in state file):
    ```
