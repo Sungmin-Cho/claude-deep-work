@@ -1,6 +1,6 @@
 {
   "name": "deep-work",
-  "version": "5.8.0",
+  "version": "5.8.1",
   "description": "Evidence-Driven Development Protocol — auto-flow orchestration with TDD enforcement, slice-based execution, and receipt validation",
   "author": {
     "name": "sungmin"
