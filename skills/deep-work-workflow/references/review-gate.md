@@ -128,13 +128,17 @@ Auto-fix 루프에서 문서를 수정할 때 반드시 따라야 하는 안전 
 |-----------|------|
 | `architecture_fit` | 기존 코드베이스의 아키텍처/패턴과 일관성 있는가? |
 | `slice_executability` | 각 slice가 독립적으로 실행 가능하고 구체적인가? |
-| `testability` | 각 slice에 failing_test와 verification_cmd(+expected_output)가 있는가? |
+| `testability` | 각 slice에 failing_test와 verification_cmd가 있는가? (expected_output은 권장) |
 | `code_completeness` | Code sketch가 Completeness Policy를 충족하는가? (placeholder 부재, 크기별 코드 완성도) |
 | `buildability` | 코드베이스에 익숙하지 않은 엔지니어가 이 plan만 보고 구현할 수 있는가? |
 | `rollback_completeness` | 롤백 전략이 구체적이고 실행 가능한가? |
 | `risk_coverage` | 리스크가 식별되고 완화 방안이 있는가? |
 
-**하위 호환성 (v5.8)**: plan.md에 `steps` 또는 `expected_output` 필드가 없는 경우 (기존 형식), `code_completeness`는 기존 기준(Code sketch 존재 여부 + placeholder 부재)으로 평가하고, `buildability`는 기존 `slice_executability`와 동일 기준으로 fallback한다. 인라인 plan(`skipped_phases` includes "plan")은 structural review 자체를 skip한다.
+**하위 호환성 (v5.8)**: plan.md에 `steps` 또는 `expected_output` 필드가 없는 경우 (기존 형식):
+- `code_completeness`는 기존 기준(Code sketch 존재 여부 + placeholder 부재)으로 평가
+- `buildability`는 기존 `slice_executability`와 동일 기준으로 fallback
+- `testability`는 `failing_test` + `verification_cmd` 존재만으로 평가 (`expected_output` 부재는 감점하지 않음)
+- 인라인 plan(`skipped_phases` includes "plan")은 structural review 자체를 skip
 
 ---
 

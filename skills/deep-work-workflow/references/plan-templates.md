@@ -21,7 +21,7 @@ When using a template:
   - files: [src/routes/resource.ts, src/types/resource.ts]
   - failing_test: tests/routes/resource.test.ts — "POST /resource returns 201 with valid input"
   - verification_cmd: npm test -- --grep "resource"
-  - expected_output: "Tests: N passed, 0 failed"
+  - expected_output: "all tests passed, 0 failed"
   - spec_checklist: [Route registered, DTO types defined, validation schema created]
   - contract: [POST /resource with valid body → 201 + {id: string}, POST /resource with missing field → 400 + {error: string}]
   - acceptance_threshold: all
@@ -37,7 +37,7 @@ When using a template:
   - files: [src/services/resource.ts, src/repositories/resource.ts]
   - failing_test: tests/services/resource.test.ts — "creates resource with valid data"
   - verification_cmd: npm test -- --grep "resource"
-  - expected_output: "Tests: N passed, 0 failed"
+  - expected_output: "all tests passed, 0 failed"
   - spec_checklist: [Service method exists, Repository query works, Error cases handled]
   - contract: [createResource(validData) → {id, ...data}, createResource(duplicateKey) → throws ConflictError]
   - acceptance_threshold: all
@@ -50,6 +50,10 @@ When using a template:
   - spec_checklist: [Auth required on route, 401 for missing token, 403 for insufficient role]
   - size: S
 ```
+
+---
+
+> **Legacy templates below**: The following templates use the old `Task Checklist` format. When using them, convert each `Task N:` into a `SLICE-NNN:` entry with `files`, `failing_test`, `verification_cmd`, `expected_output`, `spec_checklist`, `contract`, `size`, and `steps` (for M/L). See the API Endpoint exemplar above for the target format.
 
 ## UI Component Addition
 

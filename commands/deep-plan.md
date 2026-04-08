@@ -388,7 +388,7 @@ The following patterns are **plan failures** — they must never appear in a fin
 - `Add appropriate error handling` / `add validation` / `handle edge cases` (without specifying which cases)
 - `Write tests for the above` (without actual test descriptions or code)
 - `Similar to SLICE-N` (repeat the relevant details — the implementing agent may execute slices out of order or in isolation)
-- Steps that describe *what* to do without showing *how* (code blocks required for any step that changes code, per the Code sketch tiering rules)
+- In **Files to Modify** section: changes that describe *what* to do without showing *how* (code blocks required per the Code sketch tiering rules). Note: this applies to the `Code sketch` field, NOT to slice `steps` — steps are concise execution guidance and do not require inline code blocks.
 - Empty sections or sections containing only headers
 - `...` or `[etc.]` as substitutes for actual content
 - References to types, functions, or methods not defined elsewhere in the plan or existing codebase

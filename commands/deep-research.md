@@ -216,6 +216,10 @@ Write all findings to `$WORK_DIR/research.md` with the following structure:
 ## 1. Technology Stack & Architecture
 [Detailed analysis, with at least one code snippet or reference example]
 
+### Key Interfaces & Signatures (for Plan reference)
+<!-- Plan이 참조할 핵심 아티팩트에 [RA-NNN] 태그 부여 — zero-base에서는 선택한 프레임워크/라이브러리의 핵심 API -->
+- [RA-001] `[Framework/Library core API]` — [documentation reference]
+
 ## 2. Coding Conventions & Standards
 [Detailed analysis]
 
