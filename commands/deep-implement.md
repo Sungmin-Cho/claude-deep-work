@@ -324,6 +324,16 @@ Populate `harness_metadata` by aggregating data from the current slice execution
 
 **Note**: `session-receipt.json`은 `/deep-finish`에서 생성됩니다 (derived cache — slice receipts가 canonical source).
 
+#### deep-review 슬라이스 리뷰 제안 (선택적)
+
+deep-review 플러그인이 설치되어 있고, `.deep-review/contracts/SLICE-{현재 슬라이스 NNN}.yaml`이 존재하면:
+- 사용자에게 제안: "✅ SLICE-{NNN} 완료. 독립 리뷰를 실행할까요? (/deep-review --contract SLICE-{NNN})"
+- 수락 시: `/deep-review --contract SLICE-{NNN}` 실행
+- 거부 시: 다음 슬라이스로 진행
+- deep-review 미설치 또는 contract 미존재: 건너뜀 (silent skip)
+
+이 제안은 비용이 발생하므로 (Opus 서브에이전트) 항상 사용자 확인을 받는다.
+
 ### Step E: Mark Complete & Advance
 
 1. Update plan.md: `- [ ] SLICE-NNN` → `- [x] SLICE-NNN`
