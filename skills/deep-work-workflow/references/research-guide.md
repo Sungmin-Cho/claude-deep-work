@@ -116,8 +116,12 @@ For zero-base projects, see [Zero-Base Guide](zero-base-guide.md).
 A good research document:
 - Contains specific file paths, not vague descriptions
 - Shows concrete code examples, not abstract patterns
-- Identifies non-obvious constraints
+- Captures function signatures and type definitions for all interfaces the plan will touch (tagged as [RA-NNN])
+- Tags key findings with [RF-NNN] identifiers for plan cross-reference
+- Identifies non-obvious constraints with specific evidence (file path + line number)
+- Includes at least one code snippet per detailed analysis section (Sections 1-6)
 - Is detailed enough for the planning phase to be purely synthetic (no new research needed)
+- Documents existing test patterns (test framework, assertion style, file naming convention) so plan can specify tests in the project's idiom
 
 ## Incremental Research (v3.1.0)
 

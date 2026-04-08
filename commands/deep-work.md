@@ -724,12 +724,13 @@ slices:
 4. Write the inline slice to `$WORK_DIR/plan.md` as a minimal plan:
    ```markdown
    # Implementation Plan: $ARGUMENTS (Inline)
+   <!-- inline mode: Completeness Policy 적용 제외. 상세 plan은 /deep-plan 사용 -->
 
    ## Slice Checklist
 
    - [ ] SLICE-001: $ARGUMENTS
      - files: [user-provided files]
-     - failing_test: [to be determined during implementation]
+     - failing_test: [구현 시 결정 — inline mode]
      - verification_cmd: [user-provided command]
      - spec_checklist: [$ARGUMENTS]
      - contract: []

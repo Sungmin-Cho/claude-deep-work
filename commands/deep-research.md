@@ -203,10 +203,10 @@ Write all findings to `$WORK_DIR/research.md` with the following structure:
      알아야 할 가장 중요한 사항을 먼저 기술한다. -->
 
 ## Key Findings
-<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 한 줄로. -->
-- [발견 1]: [한 줄 요약]
-- [발견 2]: [한 줄 요약]
-- [발견 3]: [한 줄 요약]
+<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 [RF-NNN] 태그 포함. -->
+- [RF-001] [발견 1]: [한 줄 요약]
+- [RF-002] [발견 2]: [한 줄 요약]
+- [RF-003] [발견 3]: [한 줄 요약]
 
 ## Risk & Blockers
 <!-- 구현을 가로막을 수 있는 위험 요소. 없으면 "없음"으로 기재. -->
@@ -214,16 +214,20 @@ Write all findings to `$WORK_DIR/research.md` with the following structure:
 ---
 
 ## 1. Technology Stack & Architecture
-[Detailed analysis]
+[Detailed analysis, with at least one code snippet or reference example]
+
+### Key Interfaces & Signatures (for Plan reference)
+<!-- Plan이 참조할 핵심 아티팩트에 [RA-NNN] 태그 부여 — zero-base에서는 선택한 프레임워크/라이브러리의 핵심 API -->
+- [RA-001] `[Framework/Library core API]` — [documentation reference]
 
 ## 2. Coding Conventions & Standards
 [Detailed analysis]
 
 ## 3. Data Model & Storage
-[Detailed analysis]
+[Detailed analysis, with at least one schema draft]
 
 ## 4. API Design & External Services
-[Detailed analysis]
+[Detailed analysis, with at least one API contract example]
 
 ## 5. Project Scaffolding & Build/CI
 [Detailed analysis]
@@ -306,10 +310,10 @@ Write all findings to `$WORK_DIR/research.md` in a structured format. The docume
      알아야 할 가장 중요한 사항을 먼저 기술한다. -->
 
 ## Key Findings
-<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 한 줄로. -->
-- [발견 1]: [한 줄 요약]
-- [발견 2]: [한 줄 요약]
-- [발견 3]: [한 줄 요약]
+<!-- 불릿 리스트로 주요 발견사항 나열. 각 항목은 [RF-NNN] 태그 포함. -->
+- [RF-001] [발견 1]: [한 줄 요약]
+- [RF-002] [발견 2]: [한 줄 요약]
+- [RF-003] [발견 3]: [한 줄 요약]
 
 ## Risk & Blockers
 <!-- 구현을 가로막을 수 있는 위험 요소. 없으면 "없음"으로 기재. -->
@@ -319,14 +323,18 @@ Write all findings to `$WORK_DIR/research.md` in a structured format. The docume
 ## 1. Architecture & Structure
 [Detailed breakdown with file paths and code references]
 
+### Key Interfaces & Signatures
+<!-- Plan이 참조할 핵심 아티팩트에 [RA-NNN] 태그 부여 -->
+- [RA-001] `[FunctionName](params): ReturnType` — `src/path/file.ts:line`
+
 ## 2. Relevant Patterns
-[Every pattern the implementation must follow]
+[Every pattern the implementation must follow, with at least one code snippet]
 
 ## 3. Data Layer
-[Data models, migrations, validation]
+[Data models, migrations, validation, with at least one code snippet]
 
 ## 4. API & Integration
-[API structure, auth, external services]
+[API structure, auth, external services, with at least one code snippet]
 
 ## 5. Shared Infrastructure
 [Utilities, config, build setup]
@@ -344,9 +352,18 @@ Write all findings to `$WORK_DIR/research.md` in a structured format. The docume
 ## Constraints
 - [Technical limitation 1]
 - [Convention requirement 2]
+
+## Testing Patterns
+[Existing test framework, assertion style, file naming convention — so plan can specify tests in the project's idiom]
 ```
 
 Then continue to [Step 4: Update state file](#4-update-state-file).
+
+**Research Tag Lifecycle Rules (v5.8):**
+- Tag numbers are monotonically increasing within a document (RF-001, RF-002, ...; RA-001, RA-002, ...)
+- **Incremental research** (`--scope`, `--incremental`): Preserve existing tags, add new ones starting after the highest existing number
+- **Tag deletion**: Before removing a tagged finding, check if `plan.md` references it. If referenced, display a warning before removal.
+- **Merge/dedup**: When merging duplicate findings, keep the representative tag and add a redirect comment to the merged one: `<!-- → RF-NNN 통합 -->`
 
 ---
 
@@ -421,9 +438,10 @@ Read all 3 partial result files and synthesize into a single `$WORK_DIR/research
 <!-- 3-5줄. 세 분석가의 결과를 종합한 핵심 결론. -->
 
 ## Key Findings
-- [발견 1]: [한 줄 요약]
-- [발견 2]: [한 줄 요약]
-- [발견 3]: [한 줄 요약]
+<!-- [RF-NNN] 태그 포함. 세 분석가의 결과 종합. -->
+- [RF-001] [발견 1]: [한 줄 요약]
+- [RF-002] [발견 2]: [한 줄 요약]
+- [RF-003] [발견 3]: [한 줄 요약]
 
 ## Risk & Blockers
 <!-- 종합된 위험 요소. -->
@@ -607,3 +625,7 @@ Before marking research as complete, verify:
 - [ ] Potential conflicts and risks are identified
 - [ ] The document is detailed enough for someone unfamiliar with the codebase to understand the relevant parts
 - [ ] Executive Summary and Key Findings are at the top of the document
+- [ ] Key findings have [RF-NNN] tags for plan traceability
+- [ ] Function signatures and type definitions for plan-relevant interfaces are captured with [RA-NNN] tags
+- [ ] Each detailed analysis section (1-6) includes at least one code snippet
+- [ ] Existing test patterns (framework, assertion style, file naming) are documented

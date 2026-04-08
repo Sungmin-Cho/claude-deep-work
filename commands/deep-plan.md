@@ -177,22 +177,46 @@ The slice format replaces the previous `- [ ] Task N:` checklist format.
 Brief description of what will be implemented and the approach chosen.
 
 ## Architecture Decision
-Why this approach was chosen over alternatives. Reference research findings.
+Why this approach was chosen over alternatives.
+**Research 근거:** [RF-NNN], [RA-NNN] 태그로 연결. 근거 없는 결정은 assumption으로 표기.
 
 ## Files to Modify
 
 ### [File path 1]
 - **Action**: Create / Modify / Delete
 - **Changes**: Detailed description
-- **Code sketch**:
+- **Code sketch** (completeness tiered by slice size):
+  - **S slices**: Annotated pseudocode — describe the change with enough detail that the approach is unambiguous.
+  - **M slices**: Key function signatures and type definitions must be actual code. Logic flow can be pseudocode with inline comments.
+  - **L slices**: Boundary code (interfaces, public API, type definitions, tests) must be complete, copy-pasteable code. Repetitive internal implementations can use annotated diff/skeleton. For modifications, show before/after diff with line references.
   ```language
-  // Pseudocode or actual code snippet showing the change
+  // Example for M slice:
+  // ACTUAL — function signature and types
+  export async function authenticate(credentials: LoginCredentials): Promise<AuthResult> {
+    // PSEUDOCODE — logic flow
+    // 1. Validate input (email format, password non-empty)
+    // 2. Query user by email from UserRepository
+    // 3. Compare password hash using bcrypt
+    // 4. If match: generate JWT token, return { token, user }
+    // 5. If no match: throw AuthenticationError("invalid_credentials")
+  }
   ```
+- **Line references** (for Modify actions): Specify as `filename:startLine-endLine` or anchor to a named function/class.
 - **Reason**: Why this change is needed
 - **Risk**: Low / Medium / High — explanation
 
 ### [File path 2]
 ...
+
+## Boundary: Files NOT to Modify
+
+List files that might seem related but must NOT be changed in this task.
+
+| File | Reason to leave unchanged |
+|------|--------------------------|
+| [file] | [reason] |
+
+> If you discover during implementation that one of these files must change, STOP and document it as an Open Question. Do not modify without plan amendment.
 
 ## Execution Order
 1. First: [file/change] — because [reason]
@@ -222,25 +246,54 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
   - files: [file1, file2]
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
+  - expected_output: [what success looks like, e.g., "Tests: 5 passed, 0 failed"]
   - spec_checklist: [requirement 1, requirement 2]
   - contract: [testable criterion 1, testable criterion 2]
   - acceptance_threshold: all
   - size: S/M/L
+  - steps: (required for M/L, optional for S)
+    1. [Write failing test: test_name in test_file — assert specific_behavior]
+    2. [Verify RED: run verification_cmd, expect failure message]
+    3. [Implement: create/modify file — specific change with code reference]
+    4. [Verify GREEN: run verification_cmd, expect all pass]
+    5. [Commit: descriptive message]
 
 - [ ] SLICE-002: [Goal]
   - files: [file1, file2]
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
+  - expected_output: [성공 시 예상 출력]
   - spec_checklist: [requirement 1, requirement 2]
   - contract: [testable criterion 1, testable criterion 2]
   - acceptance_threshold: all
   - size: S/M/L
+  - steps: (required for M/L, optional for S)
+    1. ...
 
 ...
 
 ## Open Questions
 - Any unresolved decisions for the user to weigh in on
 ```
+
+**Slice field guidelines:**
+
+`expected_output`: What the `verification_cmd` should print when passing. Without this, the implementing agent cannot distinguish "tests pass" from "tests pass for the wrong reason."
+
+`steps`: Each step is one action. Steps are execution guidance, NOT receipt/TDD tracking units — the slice remains the atomic unit. Steps are required for M/L slices, optional for S.
+- **S slices**: Steps optional. Goal + files + failing_test provide enough direction.
+- **M slices**: 3-7 steps recommended. Each step completable in 2-10 minutes.
+- **L slices**: 5-12 steps required. Consider splitting into smaller slices if steps exceed 12.
+
+`failing_test` detail by slice size:
+- **S**: `failing_test: tests/auth.test.ts — "rejects empty email"` (file + description)
+- **M**: Include test function signature and key assertion:
+  ```
+  failing_test: tests/auth.test.ts — test('rejects empty email', () => {
+    expect(submitForm({email: ''})).toHaveProperty('error', 'Email required')
+  })
+  ```
+- **L**: Boundary tests include complete function body; repetitive internal tests use signature + assertion.
 
 **For zero-base projects (`project_type: zero-base`):**
 
@@ -260,6 +313,7 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
 
 ## Architecture Decision
 [Why this stack and architecture]
+**Research 근거:** [RF-NNN], [RA-NNN] 태그로 연결. 근거 없는 결정은 assumption으로 표기.
 
 ## Project Structure
 [전체 디렉토리 구조 트리]
@@ -269,8 +323,16 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
 ### [File path]
 - **Action**: Create
 - **Purpose**: [이 파일의 역할]
-- **Code sketch**: [코드 스니펫]
+- **Code sketch** (completeness tiered by slice size — same rules as existing codebase template):
+  - S: annotated pseudocode, M: actual signatures + pseudocode logic, L: boundary code complete
+  [코드 스니펫]
 - **Dependencies**: [이 파일이 의존하는 다른 파일]
+
+## Boundary: Files NOT to Modify
+
+| File | Reason to leave unchanged |
+|------|--------------------------|
+| [file] | [reason] |
 
 ## Setup Instructions
 [프로젝트 초기화 명령어 목록]
@@ -284,10 +346,13 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
   - files: [file1, file2]
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
+  - expected_output: [성공 시 예상 출력]
   - spec_checklist: [requirement 1]
   - contract: [testable criterion 1, testable criterion 2]
   - acceptance_threshold: all
   - size: S/M/L
+  - steps: (required for M/L, optional for S)
+    1. ...
 
 ...
 
@@ -313,6 +378,22 @@ Each slice is a self-contained unit of work with its own TDD cycle and receipt.
 - `contract`: Testable input→output pairs defining "done" precisely. Each item should be verifiable (e.g., "POST /login → 200 + { token: string }"). Required for M/L/XL slices. Optional for S-size slices.
 - `acceptance_threshold`: `all` (every contract item must pass, default) or `majority` (for exploratory work).
 - `spec_checklist` remains for high-level requirements. `contract` supplements it with precise verification criteria.
+
+### 3.3-1. Completeness Policy (v5.8)
+
+The following patterns are **plan failures** — they must never appear in a finalized plan.md:
+
+**Banned patterns:**
+- `TBD`, `TODO`, `FIXME`, `PLACEHOLDER`, `implement later`, `fill in details`
+- `Add appropriate error handling` / `add validation` / `handle edge cases` (without specifying which cases)
+- `Write tests for the above` (without actual test descriptions or code)
+- `Similar to SLICE-N` (repeat the relevant details — the implementing agent may execute slices out of order or in isolation)
+- In **Files to Modify** section: changes that describe *what* to do without showing *how* (code blocks required per the Code sketch tiering rules). Note: this applies to the `Code sketch` field, NOT to slice `steps` — steps are concise execution guidance and do not require inline code blocks.
+- Empty sections or sections containing only headers
+- `...` or `[etc.]` as substitutes for actual content
+- References to types, functions, or methods not defined elsewhere in the plan or existing codebase
+
+**Enforcement:** The Claude self-review step (Section 3.4.5) scans for these patterns and auto-fixes them before structural review. The structural review dimension `code_completeness` penalizes remaining placeholders. If a placeholder cannot be filled due to insufficient information, move the item to **Open Questions** rather than leaving a banned pattern.
 
 ### 3.4. Contract Negotiation (v5.1)
 
@@ -349,7 +430,14 @@ plan.md 작성 및 contract negotiation 완료 직후, subagent에게 넘기기 
 
 **점검 항목:**
 
-1. **Placeholder 스캔**: plan.md에서 "TBD", "TODO", 빈 섹션, 미완성 코드 스케치를 탐색. 발견 시 해당 내용을 구체적으로 채운다.
+1. **Placeholder 스캔**: plan.md에서 Completeness Policy (Section 3.3-1)의 전체 banned pattern 목록을 탐색:
+   - `TBD`, `TODO`, `FIXME`, `PLACEHOLDER`, `implement later`, `fill in details`
+   - Vague directives: `Add appropriate...`, `handle edge cases`, `Write tests for the above`
+   - Cross-references without content: `Similar to SLICE-N`
+   - Empty sections, sections with only headers, `...` or `[etc.]`
+   - Code steps without code blocks (for M/L slices per Code sketch tiering)
+   - References to undefined types/functions
+   발견 시 해당 내용을 구체적으로 채운다. 채울 수 없는 경우 (정보 부족), 해당 항목을 Open Questions로 이동하고 사용자에게 알린다.
 
 2. **내부 일관성**: Slice Checklist의 `files` 목록과 "Files to Modify" 섹션의 파일 목록을 비교. 불일치 시 수정. Execution Order와 Slice 순서가 충돌하는지 확인.
 
@@ -401,7 +489,7 @@ Read `evaluator_model` from state file (default: "sonnet").
 Follow the **Structural Review Protocol** with these settings:
 - **Phase**: plan
 - **Document**: `$WORK_DIR/plan.md`
-- **Dimensions**: architecture_fit, slice_executability, testability, rollback_completeness, risk_coverage
+- **Dimensions**: architecture_fit, slice_executability, testability, code_completeness, buildability, rollback_completeness, risk_coverage
 - **Output**: `$WORK_DIR/plan-review.json` + `$WORK_DIR/plan-review.md`
 - **Model**: evaluator_model from state (default: "sonnet")
 - **Max iterations**: 2

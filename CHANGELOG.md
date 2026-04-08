@@ -7,6 +7,32 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.0] - 2026-04-08
+
+### Added
+- **Completeness Policy** (Section 3.3-1) — explicit banned patterns for plan.md (TBD, TODO, vague directives, cross-references without content). Enforced via Claude self-review + structural review `code_completeness` dimension.
+- **Code sketch tiering** — S: annotated pseudocode, M: actual function signatures + type definitions, L: complete boundary code (interfaces, APIs, tests). Replaces "pseudocode or actual code" with proportional standard.
+- **Slice fields: `expected_output`, `steps`** — `expected_output` defines what `verification_cmd` should print on success. `steps` provides execution guidance within M/L slices (3-12 numbered actions). Both optional for backward compatibility.
+- **`failing_test` detail tiers** — S: file + description, M: function signature + key assertion, L: complete test body for boundary tests.
+- **"Boundary: Files NOT to Modify"** section in plan templates — prevents scope creep during implementation.
+- **Research traceability tags** — `[RF-NNN]` for Key Findings, `[RA-NNN]` for interfaces/signatures. Tags enable plan Architecture Decision to reference specific research evidence.
+- **Research Tag Lifecycle Rules** — monotonic numbering, incremental preservation, deletion warnings for plan-referenced tags.
+- **Research `Testing Patterns` section** — documents existing test framework, assertion style, file naming for plan test specification.
+- **Brainstorm context-adaptive questions** — core 2 + context-adaptive 1-3 (by task type: feature/refactoring/bug/performance/integration) + closing boundary question.
+- **Brainstorm `Scope Assessment`** — decomposition check + quick codebase pulse before approach comparison.
+- **Brainstorm `Boundaries` section** — documents what explicitly stays unchanged, feeds into plan Boundary section.
+- **Review gate dimensions: `code_completeness`, `buildability`** — synchronized across 4 locations (structural table, hardcoded dimensions, cross-model Plan Rubric, JSON schema).
+- **Review gate backward compatibility fallback** — legacy plans without `expected_output`/`steps` evaluated with relaxed criteria per dimension.
+
+### Changed
+- `deep-implement.md` slice parser now recognizes `expected_output`, `steps`, `contract`, `acceptance_threshold` fields (all optional for backward compatibility).
+- Step B-1 (RED) uses test code from `failing_test` field when available (M/L slices).
+- Step B-2 (GREEN) compares `verification_cmd` output against `expected_output` when available.
+- `deep-work.md` inline plan template updated: `failing_test: [to be determined during implementation]` → `[구현 시 결정 — inline mode]` with Completeness Policy exemption comment.
+- `research-guide.md` quality criteria expanded from 4 to 8 items (RF/RA tags, code snippets per section, test patterns).
+- `plan-templates.md` API Endpoint template upgraded to v5.8 exemplar with full slice format. Legacy templates marked with migration guide.
+- `testability` dimension description clarified: `expected_output` is recommended, not required.
+
 ## [5.7.0] - 2026-04-08
 
 ### Added
