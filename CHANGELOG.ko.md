@@ -7,6 +7,18 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.7.0] - 2026-04-08
+
+### 추가
+- **W1: Sprint Contract 생성** — Phase 2 plan 승인 후, deep-review 플러그인이 설치되어 있으면 plan.md의 슬라이스에서 `.deep-review/contracts/SLICE-{NNN}.yaml` 자동 생성
+- **W2-a: 슬라이스 리뷰 제안** — Phase 3에서 슬라이스 GREEN 도달 시 `/deep-review --contract SLICE-{NNN}` 실행 제안
+- **W2-b: 전체 리뷰 제안** — Phase 4 진입 시 `/deep-review` 전체 리뷰 실행 제안
+- **K1: 위키 ingest 제안** — Phase 4 완료 후 `/wiki-ingest report.md` 실행 제안
+
+### 변경
+- Sprint Contract 생성 시점을 plan 작성 직후에서 **plan 승인 후**로 이동 (최종 plan과 contract 일치 보장)
+- 플러그인 감지를 cache + plugins 이중 경로로 통일 (설치 방식 무관)
+
 ## [5.6.0] - 2026-04-07
 
 ### 추가

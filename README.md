@@ -593,6 +593,20 @@ This creates a feedback loop: rules that prove their value survive; rules that d
 /plugin install deep-work@Sungmin-Cho-claude-deep-work
 ```
 
+## Plugin Integration
+
+deep-work integrates with other Claude Deep Suite plugins when they are installed:
+
+### deep-review
+- **Sprint Contract** (Phase 2): After plan approval, automatically generates `.deep-review/contracts/` from slice criteria
+- **Slice Review** (Phase 3): Suggests `/deep-review --contract SLICE-NNN` after each slice reaches GREEN
+- **Full Review** (Phase 4): Suggests `/deep-review` for comprehensive review before quality gates
+
+### deep-wiki
+- **Knowledge Capture** (Phase 4): After session completion, suggests `/wiki-ingest report.md` to archive research and design decisions
+
+All integrations are optional — they only activate when the respective plugin is detected, and always require user confirmation before execution.
+
 ## License
 
 MIT

@@ -598,6 +598,20 @@ deep-work v5.2는 전체 워크플로우를 단일 `/deep-work` 커맨드로 통
 /plugin install deep-work@Sungmin-Cho-claude-deep-work
 ```
 
+## 플러그인 연동
+
+deep-work는 Claude Deep Suite의 다른 플러그인이 설치된 경우 연동됩니다:
+
+### deep-review
+- **Sprint Contract** (Phase 2): plan 승인 후 슬라이스 기준에서 `.deep-review/contracts/` 자동 생성
+- **슬라이스 리뷰** (Phase 3): 각 슬라이스가 GREEN 도달 시 `/deep-review --contract SLICE-NNN` 실행 제안
+- **전체 리뷰** (Phase 4): quality gate 전 종합 리뷰를 위한 `/deep-review` 실행 제안
+
+### deep-wiki
+- **지식 캡처** (Phase 4): 세션 완료 후 리서치 및 설계 결정 사항 아카이브를 위해 `/wiki-ingest report.md` 실행 제안
+
+모든 연동은 선택적입니다 — 해당 플러그인이 감지된 경우에만 활성화되며, 항상 실행 전 사용자 확인이 필요합니다.
+
 ## 라이선스
 
 MIT
