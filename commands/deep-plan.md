@@ -392,48 +392,6 @@ plan.md 작성 및 contract negotiation 완료 직후, subagent에게 넘기기 
 
 사용자 응답을 받은 후 다음 단계 (Structural Review)로 진행한다.
 
-### 3-1. Sprint Contract 생성 (deep-review 연동)
-
-deep-review 플러그인이 설치되어 있는지 확인:
-```bash
-ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null
-```
-
-**설치되지 않은 경우:** 이 섹션을 건너뜀 (silent skip).
-
-**설치된 경우:**
-
-1. 방금 작성한 `$WORK_DIR/plan.md`의 `## Slice Checklist` 섹션을 파싱
-2. 각 `- [ ] SLICE-{NNN}: {title}` 슬라이스에 대해:
-   a. `contract:` 필드가 있으면 → criteria로 사용
-   b. `contract:` 가 없고 `spec_checklist:` 가 있으면 → criteria로 사용
-   c. 둘 다 없으면 → 해당 슬라이스 건너뜀
-3. `.deep-review/contracts/` 디렉토리가 없으면 `mkdir -p .deep-review/contracts`
-4. 각 슬라이스에 대해 `.deep-review/contracts/SLICE-{NNN}.yaml` 작성:
-   ```yaml
-   slice: SLICE-{NNN}
-   title: "{슬라이스 제목}"
-   source_plan: "plan.md#slice-{NNN}"
-   created_at: "{현재 ISO 타임스탬프}"
-   status: active
-   criteria:
-     - id: C1
-       description: "{contract 또는 spec_checklist의 첫 번째 항목}"
-       verification: auto
-       prerequisites: []
-       status: null
-       evidence: null
-     - id: C2
-       description: "{두 번째 항목}"
-       verification: auto
-       prerequisites: []
-       status: null
-       evidence: null
-   ```
-   - verification 기본값: `auto`. "수동"/"manual"/"확인 필요" 키워드 포함 시 → `manual`
-   - 기존 contract 파일이 있으면: `status`와 `evidence` 필드를 보존하고 나머지 업데이트 (멱등성)
-5. 완료 후 알림: "📋 Sprint Contract {N}건 생성됨 (.deep-review/contracts/)"
-
 ### 3.5. Structural Review + Auto-Loop (v5.1)
 
 Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
@@ -748,6 +706,48 @@ Display:
 ```
 ✅ 계획이 승인되었습니다! 구현을 자동으로 시작합니다...
 ```
+
+#### 5b-1. Sprint Contract 생성 (deep-review 연동)
+
+deep-review 플러그인 설치 확인:
+```bash
+ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null || \
+  ls "$HOME/.claude/plugins/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null
+```
+설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
+
+**설치된 경우:**
+
+1. 승인된 `$WORK_DIR/plan.md`의 `## Slice Checklist` 섹션을 파싱
+2. 각 `- [ ] SLICE-{NNN}: {title}` 슬라이스에 대해:
+   a. `contract:` 필드가 있으면 → criteria로 사용
+   b. `contract:` 가 없고 `spec_checklist:` 가 있으면 → criteria로 사용
+   c. 둘 다 없으면 → 해당 슬라이스 건너뜀
+3. `.deep-review/contracts/` 디렉토리가 없으면 `mkdir -p .deep-review/contracts`
+4. 각 슬라이스에 대해 `.deep-review/contracts/SLICE-{NNN}.yaml` 작성:
+   ```yaml
+   slice: SLICE-{NNN}
+   title: "{슬라이스 제목}"
+   source_plan: "plan.md#slice-{NNN}"
+   created_at: "{현재 ISO 타임스탬프}"
+   status: active
+   criteria:
+     - id: C1
+       description: "{contract 또는 spec_checklist의 첫 번째 항목}"
+       verification: auto
+       prerequisites: []
+       status: null
+       evidence: null
+     - id: C2
+       description: "{두 번째 항목}"
+       verification: auto
+       prerequisites: []
+       status: null
+       evidence: null
+   ```
+   - verification 기본값: `auto`. "수동"/"manual"/"확인 필요" 키워드 포함 시 → `manual`
+   - 기존 contract 파일이 있으면: `status`와 `evidence` 필드를 보존하고 나머지 업데이트 (멱등성)
+5. 완료 후 알림: "📋 Sprint Contract {N}건 생성됨 (.deep-review/contracts/)"
 
 #### 5c. Auto-execute implementation
 
