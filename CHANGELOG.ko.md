@@ -7,6 +7,32 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.0] - 2026-04-08
+
+### 추가
+- **Completeness Policy** (Section 3.3-1) — plan.md의 명시적 금지 패턴 정의 (TBD, TODO, 모호한 지시, 컨텍스트 없는 교차 참조). Claude 자체 재검토 + structural review `code_completeness` 차원으로 강제.
+- **Code sketch 크기별 완성도** — S: 주석 의사코드, M: 실제 함수 시그니처 + 타입 정의, L: 경계면 완전 코드 (인터페이스, API, 테스트). 기존 "의사코드 또는 실제 코드"를 비례 기준으로 대체.
+- **Slice 필드: `expected_output`, `steps`** — `expected_output`: verification_cmd 성공 시 예상 출력. `steps`: M/L slice 내 실행 가이드 (3-12개 번호 액션). 하위 호환성을 위해 모두 optional.
+- **`failing_test` 크기별 상세도** — S: 파일+설명, M: 함수 시그니처+핵심 assertion, L: 경계면 테스트 완전 본문.
+- **"Boundary: Files NOT to Modify"** 섹션 — plan 템플릿에 추가, 구현 중 scope creep 방지.
+- **Research 추적성 태그** — `[RF-NNN]` (Key Findings), `[RA-NNN]` (인터페이스/시그니처). plan Architecture Decision에서 구체적 연구 근거 참조 가능.
+- **Research 태그 Lifecycle 규칙** — 단조 증가 번호, incremental 보존, plan 참조 태그 삭제 경고.
+- **Research `Testing Patterns` 섹션** — 기존 테스트 프레임워크, assertion 스타일, 파일 명명 규칙 문서화.
+- **Brainstorm 맥락 적응형 질문** — Core 2개 + 맥락별 1-3개 (기능/리팩토링/버그/성능/통합) + 마무리 경계 질문.
+- **Brainstorm `Scope Assessment`** — 분해 점검 + 빠른 코드베이스 확인 후 접근법 비교.
+- **Brainstorm `Boundaries` 섹션** — 변경하지 않는 부분 명시, plan Boundary 섹션으로 전달.
+- **Review gate 차원: `code_completeness`, `buildability`** — 4곳 동기화 (structural 테이블, 하드코딩, cross-model Plan Rubric, JSON 스키마).
+- **Review gate 하위 호환성 fallback** — `expected_output`/`steps` 없는 기존 plan은 차원별 완화 기준으로 평가.
+
+### 변경
+- `deep-implement.md` slice 파서가 `expected_output`, `steps`, `contract`, `acceptance_threshold` 인식 (모두 optional).
+- Step B-1 (RED): `failing_test`에 테스트 코드가 있으면 직접 사용 (M/L).
+- Step B-2 (GREEN): `expected_output`이 있으면 verification_cmd 출력과 비교.
+- `deep-work.md` 인라인 plan: `failing_test` 표현 변경 + Completeness Policy 제외 주석.
+- `research-guide.md` quality criteria 4→8개 확장.
+- `plan-templates.md` API Endpoint 템플릿을 v5.8 exemplar로 업그레이드. 레거시 템플릿에 마이그레이션 가이드 추가.
+- `testability` 차원: `expected_output`은 권장, 필수 아님으로 명확화.
+
 ## [5.7.0] - 2026-04-08
 
 ### 추가
