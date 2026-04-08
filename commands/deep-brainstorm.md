@@ -56,10 +56,42 @@ Engage the user in a structured design conversation:
 먼저 문제를 정확히 이해하겠습니다.
 ```
 
-Ask the user (one at a time):
+Ask the user 3-5 questions (one at a time). Start with core questions, then add context-appropriate ones:
+
+**Core questions (always ask):**
 1. **이 기능/변경의 핵심 목표는 무엇인가요?** (단순히 "무엇"이 아니라 "왜")
-2. **이 변경이 없으면 어떤 문제가 계속되나요?** (pain point 구체화)
-3. **성공하면 어떻게 보이나요?** (성공 기준)
+2. **성공하면 어떻게 보이나요?** (측정 가능한 성공 기준)
+
+**Context-adaptive questions (choose 1-3 based on the task):**
+- For user-facing features: **누가 이 기능을 사용하나요? 어떤 시나리오에서?**
+- For refactoring: **현재 코드의 가장 큰 문제점은 무엇인가요?**
+- For bug fixes: **이 문제가 발생하는 정확한 조건은? 재현 단계는?**
+- For performance: **현재 성능 수치는? 목표 수치는?**
+- For integration: **연동 대상의 API 문서나 제약사항이 있나요?**
+
+**Always close with:**
+- **이 변경에서 절대 건드리면 안 되는 부분이 있나요?** (Boundaries — feeds into plan's "Files NOT to Modify")
+
+#### 2a-bis. Scope Assessment
+
+Before proposing approaches, evaluate scope:
+
+1. **Decomposition check**: Does this task describe multiple independent subsystems? If so:
+   ```
+   이 작업은 여러 독립적인 하위 시스템을 포함합니다:
+   - [subsystem 1]
+   - [subsystem 2]
+   각각 별도의 deep-work 세션으로 분리하는 것을 권장합니다.
+   먼저 [subsystem]부터 진행할까요?
+   ```
+
+2. **Quick codebase pulse**: Read 2-3 key files related to the task to ground the conversation in reality. This is NOT full research — just enough to avoid proposing approaches that conflict with the existing architecture.
+   ```
+   빠른 코드베이스 확인:
+   - [file1]: [1줄 요약]
+   - [file2]: [1줄 요약]
+   이 컨텍스트를 바탕으로 접근법을 제안합니다.
+   ```
 
 #### 2b. Approach Comparison
 
@@ -126,6 +158,10 @@ Write `$WORK_DIR/brainstorm.md`:
 ## 엣지 케이스 & 리스크
 - [edge case 1]
 - [edge case 2]
+
+## 변경하지 않는 부분 (Boundaries)
+- [기존 기능/파일/인터페이스 that explicitly stays unchanged]
+- [Integration point that must remain backward-compatible]
 
 ## 다음 단계
 Research 단계에서 코드베이스를 분석하여 이 접근 방식의 실현 가능성을 검증합니다.

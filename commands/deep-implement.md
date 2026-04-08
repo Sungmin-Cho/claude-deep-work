@@ -48,11 +48,15 @@ Read `$WORK_DIR/plan.md` and parse the **Slice Checklist** section. Each slice h
   - files: [file1, file2]
   - failing_test: [test file — test description]
   - verification_cmd: [command to verify]
+  - expected_output: [optional — what success looks like]
   - spec_checklist: [req1, req2]
+  - contract: [criterion1, criterion2]
+  - acceptance_threshold: all
   - size: S/M/L
+  - steps: [optional — execution guidance for M/L slices]
 ```
 
-Build a list of slices with their metadata.
+Build a list of slices with their metadata. New fields (`expected_output`, `steps`) are optional for backward compatibility with older plan formats.
 
 **Inline slice handling (v5.1)**: If the plan was generated inline (state file `skipped_phases` includes "plan"):
 - The plan will have a single SLICE-001 with potentially empty `failing_test`
@@ -155,10 +159,11 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 
 #### B-1. RED: Write Failing Test
 
-1. Read the slice's `failing_test` field
-2. Create or update the test file with a test that should FAIL
-3. Run the test: execute `verification_cmd`
-4. **Verify it fails for the RIGHT reason** (feature missing, not syntax error)
+1. Read the slice's `failing_test` field. If it contains actual test code (M/L slices may include function signatures or complete test bodies), use that code directly instead of writing from scratch.
+2. If the slice has a `steps` field, follow the step sequence — but the TDD state machine (RED→GREEN→REFACTOR) always takes precedence over step ordering.
+3. Create or update the test file with a test that should FAIL
+4. Run the test: execute `verification_cmd`
+5. **Verify it fails for the RIGHT reason** (feature missing, not syntax error)
 5. Capture the failing test output (last 200 lines)
 6. **[필수] State file 업데이트**: `tdd_state: RED_VERIFIED`
    ⚠️ 이 업데이트를 수행하지 않으면 phase guard가 이후 모든 production 코드 편집을 차단한다.
@@ -183,7 +188,7 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 1. Implement the change — **minimal code to pass the test**
 2. Only modify files listed in the slice's `files` field
 3. Run `verification_cmd` again
-4. **Verify ALL tests pass** (not just the new one)
+4. **Verify ALL tests pass** (not just the new one). If the slice has an `expected_output` field, compare the actual output against it to confirm the tests pass for the right reason (not a false positive).
 5. Capture passing test output
 6. **[필수] State file 업데이트**: `tdd_state: GREEN`
    ⚠️ 이 업데이트를 수행하지 않으면 다음 slice 시작 시 phase guard가 차단한다.

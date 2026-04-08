@@ -142,6 +142,9 @@ For detailed guidance, see [Research Guide](references/research-guide.md) or [Ze
 - Transform research findings into a concrete action plan
 - **Plan Summary at the top** with approach, scope, risk level, and key decisions
 - Define exact files to modify, code snippets, execution order
+- **Code completeness tiered by slice size**: S=pseudocode OK, M=signatures+types actual code, L=boundary code complete (interfaces, APIs, tests)
+- **No placeholders**: Plan must pass the Completeness Policy — no TBD, TODO, or vague directives
+- **Research traceability**: Architecture decisions reference tagged research findings [RF-NNN], [RA-NNN]
 - Create a checklist-style task list in `$WORK_DIR/plan.md`
 
 **What's blocked**: All code file modifications (enforced by hook)
