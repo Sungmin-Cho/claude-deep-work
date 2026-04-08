@@ -398,7 +398,15 @@ Also check `quality_gates_passed` if Quality Gates were defined:
 
 4. **Automatically generate session report**: Read the `/deep-report` command file and generate `$WORK_DIR/report.md` following its structure. Include test results in the Verification Results section.
 
-5. **Git commit suggestion** (if `git_branch` is set in state file):
+5. **deep-wiki 연동 (선택적)**
+
+   deep-wiki 플러그인이 설치되어 있으면:
+   - 사용자에게 제안: "이 세션의 리서치/설계 결과를 위키에 기록할까요? (/wiki-ingest)"
+   - 수락 시: `/wiki-ingest $WORK_DIR/report.md` 실행
+   - 거부 시: 건너뜀
+   - deep-wiki 미설치: 건너뜀 (silent skip)
+
+6. **Git commit suggestion** (if `git_branch` is set in state file):
    ```
    변경사항을 커밋할까요?
       브랜치: [git_branch]
