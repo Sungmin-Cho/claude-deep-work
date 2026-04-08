@@ -7,6 +7,13 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.1] - 2026-04-08
+
+### Changed
+- **Breaking**: `/deep-review` → `/deep-phase-review` renamed to resolve naming conflict with deep-review plugin (deep-suite). Phase document review is now `/deep-phase-review`; code diff review uses the deep-review plugin.
+- Updated references in `deep-plan.md`, `deep-resume.md`, `README.md`, `README.ko.md`
+- deep-review plugin integration (Sprint Contract, slice review, full review) unchanged
+
 ## [5.8.0] - 2026-04-08
 
 ### Added

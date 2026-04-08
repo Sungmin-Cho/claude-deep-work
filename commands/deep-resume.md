@@ -203,7 +203,7 @@ Execute the appropriate action based on the current phase:
      - If `research.md` was **not** modified after timestamp → existing judgments are valid. Read the `/deep-research` command file and resume from user confirmation step (Step 4.7).
   3. **If not exists**: No prior judgments. Read the `/deep-research` command file and resume from its review flow start (Step 4.5).
 
-  **IMPORTANT**: Route to `/deep-research`'s review flow, NOT to `/deep-review`.
+  **IMPORTANT**: Route to `/deep-research`'s review flow, NOT to `/deep-phase-review`.
 
 - Otherwise:
   Read the `/deep-research` command file (located at the same directory level as this command) and follow all its steps. If research.md already has partial content, the research command's cache/incremental logic will handle it.
@@ -219,7 +219,7 @@ Execute the appropriate action based on the current phase:
      - If `plan.md` was **not** modified after timestamp → existing judgments are valid. Read the `/deep-plan` command file and resume from user confirmation step (Step 3.8).
   3. **If not exists**: No prior judgments. Read the `/deep-plan` command file and resume from its review flow start (Step 3.5).
 
-  **IMPORTANT**: Route to `/deep-plan`'s review flow, NOT to `/deep-review`.
+  **IMPORTANT**: Route to `/deep-plan`'s review flow, NOT to `/deep-phase-review`.
 
 - If `$WORK_DIR/plan.md` does **not** exist:
   Read the `/deep-plan` command file and follow all its steps.

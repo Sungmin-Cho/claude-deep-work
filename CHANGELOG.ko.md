@@ -7,6 +7,13 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.1] - 2026-04-08
+
+### 변경
+- **Breaking**: `/deep-review` → `/deep-phase-review`로 리네이밍. deep-review 플러그인(deep-suite)과의 이름 충돌 해소. Phase 문서 리뷰는 `/deep-phase-review`, 코드 diff 리뷰는 deep-review 플러그인 사용.
+- `deep-plan.md`, `deep-resume.md`, `README.md`, `README.ko.md` 참조 업데이트
+- deep-review 플러그인 연동(Sprint Contract, 슬라이스 리뷰, 전체 리뷰)은 변경 없음
+
 ## [5.8.0] - 2026-04-08
 
 ### 추가
