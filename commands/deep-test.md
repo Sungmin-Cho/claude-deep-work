@@ -76,7 +76,16 @@ Check that all slices have receipt files before proceeding.
    ```
 5. If all receipts exist → **PASS**, proceed to Plan Alignment
 
-### 1-3. Built-in Required Gate: Plan Alignment (Drift Detection)
+### 1-3. deep-review 전체 리뷰 제안 (선택적)
+
+deep-review 플러그인이 설치되어 있으면:
+- 사용자에게 제안: "전체 변경사항에 대해 /deep-review를 실행할까요?"
+- 수락 시: `/deep-review` 실행 (Sprint Contract가 있으면 자동으로 전체 contract 검증)
+- 거부 시: 기존 Quality Gate만 실행
+- deep-review 미설치: 건너뜀 (silent skip)
+- deep-review 리포트가 생성되면 `$WORK_DIR/report.md`에 링크 참조 추가
+
+### 1-4. Built-in Required Gate: Plan Alignment (Drift Detection)
 
 If `$WORK_DIR/plan.md` exists, perform Plan Alignment check **before** any other verification. This gate runs automatically — it does not need to be listed in the Quality Gates table.
 
@@ -149,7 +158,7 @@ If no commands are detected, ask the user to provide verification commands manua
 
 **Default behavior (no Quality Gates table in plan.md):**
 All built-in gates run automatically:
-- Drift Check: Required gate (already handled in Section 1-3)
+- Drift Check: Required gate (already handled in Section 1-4)
 - Spec Compliance Review: Required gate (Section 4-2)
 - Code Quality Review: Advisory gate (Section 4-3)
 - Verification Evidence: Required gate (Section 4-4)
