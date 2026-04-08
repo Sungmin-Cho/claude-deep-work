@@ -4,10 +4,9 @@ description: "Manually trigger structural review and/or cross-model adversarial 
 argument-hint: "[--structural] [--adversarial] [--phase=brainstorm|research|plan]"
 ---
 
-> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
-> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+> Phase 문서 전용 리뷰 커맨드. 코드 리뷰는 deep-review 플러그인(deep-suite) 사용.
 
-# Deep Review — Manual Review Gate Trigger (v4.2)
+# Deep Phase Review — Manual Review Gate Trigger (v4.2)
 
 Manually trigger structural review and/or cross-model adversarial review on the current phase document.
 
@@ -17,11 +16,11 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ## Usage
 
-- `/deep-review` — Run structural review (+ adversarial if plan phase and enabled)
-- `/deep-review --structural` — Run structural review only
-- `/deep-review --adversarial` — Run adversarial review only (plan phase only)
-- `/deep-review --phase=brainstorm` — Force review on a specific phase document
-- `/deep-review --structural --adversarial` — Run both explicitly
+- `/deep-phase-review` — Run structural review (+ adversarial if plan phase and enabled)
+- `/deep-phase-review --structural` — Run structural review only
+- `/deep-phase-review --adversarial` — Run adversarial review only (plan phase only)
+- `/deep-phase-review --phase=brainstorm` — Force review on a specific phase document
+- `/deep-phase-review --structural --adversarial` — Run both explicitly
 
 ## Instructions
 
@@ -48,7 +47,7 @@ If no valid phase can be determined, inform the user:
 ```
 ❌ 리뷰할 phase를 결정할 수 없습니다.
    현재 phase: ${current_phase}
-   사용법: /deep-review --phase=brainstorm|research|plan
+   사용법: /deep-phase-review --phase=brainstorm|research|plan
 ```
 
 ### 2. Locate the phase document
@@ -109,7 +108,7 @@ Structural Review 결과: ${phase}
 If score < 5 (FAIL), inform the user that review gate is blocking:
 ```
 ⛔ Structural review FAIL (${score}/10).
-   문서를 수정한 후 /deep-review를 다시 실행하세요.
+   문서를 수정한 후 /deep-phase-review를 다시 실행하세요.
 ```
 
 ### 5. Run adversarial review
@@ -209,4 +208,4 @@ Update `$STATE_FILE`:
 Where `nextStepMessage` depends on grade:
 - PASS: "다음 단계로 진행할 수 있습니다."
 - WARNING: "경고 사항을 확인하고 진행 여부를 결정하세요."
-- FAIL/BLOCKED: "문서를 수정한 후 /deep-review를 다시 실행하세요."
+- FAIL/BLOCKED: "문서를 수정한 후 /deep-phase-review를 다시 실행하세요."

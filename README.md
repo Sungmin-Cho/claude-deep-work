@@ -71,7 +71,7 @@ These commands still work but are now absorbed into the auto-flow. You no longer
 | Command | Absorbed into |
 |---------|---------------|
 | `/deep-brainstorm` | `/deep-work` auto-flow (Phase 0) |
-| `/deep-review` | `/deep-plan` (auto-runs during plan phase) |
+| `/deep-phase-review` | Phase 문서 전용 리뷰 (독립 커맨드) |
 | `/deep-receipt` | `/deep-status --receipts` |
 | `/deep-slice` | `/deep-implement` (auto-managed internally) |
 | `/deep-insight` | `/deep-test` (auto-runs as advisory gate) |
@@ -490,8 +490,8 @@ If neither tool is installed, deep-work works normally with structural review on
 - `--skip-review` — Skip all reviews (useful for spike/experimental work)
 
 ### Commands
-- `/deep-review` — Manually trigger review on current phase document
-- `/deep-review --adversarial` — Run only adversarial cross-model review
+- `/deep-phase-review` — Manually trigger review on current phase document
+- `/deep-phase-review --adversarial` — Run only adversarial cross-model review
 
 ## Auto-Loop Evaluation & Contract Negotiation (v5.1)
 

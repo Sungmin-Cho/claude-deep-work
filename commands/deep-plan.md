@@ -526,7 +526,7 @@ plan_review_retries < plan_review_max_retries?
         1. Display:
            "⛔ Plan 자동 수정 실패 (3회 시도).
             남은 문제: [issue list]
-            수동으로 plan.md를 수정한 후 /deep-review를 실행하세요."
+            수동으로 plan.md를 수정한 후 /deep-phase-review를 실행하세요."
         2. Set review_state: "auto_loop_failed"
         3. Proceed to Section 4 (user can manually fix and approve)
 ```
@@ -694,7 +694,7 @@ Before approving, check review results:
   - 미해결 Critical Consensus: [N]건
 
 해결 방법:
-  1. plan.md를 수정하고 /deep-review 실행
+  1. plan.md를 수정하고 /deep-phase-review 실행
   2. 또는 "강제 승인"을 입력하여 리뷰 게이트 우회
 ```
 
