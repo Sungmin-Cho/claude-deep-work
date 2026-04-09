@@ -126,6 +126,17 @@ Read the following files if they exist:
 - Read `review_state`, `cross_model_enabled`, and `review_results` from state file
 - Read `$WORK_DIR/brainstorm-review.json`, `$WORK_DIR/research-review.json`, `$WORK_DIR/plan-review.json`, `$WORK_DIR/plan-cross-review.json` if they exist
 
+### 2-1. Read sensor data
+
+If receipts directory exists (`$WORK_DIR/receipts/`):
+- Read all `SLICE-NNN.json` receipt files
+- For each receipt, extract `sensor_results` if present
+- Count slices where all sensor statuses are `pass` or `not_applicable` → Sensor Clean Rate numerator
+- Count total slices with sensor data → Sensor Clean Rate denominator
+- Read `mutation_testing` from the state file for mutation score
+
+If no receipt files have `sensor_results`, show "N/A ⬜" for sensor status.
+
 ### 3. Calculate progress
 
 From `$WORK_DIR/plan.md`, count:
@@ -199,6 +210,11 @@ Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
 크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
 Assumption 조정: [N]건 적용됨 (v5.1)
 건너뛴 단계: [brainstorm, research, plan]
+
+센서 상태:
+   생태계: [ecosystem, e.g. typescript (eslint ✅, tsc ✅, stryker ❌)] [or "감지 안됨 ⬜" if no sensor data]
+   Sensor Clean Rate: [N]/[total] ([N]%) [or "N/A ⬜" if no sensor data in receipts]
+   Mutation Score: [N]% ([Phase 4 실행됨 / 미실행 ⬜ / not_applicable ⏭️])
 
 산출물:
    - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]

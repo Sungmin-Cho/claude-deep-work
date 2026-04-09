@@ -47,10 +47,25 @@ TDD 모드: strict | 디버깅: 0회
 
 For each slice, read the receipt JSON from `$WORK_DIR/receipts/SLICE-NNN.json` to get:
 - TDD state (PENDING/RED/RED_VERIFIED/GREEN_ELIGIBLE/GREEN/REFACTOR/SPIKE)
+- Sensor state (SENSOR_RUN/SENSOR_FIX/SENSOR_CLEAN — displayed if sensor infrastructure active)
 - Test pass count (from verification output)
 - Spec checklist completion
 - Contract compliance (passed/total items from `contract_compliance` field)
 - Receipt status (✅ complete, ⏳ in_progress, ⚠️ spike, — pending)
+
+TDD state icon mapping:
+```
+[PEND]    — not started
+[RED]     — failing test written
+[RED_V]   — red verified
+[G_ELG]   — green eligible
+[GREEN]   — tests passing
+[REFACT]  — refactoring
+[SPIKE]   — spike mode
+[S_CLEAN] — sensors passed
+[S_RUN]   — sensors running
+[S_FIX]   — fixing sensor errors
+```
 
 ## Activate Command
 

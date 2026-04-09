@@ -9,6 +9,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/update-check.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/sensors/detect.js",
+            "timeout": 8
           }
         ]
       }
@@ -32,6 +37,11 @@
           {
             "type": "command",
             "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sensor-trigger.js",
             "timeout": 3
           }
         ]

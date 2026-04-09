@@ -65,7 +65,7 @@ Plan 승인이 유일한 필수 인터랙션입니다.
 - **Document Intelligence**: 피드백 적용 시 중복/불필요 내용 자동 정리 (Apply → Deduplicate → Prune)
 - **Session Relevance Detection**: 현재 세션 범위 밖 피드백 감지 → 새 세션 분리 제안
 - **Plan Fidelity Score**: 구현 vs 플랜 충실도 0-100 점수 산출
-- **Session Quality Score**: 세션 종료 시 품질 점수 자동 계산 (Test Pass Rate, Rework Cycles, Plan Fidelity)
+- **Session Quality Score**: 세션 종료 시 품질 점수 자동 계산 — 5-component system: Test Pass Rate (25%), Rework Cycles (20%), Plan Fidelity (25%), Sensor Clean Rate (15%), Mutation Score (15%). Sensor/Mutation components excluded proportionally when not_applicable.
 - **Cross-Session Quality Trend**: `/deep-status --history`에서 세션 간 품질 추이 시각화
 - **Assumption Engine Quality Integration**: 품질 점수 기반 규칙 자가 최적화 (cohort 분석, 3세션 minimum gate)
 - **Quality Badge**: `/deep-status --badge`로 shields.io 뱃지 생성
@@ -175,6 +175,7 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 - Implement one task at a time, marking each complete
 - Document any issues encountered — never improvise
 - **Automatically transition to Test phase** upon completion
+- **Computational sensors**: After each slice reaches GREEN, computational sensors (linter, type checker) run automatically. Failures trigger a self-correction loop (SENSOR_FIX state) where the AI attempts to fix sensor errors before moving to the next slice. Results are stored in receipt `sensor_results` fields.
 
 **What's allowed**: All tools — code modification is now permitted
 
@@ -195,6 +196,8 @@ For detailed guidance, see [Implementation Guide](references/implementation-guid
 **What happens**:
 - Auto-detects verification commands (test, lint, typecheck) from project config
 - Runs all checks sequentially, records results
+- **Sensor Clean gate**: Reads `sensor_results` from receipts (no re-execution) to verify all slices passed computational sensors
+- **Mutation testing**: Verifies AI-generated test quality by running mutation analysis (stryker/mutmut). Survived mutants trigger automatic test improvement via return to the implement phase — `/deep-mutation-test` handles this transition internally
 - **Pass**: Session completes, report generated
 - **Fail**: Returns to implement phase for fixes (up to 3 retries)
 

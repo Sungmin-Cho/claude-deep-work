@@ -860,6 +860,22 @@ Override mappings:
 
 This snapshot is consumed by `deep-finish.md` when writing the JSONL entry (Task 5) and by the assumption engine for quality-based evaluation (Task 8).
 
+#### Session Quality Score (v5.8 — 5-component system)
+
+The Session Quality Score (0-100) is calculated at session end by `/deep-finish`. It uses a 5-component weighted system with `not_applicable` proportional redistribution:
+
+| Component | Weight | not_applicable handling |
+|-----------|--------|------------------------|
+| Test Pass Rate | 25% | Always applies |
+| Rework Cycles | 20% | Always applies |
+| Plan Fidelity | 25% | Always applies |
+| Sensor Clean Rate | 15% | Excluded from denominator if all sensors not_applicable |
+| Mutation Score | 15% | Excluded from denominator if mutation not_applicable |
+
+**not_applicable proportional redistribution**: If a component is `not_applicable`, its weight is excluded and the remaining weights are scaled to sum to 100%. For example, if both Sensor Clean Rate and Mutation Score are not_applicable (30% excluded), the remaining weights become: Test=35.7%, Rework=28.6%, Plan=35.7%.
+
+The `sensor_clean_rate` is derived from receipt `sensor_results` fields written during Phase 3. The `mutation_score` is derived from the `mutation_testing` field written during Phase 4 testing. Both fields must be present in session state for the components to be applicable.
+
 If `--skip-review` flag was set: use `review_state: "skipped"` instead of `"pending"`.
 
 #### 7a. Register session in registry
