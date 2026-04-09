@@ -31,6 +31,12 @@ function matchesExclude(relPath, pattern) {
     return basename.endsWith(extMatch[1]);
   }
 
+  // Handle directory prefix style → "src/config/**" matches "src/config/env.js"
+  const dirMatch = pattern.match(/^([^*]+)\/\*\*$/);
+  if (dirMatch) {
+    return relPath.startsWith(dirMatch[1] + '/') || relPath.startsWith(dirMatch[1]);
+  }
+
   return false;
 }
 

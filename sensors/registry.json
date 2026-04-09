@@ -26,8 +26,7 @@
       "lint": { "cmd": "ruff check --output-format json .", "parser": "ruff" },
       "typecheck": { "cmd": "mypy --no-error-summary .", "parser": "generic-line" },
       "coverage_flag": "--cov --cov-report=json",
-      "mutation": { "cmd": "mutmut run", "parser": "generic-line", "timeout": 600, "max_mutants": 150 },
-      "audit": { "cmd": "pip audit --format json" }
+      "mutation": { "cmd": "mutmut run", "parser": "generic-line", "timeout": 600, "max_mutants": 150 }
     },
     "csharp": {
       "detect": { "any_of": ["*.csproj", "*.sln"] },

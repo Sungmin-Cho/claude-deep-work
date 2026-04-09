@@ -61,7 +61,18 @@ function checkDependency(projectRoot, rule, options = {}) {
     };
   }
 
-  // dep-cruiser is available — run it
+  // Only 'circular' check is implemented in v1
+  if (rule.check !== 'circular') {
+    return {
+      ruleId: rule.id,
+      status: 'not_applicable',
+      passed: true,
+      message: `check type '${rule.check}' is not yet implemented in v1`,
+      violations: [],
+    };
+  }
+
+  // dep-cruiser is available — run circular dependency check
   const violations = [];
   try {
     const include = rule.include || 'src';

@@ -85,9 +85,11 @@ function normalizeDepVuln(raw) {
       }
     }
   }
+  // Check if any ecosystem returned error
+  const hasError = Object.values(raw).some(r => r.error || r.status === 'error');
   const hasVulns = critical > 0 || high > 0;
   return {
-    status: hasVulns ? 'required_fail' : 'pass',
+    status: hasError && !hasVulns ? 'error' : hasVulns ? 'required_fail' : 'pass',
     critical,
     high,
     items,
@@ -245,7 +247,8 @@ async function runHealthCheck(projectRoot, options = {}) {
     };
   };
 
-  return Promise.race([runChecks(), totalTimeoutPromise]);
+  return Promise.race([runChecks(), totalTimeoutPromise])
+    .finally(() => clearTimeout(totalTimer));
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +257,8 @@ async function runHealthCheck(projectRoot, options = {}) {
 
 if (require.main === module) {
   const projectRoot = process.argv[2] || process.cwd();
-  runHealthCheck(projectRoot, { skipAudit: true })
+  const skipAudit = process.argv.includes('--skip-audit');
+  runHealthCheck(projectRoot, { skipAudit })
     .then(report => console.log(JSON.stringify(report, null, 2)))
     .catch(err => { console.error(err.message); process.exit(1); });
 }

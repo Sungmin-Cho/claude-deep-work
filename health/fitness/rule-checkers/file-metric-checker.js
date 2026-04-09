@@ -89,8 +89,6 @@ function checkFileMetric(projectRoot, rule) {
   for (const file of files) {
     if (rule.check === 'line-count') {
       const content = fs.readFileSync(file, 'utf-8');
-      const lineCount = content.split('\n').filter(l => l !== '' || content.endsWith('\n')).length;
-      // Count actual newline-terminated lines
       const lines = content.split('\n').length - (content.endsWith('\n') ? 1 : 0);
       if (lines > rule.max) {
         violations.push({
