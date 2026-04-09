@@ -182,4 +182,33 @@ if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
   (update_last_activity "$DEEP_WORK_SESSION_ID") 2>/dev/null || true
 fi
 
+# ─── v5.7: Marker file cache invalidation ─────────────────────
+# If a marker file was created/modified, invalidate the sensor ecosystem cache.
+# Marker files: package.json, tsconfig.json, pyproject.toml, setup.py,
+#   requirements.txt, CMakeLists.txt, *.csproj, *.sln
+
+if [[ "$TOOL_NAME" != "Bash" && -n "${FILE_PATH:-}" ]]; then
+  MARKER_BASENAME="$(basename "${FILE_PATH}")"
+  IS_MARKER=false
+
+  case "$MARKER_BASENAME" in
+    package.json|tsconfig.json|pyproject.toml|setup.py|requirements.txt|CMakeLists.txt)
+      IS_MARKER=true ;;
+    *.csproj|*.sln)
+      IS_MARKER=true ;;
+  esac
+
+  if $IS_MARKER && [[ -f "$STATE_FILE" ]]; then
+    # Update sensor_cache_valid: false in frontmatter (macOS-compatible sed)
+    if grep -q '^sensor_cache_valid:' "$STATE_FILE" 2>/dev/null; then
+      sed -i '' 's/^sensor_cache_valid:.*/sensor_cache_valid: false/' "$STATE_FILE" 2>/dev/null || true
+    else
+      # Insert before closing --- of frontmatter
+      sed -i '' '/^---$/{n;/^---$/i\
+sensor_cache_valid: false
+}' "$STATE_FILE" 2>/dev/null || true
+    fi
+  fi
+fi
+
 exit 0
