@@ -96,7 +96,7 @@ function parseLine(line) {
  * @param {string} gateType   - "required" | "advisory"
  * @returns {object} Standard sensor result
  */
-export function parseGenericLine(rawOutput, sensorType, gateType) {
+function parseGenericLine(rawOutput, sensorType, gateType) {
   const items = [];
 
   if (rawOutput && rawOutput.trim().length > 0) {
@@ -124,3 +124,5 @@ export function parseGenericLine(rawOutput, sensorType, gateType) {
     summary: `${errors} errors, ${warnings} warnings`,
   };
 }
+
+module.exports = { parseGenericLine };

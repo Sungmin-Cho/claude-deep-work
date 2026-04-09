@@ -1,13 +1,15 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { parseGenericJson } from './generic-json.js';
-import { parseGenericLine } from './generic-line.js';
-import { parseEslint } from './eslint-parser.js';
-import { parseTsc } from './tsc-parser.js';
-import { parseRuff } from './ruff-parser.js';
-import { parseStryker } from './stryker-parser.js';
-import { parseDotnet } from './dotnet-parser.js';
-import { parseClang } from './clang-parser.js';
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { parseGenericJson } = require('./generic-json.js');
+const { parseGenericLine } = require('./generic-line.js');
+const { parseEslint } = require('./eslint-parser.js');
+const { parseTsc } = require('./tsc-parser.js');
+const { parseRuff } = require('./ruff-parser.js');
+const { parseStryker } = require('./stryker-parser.js');
+const { parseDotnet } = require('./dotnet-parser.js');
+const { parseClang } = require('./clang-parser.js');
 
 // ── generic-json tests ────────────────────────────────────────────────────────
 

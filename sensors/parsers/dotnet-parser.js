@@ -10,7 +10,7 @@
  *   file:line:col: error CSXXXX: message
  */
 
-import { parseGenericLine } from './generic-line.js';
+const { parseGenericLine } = require('./generic-line.js');
 
 // Matches: file(line,col): severity CSXXXX: message
 const DOTNET_PAREN_RE = /^(.+?)\((\d+),(\d+)\):\s*(error|warning|info)\s+(\S+):\s*(.+?)(?:\s+\[.+\])?$/gm;
@@ -33,8 +33,10 @@ function normalizeOutput(rawOutput) {
  * @param {string} [sensorType='typecheck'] - "typecheck" | "lint"
  * @returns {object} Standard sensor result
  */
-export function parseDotnet(rawOutput, sensorType = 'typecheck') {
+function parseDotnet(rawOutput, sensorType = 'typecheck') {
   const normalized = normalizeOutput(rawOutput ?? '');
   const base = parseGenericLine(normalized, sensorType, 'required');
   return { ...base, sensor: 'dotnet' };
 }
+
+module.exports = { parseDotnet };

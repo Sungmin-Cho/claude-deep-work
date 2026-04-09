@@ -1,6 +1,8 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import { selectSensorsForFiles, formatFeedback, buildSensorResult } from './run-sensors.js';
+'use strict';
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { selectSensorsForFiles, formatFeedback, buildSensorResult } = require('./run-sensors.js');
 
 // ── selectSensorsForFiles ──────────────────────────────────────────────────────
 
@@ -66,6 +68,15 @@ test('selectSensorsForFiles: Python with typecheck not_installed → still selec
   assert.equal(result.length, 1);
   assert.equal(result[0].name, 'python');
   assert.equal(result[0].sensors.typecheck.status, 'not_installed');
+});
+
+test('selectSensorsForFiles: selects ecosystem when only config file changed', () => {
+  const ecosystems = [
+    { name: 'typescript', file_extensions: ['.ts', '.tsx'], sensors: { lint: { status: 'available' } } },
+  ];
+  const selected = selectSensorsForFiles(['tsconfig.json'], ecosystems);
+  assert.strictEqual(selected.length, 1);
+  assert.strictEqual(selected[0].name, 'typescript');
 });
 
 // ── formatFeedback ─────────────────────────────────────────────────────────────

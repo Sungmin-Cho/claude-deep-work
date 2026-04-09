@@ -125,7 +125,7 @@ function parseErrorsWarningsObject(obj) {
  * @param {string} gateType   - "required" | "advisory"
  * @returns {object} Standard sensor result
  */
-export function parseGenericJson(rawOutput, sensorType, gateType) {
+function parseGenericJson(rawOutput, sensorType, gateType) {
   let parsed;
   try {
     parsed = JSON.parse(rawOutput);
@@ -169,3 +169,5 @@ export function parseGenericJson(rawOutput, sensorType, gateType) {
 
   return buildResult({ type: sensorType, gate: gateType, items });
 }
+
+module.exports = { parseGenericJson };

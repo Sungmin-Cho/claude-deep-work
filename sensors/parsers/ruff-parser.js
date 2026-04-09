@@ -13,7 +13,7 @@
  * @param {string} rawOutput - Raw stdout from `ruff check --output-format json`
  * @returns {object} Standard sensor result
  */
-export function parseRuff(rawOutput) {
+function parseRuff(rawOutput) {
   let parsed;
   try {
     parsed = JSON.parse(rawOutput);
@@ -56,3 +56,5 @@ export function parseRuff(rawOutput) {
     summary: `${errors} errors, ${warnings} warnings`,
   };
 }
+
+module.exports = { parseRuff };

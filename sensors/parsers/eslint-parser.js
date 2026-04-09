@@ -31,7 +31,7 @@ function normalizeSeverity(raw) {
  * @param {string} rawOutput - Raw stdout from `eslint --format json`
  * @returns {object} Standard sensor result
  */
-export function parseEslint(rawOutput) {
+function parseEslint(rawOutput) {
   let parsed;
   try {
     parsed = JSON.parse(rawOutput);
@@ -81,3 +81,5 @@ export function parseEslint(rawOutput) {
     summary: `${errors} errors, ${warnings} warnings`,
   };
 }
+
+module.exports = { parseEslint };

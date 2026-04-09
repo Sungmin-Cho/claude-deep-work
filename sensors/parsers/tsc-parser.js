@@ -32,7 +32,7 @@ function normalizeSeverity(raw) {
  * @param {string} rawOutput - Raw stdout from `tsc --noEmit`
  * @returns {object} Standard sensor result
  */
-export function parseTsc(rawOutput) {
+function parseTsc(rawOutput) {
   const items = [];
 
   if (rawOutput && rawOutput.trim().length > 0) {
@@ -67,3 +67,5 @@ export function parseTsc(rawOutput) {
     summary: `${errors} errors, ${warnings} warnings`,
   };
 }
+
+module.exports = { parseTsc };

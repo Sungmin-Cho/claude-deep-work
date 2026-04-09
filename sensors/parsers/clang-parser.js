@@ -9,7 +9,7 @@
  *   file:line:col: error: message [check-name]
  */
 
-import { parseGenericLine } from './generic-line.js';
+const { parseGenericLine } = require('./generic-line.js');
 
 /**
  * Parse raw clang-tidy output and return a standard sensor result.
@@ -17,7 +17,9 @@ import { parseGenericLine } from './generic-line.js';
  * @param {string} rawOutput - Raw stdout from `clang-tidy`
  * @returns {object} Standard sensor result
  */
-export function parseClang(rawOutput) {
+function parseClang(rawOutput) {
   const base = parseGenericLine(rawOutput, 'lint', 'required');
   return { ...base, sensor: 'clang-tidy' };
 }
+
+module.exports = { parseClang };

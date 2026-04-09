@@ -20,49 +20,33 @@ const DEFAULT_TIMEOUTS = {
   mutation: 300,
 };
 
-// -- Lazy-loaded PARSERS registry -----------------------------------------------
-// Parsers are ES modules; we use dynamic import() to load them.
-let _parsersCache = null;
+// -- PARSERS registry (sync require, all parsers are now CJS) ------------------
+const { parseEslint } = require('./parsers/eslint-parser.js');
+const { parseTsc } = require('./parsers/tsc-parser.js');
+const { parseRuff } = require('./parsers/ruff-parser.js');
+const { parseGenericLine } = require('./parsers/generic-line.js');
+const { parseGenericJson } = require('./parsers/generic-json.js');
+const { parseStryker } = require('./parsers/stryker-parser.js');
+const { parseDotnet } = require('./parsers/dotnet-parser.js');
+const { parseClang } = require('./parsers/clang-parser.js');
 
-async function getParsers() {
-  if (_parsersCache) return _parsersCache;
-  const [
-    { parseEslint },
-    { parseTsc },
-    { parseRuff },
-    { parseGenericLine },
-    { parseGenericJson },
-    { parseStryker },
-    { parseDotnet },
-    { parseClang },
-  ] = await Promise.all([
-    import('./parsers/eslint-parser.js'),
-    import('./parsers/tsc-parser.js'),
-    import('./parsers/ruff-parser.js'),
-    import('./parsers/generic-line.js'),
-    import('./parsers/generic-json.js'),
-    import('./parsers/stryker-parser.js'),
-    import('./parsers/dotnet-parser.js'),
-    import('./parsers/clang-parser.js'),
-  ]);
+const PARSERS = {
+  eslint: (output, type, gate) => parseEslint(output),
+  tsc: (output, type, gate) => parseTsc(output),
+  ruff: (output, type, gate) => parseRuff(output),
+  'generic-line': (output, type, gate) => parseGenericLine(output, type, gate),
+  'generic-json': (output, type, gate) => parseGenericJson(output, type, gate),
+  stryker: (output, type, gate) => parseStryker(output),
+  dotnet: (output, type, gate) => parseDotnet(output, type, gate),
+  'clang-tidy': (output, type, gate) => parseClang(output),
+};
 
-  _parsersCache = {
-    eslint: (output, type, gate) => parseEslint(output),
-    tsc: (output, type, gate) => parseTsc(output),
-    ruff: (output, type, gate) => parseRuff(output),
-    'generic-line': (output, type, gate) => parseGenericLine(output, type, gate),
-    'generic-json': (output, type, gate) => parseGenericJson(output, type, gate),
-    stryker: (output, type, gate) => parseStryker(output),
-    dotnet: (output, type, gate) => parseDotnet(output, type, gate),
-    'clang-tidy': (output, type, gate) => parseClang(output),
-  };
-
-  return _parsersCache;
+function getParsers() {
+  return Promise.resolve(PARSERS);
 }
 
 function getParserSync(parserName) {
-  if (!_parsersCache) return null;
-  return _parsersCache[parserName] ?? null;
+  return PARSERS[parserName] ?? null;
 }
 
 // -- selectSensorsForFiles ------------------------------------------------------

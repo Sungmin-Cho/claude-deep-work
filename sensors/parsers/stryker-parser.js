@@ -44,7 +44,7 @@ function isPossiblyEquivalent(mutant, source) {
  * @param {string} rawOutput - Raw contents of the stryker JSON report
  * @returns {object} Mutation result
  */
-export function parseStryker(rawOutput) {
+function parseStryker(rawOutput) {
   let parsed;
   try {
     parsed = JSON.parse(rawOutput);
@@ -115,3 +115,5 @@ export function parseStryker(rawOutput) {
     survived_details: survivedDetails,
   };
 }
+
+module.exports = { parseStryker };
