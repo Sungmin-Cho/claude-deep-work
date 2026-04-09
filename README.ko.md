@@ -546,15 +546,46 @@ deep-work v5.2는 전체 워크플로우를 단일 `/deep-work` 커맨드로 통
 ### v5.1에서 마이그레이션
 별도 작업 불필요. 기존 프리셋과 세션 상태는 완전히 호환됩니다. Deprecated 커맨드도 그대로 동작합니다 — auto-flow와 동일한 로직을 호출합니다.
 
+## Health Engine + 아키텍처 Fitness (v5.9)
+
+Phase 1 Research에서 자동 **Health Check**을 실행하여 코드베이스 드리프트를 감지하고 아키텍처 fitness 규칙을 검증합니다.
+
+### 드리프트 센서 (Phase 1, 자동)
+
+| 센서 | 감지 대상 | 스코프 |
+|------|----------|--------|
+| dead-export | 어디서도 import되지 않는 미사용 export | JS/TS |
+| stale-config | tsconfig, package.json, .eslintrc 깨진 경로 참조 | JS/TS |
+| dependency-vuln | `npm audit` 기반 high/critical 취약점 | JS/TS (Required gate) |
+| coverage-trend | 이전 세션 baseline 대비 커버리지 퇴화 | 범용 |
+
+### 아키텍처 Fitness Function (fitness.json)
+
+`.deep-review/fitness.json`에 계산적 아키텍처 규칙 선언:
+- **자동 생성**: fitness.json 미존재 시 Phase 1에서 프로젝트 분석 후 규칙 제안 (ecosystem-aware)
+- **규칙 타입**: `dependency` (dep-cruiser), `file-metric`, `forbidden-pattern`, `structure`
+- **Phase 4 게이트**: Fitness Delta (Advisory) + Health Required (Required)
+- **Baseline 관리**: commit/branch 기반 스코핑, 브랜치 전환/rebase 시 자동 무효화
+
+### deep-review 연동
+
+deep-review 설치 시:
+- fitness.json 규칙이 리뷰 에이전트 프롬프트에 주입되어 아키텍처 의도 기반 리뷰
+- receipt의 health_report가 scan_commit 기반 stale 체크 후 리뷰 컨텍스트로 활용
+
 ## 품질 측정 (v5.3)
 
-모든 세션은 3가지 핵심 결과 메트릭을 기반으로 **세션 품질 점수** (0-100)를 산출합니다:
+모든 세션은 5가지 결과 메트릭을 기반으로 **세션 품질 점수** (0-100)를 산출합니다:
 
 | 메트릭 | 비중 | 측정 대상 |
 |--------|------|----------|
-| 테스트 통과율 | 35% | 첫 시도에 테스트가 통과하는 빈도 |
-| 재작업 사이클 | 30% | implement→test 루프 반복 횟수 |
-| Plan Fidelity | 35% | 구현이 승인된 Plan에 얼마나 부합하는지 |
+| 테스트 통과율 | 25% | 첫 시도에 테스트가 통과하는 빈도 |
+| 재작업 사이클 | 20% | implement→test 루프 반복 횟수 |
+| Plan Fidelity | 25% | 구현이 승인된 Plan에 얼마나 부합하는지 |
+| 센서 클린율 | 15% | Lint/typecheck 센서 통과율 (not_applicable 제외) |
+| Mutation Score | 15% | Mutation testing 효과성 (not_applicable 제외) |
+
+Health Check 결과는 품질 점수에 포함되지 않음 — 코드베이스 상태 진단이지 세션 작업 품질이 아님. receipt에 별도 표시.
 
 추가 진단 메트릭 (코드 효율성, Phase 밸런스)도 참고용으로 추적됩니다.
 
