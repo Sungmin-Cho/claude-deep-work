@@ -8,6 +8,19 @@
 
 **Evidence-Driven Development Protocol** — 단일 커맨드 auto-flow 오케스트레이션, TDD 강제, slice/receipt 시스템으로 모든 코드 변경에 증거를 요구하는 플러그인.
 
+### 하네스 엔지니어링에서의 역할
+
+deep-work는 [Deep Suite](https://github.com/Sungmin-Cho/claude-deep-suite) 생태계의 **핵심 하네스 엔진**으로, [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) 프레임워크(Böckeler/Fowler, 2026)를 구현합니다.
+
+2×2 매트릭스(Guide/Sensor × Computational/Inferential)에서 deep-work의 역할:
+
+- **Computational Guides**: Phase Guard hook(편집 물리적 차단), TDD 상태 머신(RED→GREEN), 토폴로지 템플릿(phase별 가이드)
+- **Computational Sensors**: Linter/타입 체크 파이프라인, 커버리지, 뮤테이션 테스팅, 4개 드리프트 센서, fitness 규칙, review-check 센서
+- **Inferential Guides**: Research/plan/brainstorm 문서, Sprint Contract
+- **Self-Correction Loop**: SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN (센서별 독립 3회 교정)
+
+deep-work는 [deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와 [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard)가 소비하는 receipt과 health report를 생성합니다.
+
 ## 문제
 
 AI 코딩 도구가 복잡한 작업을 수행할 때 흔히 발생하는 문제:

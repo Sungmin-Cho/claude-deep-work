@@ -8,6 +8,19 @@
 
 A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a single-command auto-flow orchestration (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
 
+### Role in Harness Engineering
+
+deep-work is the **core harness engine** in the [Deep Suite](https://github.com/Sungmin-Cho/claude-deep-suite) ecosystem, implementing the [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) framework (Böckeler/Fowler, 2026).
+
+In the 2×2 matrix (Guide/Sensor × Computational/Inferential), deep-work covers:
+
+- **Computational Guides**: Phase Guard hook (physically blocks edits), TDD state machine (RED→GREEN), topology templates (phase-specific guides)
+- **Computational Sensors**: Linter/typecheck pipeline, coverage, mutation testing, 4 drift sensors, fitness rules, review-check sensor
+- **Inferential Guides**: Research/plan/brainstorm documents, Sprint Contract
+- **Self-Correction Loop**: SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN with per-sensor 3-round independent limit
+
+deep-work also produces receipts and health reports consumed by [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard).
+
 ## The Problem
 
 Common pitfalls when AI coding tools tackle complex tasks:
