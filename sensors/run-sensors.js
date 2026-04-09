@@ -51,9 +51,18 @@ function getParserSync(parserName) {
 
 // -- selectSensorsForFiles ------------------------------------------------------
 
+// Marker files that should trigger ecosystem-wide sensor scan
+const MARKER_FILES = {
+  javascript: ['package.json', 'package-lock.json', '.eslintrc', '.eslintrc.json', '.eslintrc.js', 'eslint.config.js'],
+  typescript: ['tsconfig.json', 'package.json', 'package-lock.json', '.eslintrc', '.eslintrc.json', 'eslint.config.js'],
+  python: ['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt', '.flake8', 'ruff.toml'],
+  csharp: ['.csproj', '.sln', 'Directory.Build.props'],
+  cpp: ['CMakeLists.txt', '.clang-tidy'],
+};
+
 /**
  * Filter ecosystems to those that have at least one changed file matching
- * their file_extensions list.
+ * their file_extensions list or marker/config file list.
  *
  * @param {string[]} changedFiles - List of changed file paths
  * @param {object[]} ecosystems   - Ecosystem objects from detectEcosystems()
@@ -62,9 +71,15 @@ function getParserSync(parserName) {
 function selectSensorsForFiles(changedFiles, ecosystems) {
   return ecosystems.filter(eco => {
     const exts = eco.file_extensions ?? [];
+    const markers = MARKER_FILES[eco.name] || [];
+
     return changedFiles.some(f => {
-      const ext = path.extname(f);
-      return exts.includes(ext);
+      // Match by extension
+      if (exts.some(ext => f.endsWith(ext))) return true;
+      // Match by marker filename
+      const basename = f.split('/').pop();
+      if (markers.some(m => m.startsWith('.') ? basename === m : basename === m || basename.endsWith(m))) return true;
+      return false;
     });
   });
 }
