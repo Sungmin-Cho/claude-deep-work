@@ -8,7 +8,8 @@
       "lint": { "cmd": "npx eslint --format json .", "parser": "eslint" },
       "typecheck": null,
       "coverage_flag": "--coverage --json",
-      "mutation": { "cmd": "npx stryker run", "parser": "stryker", "timeout": 300, "max_mutants": 200 }
+      "mutation": { "cmd": "npx stryker run", "parser": "stryker", "timeout": 300, "max_mutants": 200 },
+      "audit": { "cmd": "npm audit --json" }
     },
     "typescript": {
       "detect": { "require": ["tsconfig.json"], "any_of": ["package.json"] },
@@ -16,7 +17,8 @@
       "lint": { "cmd": "npx eslint --format json .", "parser": "eslint" },
       "typecheck": { "cmd": "npx tsc --noEmit", "parser": "tsc" },
       "coverage_flag": "--coverage --json",
-      "mutation": { "cmd": "npx stryker run", "parser": "stryker", "timeout": 300, "max_mutants": 200 }
+      "mutation": { "cmd": "npx stryker run", "parser": "stryker", "timeout": 300, "max_mutants": 200 },
+      "audit": { "cmd": "npm audit --json" }
     },
     "python": {
       "detect": { "any_of": ["pyproject.toml", "setup.py", "requirements.txt"] },
@@ -24,7 +26,8 @@
       "lint": { "cmd": "ruff check --output-format json .", "parser": "ruff" },
       "typecheck": { "cmd": "mypy --no-error-summary .", "parser": "generic-line" },
       "coverage_flag": "--cov --cov-report=json",
-      "mutation": { "cmd": "mutmut run", "parser": "generic-line", "timeout": 600, "max_mutants": 150 }
+      "mutation": { "cmd": "mutmut run", "parser": "generic-line", "timeout": 600, "max_mutants": 150 },
+      "audit": { "cmd": "pip audit --format json" }
     },
     "csharp": {
       "detect": { "any_of": ["*.csproj", "*.sln"] },

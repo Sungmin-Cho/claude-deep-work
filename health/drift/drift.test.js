@@ -143,3 +143,128 @@ describe('loadHealthIgnore', () => {
     assert.deepEqual(result, {});
   });
 });
+
+// ==========================================================================
+// stale-config tests
+// ==========================================================================
+const { scanStaleConfig } = require('./stale-config.js');
+
+describe('scanStaleConfig', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sc-')); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function write(relPath, content) {
+    const full = path.join(tmpDir, relPath);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, content);
+  }
+
+  // 1. Broken package.json main path detected
+  it('detects broken package.json main path', () => {
+    write('package.json', JSON.stringify({ main: './dist/index.js' }));
+    // dist/index.js does NOT exist
+
+    const result = scanStaleConfig(tmpDir);
+    assert.ok(result.count > 0, 'should detect broken main path');
+    assert.ok(result.issues.some(i => i.file === 'package.json' && i.field === 'main'));
+  });
+
+  // 2. Valid paths -> pass (count 0)
+  it('returns count 0 when all paths are valid', () => {
+    write('dist/index.js', 'module.exports = {};');
+    write('package.json', JSON.stringify({ main: './dist/index.js' }));
+
+    const result = scanStaleConfig(tmpDir);
+    assert.equal(result.count, 0);
+  });
+
+  // 3. Broken tsconfig.json paths detected
+  it('detects broken tsconfig.json compilerOptions.paths', () => {
+    write('tsconfig.json', JSON.stringify({
+      compilerOptions: {
+        paths: { '@utils/*': ['./src/utils/*'] }
+      }
+    }));
+    // src/utils does NOT exist
+
+    const result = scanStaleConfig(tmpDir);
+    assert.ok(result.count > 0, 'should detect broken tsconfig paths');
+    assert.ok(result.issues.some(i => i.file === 'tsconfig.json'));
+  });
+
+  // 4. No config files -> count 0
+  it('returns count 0 when no config files exist', () => {
+    // empty tmpDir, no package.json, no tsconfig, no eslintrc
+    const result = scanStaleConfig(tmpDir);
+    assert.equal(result.count, 0);
+  });
+
+  // 5. Broken .eslintrc extends (uninstalled plugin) detected
+  it('detects broken .eslintrc extends with uninstalled plugin', () => {
+    write('.eslintrc.json', JSON.stringify({
+      extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
+      plugins: ['@typescript-eslint']
+    }));
+    write('package.json', '{}');
+    // node_modules/@typescript-eslint does NOT exist
+
+    const result = scanStaleConfig(tmpDir);
+    assert.ok(result.count > 0, 'should detect uninstalled eslint plugin');
+    assert.ok(result.issues.some(i => i.file.includes('eslintrc')));
+  });
+
+  // 6. No .eslintrc -> skip
+  it('skips eslintrc scan when no .eslintrc exists', () => {
+    write('package.json', '{}');
+    // no .eslintrc or .eslintrc.json
+
+    const result = scanStaleConfig(tmpDir);
+    // should not have any eslintrc-related issues
+    const eslintIssues = result.issues.filter(i => i.file.includes('eslintrc'));
+    assert.equal(eslintIssues.length, 0);
+  });
+});
+
+// ==========================================================================
+// dependency-vuln tests
+// ==========================================================================
+const { parseNpmAudit, scanDependencyVuln } = require('./dependency-vuln.js');
+
+describe('parseNpmAudit', () => {
+  // 1. npm audit JSON with high vuln -> parsed correctly
+  it('parses npm audit JSON with high vulnerability', () => {
+    const auditJson = JSON.stringify({
+      vulnerabilities: {
+        'lodash': { severity: 'high', name: 'lodash', range: '<4.17.21' },
+        'express': { severity: 'moderate', name: 'express', range: '<4.18.0' },
+        'minimist': { severity: 'low', name: 'minimist', range: '<1.2.6' }
+      }
+    });
+
+    const result = parseNpmAudit(auditJson);
+    assert.equal(result.high, 1);
+    assert.equal(result.critical, 0);
+    assert.ok(result.vulnerabilities.length > 0);
+    assert.ok(!result.error);
+  });
+
+  // 2. Clean audit -> high: 0, critical: 0, empty vulnerabilities
+  it('returns zeros for clean audit', () => {
+    const auditJson = JSON.stringify({ vulnerabilities: {} });
+
+    const result = parseNpmAudit(auditJson);
+    assert.equal(result.high, 0);
+    assert.equal(result.critical, 0);
+    assert.deepEqual(result.vulnerabilities, []);
+  });
+
+  // 3. Malformed JSON -> error: true, graceful handling
+  it('handles malformed JSON gracefully', () => {
+    const result = parseNpmAudit('not valid json {{{');
+    assert.equal(result.error, true);
+    assert.deepEqual(result.vulnerabilities, []);
+    assert.equal(result.high, 0);
+    assert.equal(result.critical, 0);
+  });
+});
