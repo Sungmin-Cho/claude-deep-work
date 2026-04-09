@@ -84,7 +84,7 @@ These commands still work but are now absorbed into the auto-flow. You no longer
 | Command | Absorbed into |
 |---------|---------------|
 | `/deep-brainstorm` | `/deep-work` auto-flow (Phase 0) |
-| `/deep-phase-review` | Phase 문서 전용 리뷰 (독립 커맨드) |
+| `/deep-phase-review` | Phase document review (standalone command) |
 | `/deep-receipt` | `/deep-status --receipts` |
 | `/deep-slice` | `/deep-implement` (auto-managed internally) |
 | `/deep-insight` | `/deep-test` (auto-runs as advisory gate) |
