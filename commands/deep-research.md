@@ -56,7 +56,43 @@ If scope option is present:
 
 Valid scope values: `architecture`, `patterns`, `data`, `api`, `infrastructure`, `dependencies`
 
-### 1-2. Check for previous Research cache
+### 1-2. Health Check (자동)
+
+프로젝트 상태를 자동 진단합니다. 별도 명령 불필요.
+
+1. **Health Engine 실행**: `node "$CLAUDE_PLUGIN_DIR/health/health-check.js" "$PROJECT_ROOT"`
+   - 드리프트 센서 4개 (병렬): dead-export, stale-config, dependency-vuln + coverage-trend
+   - fitness.json 검증 (있으면)
+   - 전체 타임아웃: 180초
+
+2. **fitness.json 자동 생성 제안** (`.deep-review/fitness.json` 미존재 시):
+   - `node "$CLAUDE_PLUGIN_DIR/health/fitness/fitness-generator.js" "$PROJECT_ROOT"` 실행
+   - 결과를 AskUserQuestion으로 유저에게 제안
+   - 승인 시: `.deep-review/fitness.json` 생성 + `git add`
+   - 거부 시: fitness 검증 `not_applicable`
+
+3. **dep-cruiser 설치 제안** (fitness.json에 dependency 규칙 + dep-cruiser 미설치 시):
+   - 설명 + "npm install --save-dev dependency-cruiser" 제안
+   - 승인 → 설치 후 검증. 거부 → required=required_missing, advisory=not_applicable
+
+4. **Health Report를 research context에 주입**:
+   Health Check 결과를 마크다운 형식으로 출력하여 이후 research 분석에 자연스럽게 반영:
+   ```
+   ## ⚡ Health Check Report
+   ### Drift Scan
+   - dead-export: [결과]
+   - coverage-trend: [결과]
+   - dependency-vuln: [결과]
+   - stale-config: [결과]
+   ### 권장 조치
+   - [조치 목록]
+   ```
+
+5. **세션 상태 저장**:
+   - `fitness_baseline`: 현재 fitness 위반 상태를 세션 상태 파일에 저장 (Phase 4 delta 비교용)
+   - `unresolved_required_issues`: required_fail/required_missing 항목을 세션 상태에 저장 (Phase 4 전파용)
+
+### 1-3. Check for previous Research cache
 
 Search the `deep-work/` directory for the most recent `research.md` from a previous session (not the current session).
 
@@ -82,7 +118,7 @@ If the user selects option 1:
 If the user selects option 2 or git is not available:
 - Proceed with full analysis as normal
 
-### 1-3. Check for incremental mode
+### 1-4. Check for incremental mode
 
 If `$ARGUMENTS` contains `--incremental`:
 
@@ -110,7 +146,7 @@ If `$ARGUMENTS` contains `--incremental`:
 
 **Note**: `--scope` takes priority over `--incremental`. If both are provided, `--scope` wins.
 
-### 1-4. Document Refinement Protocol
+### 1-5. Document Refinement Protocol
 
 **This protocol applies whenever research.md is updated** — whether via partial re-run (`--scope=`), incremental mode (`--incremental`), research cache reuse, or user feedback during the research phase.
 
@@ -129,7 +165,7 @@ After refinement, append a log entry at the end of the document:
 
 Where `[N]` is the revision number (increment from previous log entries, starting at 2).
 
-### 1-5. Session Relevance Detection
+### 1-6. Session Relevance Detection
 
 When the user provides additional direction or feedback during the research phase, evaluate whether it falls within the current session scope before incorporating it.
 

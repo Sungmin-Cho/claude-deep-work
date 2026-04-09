@@ -1081,6 +1081,8 @@ If brainstorm is skipped:
 
 #### 9-3. Research phase
 
+Phase 1 Research에서 Health Check이 자동으로 실행되어 드리프트 감지(dead-export, stale-config, dependency-vuln, coverage-trend) 및 fitness.json 검증을 수행합니다.
+
 Read the `/deep-research` command file and follow its steps.
 
 On completion (research.md written, `current_phase` transitions to `plan`):

@@ -145,6 +145,9 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `auto_loop_enabled` | Whether auto-loop evaluation is active — `true` (v5.1) |
 | `skipped_phases` | Phases skipped via `--skip-to-implement` — `[]` (v5.1) |
 | `assumption_adjustments` | Active adjustments from Assumption Engine — `[]` (v5.1) |
+| `fitness_baseline` | Phase 1 fitness violation snapshot for Phase 4 delta comparison (v5.9) |
+| `unresolved_required_issues` | Phase 1 required failures propagated to Phase 4 (v5.9) |
+| `health_report` | Latest Health Check results — drift + fitness (v5.9) |
 
 ## Workflow Details
 
@@ -173,6 +176,11 @@ Systematically analyzes the codebase across 6 areas:
 **v5.5 features:**
 - **Cross-Model Review** — codex/gemini independently review research findings with dedicated rubric
 - **Consolidated Judgment** — Claude synthesizes all review results; user confirms in bulk before proceeding
+
+**v5.9 features:**
+- **Health Check** — Automatic drift detection (dead-export, stale-config, dependency-vuln, coverage-trend) + fitness.json validation at Phase 1 start
+- **fitness.json auto-generation** — Ecosystem-aware architecture rule proposal with user approval
+- **dep-cruiser install suggestion** — Explains the tool and offers installation for dependency rules
 
 ### Phase 2: Plan
 
@@ -256,6 +264,11 @@ implement → test → (pass) → idle + report
 - **Insight Tier Quality Gate** — `/deep-insight` command and built-in Insight gate. Measures file metrics, complexity indicators, dependency graph, and change summary. Outputs `insight-report.md`. Never blocks workflow.
 - **PostToolUse File Tracking** — Automatically logs file modifications during Implement phase to `file-changes.log`. Feeds into `/deep-report` and `/deep-insight`.
 - **Stop Hook** — Sends reminder and notification when CLI session ends with an active deep-work session.
+
+**v5.9 features:**
+- **Fitness Delta Gate** (Advisory) — Compares Phase 1 fitness baseline vs current violations. New violations get flagged but don't block.
+- **Health Required Gate** (Required) — Propagates Phase 1 required failures (critical vulnerabilities, required_missing tools) to Phase 4. User must acknowledge to proceed.
+- **Phase 4 Baseline Refresh** — Automatically updates health-baseline.json after quality gates pass, creating the comparison baseline for the next session.
 
 **v3.3.3 features:**
 - **Multi-Preset Profile System** — Create named presets (`dev`, `quick`, `review`) for different work styles. Interactive selection when multiple presets exist. Auto-migration from v1 single profile to v2 multi-preset format.
@@ -541,15 +554,60 @@ deep-work v5.2 consolidates the entire workflow into a single `/deep-work` comma
 ### Migration from v5.1
 No action needed. Your existing presets and session state are fully compatible. Deprecated commands still work — they just invoke the same logic that the auto-flow would.
 
+## Health Engine + Architecture Fitness (v5.9)
+
+Phase 1 Research now includes an automatic **Health Check** that detects codebase drift and validates architecture fitness rules.
+
+### Drift Sensors (Phase 1, automatic)
+
+| Sensor | What it detects | Scope |
+|--------|----------------|-------|
+| dead-export | Unused exports never imported elsewhere | JS/TS |
+| stale-config | Broken paths in tsconfig, package.json, .eslintrc | JS/TS |
+| dependency-vuln | Known high/critical vulnerabilities via `npm audit` | JS/TS (Required gate) |
+| coverage-trend | Coverage degradation vs. previous session baseline | Universal |
+
+Drift sensors run in parallel (Promise.allSettled) with per-sensor timeouts. Results are injected into the research context so the agent considers codebase health during design.
+
+### Architecture Fitness Functions (fitness.json)
+
+Declare computational architecture rules in `.deep-review/fitness.json`:
+
+```json
+{
+  "version": 1,
+  "rules": [
+    { "id": "no-circular-deps", "type": "dependency", "check": "circular", "severity": "required" },
+    { "id": "max-file-lines", "type": "file-metric", "check": "line-count", "max": 500, "include": "src/**/*.{ts,js}", "severity": "advisory" },
+    { "id": "no-console-in-prod", "type": "forbidden-pattern", "pattern": "console\\.(log|debug)", "include": "src/**/*.{ts,js}", "exclude": "**/*.test.*", "severity": "advisory" }
+  ]
+}
+```
+
+- **Auto-generation**: If fitness.json doesn't exist, Phase 1 analyzes the project and proposes rules (ecosystem-aware — dependency rules only for JS/TS)
+- **Rule types**: `dependency` (dep-cruiser), `file-metric`, `forbidden-pattern`, `structure` (no `custom` in v1)
+- **Phase 4 gates**: Fitness Delta (Advisory) detects new violations; Health Required (Required) propagates unresolved critical issues
+- **Baseline management**: commit/branch-scoped with automatic invalidation on branch switch or rebase
+
+### deep-review Integration
+
+When deep-review is installed:
+- fitness.json rules are injected into the review agent's prompt for architecture-aware review
+- Health report from the receipt is used as additional review context (with scan_commit-based staleness check)
+
 ## Quality Measurement (v5.3)
 
-Every session produces a **Session Quality Score** (0-100) based on three core outcome metrics:
+Every session produces a **Session Quality Score** (0-100) based on five outcome metrics:
 
 | Metric | Weight | What it measures |
 |--------|--------|-----------------|
-| Test Pass Rate | 35% | How often tests pass on the first try |
-| Rework Cycles | 30% | How many implement→test loops were needed |
-| Plan Fidelity | 35% | How closely the implementation matches the approved plan |
+| Test Pass Rate | 25% | How often tests pass on the first try |
+| Rework Cycles | 20% | How many implement→test loops were needed |
+| Plan Fidelity | 25% | How closely the implementation matches the approved plan |
+| Sensor Clean Rate | 15% | Lint/typecheck sensor pass rate (not_applicable excluded) |
+| Mutation Score | 15% | Mutation testing effectiveness (not_applicable excluded) |
+
+Health Check results are **not** included in the quality score — they reflect codebase state, not session work quality. They are reported separately in the receipt.
 
 Additional diagnostic metrics (Code Efficiency, Phase Balance) are tracked for informational purposes.
 
@@ -601,6 +659,7 @@ deep-work integrates with other Claude Deep Suite plugins when they are installe
 - **Sprint Contract** (Phase 2): After plan approval, automatically generates `.deep-review/contracts/` from slice criteria
 - **Slice Review** (Phase 3): Suggests `/deep-review --contract SLICE-NNN` after each slice reaches GREEN
 - **Full Review** (Phase 4): Suggests `/deep-review` for comprehensive review before quality gates
+- **Fitness-Aware Review** (v5.9): deep-review reads `.deep-review/fitness.json` to evaluate architecture intent, and `health_report` from the receipt for drift context
 
 ### deep-wiki
 - **Knowledge Capture** (Phase 4): After session completion, suggests `/wiki-ingest report.md` to archive research and design decisions

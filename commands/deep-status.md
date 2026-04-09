@@ -137,6 +137,15 @@ If receipts directory exists (`$WORK_DIR/receipts/`):
 
 If no receipt files have `sensor_results`, show "N/A ⬜" for sensor status.
 
+### 2-2. Read health check data
+
+Read `health_report` from the session state file. If present, extract:
+- **Drift metrics**: `dead_exports.count`, `coverage_delta`, `vulnerability.critical`, `vulnerability.high`, `stale_deps.count`
+- **Fitness metrics**: `fitness.passed`, `fitness.total`, `fitness.violation_delta`
+- **Required status**: `unresolved_required_issues` count, `acknowledged_required_issues` presence
+
+If `health_report` is absent from the state file, show "N/A ⬜" for Health Check status.
+
 ### 3. Calculate progress
 
 From `$WORK_DIR/plan.md`, count:
@@ -215,6 +224,10 @@ Assumption 조정: [N]건 적용됨 (v5.1)
    생태계: [ecosystem, e.g. typescript (eslint ✅, tsc ✅, stryker ❌)] [or "감지 안됨 ⬜" if no sensor data]
    Sensor Clean Rate: [N]/[total] ([N]%) [or "N/A ⬜" if no sensor data in receipts]
    Mutation Score: [N]% ([Phase 4 실행됨 / 미실행 ⬜ / not_applicable ⏭️])
+
+Health Check:
+   드리프트: dead-export {N}건 ⚠️ | coverage {+/-N}%p ✅ | vuln {N}건 🔴 | stale {N}건 ✅
+   Fitness:  {N}/{M} 통과 ✅ | required_missing: {N}건
 
 산출물:
    - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]

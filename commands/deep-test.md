@@ -451,6 +451,61 @@ Implement 단계로 복귀하여 센서 오류를 해결하세요.
 
 **Save to state**: Write `mutation_testing` object to the session state file with tool, status, score, and survived list for use by `/deep-finish` quality score calculation.
 
+### 4-7a. Built-in Advisory Gate: Fitness Delta (⚠️ Advisory)
+
+Phase 1에서 저장한 fitness baseline과 현재 fitness 검증 결과를 비교하는 게이트.
+
+**Steps**:
+1. Phase 1에서 저장한 `fitness_baseline`(세션 상태 파일)과 현재 fitness 검증 결과 비교
+2. `node "$CLAUDE_PLUGIN_DIR/health/fitness/fitness-validator.js"` 재실행 (fitness.json이 있을 때만)
+3. 새 위반 추가 없음 → ✅ PASS
+4. 위반 감소 → ✅ PASS + 긍정 피드백
+5. 위반 증가 → ⚠️ Advisory 경고 (차단 안 함, receipt에 기록)
+6. fitness.json 없음 → not_applicable
+
+**Display**:
+```
+Fitness Delta Gate (advisory):
+  Baseline: 3건 위반 → 현재: 2건 위반 (−1) ✅
+```
+
+Or if violations increased:
+```
+⚠️ Fitness Delta (advisory):
+  Baseline: 3건 위반 → 현재: 5건 위반 (+2) — 신규 위반 확인 필요
+```
+
+### 4-7b. Built-in Required Gate: Health Required (✅ Required)
+
+Phase 1에서 발견된 required 이슈가 해결되었는지 확인하는 게이트.
+
+**Steps**:
+1. 세션 상태의 `unresolved_required_issues` 확인
+2. 있으면: AskUserQuestion — "Phase 1에서 발견된 required 이슈가 미해결입니다: [목록]. 이 상태로 완료하시겠습니까?"
+3. acknowledge 시: receipt에 `acknowledged_required_issues` 기록 + 진행
+4. 거부 시: 이슈 해결 권장
+
+**Display**:
+```
+Health Required Gate:
+  미해결 required 이슈: 2건
+  - dead-export: src/legacy/unused.ts (3개 미사용 export)
+  - vulnerability: critical CVE-2026-1234
+  사용자 확인 대기 중...
+```
+
+### 4-7c. Phase 4 Baseline 갱신
+
+모든 Quality Gate 통과 후 (또는 acknowledge 후):
+- `health-baseline.js` writeBaseline() 호출
+- 현재 커버리지, dead_exports 수, fitness_violations 수를 baseline으로 기록
+- 다음 세션의 Phase 1 비교 기준으로 사용
+
+### 4-7d. Session Quality Score 변경 없음
+
+Health Check은 세션 시작 시점의 코드베이스 상태 진단이므로 Score에 반영하지 않음.
+기존 5가지 가중치(Test Pass Rate, Rework Cycles, Plan Fidelity, Sensor Clean Rate, Mutation Score) 유지.
+
 ### 4-8. Session Quality Score Weights
 
 The Session Quality Score (calculated in `/deep-finish`) uses the following 5-component weighted formula:
