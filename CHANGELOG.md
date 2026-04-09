@@ -7,7 +7,7 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.9.0] - 2026-04-09
+## [6.0.0] - 2026-04-09
 
 ### Added
 - **Health Engine** — Automatic Health Check during Phase 1 Research with 4 drift sensors running in parallel:
