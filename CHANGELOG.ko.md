@@ -7,6 +7,32 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.0] - 2026-04-09
+
+### 추가
+- **Health Engine** — Phase 1 Research 자동 Health Check (4개 드리프트 센서 병렬 실행):
+  - `dead-export`: JS/TS 미사용 export 감지 (entry point/라이브러리/barrel 제외, health-ignore.json 지원)
+  - `stale-config`: tsconfig.json, package.json, .eslintrc 깨진 경로 참조 감지
+  - `dependency-vuln`: `npm audit --json` 기반 high/critical 취약점 감지 (Required gate)
+  - `coverage-trend`: 이전 세션 baseline 대비 커버리지 퇴화 감지 (5%p 임계값)
+- **아키텍처 Fitness Function** — `.deep-review/fitness.json` 선언적 아키텍처 규칙:
+  - 4개 rule checker: `file-metric` (줄 수), `forbidden-pattern` (정규식), `structure` (colocated 테스트), `dependency` (순환 의존성, dep-cruiser)
+  - `fitness-validator.js`: JSON 스키마 검증 + 규칙 실행 엔진 (`required_missing` 상태)
+  - `fitness-generator.js`: Ecosystem-aware 자동 생성 (비 JS/TS에서 dependency 규칙 제외)
+  - dep-cruiser 미설치 시 설명 + 설치 제안
+- **Health Check 오케스트레이터** (`health-check.js`) — 병렬 드리프트 스캔 (Promise.allSettled) + 순차 fitness 검증 (센서별 타임아웃, 전체 180초)
+- **Baseline 관리** — `health-baseline.json` commit/branch 스코핑, 브랜치 전환/rebase(git merge-base --is-ancestor)/7일 만료 시 자동 무효화
+- **Phase 4 Quality Gates**:
+  - Fitness Delta Gate (Advisory) — 이번 구현에서 추가된 fitness 위반 감지
+  - Health Required Gate (Required) — Phase 1 required 실패 전파 + 유저 acknowledge 흐름
+  - Phase 4 Baseline 갱신 — 게이트 통과 후 health-baseline.json 자동 업데이트
+- **Receipt 스키마 확장** — `health_report` 필드 + `scan_commit` (deep-review stale 판정용)
+- **deep-review 연동** — fitness.json을 리뷰 에이전트 프롬프트에 주입 + receipt health_report scan_commit 기반 stale 체크
+
+### 변경
+- 세션 품질 점수 5가지 가중치 (테스트 통과율 25%, 재작업 사이클 20%, Plan Fidelity 25%, 센서 클린율 15%, Mutation Score 15%). Health Check은 점수에서 제외.
+- `sensors/registry.json` — javascript/typescript에 `audit` 필드 추가
+
 ## [5.8.1] - 2026-04-08
 
 ### 변경
