@@ -42,7 +42,7 @@ The **Brainstorm → Research → Plan → Implement → Test** workflow enforce
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
-## Usage (v5.5 Auto-Flow)
+## Usage (Auto-Flow)
 
 ```bash
 # Just one command — the entire workflow runs automatically
@@ -115,10 +115,10 @@ All session artifacts are stored in `deep-work/<task-folder>/`:
 | `file-changes.log` | Phase 3 ongoing | Auto-tracked file modifications with slice mapping (PostToolUse hook) |
 | `plan-diff.md` | Plan rewrite | Structural change comparison between plan versions |
 | `brainstorm.md` | Phase 0 complete | Design spec: problem definition, approach comparison, success criteria |
-| `receipts/SLICE-NNN.json` | Phase 3 ongoing | Per-slice evidence: TDD output, git diff, spec check, review, model used (v4.1) |
-| `session-receipt.json` | Session finish | Cross-slice session summary — derived cache from slice receipts (v4.1) |
+| `receipts/SLICE-NNN.json` | Phase 3 ongoing | Per-slice evidence: TDD output, git diff, spec check, review, model used |
+| `session-receipt.json` | Session finish | Cross-slice session summary — derived cache from slice receipts |
 | `debug-log/RC-NNN.md` | Phase 3 (debug) | Root cause analysis notes from systematic debugging |
-| `harness-history/harness-sessions.jsonl` | Session end | Per-session assumption engine data — per-slice evidence, model, confidence signals (v5.0) |
+| `harness-history/harness-sessions.jsonl` | Session end | Per-session assumption engine data — per-slice evidence, model, confidence signals |
 
 ## Session State
 
@@ -139,7 +139,7 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `notifications` | Notification settings (channel list, enabled status) |
 | `last_research_commit` | Git commit hash at the time of last research |
 | `quality_gates_passed` | Whether all Quality Gates passed |
-| `preset` | Active preset name (v3.3.3) |
+| `preset` | Active preset name |
 | `plan_approved_at` | Timestamp when plan was approved (used by Drift Detection) |
 | `tdd_mode` | TDD enforcement mode (strict / relaxed / coaching / spike) |
 | `active_slice` | Currently active slice ID (e.g., SLICE-001) |
@@ -147,20 +147,20 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `tdd_override` | Slice-level TDD override — set to active slice ID when user bypasses TDD via AskUserQuestion |
 | `debug_mode` | Whether systematic debugging is active |
 | `brainstorm_started_at`, `brainstorm_completed_at` | Phase 0 timestamps |
-| `worktree_enabled` | Whether worktree isolation is active (v4.1) |
-| `worktree_path` | Absolute path to the worktree directory (v4.1) |
-| `worktree_branch` | Branch name inside the worktree (v4.1) |
-| `worktree_base_branch` | Original branch before worktree creation (v4.1) |
-| `worktree_base_commit` | Commit hash at the time of worktree creation (v4.1) |
-| `evaluator_model` | Default evaluator model for subagents — `"sonnet"` (v5.1) |
-| `plan_review_retries` | Auto-loop retry count for plan review — `0` (v5.1) |
-| `plan_review_max_retries` | Max retries for plan auto-loop — `3` (v5.1) |
-| `auto_loop_enabled` | Whether auto-loop evaluation is active — `true` (v5.1) |
-| `skipped_phases` | Phases skipped via `--skip-to-implement` — `[]` (v5.1) |
-| `assumption_adjustments` | Active adjustments from Assumption Engine — `[]` (v5.1) |
-| `fitness_baseline` | Phase 1 fitness violation snapshot for Phase 4 delta comparison (v5.9) |
-| `unresolved_required_issues` | Phase 1 required failures propagated to Phase 4 (v5.9) |
-| `health_report` | Latest Health Check results — drift + fitness (v5.9) |
+| `worktree_enabled` | Whether worktree isolation is active |
+| `worktree_path` | Absolute path to the worktree directory |
+| `worktree_branch` | Branch name inside the worktree |
+| `worktree_base_branch` | Original branch before worktree creation |
+| `worktree_base_commit` | Commit hash at the time of worktree creation |
+| `evaluator_model` | Default evaluator model for subagents — `"sonnet"` |
+| `plan_review_retries` | Auto-loop retry count for plan review — `0` |
+| `plan_review_max_retries` | Max retries for plan auto-loop — `3` |
+| `auto_loop_enabled` | Whether auto-loop evaluation is active — `true` |
+| `skipped_phases` | Phases skipped via `--skip-to-implement` — `[]` |
+| `assumption_adjustments` | Active adjustments from Assumption Engine — `[]` |
+| `fitness_baseline` | Phase 1 fitness violation snapshot for Phase 4 delta comparison |
+| `unresolved_required_issues` | Phase 1 required failures propagated to Phase 4 |
+| `health_report` | Latest Health Check results — drift + fitness |
 
 ## Workflow Details
 
@@ -230,7 +230,7 @@ Creates a concrete implementation plan based on research results:
 - **Backtick/subshell handling** — `splitCommands` correctly handles backtick quoting and `$()` depth tracking
 - **Error logging** — Hook errors logged to `.claude/deep-work-guard-errors.log` instead of suppressed
 
-### Phase 3: Implement (v4.0 Evidence-Driven)
+### Phase 3: Implement (Evidence-Driven)
 
 Slice-based TDD-enforced execution:
 
@@ -242,7 +242,7 @@ Slice-based TDD-enforced execution:
 - **Coaching mode**: Educational TDD guidance instead of hard blocks
 - **TDD Override**: When TDD blocks a production edit, Claude asks the user whether to write a test first or skip TDD for this slice (merge-eligible with warning in receipt)
 - Block messages include escape hatch guidance (`/deep-slice spike`, `/deep-slice reset`)
-- **Mandatory TDD state updates** (v5.5.1) — B-1 (RED_VERIFIED) and B-2 (GREEN) state file updates are explicitly marked as mandatory with phase guard blocking warnings
+- **Mandatory TDD state updates** — B-1 (RED_VERIFIED) and B-2 (GREEN) state file updates are explicitly marked as mandatory with phase guard blocking warnings
 - **Automatically enters Test phase after implementation completes**
 
 **v3.0 features:**
@@ -297,7 +297,7 @@ Automatically generated report after session completion:
 - **Verification Results** — Test/lint/type-check results
 - **Test Retry History** — Results history per attempt
 
-### Model Routing (v3.1 → v4.1)
+### Model Routing
 
 Assigns the optimal model per phase, reducing token costs by 30-40%.
 
@@ -318,10 +318,10 @@ Override per-slice: `/deep-slice model SLICE-NNN opus`. Customize the routing ta
 |-------|--------------|--------|-----------|
 | Research | sonnet | Agent delegation | Sufficient for exploration/analysis |
 | Plan | Main session | Direct execution | Requires interactive feedback |
-| Implement | **auto** (v4.1) | Size-based selection | Cost-optimized per slice |
+| Implement | **auto** | Size-based selection | Cost-optimized per slice |
 | Test | haiku | Agent delegation | Only runs tests |
 
-### Worktree Isolation (v4.1)
+### Worktree Isolation
 
 Sessions now run in an isolated git worktree by default. This prevents accidental changes to the main branch during development.
 
@@ -332,7 +332,7 @@ Sessions now run in an isolated git worktree by default. This prevents accidenta
 - `/deep-resume` automatically detects and restores worktree context
 - Opt-out with `--no-branch` flag or `git_branch: false` in preset
 
-### Session Lifecycle (v4.1)
+### Session Lifecycle
 
 Complete session lifecycle management:
 
@@ -344,7 +344,7 @@ Complete session lifecycle management:
                                                         └── discard
 ```
 
-### Receipt Validation (v4.1)
+### Receipt Validation
 
 - Receipt schema v1.0 with `schema_version`, `model_used`, `git_before`/`git_after`, `estimated_cost`
 - `receipt-migration.js` auto-converts pre-v4.1 receipts
@@ -352,14 +352,14 @@ Complete session lifecycle management:
 - `templates/deep-work-ci.yml` — GitHub Actions workflow for CI/CD receipt validation
 - `/deep-receipt export --format=ci` for CI-friendly bundle export
 
-### Session History (v4.1)
+### Session History
 
 `/deep-history` shows cross-session trends:
 - Past session list with model usage, TDD compliance, completion rate
 - Aggregate statistics and trend indicators
 - Model cost tracking (`estimated_cost` per slice and session)
 
-### Multi-Channel Notifications (v3.1)
+### Multi-Channel Notifications
 
 Sends notifications on phase completion:
 
@@ -373,7 +373,7 @@ Sends notifications on phase completion:
 
 The custom Webhook `body_template` supports variable substitution: `{{phase}}`, `{{status}}`, `{{message}}`, `{{timestamp}}`, `{{task}}`.
 
-### Quality Gates (v3.1)
+### Quality Gates
 
 Define Quality Gates in plan.md and they will be automatically executed during the Test Phase:
 
@@ -388,10 +388,10 @@ Define Quality Gates in plan.md and they will be automatically executed during t
 
 - **✅ Required**: Returns to implement on failure
 - **⚠️ Advisory**: Warning logged only, does not block
-- **ℹ️ Insight**: Results recorded for information only (v3.3)
+- **ℹ️ Insight**: Results recorded for information only
 - Falls back to existing auto-detection when not defined
 
-## Internationalization (v3.2.2)
+## Internationalization
 
 All commands automatically detect the user's language and output messages accordingly. Supported through Claude's native multilingual capability — no configuration needed.
 
@@ -407,8 +407,8 @@ Three hooks manage the session lifecycle:
 
 | Hook | Script | Trigger | Purpose |
 |------|--------|---------|---------|
-| SessionStart | `update-check.sh` | startup/resume/clear/compact | Git-based version update check (v4.0) |
-| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/Bash | Blocks code edits during research/plan/test phases; Bash file-write detection (v4.0) |
+| SessionStart | `update-check.sh` | startup/resume/clear/compact | Git-based version update check |
+| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/Bash | Blocks code edits during research/plan/test phases; Bash file-write detection |
 | PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit/Bash | Tracks file modifications during implement phase, updates receipts |
 | Stop | `session-end.sh` | CLI session end | Reminds about active sessions, shows worktree info, sends notifications |
 
@@ -422,7 +422,7 @@ Three hooks manage the session lifecycle:
 | Test | ❌ Blocked | ✅ Allowed | — |
 | Idle | ✅ Allowed | ✅ Allowed | — |
 
-## Profile System (v3.3.3)
+## Profile System
 
 On first run, setup questions are asked and saved as the `default` preset. On subsequent runs, the preset is auto-applied — you only provide the task description.
 
@@ -490,7 +490,7 @@ Enabling Team mode:
 | Medium | Plan → Implement → Test (skip Research) | 2-4 files, extending a familiar area |
 | Low | No workflow needed | Single file edit, config changes |
 
-## Multi-Model Verification (v4.2)
+## Multi-Model Verification
 
 deep-work v4.2 adds adversarial multi-model review to catch design flaws before implementation.
 
@@ -519,7 +519,7 @@ If neither tool is installed, deep-work works normally with structural review on
 - `/deep-phase-review` — Manually trigger review on current phase document
 - `/deep-phase-review --adversarial` — Run only adversarial cross-model review
 
-## Auto-Loop Evaluation & Contract Negotiation (v5.1)
+## Auto-Loop Evaluation & Contract Negotiation
 
 deep-work v5.1 adds self-correcting evaluation loops and contract-driven slice negotiation.
 
@@ -546,7 +546,7 @@ At session start, the Assumption Engine automatically applies adjustments based 
 - **`--skip-to-implement`** flag on `/deep-work` — Skips brainstorm, research, and plan phases, jumping directly to implement. Requires an inline slice definition in the task description.
 - Skipped phases are recorded in `skipped_phases` for traceability in reports and receipts.
 
-## Auto-Flow Orchestration (v5.2)
+## Auto-Flow Orchestration
 
 deep-work v5.2 consolidates the entire workflow into a single `/deep-work` command. Instead of manually invoking each phase, the auto-flow orchestrates the full pipeline automatically.
 
@@ -567,7 +567,7 @@ deep-work v5.2 consolidates the entire workflow into a single `/deep-work` comma
 ### Migration from v5.1
 No action needed. Your existing presets and session state are fully compatible. Deprecated commands still work — they just invoke the same logic that the auto-flow would.
 
-## Health Engine + Architecture Fitness (v5.9)
+## Health Engine + Architecture Fitness
 
 Phase 1 Research now includes an automatic **Health Check** that detects codebase drift and validates architecture fitness rules.
 
@@ -608,7 +608,7 @@ When deep-review is installed:
 - fitness.json rules are injected into the review agent's prompt for architecture-aware review
 - Health report from the receipt is used as additional review context (with scan_commit-based staleness check)
 
-## Topology Templates (v5.9)
+## Topology Templates
 
 Phase 1 Research now auto-detects the service topology and loads a matching template that provides topology-specific guides, sensor configuration, and fitness defaults.
 
@@ -663,7 +663,7 @@ Place a file at `.deep-work/custom/<name>.json` using the same schema. The templ
 - **Fitness generator**: `fitness_defaults` from the matched template seed the auto-generated `fitness.json` (topology-appropriate rules only)
 - **deep-review**: `harnessability_hints` are forwarded to the review agent prompt
 
-## Self-Correction Loop (v5.9)
+## Self-Correction Loop
 
 A new `review-check` sensor runs automatically after lint and typecheck, providing two layers of correction before Phase 4.
 
@@ -713,7 +713,7 @@ This disables both the always-on and fitness layers entirely. Individual layers 
 - Full-project fitness checks (not incremental diff-only)
 - Receipt schema extended with `review_check` field recording layer results and correction rounds used
 
-## Quality Measurement (v5.3)
+## Quality Measurement
 
 Every session produces a **Session Quality Score** (0-100) based on five outcome metrics:
 
@@ -735,7 +735,7 @@ Use `/deep-status --history` to see your quality score trend across sessions. Th
 ### Quality Badge
 Use `/deep-status --badge` to generate a shield badge reflecting your recent quality trend (last 5 sessions). Badge levels: Excellent (90+), Good (75-89), Improving (60-74), Developing (<60).
 
-## Self-Evolving Rules (v5.3)
+## Self-Evolving Rules
 
 The **Assumption Engine** tracks whether each enforcement rule (phase guard, TDD, research requirement, etc.) actually improves your outcomes. At each session start, it captures an **assumption snapshot** — the enforcement level of every rule. At session end, the quality score is recorded alongside the snapshot.
 
@@ -777,7 +777,7 @@ deep-work integrates with other Claude Deep Suite plugins when they are installe
 - **Sprint Contract** (Phase 2): After plan approval, automatically generates `.deep-review/contracts/` from slice criteria
 - **Slice Review** (Phase 3): Suggests `/deep-review --contract SLICE-NNN` after each slice reaches GREEN
 - **Full Review** (Phase 4): Suggests `/deep-review` for comprehensive review before quality gates
-- **Fitness-Aware Review** (v5.9): deep-review reads `.deep-review/fitness.json` to evaluate architecture intent, and `health_report` from the receipt for drift context
+- **Fitness-Aware Review**: deep-review reads `.deep-review/fitness.json` to evaluate architecture intent, and `health_report` from the receipt for drift context
 
 ### deep-wiki
 - **Knowledge Capture** (Phase 4): After session completion, suggests `/wiki-ingest report.md` to archive research and design decisions
