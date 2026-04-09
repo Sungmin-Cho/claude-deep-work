@@ -1,0 +1,64 @@
+{
+  "topology": "python-web",
+  "display_name": "Python Web Service",
+  "guides": {
+    "phase1": [
+      "Map all endpoints: HTTP method + path + handler — identify missing Pydantic request models",
+      "Assess async patterns: are all I/O-bound handlers async def? Note any sync blocking calls",
+      "Document dependency injection: FastAPI Depends(), or equivalent in Flask/Django",
+      "Identify database session management: SQLAlchemy async sessions, connection pool settings",
+      "Check background task usage: Celery, FastAPI BackgroundTasks, arq — assess error handling",
+      "Review authentication/authorization: OAuth2, JWT decode, permission guards per route"
+    ],
+    "phase3": [
+      "Define all request/response bodies with Pydantic v2 models; never use raw dicts in handlers",
+      "Make all I/O-bound route handlers async; use asyncio-compatible DB drivers (asyncpg, aiomysql)",
+      "Inject dependencies via FastAPI Depends() — keep handler bodies under 15 lines",
+      "Raise HTTPException with explicit status codes and detail messages; use exception handlers for domain errors",
+      "Use lifespan context manager for startup/shutdown (DB connections, caches) — avoid global state",
+      "Return consistent response schemas; document all endpoints with response_model and status_code"
+    ],
+    "phase4": [
+      "Test endpoints with FastAPI TestClient (sync) or AsyncClient from httpx for async tests",
+      "Override dependencies in tests using app.dependency_overrides to inject mocks",
+      "Test Pydantic models directly: valid inputs, invalid inputs, edge cases with pytest.mark.parametrize",
+      "Use pytest-asyncio for async service/repository unit tests",
+      "Assert OpenAPI schema completeness: all endpoints have request/response models"
+    ]
+  },
+  "sensors": {
+    "priority": ["lint", "typecheck", "coverage"],
+    "recommended": ["build"]
+  },
+  "fitness_defaults": {
+    "rules": [
+      {
+        "id": "python-web-max-file-lines",
+        "type": "file-metric",
+        "check": "line-count",
+        "max": 300,
+        "include": "**/*.py",
+        "severity": "advisory"
+      },
+      {
+        "id": "no-print-statements",
+        "type": "forbidden-pattern",
+        "pattern": "^\\s*print\\(",
+        "include": "**/*.py",
+        "severity": "advisory"
+      },
+      {
+        "id": "python-web-colocated-tests",
+        "type": "structure",
+        "check": "colocated",
+        "source": "src/**/routers/*.py",
+        "test": "tests/**/*.py",
+        "severity": "advisory"
+      }
+    ]
+  },
+  "harnessability_hints": {
+    "type_system": "python-typed",
+    "test_pattern": "tests/**/*.py"
+  }
+}

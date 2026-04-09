@@ -1,0 +1,64 @@
+{
+  "topology": "react-spa",
+  "display_name": "React SPA",
+  "guides": {
+    "phase1": [
+      "Map the component tree: identify container vs presentational components",
+      "Locate global state: Context, Redux, Zustand, Jotai — assess whether state scope is minimal",
+      "Identify re-render hot spots: large context consumers, missing memo/useMemo/useCallback",
+      "Document async data patterns: React Query, SWR, raw useEffect — note error/loading handling",
+      "Check for prop drilling deeper than 2-3 levels (consider lifting state or context)",
+      "Identify router (React Router, TanStack Router) usage and route-level code splitting"
+    ],
+    "phase3": [
+      "Split UI into small, single-responsibility components; keep render functions under 50 lines",
+      "Stabilize context values with useMemo to prevent unnecessary re-renders of all consumers",
+      "Use React Query or SWR for server state; avoid duplicating server state in local state",
+      "Apply React.memo to leaf components with stable props; use useCallback for event handlers passed as props",
+      "Lazy-load routes with React.lazy + Suspense; never bundle the entire app into one chunk",
+      "Colocate component styles, types, and tests in the same directory as the component"
+    ],
+    "phase4": [
+      "Test components with React Testing Library using user-centric queries (getByRole, getByText)",
+      "Mock network calls with MSW (Mock Service Worker) — test loading, success, and error states",
+      "Test custom hooks in isolation with renderHook",
+      "Measure re-render counts in performance-sensitive components with why-did-you-render",
+      "Run accessibility checks with jest-axe on key interactive components"
+    ]
+  },
+  "sensors": {
+    "priority": ["lint", "typecheck", "coverage"],
+    "recommended": ["build"]
+  },
+  "fitness_defaults": {
+    "rules": [
+      {
+        "id": "react-max-file-lines",
+        "type": "file-metric",
+        "check": "line-count",
+        "max": 250,
+        "include": "**/*.{tsx,ts}",
+        "severity": "advisory"
+      },
+      {
+        "id": "no-direct-dom",
+        "type": "forbidden-pattern",
+        "pattern": "document\\.getElementById|document\\.querySelector",
+        "include": "src/**/*.{tsx,ts}",
+        "severity": "advisory"
+      },
+      {
+        "id": "react-colocated-tests",
+        "type": "structure",
+        "check": "colocated",
+        "source": "src/components/**/*.tsx",
+        "test": "src/**/*.test.{ts,tsx}",
+        "severity": "advisory"
+      }
+    ]
+  },
+  "harnessability_hints": {
+    "type_system": "typescript",
+    "test_pattern": "src/**/*.test.{ts,tsx}"
+  }
+}

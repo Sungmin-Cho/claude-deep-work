@@ -1,0 +1,64 @@
+{
+  "topology": "nextjs-app",
+  "display_name": "Next.js App Router",
+  "guides": {
+    "phase1": [
+      "Identify all Server Components and Client Components in the affected file tree",
+      "Map 'use client' boundaries — count directives and assess whether they are minimal",
+      "Trace data-fetching patterns: async Server Components, fetch() caching, generateStaticParams",
+      "Document Server Actions (<form action>, 'use server' functions) and their validation approach",
+      "Check for hydration risk: browser-only APIs (window, localStorage) in shared components",
+      "Identify Layout vs Page component hierarchy and any parallel/intercepting routes"
+    ],
+    "phase3": [
+      "Minimize 'use client' — push state as low as possible; prefer Server Components for data display",
+      "Use Server Actions for mutations; validate input server-side with zod or similar",
+      "Co-locate data fetching in Server Components; avoid prop-drilling fetched data through Client Components",
+      "Handle loading.tsx and error.tsx at route segments; never block the entire layout",
+      "Cache fetch() calls at the request level; use revalidatePath/revalidateTag for on-demand ISR",
+      "Avoid 'use client' in layout.tsx unless absolutely required for global state providers"
+    ],
+    "phase4": [
+      "Test Server Components with React Testing Library in a Node environment (no browser globals)",
+      "Test Server Actions independently as plain async functions with mocked DB/service layers",
+      "Test Client Components with userEvent and mocked server action stubs",
+      "Use Playwright for end-to-end route rendering and navigation tests",
+      "Assert hydration errors are absent in Playwright console logs"
+    ]
+  },
+  "sensors": {
+    "priority": ["lint", "typecheck", "coverage"],
+    "recommended": ["build", "e2e"]
+  },
+  "fitness_defaults": {
+    "rules": [
+      {
+        "id": "nextjs-max-file-lines",
+        "type": "file-metric",
+        "check": "line-count",
+        "max": 300,
+        "include": "**/*.{tsx,ts}",
+        "severity": "advisory"
+      },
+      {
+        "id": "no-use-client-in-layout",
+        "type": "forbidden-pattern",
+        "pattern": "^'use client'",
+        "include": "**/layout.tsx",
+        "severity": "required"
+      },
+      {
+        "id": "nextjs-colocated-tests",
+        "type": "structure",
+        "check": "colocated",
+        "source": "app/**/*.tsx",
+        "test": "**/__tests__/**/*.test.tsx",
+        "severity": "advisory"
+      }
+    ]
+  },
+  "harnessability_hints": {
+    "type_system": "typescript",
+    "test_pattern": "**/__tests__/**/*.test.{ts,tsx}"
+  }
+}

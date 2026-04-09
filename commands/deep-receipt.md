@@ -65,6 +65,27 @@ TDD state icons:
 - ⬜ PENDING — not started
 - SPIKE — spike mode (not merge-eligible)
 - override — TDD skipped by user (merge-eligible with warning)
+- 🔍 SENSOR_RUN — Computational sensor running
+- 🔧 SENSOR_FIX — Fixing sensor errors (self-correction loop active)
+- ✅ SENSOR_CLEAN — All sensors passed
+
+## Health Check Display
+
+When displaying any receipt (dashboard or view), if the session state file contains `health_report`, include the Health Check section:
+
+```
+### Health Check (Phase 1 진단)
+- 🔍 드리프트: dead-export {count}건 | coverage {delta}%p | vuln {critical+high}건 | stale {count}건
+- 📐 Fitness: {passed}/{total} 통과 | 위반 delta: {delta}건
+- ⚠️ Required: {acknowledged ? "acknowledged" : "미해결 N건"}
+```
+
+**Steps**:
+1. Read `health_report` from the session state file
+2. Extract drift metrics: `dead_exports.count`, `coverage_delta`, `vulnerability.critical + vulnerability.high`, `stale_deps.count`
+3. Extract fitness metrics: `fitness.passed`, `fitness.total`, `fitness.violation_delta`
+4. Extract required status: check `acknowledged_required_issues` in the state file
+5. If `health_report` is absent from the state file, skip this section silently
 
 ## View
 
@@ -99,9 +120,17 @@ Code Review:
   결과: [PASS/WARN]
   Findings: [N] (critical: [N], important: [N])
 
+Sensor Results:
+  생태계: [ecosystem, e.g. typescript]
+  Lint ([tool]): [pass|fail|not_applicable] — errors: [N], warnings: [N], correction_rounds: [N]
+  Typecheck ([tool]): [pass|fail|not_applicable] — errors: [N], correction_rounds: [N]
+  Coverage ([tool]): [pass|fail|not_applicable] — line: [N]%, branch: [N]%
+
 Debug Log:
   [None / RC-NNN: root cause description]
 ```
+
+If `sensor_results` is absent from the receipt, skip the Sensor Results block silently.
 
 ## Export — JSON
 
@@ -177,4 +206,60 @@ Copy to clipboard suggestion:
 ```
 PR 디스크립션에 붙여넣으려면:
    cat $WORK_DIR/receipts-export.md | pbcopy
+```
+
+## Receipt Schema: Sensor Fields
+
+These fields are written by the sensor infrastructure during Phase 3 (implement) and are consumed by deep-test Quality Gates (Section 4-6/4-7) and deep-review integration.
+
+### Per-slice sensor_results
+
+```json
+{
+  "ecosystem": "typescript",
+  "lint": {
+    "tool": "eslint",
+    "status": "pass|fail|not_applicable|timeout",
+    "errors": 0,
+    "warnings": 0,
+    "correction_rounds": 0
+  },
+  "typecheck": {
+    "tool": "tsc",
+    "status": "pass|fail|not_applicable|timeout",
+    "errors": 0,
+    "correction_rounds": 0
+  },
+  "coverage": {
+    "tool": "jest",
+    "status": "pass|fail|not_applicable|timeout",
+    "line_pct": 87.3,
+    "branch_pct": 72.1
+  }
+}
+```
+
+### Session mutation_testing
+
+Written to the session state file after Phase 4 Mutation Score gate (Section 4-7).
+
+```json
+{
+  "tool": "stryker",
+  "status": "completed|not_applicable",
+  "total_mutants": 45,
+  "killed": 39,
+  "survived": 4,
+  "equivalent": 2,
+  "score": 90.7,
+  "auto_fix_rounds": 2,
+  "remaining_survived": [
+    {
+      "file": "src/auth/jwt.ts",
+      "line": 42,
+      "mutator": "ConditionalExpression",
+      "tag": "possibly_equivalent"
+    }
+  ]
+}
 ```

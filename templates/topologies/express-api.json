@@ -1,0 +1,64 @@
+{
+  "topology": "express-api",
+  "display_name": "Express/Fastify API",
+  "guides": {
+    "phase1": [
+      "Map all routes: method + path + handler — identify missing input validation or auth guards",
+      "Trace middleware stack: order matters (auth before business logic, error handler last)",
+      "Document error handling: are all async route handlers wrapped or using express-async-errors?",
+      "Identify database access patterns: ORM, raw queries, connection pooling setup",
+      "Check for secrets/env vars: hardcoded values, missing validation of required env at startup",
+      "Assess route file size — large files often indicate missing controller/service layering"
+    ],
+    "phase3": [
+      "Validate all input at the boundary with zod, joi, or Fastify's built-in schema validation",
+      "Separate routes, controllers, services, and repositories — keep handler functions under 20 lines",
+      "Use a centralized error handler middleware; never send stack traces to clients in production",
+      "Wrap async route handlers consistently (express-async-errors or try/catch + next(err))",
+      "Return consistent JSON shapes: { data, error, meta } — document with OpenAPI/JSDoc",
+      "Use dependency injection or factory functions for services to enable unit testing without I/O"
+    ],
+    "phase4": [
+      "Unit-test service layer functions with mocked repository/DB dependencies",
+      "Integration-test routes with supertest — assert status codes, response shapes, and error responses",
+      "Test middleware in isolation by calling them directly with mock req/res/next objects",
+      "Test error handling paths: invalid input, missing auth, DB failure simulation",
+      "Use a test database or in-memory SQLite for integration tests; never hit production DB"
+    ]
+  },
+  "sensors": {
+    "priority": ["lint", "typecheck", "coverage"],
+    "recommended": ["build"]
+  },
+  "fitness_defaults": {
+    "rules": [
+      {
+        "id": "api-max-file-lines",
+        "type": "file-metric",
+        "check": "line-count",
+        "max": 250,
+        "include": "src/**/*.{ts,js}",
+        "severity": "advisory"
+      },
+      {
+        "id": "no-console-log",
+        "type": "forbidden-pattern",
+        "pattern": "console\\.log\\(",
+        "include": "src/**/*.{ts,js}",
+        "severity": "advisory"
+      },
+      {
+        "id": "api-colocated-tests",
+        "type": "structure",
+        "check": "colocated",
+        "source": "src/routes/**/*.ts",
+        "test": "src/**/*.test.ts",
+        "severity": "advisory"
+      }
+    ]
+  },
+  "harnessability_hints": {
+    "type_system": "typescript",
+    "test_pattern": "src/**/*.test.ts"
+  }
+}

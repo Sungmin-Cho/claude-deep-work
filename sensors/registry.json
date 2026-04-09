@@ -1,0 +1,48 @@
+{
+  "$schema": "sensor-registry-v1",
+  "$comment": "Ecosystem sensor definitions. Users can add custom ecosystems by appending entries.",
+  "ecosystems": {
+    "javascript": {
+      "detect": { "any_of": ["package.json"] },
+      "file_extensions": [".js", ".jsx", ".mjs", ".cjs"],
+      "lint": { "cmd": "npx eslint --format json .", "parser": "eslint" },
+      "typecheck": null,
+      "coverage_flag": "--coverage --json",
+      "mutation": { "cmd": "npx stryker run", "parser": "stryker", "timeout": 300, "max_mutants": 200 },
+      "audit": { "cmd": "npm audit --json" }
+    },
+    "typescript": {
+      "detect": { "require": ["tsconfig.json"], "any_of": ["package.json"] },
+      "file_extensions": [".ts", ".tsx"],
+      "lint": { "cmd": "npx eslint --format json .", "parser": "eslint" },
+      "typecheck": { "cmd": "npx tsc --noEmit", "parser": "tsc" },
+      "coverage_flag": "--coverage --json",
+      "mutation": { "cmd": "npx stryker run", "parser": "stryker", "timeout": 300, "max_mutants": 200 },
+      "audit": { "cmd": "npm audit --json" }
+    },
+    "python": {
+      "detect": { "any_of": ["pyproject.toml", "setup.py", "requirements.txt"] },
+      "file_extensions": [".py"],
+      "lint": { "cmd": "ruff check --output-format json .", "parser": "ruff" },
+      "typecheck": { "cmd": "mypy --no-error-summary .", "parser": "generic-line" },
+      "coverage_flag": "--cov --cov-report=json",
+      "mutation": { "cmd": "mutmut run", "parser": "generic-line", "timeout": 600, "max_mutants": 150 }
+    },
+    "csharp": {
+      "detect": { "any_of": ["*.csproj", "*.sln"] },
+      "file_extensions": [".cs"],
+      "lint": { "cmd": "dotnet format --verify-no-changes", "parser": "generic-line" },
+      "typecheck": { "cmd": "dotnet build --no-restore --nologo", "parser": "generic-line" },
+      "coverage_flag": "--collect:'XPlat Code Coverage'",
+      "mutation": { "cmd": "dotnet stryker", "parser": "stryker", "timeout": 600, "max_mutants": 200 }
+    },
+    "cpp": {
+      "detect": { "any_of": ["CMakeLists.txt"] },
+      "file_extensions": [".cpp", ".cc", ".cxx", ".h", ".hpp"],
+      "lint": { "cmd": "clang-tidy", "parser": "clang-tidy" },
+      "typecheck": { "cmd": "cmake --build . --target all", "parser": "generic-line" },
+      "coverage_flag": null,
+      "mutation": { "cmd": "mull-runner", "parser": "generic-line", "timeout": 600, "max_mutants": 100 }
+    }
+  }
+}

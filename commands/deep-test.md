@@ -170,6 +170,9 @@ All built-in gates run automatically:
 - Verification Evidence: Required gate (Section 4-4)
 - SOLID Review: Advisory gate (Section 4-5a, new in v5.2)
 - Insight Analysis: Insight gate (Section 4-5b, new in v5.2)
+- **Sensor Clean**: Required gate (Section 4-6, reads receipts — NO re-execution)
+- **Coverage Report**: Advisory gate (Section 4-6, reads receipts — NO re-execution)
+- **Mutation Score**: Advisory gate (Section 4-7, triggers `/deep-mutation-test` execution)
 - Auto-detected test commands from Section 2 are used for test execution
 
 **Override (Quality Gates table exists in plan.md):**
@@ -370,7 +373,177 @@ After SOLID Review, run Insight analysis. Insight gates NEVER affect pass/fail d
      ℹ️ [User Gate]: [output summary]
    ```
 
-5. **Important**: Even if Insight analysis fails completely, it does NOT affect the overall pass/fail determination. Silently skip and continue to Section 5.
+5. **Important**: Even if Insight analysis fails completely, it does NOT affect the overall pass/fail determination. Silently skip and continue to Section 4-6.
+
+### 4-6. Built-in Gate: Sensor Clean + Coverage Report (reads receipts, NO re-execution)
+
+These gates read sensor data already collected during Phase 3 (implement). They do NOT re-run any sensors.
+
+#### Sensor Clean Gate (✅ Required)
+
+**Source**: Each slice's `sensor_results` field in `$WORK_DIR/receipts/SLICE-NNN.json`.
+
+**Steps**:
+1. For each slice receipt, read `sensor_results` (lint, typecheck fields).
+2. Classify each sensor result:
+   - `status: "pass"` → PASS
+   - `status: "not_applicable"` → SKIP (excluded from judgment)
+   - `status: "fail"` or `status: "timeout"` → FAIL
+3. If any sensor has `status: "fail"` or `status: "timeout"` across any slice → **FAIL** (Required Gate).
+4. If all sensor statuses are `pass` or `not_applicable` → **PASS**.
+
+**Display**:
+```
+Sensor Clean Gate:
+  SLICE-001: eslint ✅ pass, tsc ✅ pass
+  SLICE-002: eslint ✅ pass, tsc ✅ pass
+  Sensor Clean Rate: 2/2 슬라이스 통과 ✅
+```
+
+If any fail:
+```
+❌ Sensor Clean 실패:
+  SLICE-002: tsc ❌ fail (correction_rounds: 3)
+Implement 단계로 복귀하여 센서 오류를 해결하세요.
+```
+
+### review-check Results in Receipt
+
+The slice receipt includes review-check results:
+```json
+{
+  "review_check": {
+    "status": "completed|not_applicable|disabled",
+    "violations_count": 0,
+    "required_violations": 0,
+    "advisory_violations": 0,
+    "rounds_used": 1
+  }
+}
+```
+
+#### Coverage Report Gate (⚠️ Advisory)
+
+**Source**: Each slice's `sensor_results.coverage` field in `$WORK_DIR/receipts/SLICE-NNN.json`.
+
+**Steps**:
+1. For each slice receipt, read `sensor_results.coverage` (line_pct, branch_pct).
+2. If all slices have `coverage.status: "not_applicable"` → skip, display "커버리지 데이터 없음".
+3. Otherwise, aggregate and display coverage percentages per slice.
+4. This gate is advisory — it NEVER blocks progression regardless of coverage numbers.
+
+**Display**:
+```
+⚠️ Coverage Report (advisory):
+  SLICE-001: line 87.3%, branch 72.1%
+  SLICE-002: line 91.2%, branch 80.5%
+  전체 평균: line 89.3%, branch 76.3%
+```
+
+### 4-7. Built-in Advisory Gate: Mutation Score (/deep-mutation-test)
+
+**Source**: Triggers new execution of `/deep-mutation-test`. This is the only gate that causes NEW execution (unlike Sensor Clean and Coverage which read from receipts).
+
+**Steps**:
+1. Check if a mutation testing tool is available (stryker, mutmut, pitest) by reading `sensor_results.ecosystem` from any slice receipt or detecting from project config.
+2. If no mutation tool available → mark as `not_applicable`, skip gracefully.
+3. If available → execute `/deep-mutation-test` (or equivalent mutation test command).
+4. Parse results: total mutants, killed, survived, equivalent, mutation score (%).
+5. Display survived mutants list.
+6. This gate is advisory — it NEVER blocks progression.
+
+**Display**:
+```
+⚠️ Mutation Score (advisory):
+  도구: stryker | 총 변이체: 45 | 사살: 39 | 생존: 4 | 동등: 2
+  Mutation Score: 90.7%
+  생존 변이체:
+    - src/auth/jwt.ts:42 (ConditionalExpression) [possibly_equivalent]
+    - src/utils/parse.ts:15 (BinaryExpression)
+```
+
+**Mutation auto-fix**: If survived mutants are found, `/deep-mutation-test` handles the implement phase transition internally — returning to implement phase to add tests targeting surviving mutants, then looping back to test phase. This is managed by `/deep-mutation-test`'s own flow, not by this gate.
+
+**Save to state**: Write `mutation_testing` object to the session state file with tool, status, score, and survived list for use by `/deep-finish` quality score calculation.
+
+### 4-7a. Built-in Advisory Gate: Fitness Delta (⚠️ Advisory)
+
+Phase 1에서 저장한 fitness baseline과 현재 fitness 검증 결과를 비교하는 게이트.
+
+**Steps**:
+1. Phase 1에서 저장한 `fitness_baseline`(세션 상태 파일)과 현재 fitness 검증 결과 비교
+2. `node "$CLAUDE_PLUGIN_DIR/health/fitness/fitness-validator.js"` 재실행 (fitness.json이 있을 때만)
+3. 새 위반 추가 없음 → ✅ PASS
+4. 위반 감소 → ✅ PASS + 긍정 피드백
+5. 위반 증가 → ⚠️ Advisory 경고 (차단 안 함, receipt에 기록)
+6. fitness.json 없음 → not_applicable
+
+**Display**:
+```
+Fitness Delta Gate (advisory):
+  Baseline: 3건 위반 → 현재: 2건 위반 (−1) ✅
+```
+
+Or if violations increased:
+```
+⚠️ Fitness Delta (advisory):
+  Baseline: 3건 위반 → 현재: 5건 위반 (+2) — 신규 위반 확인 필요
+```
+
+### 4-7b. Built-in Required Gate: Health Required (✅ Required)
+
+Phase 1에서 발견된 required 이슈가 해결되었는지 확인하는 게이트.
+
+**Steps**:
+1. 세션 상태의 `unresolved_required_issues` 확인
+2. 있으면: AskUserQuestion — "Phase 1에서 발견된 required 이슈가 미해결입니다: [목록]. 이 상태로 완료하시겠습니까?"
+3. acknowledge 시: receipt에 `acknowledged_required_issues` 기록 + 진행
+4. 거부 시: 이슈 해결 권장
+
+**Display**:
+```
+Health Required Gate:
+  미해결 required 이슈: 2건
+  - dead-export: src/legacy/unused.ts (3개 미사용 export)
+  - vulnerability: critical CVE-2026-1234
+  사용자 확인 대기 중...
+```
+
+### 4-7c. Phase 4 Baseline 갱신
+
+모든 Quality Gate 통과 후 (또는 acknowledge 후):
+- `health-baseline.js` writeBaseline() 호출
+- 현재 커버리지, dead_exports 수, fitness_violations 수를 baseline으로 기록
+- 다음 세션의 Phase 1 비교 기준으로 사용
+
+### 4-7d. Session Quality Score 변경 없음
+
+Health Check은 세션 시작 시점의 코드베이스 상태 진단이므로 Score에 반영하지 않음.
+기존 5가지 가중치(Test Pass Rate, Rework Cycles, Plan Fidelity, Sensor Clean Rate, Mutation Score) 유지.
+
+### 4-8. Session Quality Score Weights
+
+The Session Quality Score (calculated in `/deep-finish`) uses the following 5-component weighted formula:
+
+| Component | Weight | not_applicable handling |
+|-----------|--------|------------------------|
+| Test Pass Rate | 25% | Always applies |
+| Rework Cycles | 20% | Always applies |
+| Plan Fidelity | 25% | Always applies |
+| Sensor Clean Rate | 15% | Excluded from denominator if all sensors not_applicable |
+| Mutation Score | 15% | Excluded from denominator if mutation not_applicable |
+
+**not_applicable proportional redistribution**: When a component is excluded, the remaining weights are scaled proportionally so they sum to 100%.
+
+Examples:
+- If Sensor Clean is not_applicable (15% excluded): remaining 85% is redistributed → Test=29.4%, Rework=23.5%, Fidelity=29.4%, Mutation=17.6%
+- If both Sensor + Mutation are not_applicable (30% excluded): remaining 70% redistributed → Test=35.7%, Rework=28.6%, Plan=35.7%
+
+**Formula**:
+```
+applicable_weights = sum of weights for applicable components
+score = Σ (component_score × component_weight) / applicable_weights × 100
+```
 
 ### 5. Determine outcome
 

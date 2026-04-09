@@ -7,6 +7,34 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2026-04-09
+
+### Added
+- **Health Engine** — Automatic Health Check during Phase 1 Research with 4 drift sensors running in parallel:
+  - `dead-export`: Detects unused JS/TS exports via grep-based cross-referencing (entry point/library/barrel exclusion, health-ignore.json support)
+  - `stale-config`: Detects broken path references in tsconfig.json, package.json, .eslintrc
+  - `dependency-vuln`: Runs `npm audit --json` for known high/critical vulnerabilities (Required gate)
+  - `coverage-trend`: Compares current coverage against previous session baseline (5%p threshold)
+- **Architecture Fitness Functions** — Declarative architecture rules in `.deep-review/fitness.json`:
+  - 4 rule checkers: `file-metric` (line count), `forbidden-pattern` (regex), `structure` (colocated tests), `dependency` (circular deps via dep-cruiser)
+  - `fitness-validator.js`: JSON schema validation + rule execution engine with `required_missing` status
+  - `fitness-generator.js`: Ecosystem-aware auto-generation (dependency rules excluded for non-JS/TS projects)
+  - dep-cruiser install suggestion with explanation when dependency rules are present but tool is missing
+- **Health Check Orchestrator** (`health-check.js`) — Parallel drift scan (Promise.allSettled) + sequential fitness validation with per-sensor timeouts (180s total)
+- **Baseline Management** — `health-baseline.json` with commit/branch scoping, automatic invalidation on branch switch, rebase (git merge-base --is-ancestor), or 7-day expiry
+- **Phase 4 Quality Gates**:
+  - Fitness Delta Gate (Advisory) — Detects new fitness violations added during implementation
+  - Health Required Gate (Required) — Propagates Phase 1 required failures with user acknowledge flow
+  - Phase 4 Baseline Refresh — Updates health-baseline.json after gates pass
+- **Receipt Schema Extension** — `health_report` field with `scan_commit` for deep-review stale detection
+- **deep-review Integration** — fitness.json injected into review agent prompt + receipt health_report consumed with commit-based staleness check
+- **Harness Templates (#5)**: Topology detection layer with 6 built-in topologies (nextjs-app, react-spa, express-api, python-web, python-lib, generic). Template loader with deep merge and custom/ override support. Phase 1/3 integration with topology-specific guides. Fitness generator extended with template fitness_defaults.
+- **Self-Correction Loop (#6)**: review-check sensor with always-on layer (topology guides) and fitness layer (fitness.json rules). Per-sensor 3-round independent correction limit. Config disable support. Receipt schema extension.
+
+### Changed
+- Session Quality Score now uses 5 weights (Test Pass Rate 25%, Rework Cycles 20%, Plan Fidelity 25%, Sensor Clean Rate 15%, Mutation Score 15%). Health Check is excluded from scoring.
+- `sensors/registry.json` — Added `audit` field to javascript/typescript ecosystems
+
 ## [5.8.1] - 2026-04-08
 
 ### Changed

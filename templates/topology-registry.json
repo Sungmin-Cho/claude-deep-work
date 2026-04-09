@@ -1,0 +1,58 @@
+{
+  "$schema": "topology-registry-v1",
+  "topologies": [
+    {
+      "id": "nextjs-app",
+      "priority": 100,
+      "display_name": "Next.js App Router",
+      "detect": {
+        "marker_files": ["next.config.js", "next.config.mjs", "next.config.ts"],
+        "marker_dirs": ["app"],
+        "deps": ["next"]
+      }
+    },
+    {
+      "id": "react-spa",
+      "priority": 90,
+      "display_name": "React SPA",
+      "detect": {
+        "deps": ["react"],
+        "exclude_deps": ["next", "express", "fastify", "hono"]
+      }
+    },
+    {
+      "id": "express-api",
+      "priority": 80,
+      "display_name": "Express/Fastify API",
+      "detect": {
+        "deps_any": ["express", "fastify", "hono"],
+        "exclude_deps": ["next"]
+      }
+    },
+    {
+      "id": "python-web",
+      "priority": 70,
+      "display_name": "Python Web Service",
+      "detect": {
+        "python_deps_any": ["fastapi", "flask", "django"]
+      }
+    },
+    {
+      "id": "python-lib",
+      "priority": 60,
+      "display_name": "Python Library/CLI",
+      "detect": {
+        "python_project": true,
+        "exclude_python_deps": ["fastapi", "flask", "django"]
+      }
+    },
+    {
+      "id": "generic",
+      "priority": 0,
+      "display_name": "Generic",
+      "detect": {
+        "always": true
+      }
+    }
+  ]
+}

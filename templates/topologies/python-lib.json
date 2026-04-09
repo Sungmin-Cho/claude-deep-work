@@ -1,0 +1,64 @@
+{
+  "topology": "python-lib",
+  "display_name": "Python Library/CLI",
+  "guides": {
+    "phase1": [
+      "Map the public API surface: all exported symbols in __init__.py — assess naming and stability",
+      "Review type hint coverage: are all public function signatures fully annotated?",
+      "Check docstring completeness: module, class, and public method docstrings (Google/NumPy style)",
+      "Assess backwards compatibility risk: any changes to public API signatures or behavior?",
+      "Document CLI entry points (typer, click, argparse) and their argument validation",
+      "Check packaging metadata: pyproject.toml completeness, version constraints, classifiers"
+    ],
+    "phase3": [
+      "Annotate all public functions and methods with complete type hints; use typing.Protocol for duck-typed interfaces",
+      "Keep public API minimal and stable; mark experimental APIs with warnings.warn(DeprecationWarning)",
+      "Provide Google-style docstrings with Args, Returns, Raises, and Examples sections on all public symbols",
+      "Write pure functions where possible — minimize side effects in library code",
+      "Export only the intended public interface from __init__.py; use __all__ to enforce it",
+      "Design CLI commands to be thin wrappers around library functions for testability"
+    ],
+    "phase4": [
+      "Test public API functions directly — test the interface, not the implementation",
+      "Use pytest.mark.parametrize for input boundary testing",
+      "Test type correctness with mypy in strict mode as part of the test suite",
+      "Test CLI commands with click.testing.CliRunner or typer.testing.CliRunner",
+      "Write doctest examples in docstrings; run them with pytest --doctest-modules"
+    ]
+  },
+  "sensors": {
+    "priority": ["lint", "typecheck"],
+    "recommended": ["coverage"]
+  },
+  "fitness_defaults": {
+    "rules": [
+      {
+        "id": "python-lib-max-file-lines",
+        "type": "file-metric",
+        "check": "line-count",
+        "max": 400,
+        "include": "**/*.py",
+        "severity": "advisory"
+      },
+      {
+        "id": "no-print-statements",
+        "type": "forbidden-pattern",
+        "pattern": "^\\s*print\\(",
+        "include": "src/**/*.py",
+        "severity": "advisory"
+      },
+      {
+        "id": "python-lib-colocated-tests",
+        "type": "structure",
+        "check": "colocated",
+        "source": "src/**/__init__.py",
+        "test": "tests/**/*.py",
+        "severity": "advisory"
+      }
+    ]
+  },
+  "harnessability_hints": {
+    "type_system": "python-typed",
+    "test_pattern": "tests/**/*.py"
+  }
+}

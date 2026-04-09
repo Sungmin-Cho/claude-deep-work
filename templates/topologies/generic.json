@@ -1,0 +1,38 @@
+{
+  "topology": "generic",
+  "display_name": "Generic",
+  "guides": {
+    "phase1": [
+      "Read the affected files and understand the current implementation",
+      "Identify dependencies and interfaces between modules"
+    ],
+    "phase3": [
+      "Implement the change with minimal footprint",
+      "Follow existing code style and conventions in the project"
+    ],
+    "phase4": [
+      "Write tests that verify the observable behavior, not internals",
+      "Ensure existing tests still pass after the change"
+    ]
+  },
+  "sensors": {
+    "priority": ["lint"],
+    "recommended": []
+  },
+  "fitness_defaults": {
+    "rules": [
+      {
+        "id": "generic-max-file-lines",
+        "type": "file-metric",
+        "check": "line-count",
+        "max": 500,
+        "include": "**/*",
+        "severity": "advisory"
+      }
+    ]
+  },
+  "harnessability_hints": {
+    "type_system": "unknown",
+    "test_pattern": "**/*.test.*"
+  }
+}
