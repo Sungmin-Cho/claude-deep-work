@@ -92,6 +92,27 @@ Valid scope values: `architecture`, `patterns`, `data`, `api`, `infrastructure`,
    - `fitness_baseline`: 현재 fitness 위반 상태를 세션 상태 파일에 저장 (Phase 4 delta 비교용)
    - `unresolved_required_issues`: required_fail/required_missing 항목을 세션 상태에 저장 (Phase 4 전파용)
 
+### 1-2a. Topology Detection
+
+After Health Check, detect the project topology and inject topology-specific research guides:
+
+1. Run topology detection: `node templates/topology-detector.js <project-root>`
+2. Load the matching template: topology-specific guides for Phase 1
+3. Add to research context:
+   - Detected topology name and confidence
+   - Template's `guides.phase1` items as additional research checklist
+   - Template's `harnessability_hints` for context
+4. Store detection result in session state for use by Phase 3/4
+
+Example output:
+```
+[TOPOLOGY] Detected: nextjs-app (high confidence)
+Research guides:
+  - Identify Server vs Client Component boundaries
+  - Map API route structure (app/api/ directory)
+  - Check data fetching patterns (RSC vs client-side fetch)
+```
+
 ### 1-3. Check for previous Research cache
 
 Search the `deep-work/` directory for the most recent `research.md` from a previous session (not the current session).

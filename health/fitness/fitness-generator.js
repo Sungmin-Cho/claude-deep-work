@@ -1,6 +1,8 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { detectTopology } = require('../../templates/topology-detector.js');
+const { loadTemplate } = require('../../templates/template-loader.js');
 
 // ---------------------------------------------------------------------------
 // Fitness Generator — ecosystem-aware fitness.json rule generation
@@ -110,6 +112,19 @@ function scanForTestFiles(dir) {
 }
 
 /**
+ * Get template-based fitness rules for a project by detecting its topology.
+ *
+ * @param {string} projectRoot
+ * @returns {object[]} array of rule objects from the matching template's fitness_defaults
+ */
+function getTemplateRules(projectRoot) {
+  const registryPath = path.join(__dirname, '..', '..', 'templates', 'topology-registry.json');
+  const topoResult = detectTopology(projectRoot, registryPath);
+  const template = loadTemplate(topoResult.id);
+  return (template.fitness_defaults && template.fitness_defaults.rules) || [];
+}
+
+/**
  * Generate ecosystem-aware fitness rules for a project.
  *
  * - Always includes UNIVERSAL_RULES (max-file-lines)
@@ -162,6 +177,12 @@ function generateFitnessRules(projectRoot) {
     });
   }
 
+  const templateRules = getTemplateRules(projectRoot);
+  const existingIds = new Set(rules.map(r => r.id));
+  for (const tr of templateRules) {
+    if (!existingIds.has(tr.id)) rules.push(tr);
+  }
+
   return rules;
 }
 
@@ -183,4 +204,4 @@ function formatFitnessJson(rules) {
   );
 }
 
-module.exports = { generateFitnessRules, formatFitnessJson, isJsTsProject };
+module.exports = { generateFitnessRules, formatFitnessJson, isJsTsProject, getTemplateRules };

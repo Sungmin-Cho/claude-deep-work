@@ -133,6 +133,22 @@ If "main": proceed with inline execution below.
 
 ---
 
+### Topology Guides
+
+Before each slice implementation, load the session's detected topology template and inject `guides.phase3` as implementation guidelines. These are **Advisory** — inform the agent's decisions but do not block.
+
+If topology was detected in Phase 1, the guides are available in session state. Otherwise, run detection: `node templates/topology-detector.js <project-root>`
+
+Example:
+```
+[TOPOLOGY GUIDES] Next.js App Router:
+  - Minimize 'use client' — prefer Server Components by default
+  - Use Server Actions for mutations over API routes
+  - Keep layout.tsx and page.tsx focused — extract shared logic to lib/
+```
+
+---
+
 ## Slice Execution Loop (Solo Mode)
 
 For each unchecked slice (`- [ ]`), execute the following cycle:
