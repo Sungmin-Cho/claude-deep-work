@@ -106,4 +106,11 @@ if (require.main === module) {
   const registryPath = path.join(__dirname, 'registry.json');
   const result = detectEcosystems(projectRoot, registryPath);
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+
+  // Cache detection results to .claude/.sensor-detection-cache.json for
+  // subsequent deep-implement runs to read without re-running detection.
+  const cacheDir = path.join(projectRoot, '.claude');
+  if (fs.existsSync(cacheDir)) {
+    fs.writeFileSync(path.join(cacheDir, '.sensor-detection-cache.json'), JSON.stringify(result, null, 2));
+  }
 }
