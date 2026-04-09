@@ -7,7 +7,7 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [5.9.0] - 2026-04-09
+## [6.0.0] - 2026-04-09
 
 ### 추가
 - **Health Engine** — Phase 1 Research 자동 Health Check (4개 드리프트 센서 병렬 실행):
@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Phase 4 Baseline 갱신 — 게이트 통과 후 health-baseline.json 자동 업데이트
 - **Receipt 스키마 확장** — `health_report` 필드 + `scan_commit` (deep-review stale 판정용)
 - **deep-review 연동** — fitness.json을 리뷰 에이전트 프롬프트에 주입 + receipt health_report scan_commit 기반 stale 체크
+- **Harness Templates (#5)**: 6개 내장 토폴로지(nextjs-app, react-spa, express-api, python-web, python-lib, generic)를 갖춘 토폴로지 감지 레이어. deep merge 및 custom/ override 지원 템플릿 로더. Phase 1/3에 토폴로지별 가이드 통합. Fitness generator에 template fitness_defaults 확장.
+- **Self-Correction Loop (#6)**: always-on 레이어(토폴로지 가이드)와 fitness 레이어(fitness.json 규칙)를 갖춘 review-check 센서. 센서별 독립 3회 교정 제한. 설정 비활성화 지원. Receipt 스키마 확장.
 
 ### 변경
 - 세션 품질 점수 5가지 가중치 (테스트 통과율 25%, 재작업 사이클 20%, Plan Fidelity 25%, 센서 클린율 15%, Mutation Score 15%). Health Check은 점수에서 제외.

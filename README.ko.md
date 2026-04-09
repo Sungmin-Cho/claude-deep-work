@@ -573,6 +573,111 @@ deep-review 설치 시:
 - fitness.json 규칙이 리뷰 에이전트 프롬프트에 주입되어 아키텍처 의도 기반 리뷰
 - receipt의 health_report가 scan_commit 기반 stale 체크 후 리뷰 컨텍스트로 활용
 
+## 토폴로지 템플릿 (v5.9)
+
+Phase 1 Research에서 서비스 토폴로지를 자동 감지하고, 토폴로지별 가이드·센서 설정·fitness 기본값을 제공하는 매칭 템플릿을 로드합니다.
+
+### 토폴로지 감지
+
+`topology-detector.js`는 기존 ecosystem 감지 위에서 실행됩니다. 6개 내장 토폴로지를 우선순위 순으로 평가하여 첫 번째 일치 항목을 반환합니다:
+
+| 토폴로지 | 감지 기준 |
+|----------|----------|
+| `nextjs-app` | package.json의 `next` 의존성 |
+| `react-spa` | `react` 있고 `next`/`express` 없음 |
+| `express-api` | `express` 의존성 |
+| `python-web` | requirements의 `fastapi` / `django` / `flask` |
+| `python-lib` | 웹 프레임워크 없는 Python 프로젝트 |
+| `generic` | 그 외 모든 프로젝트 폴백 |
+
+감지 결과는 세션 상태에 저장되어 워크플로우 전반에 사용됩니다.
+
+### 템플릿 구조
+
+각 토폴로지 템플릿(`templates/topologies/<name>.json`)의 구성:
+
+```json
+{
+  "topology": "nextjs-app",
+  "guides": ["...토폴로지별 구현 가이드..."],
+  "sensors": { "dead-export": true, "stale-config": true },
+  "fitness_defaults": [
+    { "id": "no-circular-deps", "type": "dependency", "severity": "required" }
+  ],
+  "harnessability_hints": ["...리뷰 에이전트용 참고사항..."]
+}
+```
+
+- **`guides`** — Phase 1 연구 컨텍스트 및 Phase 3 구현 프롬프트에 주입
+- **`sensors`** — 토폴로지별 센서 활성화/비활성화 힌트
+- **`fitness_defaults`** — 기존 규칙과 충돌하지 않을 때 자동 생성 `fitness.json`에 병합
+- **`harnessability_hints`** — deep-review에 전달되어 토폴로지 인식 코드 리뷰 수행
+
+### 커스텀 토폴로지 Override
+
+`.deep-work/custom/<name>.json`에 동일 스키마로 파일을 배치합니다. 템플릿 로더는 **deep merge**를 수행(custom 값 우선)하므로 전체 템플릿을 재작성하지 않고도 원하는 필드만 덮어쓸 수 있습니다.
+
+```bash
+# 예시: nextjs-app 프로젝트의 fitness_defaults override
+.deep-work/custom/nextjs-app.json
+```
+
+### Phase 통합
+
+- **Phase 1/3**: 토폴로지 가이드가 연구 및 구현 컨텍스트에 주입
+- **Fitness generator**: 매칭 템플릿의 `fitness_defaults`가 자동 생성 `fitness.json` 초기값으로 사용 (토폴로지 적합 규칙만 포함)
+- **deep-review**: `harnessability_hints`가 리뷰 에이전트 프롬프트로 전달
+
+## 자기 교정 루프 (v5.9)
+
+lint 및 typecheck 이후 새로운 `review-check` 센서가 자동 실행되어 Phase 4 이전에 두 레이어의 교정을 제공합니다.
+
+### review-check 센서
+
+`sensors/review-check.js`는 두 개의 독립 레이어로 동작합니다:
+
+| 레이어 | 트리거 | 검사 대상 |
+|--------|--------|----------|
+| **Always-on** | 모든 세션 | 토폴로지 가이드 준수 — 구현이 토폴로지별 패턴을 따르는지 확인 |
+| **Fitness** | `fitness.json` 존재 시 | 현재 구현으로 추가된 fitness 규칙 위반 |
+
+센서는 표준 파이프라인에 추가됩니다:
+
+```
+lint → typecheck → review-check
+```
+
+### 센서별 교정 제한
+
+각 센서(`review-check` 포함)는 독립적인 3회 교정 제한을 가집니다. 3회 자기 교정 후에도 센서가 실패하면 무한 루프 대신 수동 개입으로 에스컬레이션합니다.
+
+```
+1라운드: 센서 실패 → 자기 교정
+2라운드: 센서 실패 → 자기 교정
+3라운드: 센서 실패 → 자기 교정
+4라운드: 센서 실패 → 에스컬레이션 (수동 개입 필요)
+```
+
+제한은 센서별로 독립적입니다 — `review-check` 실패는 lint 또는 typecheck의 교정 횟수를 소모하지 않습니다.
+
+### review-check 비활성화
+
+`.deep-work/config.json`에 추가:
+
+```json
+{
+  "review_check": false
+}
+```
+
+always-on 레이어와 fitness 레이어가 모두 비활성화됩니다. v1에서는 레이어별 개별 비활성화를 지원하지 않습니다.
+
+### v1 범위
+
+- 계산적 검사만 수행 (패턴 매칭, fitness 규칙 평가)
+- 전체 프로젝트 fitness 검사 (증분 diff 방식 아님)
+- Receipt 스키마에 `review_check` 필드 추가 — 레이어 결과 및 사용된 교정 횟수 기록
+
 ## 품질 측정 (v5.3)
 
 모든 세션은 5가지 결과 메트릭을 기반으로 **세션 품질 점수** (0-100)를 산출합니다:
