@@ -7,6 +7,8 @@ const os = require('node:os');
 const { checkFileMetric } = require('./rule-checkers/file-metric-checker.js');
 const { checkForbiddenPattern } = require('./rule-checkers/pattern-checker.js');
 const { checkStructure } = require('./rule-checkers/structure-checker.js');
+const { checkDependency } = require('./rule-checkers/dependency-checker.js');
+const { validateFitness } = require('./fitness-validator.js');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -131,5 +133,89 @@ describe('checkStructure', () => {
     assert.equal(result.ruleId, 'colocated');
     assert.equal(result.passed, true);
     assert.equal(result.violations.length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dependency-checker
+// ---------------------------------------------------------------------------
+
+describe('checkDependency', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = makeTmpProject(); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('dep-cruiser not installed + required severity → required_missing, passed: false', () => {
+    const rule = { id: 'no-circular', type: 'dependency', severity: 'required' };
+    const result = checkDependency(tmpDir, rule, { depCruiserAvailable: false });
+
+    assert.equal(result.status, 'required_missing');
+    assert.equal(result.passed, false);
+  });
+
+  it('dep-cruiser not installed + advisory severity → not_applicable, passed: true', () => {
+    const rule = { id: 'no-circular', type: 'dependency', severity: 'advisory' };
+    const result = checkDependency(tmpDir, rule, { depCruiserAvailable: false });
+
+    assert.equal(result.status, 'not_applicable');
+    assert.equal(result.passed, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fitness-validator
+// ---------------------------------------------------------------------------
+
+describe('validateFitness', () => {
+  it('unsupported version (99) → valid: false, error mentions "version"', () => {
+    const parsed = { version: 99, rules: [] };
+    const result = validateFitness(parsed);
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.toLowerCase().includes('version')));
+  });
+
+  it('rule missing required field (id) → valid: false, error mentions "id"', () => {
+    const parsed = { version: 1, rules: [{ type: 'structure', severity: 'advisory' }] };
+    const result = validateFitness(parsed);
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('id')));
+  });
+
+  it('unknown type "custom" → valid: false, error mentions "custom"', () => {
+    const parsed = { version: 1, rules: [{ id: 'r1', type: 'custom', severity: 'advisory' }] };
+    const result = validateFitness(parsed);
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('custom')));
+  });
+
+  it('valid fitness.json → valid: true, validRules.length: 1', () => {
+    const parsed = {
+      version: 1,
+      rules: [{ id: 'max-lines', type: 'file-metric', severity: 'advisory', check: 'line-count', max: 500, include: 'src/**/*.js' }],
+    };
+    const result = validateFitness(parsed);
+
+    assert.equal(result.valid, true);
+    assert.equal(result.validRules.length, 1);
+  });
+
+  it('mixed valid+invalid rules → validRules has valid ones, skippedRules has invalid ones', () => {
+    const parsed = {
+      version: 1,
+      rules: [
+        { id: 'good-rule', type: 'structure', severity: 'advisory', check: 'colocated' },
+        { type: 'file-metric', severity: 'advisory' }, // missing id
+        { id: 'bad-type', type: 'custom', severity: 'advisory' }, // unknown type
+      ],
+    };
+    const result = validateFitness(parsed);
+
+    assert.equal(result.valid, false);
+    assert.equal(result.validRules.length, 1);
+    assert.equal(result.validRules[0].id, 'good-rule');
+    assert.equal(result.skippedRules.length, 2);
   });
 });
