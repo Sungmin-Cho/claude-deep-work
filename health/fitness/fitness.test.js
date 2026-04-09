@@ -9,6 +9,7 @@ const { checkForbiddenPattern } = require('./rule-checkers/pattern-checker.js');
 const { checkStructure } = require('./rule-checkers/structure-checker.js');
 const { checkDependency } = require('./rule-checkers/dependency-checker.js');
 const { validateFitness } = require('./fitness-validator.js');
+const { generateFitnessRules, formatFitnessJson, isJsTsProject } = require('./fitness-generator.js');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -217,5 +218,81 @@ describe('validateFitness', () => {
     assert.equal(result.validRules.length, 1);
     assert.equal(result.validRules[0].id, 'good-rule');
     assert.equal(result.skippedRules.length, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fitness-generator
+// ---------------------------------------------------------------------------
+
+describe('generateFitnessRules', () => {
+  let tmpDir;
+  beforeEach(() => { tmpDir = makeTmpProject(); });
+  afterEach(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('JS/TS project includes no-circular-deps and max-file-lines', () => {
+    writeFile(tmpDir, 'package.json', '{}');
+    writeFile(tmpDir, 'src/index.js', '');
+
+    const rules = generateFitnessRules(tmpDir);
+    const ids = rules.map(r => r.id);
+
+    assert.ok(ids.includes('max-file-lines'), 'should include max-file-lines');
+    assert.ok(ids.includes('no-circular-deps'), 'should include no-circular-deps');
+  });
+
+  it('layer structure detected → proposes layer-direction rule', () => {
+    writeFile(tmpDir, 'package.json', '{}');
+    writeFile(tmpDir, 'src/controllers/.keep', '');
+    writeFile(tmpDir, 'src/services/.keep', '');
+    writeFile(tmpDir, 'src/repositories/.keep', '');
+
+    const rules = generateFitnessRules(tmpDir);
+    const ids = rules.map(r => r.id);
+
+    assert.ok(ids.includes('layer-direction'), 'should include layer-direction');
+  });
+
+  it('config module detected → proposes no-direct-env-access rule', () => {
+    writeFile(tmpDir, 'package.json', '{}');
+    writeFile(tmpDir, 'src/config/db.js', '');
+
+    const rules = generateFitnessRules(tmpDir);
+    const ids = rules.map(r => r.id);
+
+    assert.ok(ids.includes('no-direct-env-access'), 'should include no-direct-env-access');
+  });
+
+  it('empty project → max-file-lines only (no dependency rules)', () => {
+    // No package.json, no tsconfig.json, no src/ — truly empty
+    const rules = generateFitnessRules(tmpDir);
+    const ids = rules.map(r => r.id);
+
+    assert.ok(ids.includes('max-file-lines'), 'should include max-file-lines');
+    assert.ok(!ids.includes('no-circular-deps'), 'should NOT include no-circular-deps');
+    assert.equal(rules.length, 1, 'should have only max-file-lines');
+  });
+
+  it('non-JS/TS project → no-circular-deps EXCLUDED', () => {
+    // Python project: no package.json, no tsconfig.json
+    writeFile(tmpDir, 'requirements.txt', 'flask==2.0\n');
+    writeFile(tmpDir, 'src/app.py', 'print("hello")\n');
+
+    const rules = generateFitnessRules(tmpDir);
+    const ids = rules.map(r => r.id);
+
+    assert.ok(!ids.includes('no-circular-deps'), 'should NOT include no-circular-deps for non-JS/TS');
+    assert.equal(isJsTsProject(tmpDir), false, 'should not detect as JS/TS project');
+  });
+
+  it('colocated tests detected → proposes colocated-tests rule', () => {
+    writeFile(tmpDir, 'package.json', '{}');
+    writeFile(tmpDir, 'src/utils.ts', 'export const x = 1;');
+    writeFile(tmpDir, 'src/utils.test.ts', 'import { x } from "./utils";');
+
+    const rules = generateFitnessRules(tmpDir);
+    const ids = rules.map(r => r.id);
+
+    assert.ok(ids.includes('colocated-tests'), 'should include colocated-tests');
   });
 });
