@@ -89,6 +89,7 @@ function detectEcosystems(projectRoot, registryPath) {
       root: '.',
       sensors,
       file_extensions: def.file_extensions || [],
+      coverage_flag: def.coverage_flag || null,
     });
   }
 
