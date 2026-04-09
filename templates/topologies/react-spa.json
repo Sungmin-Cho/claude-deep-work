@@ -33,27 +33,27 @@
   "fitness_defaults": {
     "rules": [
       {
-        "id": "max-file-lines",
+        "id": "react-max-file-lines",
         "type": "file-metric",
-        "check": "max-lines",
+        "check": "line-count",
         "max": 250,
-        "include": ["**/*.tsx", "**/*.ts"],
-        "severity": "warn"
+        "include": "**/*.{tsx,ts}",
+        "severity": "advisory"
       },
       {
         "id": "no-direct-dom",
         "type": "forbidden-pattern",
         "pattern": "document\\.getElementById|document\\.querySelector",
-        "include": ["src/**/*.tsx", "src/**/*.ts"],
-        "severity": "warn"
+        "include": "src/**/*.{tsx,ts}",
+        "severity": "advisory"
       },
       {
-        "id": "component-test-coverage",
+        "id": "react-colocated-tests",
         "type": "structure",
-        "check": "test-coverage",
+        "check": "colocated",
         "source": "src/components/**/*.tsx",
         "test": "src/**/*.test.{ts,tsx}",
-        "severity": "warn"
+        "severity": "advisory"
       }
     ]
   },

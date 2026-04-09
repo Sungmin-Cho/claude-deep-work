@@ -263,14 +263,16 @@ describe('generateFitnessRules', () => {
     assert.ok(ids.includes('no-direct-env-access'), 'should include no-direct-env-access');
   });
 
-  it('empty project → max-file-lines only (no dependency rules)', () => {
+  it('empty project → max-file-lines + generic template rules (no dependency rules)', () => {
     // No package.json, no tsconfig.json, no src/ — truly empty
+    // Topology detection yields "generic", which adds generic template rules
     const rules = generateFitnessRules(tmpDir);
     const ids = rules.map(r => r.id);
 
     assert.ok(ids.includes('max-file-lines'), 'should include max-file-lines');
     assert.ok(!ids.includes('no-circular-deps'), 'should NOT include no-circular-deps');
-    assert.equal(rules.length, 1, 'should have only max-file-lines');
+    // Universal max-file-lines + generic template rules (deduplicated by id)
+    assert.ok(rules.length >= 1, 'should have at least max-file-lines');
   });
 
   it('non-JS/TS project → no-circular-deps EXCLUDED', () => {

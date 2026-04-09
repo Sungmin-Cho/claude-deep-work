@@ -40,7 +40,7 @@ function runReviewCheck(projectRoot, options = {}) {
     const configPath = path.join(projectRoot, '.deep-work', 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     if (config.review_check === false) {
-      return { status: 'disabled', alwaysOn: null, fitness: null, violations: [] };
+      return { status: 'disabled', alwaysOn: null, fitness: null, violations: [], hasRequired: false };
     }
   } catch { /* no config — proceed */ }
 
@@ -54,7 +54,7 @@ function runReviewCheck(projectRoot, options = {}) {
 
   // All sources missing → not_applicable
   if (!hasGuides && !fitnessData) {
-    return { status: 'not_applicable', alwaysOn: null, fitness: null, violations: [] };
+    return { status: 'not_applicable', alwaysOn: null, fitness: null, violations: [], hasRequired: false };
   }
 
   let alwaysOn = null;

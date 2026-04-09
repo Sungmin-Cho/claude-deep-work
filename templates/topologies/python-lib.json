@@ -33,27 +33,27 @@
   "fitness_defaults": {
     "rules": [
       {
-        "id": "max-file-lines",
+        "id": "python-lib-max-file-lines",
         "type": "file-metric",
-        "check": "max-lines",
+        "check": "line-count",
         "max": 400,
-        "include": ["**/*.py"],
-        "severity": "warn"
+        "include": "**/*.py",
+        "severity": "advisory"
       },
       {
         "id": "no-print-statements",
         "type": "forbidden-pattern",
         "pattern": "^\\s*print\\(",
-        "include": ["src/**/*.py"],
-        "severity": "warn"
+        "include": "src/**/*.py",
+        "severity": "advisory"
       },
       {
-        "id": "public-api-test-coverage",
+        "id": "python-lib-colocated-tests",
         "type": "structure",
-        "check": "test-coverage",
+        "check": "colocated",
         "source": "src/**/__init__.py",
         "test": "tests/**/*.py",
-        "severity": "warn"
+        "severity": "advisory"
       }
     ]
   },

@@ -22,12 +22,12 @@
   "fitness_defaults": {
     "rules": [
       {
-        "id": "max-file-lines",
+        "id": "generic-max-file-lines",
         "type": "file-metric",
-        "check": "max-lines",
+        "check": "line-count",
         "max": 500,
-        "include": ["**/*"],
-        "severity": "warn"
+        "include": "**/*",
+        "severity": "advisory"
       }
     ]
   },

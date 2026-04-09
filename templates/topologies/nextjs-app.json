@@ -33,33 +33,27 @@
   "fitness_defaults": {
     "rules": [
       {
-        "id": "max-file-lines",
+        "id": "nextjs-max-file-lines",
         "type": "file-metric",
-        "check": "max-lines",
+        "check": "line-count",
         "max": 300,
-        "include": ["**/*.tsx", "**/*.ts"],
-        "severity": "warn"
+        "include": "**/*.{tsx,ts}",
+        "severity": "advisory"
       },
       {
         "id": "no-use-client-in-layout",
         "type": "forbidden-pattern",
         "pattern": "^'use client'",
-        "include": ["**/layout.tsx"],
-        "severity": "error"
+        "include": "**/layout.tsx",
+        "severity": "required"
       },
       {
-        "id": "server-client-structure",
+        "id": "nextjs-colocated-tests",
         "type": "structure",
-        "check": "test-coverage",
+        "check": "colocated",
         "source": "app/**/*.tsx",
         "test": "**/__tests__/**/*.test.tsx",
-        "severity": "warn"
-      },
-      {
-        "id": "no-next-peer",
-        "type": "dependency",
-        "check": "no-peer-mismatch",
-        "severity": "warn"
+        "severity": "advisory"
       }
     ]
   },

@@ -33,33 +33,27 @@
   "fitness_defaults": {
     "rules": [
       {
-        "id": "max-file-lines",
+        "id": "api-max-file-lines",
         "type": "file-metric",
-        "check": "max-lines",
+        "check": "line-count",
         "max": 250,
-        "include": ["src/**/*.ts", "src/**/*.js"],
-        "severity": "warn"
+        "include": "src/**/*.{ts,js}",
+        "severity": "advisory"
       },
       {
         "id": "no-console-log",
         "type": "forbidden-pattern",
         "pattern": "console\\.log\\(",
-        "include": ["src/**/*.ts", "src/**/*.js"],
-        "severity": "warn"
+        "include": "src/**/*.{ts,js}",
+        "severity": "advisory"
       },
       {
-        "id": "route-test-coverage",
+        "id": "api-colocated-tests",
         "type": "structure",
-        "check": "test-coverage",
+        "check": "colocated",
         "source": "src/routes/**/*.ts",
         "test": "src/**/*.test.ts",
-        "severity": "warn"
-      },
-      {
-        "id": "no-deprecated-http",
-        "type": "dependency",
-        "check": "no-deprecated",
-        "severity": "warn"
+        "severity": "advisory"
       }
     ]
   },
