@@ -230,6 +230,7 @@ describe('scanStaleConfig', () => {
 // dependency-vuln tests
 // ==========================================================================
 const { parseNpmAudit, scanDependencyVuln } = require('./dependency-vuln.js');
+const { analyzeCoverageTrend } = require('./coverage-trend.js');
 
 describe('parseNpmAudit', () => {
   // 1. npm audit JSON with high vuln -> parsed correctly
@@ -266,5 +267,65 @@ describe('parseNpmAudit', () => {
     assert.deepEqual(result.vulnerabilities, []);
     assert.equal(result.high, 0);
     assert.equal(result.critical, 0);
+  });
+});
+
+// ==========================================================================
+// coverage-trend tests
+// ==========================================================================
+
+describe('analyzeCoverageTrend', () => {
+  // 1. Degradation beyond threshold (5%p) -> degraded: true
+  it('detects degradation beyond threshold', () => {
+    const baseline = { coverage: { line: 80 } };
+    const current = { line: 70 };
+
+    const result = analyzeCoverageTrend(baseline, current);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.baseline, 80);
+    assert.equal(result.current, 70);
+    assert.equal(result.delta, -10);
+    assert.equal(result.degraded, true);
+  });
+
+  // 2. Within threshold -> degraded: false
+  it('returns degraded false when within threshold', () => {
+    const baseline = { coverage: { line: 80 } };
+    const current = { line: 77 };
+
+    const result = analyzeCoverageTrend(baseline, current);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.delta, -3);
+    assert.equal(result.degraded, false);
+  });
+
+  // 3. Null baseline -> status: 'not_applicable'
+  it('returns not_applicable when baseline is null', () => {
+    const result = analyzeCoverageTrend(null, { line: 80 });
+    assert.equal(result.status, 'not_applicable');
+    assert.equal(result.baseline, null);
+    assert.equal(result.current, null);
+    assert.equal(result.delta, null);
+    assert.equal(result.degraded, false);
+  });
+
+  // 4. Baseline with no coverage field -> status: 'not_applicable'
+  it('returns not_applicable when baseline has no coverage field', () => {
+    const result = analyzeCoverageTrend({}, { line: 80 });
+    assert.equal(result.status, 'not_applicable');
+    assert.equal(result.baseline, null);
+    assert.equal(result.degraded, false);
+  });
+
+  // 5. Improvement -> degraded: false, positive delta
+  it('returns degraded false with positive delta on improvement', () => {
+    const baseline = { coverage: { line: 70 } };
+    const current = { line: 85 };
+
+    const result = analyzeCoverageTrend(baseline, current);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.delta, 15);
+    assert.ok(result.delta > 0, 'delta should be positive');
+    assert.equal(result.degraded, false);
   });
 });
