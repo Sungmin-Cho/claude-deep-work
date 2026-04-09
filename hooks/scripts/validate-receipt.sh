@@ -92,7 +92,7 @@ fi
 
 # ─── 3. Validate each slice receipt ──────────────────────────
 
-VALID_TDD_STATES="PENDING RED RED_VERIFIED GREEN_ELIGIBLE GREEN REFACTOR SPIKE"
+VALID_TDD_STATES="PENDING RED RED_VERIFIED GREEN_ELIGIBLE GREEN SENSOR_RUN SENSOR_FIX SENSOR_CLEAN REFACTOR SPIKE"
 
 for receipt_file in "${RECEIPT_FILES[@]}"; do
   fname=$(basename "$receipt_file")

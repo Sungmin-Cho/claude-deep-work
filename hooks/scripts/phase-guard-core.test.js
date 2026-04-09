@@ -704,6 +704,79 @@ describe('v5.5.2: Extended exempt file patterns', () => {
   });
 });
 
+// ─── Sensor TDD States ──────────────────────────────────────
+
+describe('Sensor TDD States', () => {
+  // Valid transitions (7)
+  it('GREEN → SENSOR_RUN: valid transition', () => {
+    assert.ok(isValidTransition('GREEN', 'SENSOR_RUN'));
+  });
+
+  it('SENSOR_RUN → SENSOR_FIX: valid transition', () => {
+    assert.ok(isValidTransition('SENSOR_RUN', 'SENSOR_FIX'));
+  });
+
+  it('SENSOR_RUN → SENSOR_CLEAN: valid transition', () => {
+    assert.ok(isValidTransition('SENSOR_RUN', 'SENSOR_CLEAN'));
+  });
+
+  it('SENSOR_FIX → GREEN: valid transition', () => {
+    assert.ok(isValidTransition('SENSOR_FIX', 'GREEN'));
+  });
+
+  it('SENSOR_FIX → RED: valid transition', () => {
+    assert.ok(isValidTransition('SENSOR_FIX', 'RED'));
+  });
+
+  it('SENSOR_CLEAN → REFACTOR: valid transition', () => {
+    assert.ok(isValidTransition('SENSOR_CLEAN', 'REFACTOR'));
+  });
+
+  it('SENSOR_CLEAN → PENDING: valid transition', () => {
+    assert.ok(isValidTransition('SENSOR_CLEAN', 'PENDING'));
+  });
+
+  // Invalid transitions (2)
+  it('SENSOR_RUN → REFACTOR: invalid (must go through SENSOR_CLEAN)', () => {
+    assert.ok(!isValidTransition('SENSOR_RUN', 'REFACTOR'));
+  });
+
+  it('SENSOR_FIX → SENSOR_CLEAN: invalid (must go through GREEN first)', () => {
+    assert.ok(!isValidTransition('SENSOR_FIX', 'SENSOR_CLEAN'));
+  });
+
+  // Production code permissions (2)
+  it('SENSOR_FIX allows production file edits (mechanical lint/type fixes)', () => {
+    const result = checkTddEnforcement('SENSOR_FIX', 'src/app.ts', 'strict', []);
+    assert.ok(result.allowed);
+  });
+
+  it('SENSOR_RUN blocks production file edits (sensor is running, no edits)', () => {
+    const result = checkTddEnforcement('SENSOR_RUN', 'src/app.ts', 'strict', []);
+    assert.ok(!result.allowed);
+  });
+
+  // Receipt validation (1)
+  it('validateReceipt accepts SENSOR_CLEAN as valid tdd_state', () => {
+    const receipt = { slice_id: 'SLICE-001', status: 'complete', tdd_state: 'SENSOR_CLEAN' };
+    const result = validateReceipt(receipt);
+    assert.ok(result.valid);
+  });
+
+  // Backward compatibility (3)
+  it('GREEN → REFACTOR still valid (for sensor-not-installed projects)', () => {
+    assert.ok(isValidTransition('GREEN', 'REFACTOR'));
+  });
+
+  it('GREEN → PENDING still valid (skip to next slice)', () => {
+    assert.ok(isValidTransition('GREEN', 'PENDING'));
+  });
+
+  it('GREEN → SPIKE still valid', () => {
+    assert.ok(isValidTransition('GREEN', 'SPIKE'));
+  });
+});
+
 // ─── v5.5.2: TDD state validation ──────────────────────────
 
 describe('v5.5.2: TDD state validation in processHook', () => {
