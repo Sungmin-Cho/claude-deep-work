@@ -16,7 +16,10 @@ const { validateFitness, runFitnessCheck } = require('./fitness/fitness-validato
 function withTimeout(fn, ms) {
   return Promise.race([
     fn().then(value => ({ value })),
-    new Promise(resolve => setTimeout(() => resolve({ timeout: true }), ms)),
+    new Promise(resolve => {
+      const timer = setTimeout(() => resolve({ timeout: true }), ms);
+      timer.unref();
+    }),
   ]);
 }
 
@@ -188,14 +191,16 @@ async function runHealthCheck(projectRoot, options = {}) {
   const ignoreList = healthIgnore.dead_export_ignore || [];
 
   // 2. Total timeout wrapper
-  const totalTimeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Health check exceeded total timeout')), timeouts.total)
-  );
+  let totalTimer;
+  const totalTimeoutPromise = new Promise((_, reject) => {
+    totalTimer = setTimeout(() => reject(new Error('Health check exceeded total timeout')), timeouts.total);
+    totalTimer.unref();
+  });
 
   const runChecks = async () => {
     // Test hook: inject artificial delay to test total timeout enforcement
     if (options._testDelay) {
-      await new Promise(resolve => setTimeout(resolve, options._testDelay));
+      await new Promise(resolve => { const t = setTimeout(resolve, options._testDelay); t.unref(); });
     }
 
     // 3. Promise.allSettled — dead-export + stale-config + dep-vuln parallel
