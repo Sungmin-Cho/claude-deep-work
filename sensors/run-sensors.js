@@ -101,6 +101,8 @@ function runSensor(cmd, parserName, sensorType, gateType, timeoutSec) {
   }
 
   let rawOutput = '';
+  let exitedNonZero = false;
+  let exitCode = 0;
   try {
     // Commands are trusted config -- execSync is intentional (not execFileSync)
     rawOutput = execSync(cmd, { timeout, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -117,10 +119,30 @@ function runSensor(cmd, parserName, sensorType, gateType, timeoutSec) {
         summary: 'Sensor timed out after ' + (timeoutSec ?? DEFAULT_TIMEOUTS[sensorType] ?? 30) + 's',
       };
     }
-    rawOutput = (err.stderr || err.stdout || '').toString();
+    // Prefer stdout over stderr: many linters (eslint) output valid JSON to stdout even on exit code 1
+    rawOutput = (err.stdout || err.stderr || '').toString();
+    exitedNonZero = true;
+    exitCode = err.status ?? 1;
   }
 
-  return parser(rawOutput, sensorType, gateType);
+  const result = parser(rawOutput, sensorType, gateType);
+
+  // Fail-closed: non-zero exit with no diagnostics = failure, not silent pass
+  if (exitedNonZero && result.items && result.items.length === 0) {
+    result.status = 'fail';
+    result.errors = 1;
+    result.items = [{
+      file: '',
+      line: 0,
+      rule: 'SENSOR_EXECUTION_ERROR',
+      severity: 'error',
+      message: `Sensor command exited with code ${exitCode} but produced no diagnostics. Raw output: ${(rawOutput || '').slice(0, 500)}`,
+      fix: 'Check if the sensor tool is properly configured and the command is correct.',
+    }];
+    result.summary = `Sensor execution error (exit code ${exitCode})`;
+  }
+
+  return result;
 }
 
 // -- formatFeedback ------------------------------------------------------------
