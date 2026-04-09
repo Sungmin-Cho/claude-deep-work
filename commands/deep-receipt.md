@@ -69,6 +69,24 @@ TDD state icons:
 - 🔧 SENSOR_FIX — Fixing sensor errors (self-correction loop active)
 - ✅ SENSOR_CLEAN — All sensors passed
 
+## Health Check Display
+
+When displaying any receipt (dashboard or view), if the session state file contains `health_report`, include the Health Check section:
+
+```
+### Health Check (Phase 1 진단)
+- 🔍 드리프트: dead-export {count}건 | coverage {delta}%p | vuln {critical+high}건 | stale {count}건
+- 📐 Fitness: {passed}/{total} 통과 | 위반 delta: {delta}건
+- ⚠️ Required: {acknowledged ? "acknowledged" : "미해결 N건"}
+```
+
+**Steps**:
+1. Read `health_report` from the session state file
+2. Extract drift metrics: `dead_exports.count`, `coverage_delta`, `vulnerability.critical + vulnerability.high`, `stale_deps.count`
+3. Extract fitness metrics: `fitness.passed`, `fitness.total`, `fitness.violation_delta`
+4. Extract required status: check `acknowledged_required_issues` in the state file
+5. If `health_report` is absent from the state file, skip this section silently
+
 ## View
 
 `/deep-receipt view SLICE-NNN`:
