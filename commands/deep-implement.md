@@ -199,7 +199,58 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
    통과: [N]/[N] tests
 ```
 
-#### B-3. REFACTOR (optional)
+#### B-3. SENSOR_RUN: Computational Sensor Verification
+
+> **Mode gate**: spike mode → skip entirely (proceed to B-4). All other modes: execute.
+
+After GREEN, check `sensor_pending` flag in state file. If set:
+
+**B-3 Pre-check**: Read sensor detection cache from session state. If empty or `sensor_cache_valid=false`, re-run detection:
+```bash
+node "$PLUGIN_DIR/sensors/detect.js" "$PROJECT_ROOT"
+```
+Cache results in session state.
+
+**B-3 Sensor selection**: From `file-changes.log`, identify changed file extensions. Select only matching ecosystems' sensors.
+
+**B-3 Execution order** (fast-fail):
+
+1. **Linter** (timeout: 30s):
+   ```bash
+   node "$PLUGIN_DIR/sensors/run-sensors.js" "<lint_cmd>" "<parser>" "lint" "required" 30
+   ```
+2. **Type checker** (timeout: 60s):
+   ```bash
+   node "$PLUGIN_DIR/sensors/run-sensors.js" "<typecheck_cmd>" "<parser>" "typecheck" "required" 60
+   ```
+3. **Coverage**: parse piggybacked `--coverage` output from GREEN test run (advisory only — does not block)
+
+**On required sensor failure** → enter B-3a SENSOR_FIX.
+**On all sensors pass** → update `tdd_state: SENSOR_CLEAN`, clear `sensor_pending`, record `sensor_results` in receipt.
+**On all sensors not_applicable** (no sensors installed) → skip directly to B-4 REFACTOR.
+
+**Mode-specific behavior**:
+- **strict / coaching**: required sensors block progression (normal path above)
+- **relaxed**: SENSOR_RUN executes but required sensor failures are treated as advisory (no blocking; log and continue)
+- **spike**: SENSOR_RUN is skipped entirely — GREEN → B-4 REFACTOR directly
+
+#### B-3a. SENSOR_FIX: Self-Correction Loop
+
+1. Update `tdd_state: SENSOR_FIX`
+2. Present agent-readable FIX feedback (from `formatFeedback`):
+   ```
+   [SENSOR_FIX] Round <N>/3 — <sensor_type> failures detected
+   FILE: <path>:<line>
+     RULE: <rule_id>
+     MESSAGE: <message>
+     FIX: <suggestion>
+   ```
+3. Agent fixes code → re-runs tests → verifies GREEN → re-runs sensors
+4. Increment `sensor_correction_round` counter (max 3)
+5. **If fix breaks tests** → set `tdd_state: RED` → restart TDD from B-1
+6. **If 3 rounds exceeded** → record remaining errors in receipt under `sensor_results.unresolved`, emit warning, set `tdd_state: SENSOR_CLEAN`, proceed to B-4
+
+#### B-4. REFACTOR (optional)
 
 1. If code can be improved while keeping tests green — refactor
 2. Run `verification_cmd` after each refactor to ensure tests still pass
@@ -283,6 +334,13 @@ Update `$WORK_DIR/receipts/SLICE-NNN.json`:
     "lint_output": "[if available]",
     "typecheck_output": "[if available]",
     "full_test_suite": "PASS (N/N)"
+  },
+  "sensor_results": {
+    "lint": { "status": "pass|fail|not_applicable|timeout", "errors": 0, "warnings": 0 },
+    "typecheck": { "status": "pass|fail|not_applicable|timeout", "errors": 0, "warnings": 0 },
+    "coverage": { "status": "pass|advisory|not_applicable", "pct": null },
+    "sensor_correction_rounds": 0,
+    "unresolved": []
   },
   "spec_compliance": {
     "checklist": { "req1": true, "req2": true },
