@@ -141,11 +141,6 @@ function isBarrelFile(filePath) {
   return /^index\.[A-Za-z]+$/.test(base);
 }
 
-/** Does this line contain a re-export pattern? */
-function isReExportLine(line) {
-  return /export\s*\{[^}]*\}\s*from\s/.test(line);
-}
-
 // ---------------------------------------------------------------------------
 // Health-ignore loader
 // ---------------------------------------------------------------------------
