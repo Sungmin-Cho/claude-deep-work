@@ -595,6 +595,111 @@ When deep-review is installed:
 - fitness.json rules are injected into the review agent's prompt for architecture-aware review
 - Health report from the receipt is used as additional review context (with scan_commit-based staleness check)
 
+## Topology Templates (v5.9)
+
+Phase 1 Research now auto-detects the service topology and loads a matching template that provides topology-specific guides, sensor configuration, and fitness defaults.
+
+### Topology Detection
+
+`topology-detector.js` runs on top of the existing ecosystem detection. It evaluates 6 built-in topologies in priority order and returns the first match:
+
+| Topology | Detected by |
+|----------|-------------|
+| `nextjs-app` | `next` dependency in package.json |
+| `react-spa` | `react` + no `next`/`express` |
+| `express-api` | `express` dependency |
+| `python-web` | `fastapi` / `django` / `flask` in requirements |
+| `python-lib` | Python project with no web framework |
+| `generic` | Fallback for all other projects |
+
+Detection results are stored in session state and used throughout the workflow.
+
+### Template Structure
+
+Each topology template (`templates/topologies/<name>.json`) contains:
+
+```json
+{
+  "topology": "nextjs-app",
+  "guides": ["...topology-specific implementation guidance..."],
+  "sensors": { "dead-export": true, "stale-config": true },
+  "fitness_defaults": [
+    { "id": "no-circular-deps", "type": "dependency", "severity": "required" }
+  ],
+  "harnessability_hints": ["...notes for the review agent..."]
+}
+```
+
+- **`guides`** — injected into Phase 1 research context and Phase 3 implementation prompts
+- **`sensors`** — topology-aware sensor enable/disable hints
+- **`fitness_defaults`** — merged into auto-generated `fitness.json` when no existing rules conflict
+- **`harnessability_hints`** — hints passed to deep-review for topology-aware code review
+
+### Custom Topology Override
+
+Place a file at `.deep-work/custom/<name>.json` using the same schema. The template loader performs a **deep merge** (custom values win), so you can override any field without rewriting the entire template.
+
+```bash
+# Example: override fitness_defaults for your nextjs-app project
+.deep-work/custom/nextjs-app.json
+```
+
+### Phase Integration
+
+- **Phase 1/3**: topology guides are injected into research and implementation context
+- **Fitness generator**: `fitness_defaults` from the matched template seed the auto-generated `fitness.json` (topology-appropriate rules only)
+- **deep-review**: `harnessability_hints` are forwarded to the review agent prompt
+
+## Self-Correction Loop (v5.9)
+
+A new `review-check` sensor runs automatically after lint and typecheck, providing two layers of correction before Phase 4.
+
+### review-check Sensor
+
+`sensors/review-check.js` operates in two independent layers:
+
+| Layer | Trigger | What it checks |
+|-------|---------|----------------|
+| **Always-on** | Every session | Topology guides compliance — ensures implementation follows topology-specific patterns |
+| **Fitness** | When `fitness.json` exists | Fitness rule violations introduced by the current implementation |
+
+The sensor is added to the standard pipeline:
+
+```
+lint → typecheck → review-check
+```
+
+### Per-Sensor Correction Limit
+
+Each sensor (including `review-check`) has an independent 3-round correction limit. If a sensor still fails after 3 rounds of self-correction, the session escalates to manual intervention rather than looping indefinitely.
+
+```
+round 1: sensor fails → self-correct
+round 2: sensor fails → self-correct
+round 3: sensor fails → self-correct
+round 4: sensor fails → escalate (manual intervention required)
+```
+
+The limits are independent per sensor — a `review-check` failure does not consume lint or typecheck correction rounds.
+
+### Disabling review-check
+
+Add to `.deep-work/config.json`:
+
+```json
+{
+  "review_check": false
+}
+```
+
+This disables both the always-on and fitness layers entirely. Individual layers cannot be disabled separately in v1.
+
+### v1 Scope
+
+- Computational checks only (pattern matching, fitness rule evaluation)
+- Full-project fitness checks (not incremental diff-only)
+- Receipt schema extended with `review_check` field recording layer results and correction rounds used
+
 ## Quality Measurement (v5.3)
 
 Every session produces a **Session Quality Score** (0-100) based on five outcome metrics:
