@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 
 function loadRegistry(registryPath) {
   const raw = fs.readFileSync(registryPath, 'utf-8');
@@ -49,10 +49,10 @@ function checkToolAvailable(cmd) {
   try {
     if (parts[0] === 'npx') {
       const pkg = parts[1];
-      execSync('npx --no-install ' + pkg + ' --version', { stdio: 'ignore', timeout: 10000 });
+      execFileSync('npx', ['--no-install', pkg, '--version'], { stdio: 'ignore', timeout: 10000 });
     } else {
       const binary = parts[0];
-      execSync('which ' + binary, { stdio: 'ignore', timeout: 5000 });
+      execFileSync('which', [binary], { stdio: 'ignore', timeout: 5000 });
     }
     return true;
   } catch {
