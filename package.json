@@ -21,6 +21,7 @@
     "skills/",
     "hooks/",
     "sensors/",
+    "health/",
     "README.md",
     "assumptions.json",
     "templates/"
