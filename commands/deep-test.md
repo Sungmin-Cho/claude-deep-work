@@ -407,6 +407,21 @@ If any fail:
 Implement 단계로 복귀하여 센서 오류를 해결하세요.
 ```
 
+### review-check Results in Receipt
+
+The slice receipt includes review-check results:
+```json
+{
+  "review_check": {
+    "status": "completed|not_applicable|disabled",
+    "violations_count": 0,
+    "required_violations": 0,
+    "advisory_violations": 0,
+    "rounds_used": 1
+  }
+}
+```
+
 #### Coverage Report Gate (⚠️ Advisory)
 
 **Source**: Each slice's `sensor_results.coverage` field in `$WORK_DIR/receipts/SLICE-NNN.json`.

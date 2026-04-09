@@ -266,6 +266,38 @@ Cache results in session state.
 5. **If fix breaks tests** → set `tdd_state: RED` → restart TDD from B-1
 6. **If 3 rounds exceeded** → record remaining errors in receipt under `sensor_results.unresolved`, emit warning, set `tdd_state: SENSOR_CLEAN`, proceed to B-4
 
+### Sensor Pipeline (Extended with review-check)
+
+After GREEN, run sensors in order. Each sensor has an **independent 3-round correction limit**:
+
+1. **lint** — shell command via `run-sensors.js runSensor`. Rounds: 0/3
+2. **typecheck** — shell command via `run-sensors.js runSensor`. Rounds: 0/3
+3. **review-check** — JS function via `review-check.js`. Rounds: 0/3
+
+review-check is a JS function, not a shell command. Execute it by running:
+```bash
+node -e "
+  const { runReviewCheck, formatReviewCheckFeedback } = require('./sensors/review-check.js');
+  const result = runReviewCheck(process.cwd(), { topology: 'DETECTED_TOPOLOGY' });
+  if (result.status === 'completed' && result.violations.length > 0) {
+    console.log(formatReviewCheckFeedback(result, 'SLICE_NAME'));
+    process.exit(result.hasRequired ? 1 : 0);
+  }
+  console.log(JSON.stringify({ status: result.status, violations: 0 }));
+"
+```
+
+**Per-sensor round tracking:**
+- When a sensor fails → SENSOR_FIX → agent corrects → re-run ALL sensors from start
+- Only the failing sensor's counter increments
+- After 3 failures for a sensor → mark exhausted, skip to next
+- SENSOR_CLEAN when all pass or all exhausted
+
+**review-check behavior:**
+- If required violations → exit 1 → SENSOR_FIX
+- If advisory only → log feedback, proceed (exit 0)
+- If disabled/not_applicable → skip, proceed
+
 #### B-4. REFACTOR (optional)
 
 1. If code can be improved while keeping tests green — refactor

@@ -223,6 +223,11 @@ module.exports = {
   getParsers,
 };
 
+// Re-export review-check for pipeline orchestration
+const { runReviewCheck, formatReviewCheckFeedback } = require('./review-check.js');
+module.exports.runReviewCheck = runReviewCheck;
+module.exports.formatReviewCheckFeedback = formatReviewCheckFeedback;
+
 // -- CLI -----------------------------------------------------------------------
 // Usage: node run-sensors.js <cmd> <parser> [type] [gate] [timeout]
 
