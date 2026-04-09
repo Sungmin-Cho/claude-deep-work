@@ -10,12 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [6.0.0] - 2026-04-09
 
 ### 추가
-- **Health Engine** — Phase 1 Research 자동 Health Check (4개 드리프트 센서 병렬 실행):
+- **Computational Sensor Pipeline (#2)** — 레지스트리 기반 센서 오케스트레이션, TDD 워크플로우 통합:
+  - `sensors/registry.json`: JS, TS, Python, C#, C++ 생태계 정의 (감지 규칙, lint/typecheck/mutation 명령, coverage 플래그)
+  - `sensors/detect.js`: 프로젝트 마커 파일(package.json, tsconfig.json, pyproject.toml 등)에서 자동 생태계 감지
+  - 8개 출력 파서: eslint, tsc, ruff, generic-line, generic-json, stryker, dotnet, clang-tidy
+  - TDD 상태 머신 확장: GREEN 이후 SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN 상태
+  - 자기 교정 루프: GREEN 후 센서 자동 실행, 센서별 최대 3회 수정
+  - `sensor-trigger.js`: Config/마커 파일 변경 시 생태계 전체 센서 재스캔 트리거
+  - `/deep-sensor-scan`: 독립 실행 computational sensor 스캔 커맨드
+  - 감지 결과 캐싱 (`.sensor-detection-cache.json`)
+  - Fail-closed 정책: non-zero exit + 0 진단 항목 = 명시적 실패
+- **Mutation Testing (#1)** — AI 생성 테스트 품질 검증:
+  - Stryker (JS/TS), stryker-net (C#), mutmut (Python) 통합 (registry.json 기반)
+  - `/deep-mutation-test`: git diff 기반 범위, 자동 테스트 재생성 루프 (최대 3회)
+  - Implement phase 복귀 패턴: Phase 4 mutation 실패 → Phase 3 TDD 루프로 테스트 보강
+  - Mutation Score Quality Gate (Advisory) + Session Quality Score 통합 (15% 가중치)
+  - `stryker-parser.js`: NoCoverage + 로깅 변이에 possibly_equivalent 태깅
+  - Receipt `mutation_testing` 필드: score, survived_details, auto_fix_rounds
+- **Health Engine (#3A)** — Phase 1 Research 자동 Health Check (4개 드리프트 센서 병렬 실행):
   - `dead-export`: JS/TS 미사용 export 감지 (entry point/라이브러리/barrel 제외, health-ignore.json 지원)
   - `stale-config`: tsconfig.json, package.json, .eslintrc 깨진 경로 참조 감지
   - `dependency-vuln`: `npm audit --json` 기반 high/critical 취약점 감지 (Required gate)
   - `coverage-trend`: 이전 세션 baseline 대비 커버리지 퇴화 감지 (5%p 임계값)
-- **아키텍처 Fitness Function** — `.deep-review/fitness.json` 선언적 아키텍처 규칙:
+- **아키텍처 Fitness Function (#4)** — `.deep-review/fitness.json` 선언적 아키텍처 규칙:
   - 4개 rule checker: `file-metric` (줄 수), `forbidden-pattern` (정규식), `structure` (colocated 테스트), `dependency` (순환 의존성, dep-cruiser)
   - `fitness-validator.js`: JSON 스키마 검증 + 규칙 실행 엔진 (`required_missing` 상태)
   - `fitness-generator.js`: Ecosystem-aware 자동 생성 (비 JS/TS에서 dependency 규칙 제외)

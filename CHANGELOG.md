@@ -10,12 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [6.0.0] - 2026-04-09
 
 ### Added
-- **Health Engine** — Automatic Health Check during Phase 1 Research with 4 drift sensors running in parallel:
+- **Computational Sensor Pipeline (#2)** — Registry-driven sensor orchestration integrated into the TDD workflow:
+  - `sensors/registry.json`: Ecosystem definitions for JS, TS, Python, C#, C++ with detect rules, lint/typecheck/mutation commands, and coverage flags
+  - `sensors/detect.js`: Automatic ecosystem detection from project marker files (package.json, tsconfig.json, pyproject.toml, etc.)
+  - 8 output parsers: eslint, tsc, ruff, generic-line, generic-json, stryker, dotnet, clang-tidy
+  - TDD state machine extension: SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN states after GREEN
+  - Self-correction loop: automatic sensor execution after GREEN, up to 3 fix rounds per sensor
+  - `sensor-trigger.js`: Config/marker file changes trigger ecosystem-wide sensor re-scan
+  - `/deep-sensor-scan`: Standalone computational sensor scan command
+  - Detection result caching (`.sensor-detection-cache.json`)
+  - Fail-closed policy: non-zero exit + 0 diagnostics = explicit failure
+- **Mutation Testing (#1)** — AI-generated test quality verification:
+  - Stryker (JS/TS), stryker-net (C#), mutmut (Python) integration via registry.json
+  - `/deep-mutation-test`: git diff-based scope, automatic test regeneration loop (up to 3 rounds)
+  - Implement phase return pattern: Phase 4 mutation failure → Phase 3 TDD loop for test hardening
+  - Mutation Score Quality Gate (Advisory) + Session Quality Score integration (15% weight)
+  - `stryker-parser.js`: possibly_equivalent tagging for NoCoverage + logging mutations
+  - Receipt `mutation_testing` field: score, survived_details, auto_fix_rounds
+- **Health Engine (#3A)** — Automatic Health Check during Phase 1 Research with 4 drift sensors running in parallel:
   - `dead-export`: Detects unused JS/TS exports via grep-based cross-referencing (entry point/library/barrel exclusion, health-ignore.json support)
   - `stale-config`: Detects broken path references in tsconfig.json, package.json, .eslintrc
   - `dependency-vuln`: Runs `npm audit --json` for known high/critical vulnerabilities (Required gate)
   - `coverage-trend`: Compares current coverage against previous session baseline (5%p threshold)
-- **Architecture Fitness Functions** — Declarative architecture rules in `.deep-review/fitness.json`:
+- **Architecture Fitness Functions (#4)** — Declarative architecture rules in `.deep-review/fitness.json`:
   - 4 rule checkers: `file-metric` (line count), `forbidden-pattern` (regex), `structure` (colocated tests), `dependency` (circular deps via dep-cruiser)
   - `fitness-validator.js`: JSON schema validation + rule execution engine with `required_missing` status
   - `fitness-generator.js`: Ecosystem-aware auto-generation (dependency rules excluded for non-JS/TS projects)
