@@ -187,6 +187,20 @@ Deep Work 세션 요약
    Quality Score: [score]/100
 ```
 
+If any slice has `slice_confidence: "done_with_concerns"`:
+
+```
+   Slice Confidence:
+      ✅ done: [N]개
+      ⚠️ done_with_concerns: [N]개
+
+   Concerns:
+      SLICE-NNN: [concern 1], [concern 2]
+      SLICE-MMM: [concern 1]
+```
+
+If all slices are `done`, skip this section.
+
 ### 4. Partial session check
 
 If `slices.completed < slices.total`:
