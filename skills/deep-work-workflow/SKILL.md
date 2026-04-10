@@ -176,6 +176,10 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 - Document any issues encountered — never improvise
 - **Automatically transition to Test phase** upon completion
 - **Computational sensors**: After each slice reaches GREEN, computational sensors (linter, type checker) run automatically. Failures trigger a self-correction loop (SENSOR_FIX state) where the AI attempts to fix sensor errors before moving to the next slice. Results are stored in receipt `sensor_results` fields.
+- **Slice Review**: After sensors pass, independent 2-stage review per slice — spec compliance (required) and code quality (advisory). Issues caught immediately, not deferred to Phase 4.
+- **Pre-flight Check**: Before each slice's TDD cycle, verify prerequisites (files exist, commands work). Problems surface immediately via AskUserQuestion.
+- **Status Reporting**: Each slice records `slice_confidence` (done/done_with_concerns) and specific concerns in the receipt.
+- **Red Flags**: Rationalization prevention tables in implement and test phases. Complements hook-based hard gates with soft behavioral guidance.
 
 **What's allowed**: All tools — code modification is now permitted
 
@@ -186,6 +190,7 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 - **Team mode**: Tasks clustered by file ownership, distributed to parallel agents with cross-review and progress notifications
 - **Auto-test**: After all tasks complete, transitions to Test phase automatically
 - **TDD state 업데이트 필수화** (v5.5.1): B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
+- **Slice Review**: Per-slice 2-stage independent review (spec compliance → code quality) after sensors pass. Solo mode only; delegation mode uses self-review recorded as `slice_review.mode: "self"`
 
 For detailed guidance, see [Implementation Guide](references/implementation-guide.md).
 
@@ -198,6 +203,7 @@ For detailed guidance, see [Implementation Guide](references/implementation-guid
 - Runs all checks sequentially, records results
 - **Sensor Clean gate**: Reads `sensor_results` from receipts (no re-execution) to verify all slices passed computational sensors
 - **Mutation testing**: Verifies AI-generated test quality by running mutation analysis (stryker/mutmut). Survived mutants trigger automatic test improvement via return to the implement phase — `/deep-mutation-test` handles this transition internally
+- **Cross-slice consistency + backfill review**: Phase 4 now verifies inter-slice compatibility instead of per-slice compliance (done in Phase 3). Slices that skipped Phase 3 review get backfill (보완) review here.
 - **Pass**: Session completes, report generated
 - **Fail**: Returns to implement phase for fixes (up to 3 retries)
 
