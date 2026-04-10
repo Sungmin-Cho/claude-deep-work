@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 description: "Phase 3: Implement the approved plan using slice-based TDD execution"
 ---
 
@@ -142,7 +142,7 @@ If `team_mode` is "solo" and model is not "main":
 
   ⚠️ Slice Review 강제 규칙 (반드시 준수):
   7. 각 slice GREEN + sensor 통과 후, self-review를 실행하세요:
-     - Spec Review: git diff $git_before..HEAD -- [files]를 읽고, spec_checklist/contract 항목을
+     - Spec Review: git diff $git_before -- [files]를 읽고, spec_checklist/contract 항목을
        하나씩 검증. 미충족 발견 시 수정 후 재검증 (최대 2회).
      - Quality Review: 같은 diff를 읽고 error handling, naming, DRY, type safety, test quality 검증.
        Critical 발견 시 수정 (최대 1회).
@@ -204,10 +204,9 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
 Before starting TDD, verify this slice's prerequisites are met:
 
 1. Check each file in the slice's `files` list:
-   - For **Modify** actions: file must exist at the specified path
-   - For **Create** actions: skip (file doesn't exist yet, that's expected)
-2. Check `failing_test` path: the test file's parent directory must exist
-3. Check `verification_cmd`: run with `--help` or `--version` to verify it's executable
+   - The slice checklist does not always encode Create/Modify explicitly. Heuristic: if the file exists → treat as Modify (OK). If the file does not exist → treat as Create (OK, skip check). Only flag an issue if a file path looks malformed or its parent directory does not exist and cannot be created.
+2. Check `failing_test` path: if non-empty, verify the test file's parent directory exists or can be created. Empty `failing_test` (e.g., inline plans) is allowed — skip this check.
+3. Check `verification_cmd`: extract the first token (command name) and verify it's executable with `command -v [first_token]`. Do NOT run the full command or use `--help`/`--version` (may produce false failures with commands like `npm test -- --grep`).
 
 **All checks pass** → proceed to Step B (no log, no message, completely transparent).
 
@@ -405,131 +404,6 @@ If the active slice has a `contract` field:
 5. If `acceptance_threshold` is `all` and any item fails: fix it (another RED→GREEN cycle)
 6. If `acceptance_threshold` is `majority` and > 50% pass: proceed with warning
 
-### Step D: Collect Receipt
-
-Update `$WORK_DIR/receipts/SLICE-NNN.json`:
-
-```json
-{
-  "schema_version": "1.0",
-  "slice_id": "SLICE-NNN",
-  "goal": "[slice goal from plan.md]",
-  "status": "complete",
-  "tdd_state": "GREEN",
-  "tdd_mode": "[strict/relaxed/coaching/spike]",
-  "model_used": "[haiku/sonnet/opus/main]",
-  "model_auto_selected": true,
-  "model_override_reason": null,
-  "estimated_cost": null,
-  "worktree_branch": "[dw/slug or empty]",
-  "git_before": "[commit hash before slice]",
-  "git_after": "[commit hash after slice]",
-  "tdd": {
-    "failing_test_output": "[last 200 lines]",
-    "failing_test_timestamp": "[ISO]",
-    "passing_test_output": "[last 200 lines]",
-    "passing_test_timestamp": "[ISO]"
-  },
-  "changes": {
-    "git_diff": "[output of git diff for slice files]",
-    "files_modified": ["file1", "file2"],
-    "lines_added": N,
-    "lines_removed": N
-  },
-  "verification": {
-    "lint_output": "[if available]",
-    "typecheck_output": "[if available]",
-    "full_test_suite": "PASS (N/N)"
-  },
-  "sensor_results": {
-    "lint": { "status": "pass|fail|not_applicable|timeout", "errors": 0, "warnings": 0 },
-    "typecheck": { "status": "pass|fail|not_applicable|timeout", "errors": 0, "warnings": 0 },
-    "coverage": { "status": "pass|advisory|not_applicable", "pct": null },
-    "sensor_correction_rounds": 0,
-    "unresolved": []
-  },
-  "spec_compliance": {
-    "checklist": { "req1": true, "req2": true },
-    "reviewer_result": null
-  },
-  "code_review": { "reviewer_result": null, "findings": [] },
-  "debug": null,
-  "harness_metadata": {
-    "model_id": "[model identifier, e.g. claude-opus-4-6]",
-    "assumption_overrides": [
-      {"assumption_id": "[id from assumptions.json]", "action": "override", "reason": "[reason]"}
-    ],
-    "rework_count": 0,
-    "tests_passed_first_try": true,
-    "review_defects_found": 0,
-    "research_references_used": 0,
-    "cross_model_unique_findings": 0,
-    "bugs_caught_in_red_phase": 0
-  },
-  "slice_confidence": "done",
-  "concerns": [],
-  "preflight": {
-    "passed": true,
-    "issues": [],
-    "user_override": false
-  },
-  "timestamp": "[ISO]"
-}
-```
-
-Capture git diff and `git_after` hash:
-```bash
-git diff $git_before..HEAD -- [file1] [file2]
-git rev-parse HEAD 2>/dev/null  # → git_after
-```
-
-**Collect `harness_metadata`** (v5.0 — optional, backward-compatible):
-
-Populate `harness_metadata` by aggregating data from the current slice execution. If a field cannot be determined, use the default value. Old receipts without `harness_metadata` remain valid.
-
-| Field | How to collect | Default |
-|-------|---------------|---------|
-| `model_id` | Model identifier used for this slice (from model routing or `"main"` if inline) | `"unknown"` |
-| `assumption_overrides` | Array of overrides during this slice. Each TDD override (Step B skip) → `{"assumption_id": "tdd_required_before_implement", "action": "override", "reason": "[config_change\|untestable\|urgent_fix]"}`. Empty array if no overrides. | `[]` |
-| `rework_count` | Number of times this slice returned to RED after a failed GREEN attempt (Step B-2 failure → Debug Sub-Mode → re-enter TDD cycle) | `0` |
-| `tests_passed_first_try` | `true` if verification_cmd passed on the first GREEN attempt (no rework, no debug sub-mode entry) | `true` |
-| `review_defects_found` | Count of findings from `code_review.findings` array for this slice | `0` |
-| `research_references_used` | Count of research findings from `$WORK_DIR/research.md` explicitly referenced during implementation of this slice | `0` |
-| `cross_model_unique_findings` | Count of unique issues found by cross-model review (from `{phase}-review.json` if it exists) for this slice | `0` |
-| `bugs_caught_in_red_phase` | Count of real bugs discovered because the RED test failed for the right reason (test exposed a pre-existing defect, not just "feature not implemented yet") | `0` |
-
-**Note**: `session-receipt.json`은 `/deep-finish`에서 생성됩니다 (derived cache — slice receipts가 canonical source).
-
-#### Step D-1: Confidence Judgment
-
-Automatically determine `slice_confidence` based on the completed slice's execution history (no user interaction):
-
-| slice_confidence | Condition |
-|-----------------|-----------|
-| `done` | spec PASS + quality PASS/WARN + no pre-flight issues + no TDD override + sensor fix rounds < 3 |
-| `done_with_concerns` | Any of: spec review retried 2+ times, quality review had critical finding, pre-flight user_override, TDD override used, sensor fix 3 rounds exhausted, slice_review skipped (fallback) |
-
-Update the receipt's `slice_confidence` and `concerns` fields accordingly. If `done_with_concerns`, populate `concerns` array with specific reason strings.
-
-**spike mode default**: `slice_confidence: "done_with_concerns"`, `concerns: ["spike mode — no slice review performed"]`
-
-#### deep-review 슬라이스 리뷰 제안 (선택적)
-
-deep-review 플러그인 설치 확인:
-```bash
-ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null || \
-  ls "$HOME/.claude/plugins/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null
-```
-설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
-
-**설치된 경우:** `.deep-review/contracts/SLICE-{현재 슬라이스 NNN}.yaml`이 존재하면:
-- 사용자에게 제안: "✅ SLICE-{NNN} Slice Review 완료. 추가 심층 리뷰가 필요하면 /deep-review --contract SLICE-{NNN}를 실행할까요?"
-- 수락 시: `/deep-review --contract SLICE-{NNN}` 실행
-- 거부 시: 다음 슬라이스로 진행
-- deep-review 미설치 또는 contract 미존재: 건너뜀 (silent skip)
-
-이 제안은 비용이 발생하므로 (Opus 서브에이전트) 항상 사용자 확인을 받는다.
-
 ### Step C-2: Slice Review (Built-in 2-Stage Independent Review)
 
 > **Mode gate**: spike mode → skip entirely (set `slice_review.skipped: true`, `skip_reason: "spike_mode"`, `slice_confidence: "done_with_concerns"`, `concerns: ["spike mode — no slice review performed"]`). relaxed mode → Stage 1 only, skip Stage 2.
@@ -538,20 +412,24 @@ After sensor pipeline passes (SENSOR_CLEAN) and spec/contract checklist verifica
 
 #### Per-Slice Diff
 
-Slice Review uses **per-slice diff**, not cumulative diff. Capture using `git_before` from Step A:
+Slice Review uses **per-slice diff** against the working tree (not `..HEAD`, since slices are not committed mid-loop). Capture using `git_before` from Step A:
 
 ```bash
-git diff $git_before..HEAD -- [slice files]
+# Slice-scoped diff (for spec/quality review)
+git diff $git_before -- [slice files]
+
+# Scope creep detection (all files changed during this slice)
+git diff $git_before --name-only
 ```
 
-This includes only changes made during this slice.
+The slice-scoped diff is the primary input for Stage 1/2 reviewers. The full `--name-only` list is compared against the slice's declared `files` to detect out-of-scope changes (scope creep). Any file not in the slice's `files` list is flagged as potential scope creep and included in the Stage 1 prompt.
 
 #### Stage 1: Spec Compliance Review
 
 Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (slice-spec-reviewer):
 
 - **Model**: evaluator_model
-- **Input**: plan.md slice definition (goal, spec_checklist, contract) + per-slice diff + tdd.passing_test_output from receipt
+- **Input**: plan.md slice definition (goal, spec_checklist, contract) + per-slice diff + tdd.passing_test_output from receipt + out-of-scope file list (from scope creep detection)
 - **Prompt**:
   ```
   You are reviewing whether a single slice implementation matches its specification.
@@ -561,7 +439,8 @@ Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent 
 
   Check:
   - Missing requirements: spec_checklist items not reflected in code
-  - Extra work: changes not in spec (scope creep)
+  - Extra work: changes not in spec (scope creep). Also check the out-of-scope
+    file list — any file changed but not in the slice's declared files is a red flag.
   - Misunderstandings: correct feature but wrong approach
 
   Return JSON: {
@@ -572,7 +451,7 @@ Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent 
   }
   ```
 
-**判定:**
+**판정:**
 - PASS → proceed to Stage 2
 - FAIL → fix code within Step C-2 (do NOT return to Step B):
   1. Apply reviewer's feedback to production code
@@ -666,6 +545,131 @@ Update receipt with `slice_review` namespace (separate from Phase 4's `spec_comp
 ```
 
 `mode` is `"independent"` for inline execution (main model) or `"self"` for agent delegation.
+
+#### Step D-1: Confidence Judgment
+
+Automatically determine `slice_confidence` based on the completed slice's execution history (no user interaction):
+
+| slice_confidence | Condition |
+|-----------------|-----------|
+| `done` | spec PASS + quality PASS/WARN + no pre-flight issues + no TDD override + sensor fix rounds < 3 |
+| `done_with_concerns` | Any of: spec review retried 2+ times, quality review had critical finding, pre-flight user_override, TDD override used, sensor fix 3 rounds exhausted, slice_review skipped (fallback) |
+
+Update the receipt's `slice_confidence` and `concerns` fields accordingly. If `done_with_concerns`, populate `concerns` array with specific reason strings.
+
+**spike mode default**: `slice_confidence: "done_with_concerns"`, `concerns: ["spike mode — no slice review performed"]`
+
+#### deep-review 슬라이스 리뷰 제안 (선택적)
+
+deep-review 플러그인 설치 확인:
+```bash
+ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null || \
+  ls "$HOME/.claude/plugins/"*/deep-review/.claude-plugin/plugin.json 2>/dev/null
+```
+설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
+
+**설치된 경우:** `.deep-review/contracts/SLICE-{현재 슬라이스 NNN}.yaml`이 존재하면:
+- 사용자에게 제안: "✅ SLICE-{NNN} Slice Review 완료. 추가 심층 리뷰가 필요하면 /deep-review --contract SLICE-{NNN}를 실행할까요?"
+- 수락 시: `/deep-review --contract SLICE-{NNN}` 실행
+- 거부 시: 다음 슬라이스로 진행
+- deep-review 미설치 또는 contract 미존재: 건너뜀 (silent skip)
+
+이 제안은 비용이 발생하므로 (Opus 서브에이전트) 항상 사용자 확인을 받는다.
+
+### Step D: Collect Receipt
+
+Update `$WORK_DIR/receipts/SLICE-NNN.json`:
+
+```json
+{
+  "schema_version": "1.0",
+  "slice_id": "SLICE-NNN",
+  "goal": "[slice goal from plan.md]",
+  "status": "complete",
+  "tdd_state": "GREEN",
+  "tdd_mode": "[strict/relaxed/coaching/spike]",
+  "model_used": "[haiku/sonnet/opus/main]",
+  "model_auto_selected": true,
+  "model_override_reason": null,
+  "estimated_cost": null,
+  "worktree_branch": "[dw/slug or empty]",
+  "git_before": "[commit hash before slice]",
+  "git_after": "[commit hash after slice]",
+  "tdd": {
+    "failing_test_output": "[last 200 lines]",
+    "failing_test_timestamp": "[ISO]",
+    "passing_test_output": "[last 200 lines]",
+    "passing_test_timestamp": "[ISO]"
+  },
+  "changes": {
+    "git_diff": "[output of git diff for slice files]",
+    "files_modified": ["file1", "file2"],
+    "lines_added": N,
+    "lines_removed": N
+  },
+  "verification": {
+    "lint_output": "[if available]",
+    "typecheck_output": "[if available]",
+    "full_test_suite": "PASS (N/N)"
+  },
+  "sensor_results": {
+    "lint": { "status": "pass|fail|not_applicable|timeout", "errors": 0, "warnings": 0 },
+    "typecheck": { "status": "pass|fail|not_applicable|timeout", "errors": 0, "warnings": 0 },
+    "coverage": { "status": "pass|advisory|not_applicable", "pct": null },
+    "sensor_correction_rounds": 0,
+    "unresolved": []
+  },
+  "spec_compliance": {
+    "checklist": { "req1": true, "req2": true },
+    "reviewer_result": null
+  },
+  "code_review": { "reviewer_result": null, "findings": [] },
+  "debug": null,
+  "harness_metadata": {
+    "model_id": "[model identifier, e.g. claude-opus-4-6]",
+    "assumption_overrides": [
+      {"assumption_id": "[id from assumptions.json]", "action": "override", "reason": "[reason]"}
+    ],
+    "rework_count": 0,
+    "tests_passed_first_try": true,
+    "review_defects_found": 0,
+    "research_references_used": 0,
+    "cross_model_unique_findings": 0,
+    "bugs_caught_in_red_phase": 0
+  },
+  "slice_confidence": "done",
+  "concerns": [],
+  "preflight": {
+    "passed": true,
+    "issues": [],
+    "user_override": false
+  },
+  "timestamp": "[ISO]"
+}
+```
+
+Capture git diff and `git_after` hash:
+```bash
+git diff $git_before -- [file1] [file2]
+git rev-parse HEAD 2>/dev/null  # → git_after
+```
+
+**Collect `harness_metadata`** (v5.0 — optional, backward-compatible):
+
+Populate `harness_metadata` by aggregating data from the current slice execution. If a field cannot be determined, use the default value. Old receipts without `harness_metadata` remain valid.
+
+| Field | How to collect | Default |
+|-------|---------------|---------|
+| `model_id` | Model identifier used for this slice (from model routing or `"main"` if inline) | `"unknown"` |
+| `assumption_overrides` | Array of overrides during this slice. Each TDD override (Step B skip) → `{"assumption_id": "tdd_required_before_implement", "action": "override", "reason": "[config_change\|untestable\|urgent_fix]"}`. Empty array if no overrides. | `[]` |
+| `rework_count` | Number of times this slice returned to RED after a failed GREEN attempt (Step B-2 failure → Debug Sub-Mode → re-enter TDD cycle) | `0` |
+| `tests_passed_first_try` | `true` if verification_cmd passed on the first GREEN attempt (no rework, no debug sub-mode entry) | `true` |
+| `review_defects_found` | Count of findings from `code_review.findings` array for this slice | `0` |
+| `research_references_used` | Count of research findings from `$WORK_DIR/research.md` explicitly referenced during implementation of this slice | `0` |
+| `cross_model_unique_findings` | Count of unique issues found by cross-model review (from `{phase}-review.json` if it exists) for this slice | `0` |
+| `bugs_caught_in_red_phase` | Count of real bugs discovered because the RED test failed for the right reason (test exposed a pre-existing defect, not just "feature not implemented yet") | `0` |
+
+**Note**: `session-receipt.json`은 `/deep-finish`에서 생성됩니다 (derived cache — slice receipts가 canonical source).
 
 ### Step E: Mark Complete & Advance
 

@@ -1,6 +1,6 @@
 {
   "name": "deep-work",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "description": "Evidence-Driven Development Protocol — auto-flow orchestration with TDD enforcement, Health Engine (drift detection + fitness functions), slice-based execution, and receipt validation",
   "author": {
     "name": "sungmin"

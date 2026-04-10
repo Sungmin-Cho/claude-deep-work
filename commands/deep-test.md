@@ -293,6 +293,7 @@ After all test/lint gates pass, run cross-slice consistency review. Each slice a
 2. Identify slices requiring backfill (보완):
    - `slice_review.skipped: true` → backfill
    - `slice_review.mode: "self"` → backfill (delegation self-review, less reliable)
+   - `slice_review.spec_compliance.result: "FAIL"` → **mandatory backfill** (Phase 3에서 FAIL했지만 done_with_concerns로 통과된 슬라이스 — 최종 안전망)
    - No `slice_review` field at all (team mode receipt) → treat as `skipped: true`, include in backfill
 3. Identify concerns slices:
    - `slice_confidence: "done_with_concerns"` → extra scrutiny list
@@ -318,7 +319,7 @@ After all test/lint gates pass, run cross-slice consistency review. Each slice a
    - `cross_slice_review.spec.result`: "PASS" or "FAIL"
    - `cross_slice_review.spec.cross_slice_issues`: [...]
    - `cross_slice_review.spec.backfill_results`: [...]
-   Write to each receipt or to a shared `$WORK_DIR/cross-slice-review.json`.
+   Write to a shared `$WORK_DIR/cross-slice-review.json` (canonical location for cross-slice results).
 7. Display:
    ```
    Cross-Slice Spec Review:
@@ -349,7 +350,7 @@ Run cross-slice quality review using a subagent. This is advisory — does NOT b
 
      Your job is TWO-FOLD:
      1. Cross-slice quality: review the FULL git diff for cross-cutting concerns — duplication across slices, inconsistent error handling patterns, naming mismatches between modules, anti-patterns that span multiple files.
-     2. Backfill (보완) review: for slices where slice_review.skipped is true, slice_review.code_quality.result is null, OR slice_review.mode is 'self', perform full per-slice code quality review.
+     2. Backfill (보완) review: for slices where slice_review.skipped is true, slice_review.code_quality.result is null or 'WARN' with critical findings, slice_review.mode is 'self', OR slice_review.spec_compliance.result is 'FAIL' (Phase 3 exhausted retries), perform full per-slice code quality review.
 
      Check: error handling, naming clarity, DRY violations, type safety, test quality (real behavior vs mock behavior), pattern consistency.
 
@@ -362,7 +363,7 @@ Run cross-slice quality review using a subagent. This is advisory — does NOT b
    - `cross_slice_review.quality.result`: "PASS" or "WARN"
    - `cross_slice_review.quality.cross_slice_findings`: [...]
    - `cross_slice_review.quality.backfill_findings`: [...]
-   Write to each receipt or to a shared `$WORK_DIR/cross-slice-review.json` (appended alongside `spec` field).
+   Write to `$WORK_DIR/cross-slice-review.json` (appended alongside `spec` field).
 7. Display:
    ```
    Cross-Slice Quality Review (advisory):

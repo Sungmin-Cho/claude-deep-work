@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.1] - 2026-04-10
+
+### 추가 — Superpowers 강점 통합 (Slice Review, Red Flags, Escalation)
+
+- **Slice Review (Step C-2)**: 센서 파이프라인 이후 슬라이스별 2단계 독립 리뷰. Stage 1 (스펙 준수, required) + Stage 2 (코드 품질, advisory). Subagent 실패 시 graceful degradation.
+- **Red Flags 테이블**: implement (10항목) 및 test (6항목) 단계의 합리화 방지 테이블. Hook 기반 하드 게이트를 소프트 가이던스로 보완.
+- **Pre-flight Check (Step A-2)**: TDD 시작 전 전제조건 검증. `command -v`로 안전한 실행 가능성 확인. 2개 옵션: 계속 진행 (done_with_concerns) 또는 Plan 수정.
+- **Status Reporting**: 슬라이스별 `slice_confidence` (done/done_with_concerns) 및 `concerns` 배열. 리뷰/센서/pre-flight 이력 기반 자동 판정.
+- **Agent delegation prompt 확장**: 위임 에이전트용 규칙 7-10 (self-review, receipt 기록, pre-flight, confidence 판정).
+- **Phase 4 cross-slice + 보완 리뷰**: Section 4-2/4-3을 전체 제어 흐름으로 재작성. Phase 3 FAIL 슬라이스는 필수 보완 대상.
+- **Scope creep 감지**: `git diff --name-only`로 슬라이스 외 파일 변경 탐지.
+- **Per-slice working tree diff**: `git diff $git_before` (커밋이 아닌 working tree 비교).
+- **deep-finish.md concerns 요약**: 세션 리포트에 slice confidence 집계 및 concerns 목록 추가.
+
+### 변경
+
+- Phase 4 Spec Compliance (4-2) 및 Code Quality (4-3) 게이트가 per-slice 검증 대신 cross-slice 일관성 검증으로 전환 (per-slice은 Phase 3에서 수행).
+- Receipt의 `changes.git_diff`가 per-slice baseline (`git diff $git_before -- [files]`)으로 변경.
+- `AskUserQuestion`이 deep-implement.md의 `allowed-tools`에 추가.
+- 버전 참조 6.0.1로 통일 (CLAUDE.md, SKILL.md, package.json, plugin.json).
+
 ## [6.0.0] - 2026-04-09
 
 ### 추가

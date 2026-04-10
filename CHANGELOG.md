@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.1] - 2026-04-10
+
+### Added — Superpowers Integration (Slice Review, Red Flags, Escalation)
+
+- **Slice Review (Step C-2)**: Per-slice 2-stage independent review after sensor pipeline. Stage 1 (Spec Compliance, required) + Stage 2 (Code Quality, advisory). Subagent failure fallback with graceful degradation.
+- **Red Flags tables**: Rationalization prevention in implement (10 entries) and test (6 entries) phases. Complements hook-based hard gates with soft behavioral guidance.
+- **Pre-flight Check (Step A-2)**: Prerequisite verification before TDD cycle. Uses `command -v` for safe executability check. 2 options: continue (done_with_concerns) or plan revision.
+- **Status Reporting**: `slice_confidence` (done/done_with_concerns) and `concerns` array per slice receipt. Automatic judgment based on review/sensor/pre-flight history.
+- **Agent delegation prompt extended**: Rules 7-10 for self-review, receipt recording, pre-flight, and confidence judgment in delegated agents.
+- **Phase 4 cross-slice + backfill review**: Section 4-2/4-3 rewritten with full control flow (prompt, parser, judgment, storage, display). Slices with Phase 3 FAIL are mandatory backfill targets.
+- **Scope creep detection**: `git diff --name-only` against all changed files, not just slice files.
+- **Per-slice working tree diff**: `git diff $git_before` (not `..HEAD`) for accurate uncommitted change capture.
+- **deep-finish.md concerns summary**: Slice confidence tally and concerns list in session report.
+
+### Changed
+
+- Phase 4 Spec Compliance (4-2) and Code Quality (4-3) gates now focus on cross-slice consistency instead of per-slice validation (already done in Phase 3).
+- `changes.git_diff` in receipts now uses per-slice baseline (`git diff $git_before -- [files]`).
+- `AskUserQuestion` added to deep-implement.md `allowed-tools`.
+- Version references updated to 6.0.1 across CLAUDE.md, SKILL.md, package.json, plugin.json.
+
 ## [6.0.0] - 2026-04-09
 
 ### Added
