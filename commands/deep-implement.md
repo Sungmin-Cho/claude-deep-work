@@ -19,6 +19,23 @@ Detect the user's language from their messages or the Claude Code `language` set
 🚫 **Do NOT modify files outside the active slice's scope** (warning or block depending on config).
 ⚠️ **If you encounter a bug, enter debug mode** — do NOT guess at fixes.
 
+## Red Flags — 이 생각이 들면 멈추세요
+
+| 합리화 시도 | 현실 |
+|------------|------|
+| "이건 너무 단순해서 TDD 안 해도 돼" | 단순 코드도 깨진다. RED는 30초면 된다. |
+| "테스트는 나중에 추가하지" | 나중에 쓴 테스트는 즉시 통과한다 — 아무것도 증명하지 않는다. |
+| "일단 고쳐보고 안 되면 조사하자" | 추측 수정은 3회 연속 실패로 끝난다. Root cause 먼저. |
+| "Plan에는 없지만 이것도 같이 하면 좋겠다" | Scope creep. Issues Encountered에 기록하고 넘어가라. |
+| "이 파일도 살짝 리팩토링하면…" | 슬라이스 scope 밖이다. 다음 세션에서 하라. |
+| "mock으로 빠르게 테스트하자" | Mock은 mock을 테스트한다. 실제 동작을 검증하라. |
+| "GREEN인데 refactor는 건너뛰자" | 기술 부채가 다음 슬라이스에서 복리로 돌아온다. |
+| "센서 경고는 무시해도 되겠지" | Advisory도 기록된다. 무시한 경고가 Phase 4에서 차단으로 돌아온다. |
+| "이미 수동으로 테스트했으니까" | 수동 테스트는 증거가 아니다. Receipt에 남지 않는다. |
+| "비슷한 코드를 복사해서 수정하면 빠르겠다" | Plan의 code sketch를 따르라. 복사한 코드는 컨텍스트가 다르다. |
+
+**이 중 하나라도 해당되면**: 현재 작업을 멈추고, 해당 Red Flag의 "현실" 컬럼을 따르세요.
+
 ## Instructions
 
 ### 1. Verify prerequisites
@@ -122,6 +139,19 @@ If `team_mode` is "solo" and model is not "main":
   4. receipt 데이터를 $WORK_DIR/receipts/SLICE-NNN.json에 기록하세요
   5. exempt 파일 (*.yml, *.md, *.json)은 TDD 없이 수정 가능합니다
   6. receipt에 harness_metadata를 포함하세요 (model_id, rework_count, tests_passed_first_try, bugs_caught_in_red_phase 등)
+
+  ⚠️ Slice Review 강제 규칙 (반드시 준수):
+  7. 각 slice GREEN + sensor 통과 후, self-review를 실행하세요:
+     - Spec Review: git diff $git_before..HEAD -- [files]를 읽고, spec_checklist/contract 항목을
+       하나씩 검증. 미충족 발견 시 수정 후 재검증 (최대 2회).
+     - Quality Review: 같은 diff를 읽고 error handling, naming, DRY, type safety, test quality 검증.
+       Critical 발견 시 수정 (최대 1회).
+  8. Review 결과를 receipt의 slice_review 필드에 기록하세요.
+     slice_review.mode는 "self"로 설정하세요 (independent subagent가 아닌 self-review임을 표시).
+  9. Slice 시작 전 Pre-flight: files 존재, verification_cmd 실행 가능 여부 확인.
+     문제 발견 시 done_with_concerns로 기록하거나, 심각하면 즉시 보고하세요.
+  10. Slice 완료 시 slice_confidence 판정: done / done_with_concerns.
+     concerns가 있으면 반드시 구체적 사유를 기록하세요.
   ```
 - Set 10-minute timeout per slice. On timeout: abort, rollback slice to PENDING, warn user.
 - After Agent completion: validate receipt JSON structure. If corrupt, warn and mark slice for re-execution.
@@ -168,6 +198,34 @@ For each unchecked slice (`- [ ]`), execute the following cycle:
       TDD 모드: [strict/relaxed/coaching/spike]
       Contract: [N]개 항목 (threshold: [all/majority])
    ```
+
+### Step A-2: Pre-flight Check
+
+Before starting TDD, verify this slice's prerequisites are met:
+
+1. Check each file in the slice's `files` list:
+   - For **Modify** actions: file must exist at the specified path
+   - For **Create** actions: skip (file doesn't exist yet, that's expected)
+2. Check `failing_test` path: the test file's parent directory must exist
+3. Check `verification_cmd`: run with `--help` or `--version` to verify it's executable
+
+**All checks pass** → proceed to Step B (no log, no message, completely transparent).
+
+**Any check fails** → AskUserQuestion:
+
+```
+⚠️ SLICE-NNN Pre-flight 이슈:
+   - [구체적 문제: e.g., "src/auth/oauth.ts가 존재하지 않습니다"]
+
+선택:
+1. 계속 진행 (문제를 인지하고 구현 시도)
+2. Plan 수정 필요 (implement 중단)
+```
+
+**선택 1**: Record `preflight.user_override: true` in receipt, set `slice_confidence: "done_with_concerns"` (reserved), proceed to Step B.
+**선택 2**: Set `current_phase: plan` in state file. Display "Plan 단계로 복귀합니다." and stop implementation.
+
+> 참고: 이전 슬라이스와의 전제 충돌 감지는 자동화가 어려우므로 Pre-flight에서 제외. 이 문제는 Slice Review Stage 1에서 per-slice diff를 통해 간접적으로 감지된다.
 
 ### Step B: TDD Cycle (RED → GREEN → REFACTOR)
 
@@ -408,13 +466,20 @@ Update `$WORK_DIR/receipts/SLICE-NNN.json`:
     "cross_model_unique_findings": 0,
     "bugs_caught_in_red_phase": 0
   },
+  "slice_confidence": "done",
+  "concerns": [],
+  "preflight": {
+    "passed": true,
+    "issues": [],
+    "user_override": false
+  },
   "timestamp": "[ISO]"
 }
 ```
 
 Capture git diff and `git_after` hash:
 ```bash
-git diff -- [file1] [file2]
+git diff $git_before..HEAD -- [file1] [file2]
 git rev-parse HEAD 2>/dev/null  # → git_after
 ```
 
@@ -435,6 +500,19 @@ Populate `harness_metadata` by aggregating data from the current slice execution
 
 **Note**: `session-receipt.json`은 `/deep-finish`에서 생성됩니다 (derived cache — slice receipts가 canonical source).
 
+#### Step D-1: Confidence Judgment
+
+Automatically determine `slice_confidence` based on the completed slice's execution history (no user interaction):
+
+| slice_confidence | Condition |
+|-----------------|-----------|
+| `done` | spec PASS + quality PASS/WARN + no pre-flight issues + no TDD override + sensor fix rounds < 3 |
+| `done_with_concerns` | Any of: spec review retried 2+ times, quality review had critical finding, pre-flight user_override, TDD override used, sensor fix 3 rounds exhausted, slice_review skipped (fallback) |
+
+Update the receipt's `slice_confidence` and `concerns` fields accordingly. If `done_with_concerns`, populate `concerns` array with specific reason strings.
+
+**spike mode default**: `slice_confidence: "done_with_concerns"`, `concerns: ["spike mode — no slice review performed"]`
+
 #### deep-review 슬라이스 리뷰 제안 (선택적)
 
 deep-review 플러그인 설치 확인:
@@ -445,12 +523,149 @@ ls "$HOME/.claude/plugins/cache/"*/deep-review/.claude-plugin/plugin.json 2>/dev
 설치되지 않은 경우 이 섹션을 건너뜀 (silent skip).
 
 **설치된 경우:** `.deep-review/contracts/SLICE-{현재 슬라이스 NNN}.yaml`이 존재하면:
-- 사용자에게 제안: "✅ SLICE-{NNN} 완료. 독립 리뷰를 실행할까요? (/deep-review --contract SLICE-{NNN})"
+- 사용자에게 제안: "✅ SLICE-{NNN} Slice Review 완료. 추가 심층 리뷰가 필요하면 /deep-review --contract SLICE-{NNN}를 실행할까요?"
 - 수락 시: `/deep-review --contract SLICE-{NNN}` 실행
 - 거부 시: 다음 슬라이스로 진행
 - deep-review 미설치 또는 contract 미존재: 건너뜀 (silent skip)
 
 이 제안은 비용이 발생하므로 (Opus 서브에이전트) 항상 사용자 확인을 받는다.
+
+### Step C-2: Slice Review (Built-in 2-Stage Independent Review)
+
+> **Mode gate**: spike mode → skip entirely (set `slice_review.skipped: true`, `skip_reason: "spike_mode"`, `slice_confidence: "done_with_concerns"`, `concerns: ["spike mode — no slice review performed"]`). relaxed mode → Stage 1 only, skip Stage 2.
+
+After sensor pipeline passes (SENSOR_CLEAN) and spec/contract checklist verification (Step C/C-1), run independent 2-stage review.
+
+#### Per-Slice Diff
+
+Slice Review uses **per-slice diff**, not cumulative diff. Capture using `git_before` from Step A:
+
+```bash
+git diff $git_before..HEAD -- [slice files]
+```
+
+This includes only changes made during this slice.
+
+#### Stage 1: Spec Compliance Review
+
+Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (slice-spec-reviewer):
+
+- **Model**: evaluator_model
+- **Input**: plan.md slice definition (goal, spec_checklist, contract) + per-slice diff + tdd.passing_test_output from receipt
+- **Prompt**:
+  ```
+  You are reviewing whether a single slice implementation matches its specification.
+
+  CRITICAL: Do Not Trust the implementer's claims. Read the actual code (git diff)
+  and verify independently against the spec_checklist and contract items.
+
+  Check:
+  - Missing requirements: spec_checklist items not reflected in code
+  - Extra work: changes not in spec (scope creep)
+  - Misunderstandings: correct feature but wrong approach
+
+  Return JSON: {
+    result: "PASS" | "FAIL",
+    missing: ["unmet spec items"],
+    extra: ["out-of-scope changes"],
+    misunderstandings: ["wrong interpretations"]
+  }
+  ```
+
+**判定:**
+- PASS → proceed to Stage 2
+- FAIL → fix code within Step C-2 (do NOT return to Step B):
+  1. Apply reviewer's feedback to production code
+  2. Re-run `verification_cmd` to confirm GREEN still holds
+  3. If GREEN breaks → set `tdd_state: RED`, return to Step B (full TDD restart)
+  4. If GREEN holds → re-run sensor pipeline (code changes may break lint/typecheck)
+  5. Re-run Stage 1 (max 2 retries)
+  6. After 2 retries still FAIL → set `slice_confidence: "done_with_concerns"`, record concerns, proceed
+
+**Subagent failure/timeout fallback:**
+- Set `slice_review.skipped: true`, `skip_reason: "subagent_failed: [error]"`
+- Set `slice_confidence: "done_with_concerns"`, `concerns: ["slice_review_spec_failed: [reason]"]`
+- Skip Stage 2 as well. Proceed to Step D.
+
+Display:
+```
+Slice Review Stage 1 — Spec Compliance:
+   ✅ PASS: spec 3/3, contract 4/4
+```
+or:
+```
+Slice Review Stage 1 — Spec Compliance:
+   ❌ FAIL: missing [item], extra [item]
+   → 수정 후 재검증 (시도 1/2)
+```
+
+#### Stage 2: Code Quality Review
+
+Spawn a fresh Agent (slice-quality-reviewer):
+
+- **Model**: evaluator_model
+- **Input**: per-slice diff + plan.md Architecture Decision + research.md Relevant Patterns
+- **Prompt**:
+  ```
+  Review this slice's code diff for quality issues.
+
+  Check: error handling, naming clarity, DRY violations, type safety,
+  test quality (real behavior vs mock behavior), pattern consistency
+  with the Architecture Decision and Relevant Patterns provided.
+
+  Return JSON: {
+    result: "PASS" | "WARN",
+    findings: [{
+      severity: "critical" | "important" | "suggestion",
+      file: "path",
+      issue: "description",
+      fix: "recommendation"
+    }]
+  }
+  ```
+
+**판정:**
+- PASS → proceed to Step D
+- WARN (no critical findings) → record findings in receipt `slice_review.code_quality.findings`, proceed
+- Critical finding → fix code, re-run GREEN check, re-run sensors, re-run Stage 2 (max 1 retry)
+- 1 retry exceeded → set `slice_confidence: "done_with_concerns"`, record concerns, proceed
+
+**Subagent failure/timeout fallback:**
+- Same as Stage 1: skip, mark `done_with_concerns`, proceed.
+
+Display:
+```
+Slice Review Stage 2 — Code Quality:
+   ✅ PASS: Critical 0 | Important 1 | Suggestions 3
+```
+
+#### Slice Review Receipt Fields
+
+Update receipt with `slice_review` namespace (separate from Phase 4's `spec_compliance`/`code_review`):
+
+```json
+{
+  "slice_review": {
+    "spec_compliance": {
+      "result": "PASS",
+      "missing": [],
+      "extra": [],
+      "misunderstandings": [],
+      "retries": 0
+    },
+    "code_quality": {
+      "result": "PASS",
+      "findings": [],
+      "retries": 0
+    },
+    "skipped": false,
+    "skip_reason": null,
+    "mode": "independent"
+  }
+}
+```
+
+`mode` is `"independent"` for inline execution (main model) or `"self"` for agent delegation.
 
 ### Step E: Mark Complete & Advance
 
