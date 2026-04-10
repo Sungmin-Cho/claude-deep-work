@@ -18,6 +18,19 @@ Detect the user's language from their messages or the Claude Code `language` set
 ✅ **Only run tests, analyze results, and update documentation.**
 ✅ **If tests fail, the system will transition back to implement phase for fixes.**
 
+## Red Flags — 이 생각이 들면 멈추세요
+
+| 합리화 시도 | 현실 |
+|------------|------|
+| "테스트는 통과했으니 됐다" | 테스트 통과 ≠ 스펙 충족. Receipt의 spec_compliance를 확인하라. |
+| "lint 경고 몇 개는 괜찮겠지" | Sensor Clean Gate가 차단한다. 지금 고쳐라. |
+| "커버리지가 낮지만 핵심은 테스트했다" | "핵심"은 주관적이다. 누락된 경로가 프로덕션에서 터진다. |
+| "이 실패는 환경 문제일 거야" | 95%의 "환경 문제"는 불완전한 조사다. Root cause를 찾아라. |
+| "Advisory 게이트는 무시해도 된다" | Advisory도 report에 기록된다. Session Quality Score에 반영된다. |
+| "auto-retry가 고쳐줄 거야" | Auto-retry는 같은 문제를 반복한다. 실패 원인을 분석하라. |
+
+**이 중 하나라도 해당되면**: 현재 작업을 멈추고, 해당 Red Flag의 "현실" 컬럼을 따르세요.
+
 ## Instructions
 
 ### 1. Verify prerequisites
@@ -267,52 +280,95 @@ Quality Gate 결과:
   ⚠️ [Gate 3]: 72% (≥80% 권고) — 경고만, 차단 없음
 ```
 
-### 4-2. Built-in Required Gate: Spec Compliance Review (v4.0, updated v5.1)
+### 4-2. Built-in Required Gate: Cross-Slice Spec Consistency + 보완 Review (v4.0, updated v6.1)
 
-After all test/lint gates pass, run spec compliance review using a subagent.
-
-**Steps**:
-1. Read plan.md's Slice Checklist to get all spec_checklist and contract items per slice
-2. Read each receipt's `spec_compliance.checklist` and `contract_compliance.items` results
-3. Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (spec-compliance-reviewer):
-   - **Input**: plan.md + all receipt JSON files
-   - **Prompt**: "For each slice, verify:
-     1. Every spec_checklist item is implemented correctly
-     2. Every contract item (if present) is satisfied — check receipt contract_compliance.items
-     Compare the plan's requirements against the actual code changes (from receipt git_diff).
-     Return JSON: { result: 'PASS'|'FAIL', per_slice: [{ slice_id, checklist_pass: bool, contract_pass: bool, missing_checklist: [...], missing_contract: [...] }] }"
-   - **Model**: evaluator_model from state (default: "sonnet")
-4. Parse reviewer result:
-   - All slices pass (both checklist and contract) → **PASS**
-   - Any slice fails → **FAIL** (Required Gate)
-5. Update each receipt: `spec_compliance.reviewer_result`
-6. Display:
-   ```
-   Spec Compliance Review:
-      SLICE-001: ✅ checklist 3/3, contract 4/4
-      SLICE-002: ❌ checklist 2/3 — missing: [requirement], contract 3/4 — missing: [item]
-   ```
-
-### 4-3. Built-in Advisory Gate: Code Quality Review (v4.0, updated v5.1)
-
-Run code quality review using a subagent. This is advisory — does NOT block.
+After all test/lint gates pass, run cross-slice consistency review. Each slice already passed individual spec review in Phase 3 (check `slice_review.spec_compliance` in each receipt). This gate verifies cross-slice consistency and covers slices that skipped Phase 3 review.
 
 **Steps**:
-1. Get the full git diff for this session
-2. Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (code-quality-reviewer):
-   - **Input**: git diff + plan.md
-   - **Prompt**: "Review this code diff for quality issues. Check: error handling, naming, DRY violations, type safety, test coverage quality. Return JSON: { result: 'PASS'|'WARN', findings: [{ severity: 'critical'|'important'|'suggestion', file, issue, fix }] }"
+1. Read all receipt JSON files from `$WORK_DIR/receipts/`. For each receipt, collect:
+   - `slice_review.skipped` (true/false)
+   - `slice_review.mode` ("independent" or "self")
+   - `slice_review` presence (missing field = team mode → treat as skipped)
+   - `slice_confidence` and `concerns`
+2. Identify slices requiring backfill (보완):
+   - `slice_review.skipped: true` → backfill
+   - `slice_review.mode: "self"` → backfill (delegation self-review, less reliable)
+   - No `slice_review` field at all (team mode receipt) → treat as `skipped: true`, include in backfill
+3. Identify concerns slices:
+   - `slice_confidence: "done_with_concerns"` → extra scrutiny list
+4. Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (cross-slice-spec-reviewer):
+   - **Input**: plan.md + all receipt JSON files (including `changes.git_diff` per receipt for backfill slices)
+   - **Prompt**: "Each slice has already passed individual spec review in Phase 3 (check receipt slice_review.spec_compliance).
+
+     Your job is TWO-FOLD:
+     1. Cross-slice consistency: verify interface compatibility, naming coherence, and architectural alignment across ALL slices combined. Check for contradictions between slices (mismatched types, incompatible APIs, duplicate implementations).
+     2. Backfill (보완) review: for slices where slice_review.skipped is true OR slice_review.mode is 'self' (delegation self-review, less reliable), perform full per-slice spec compliance review against spec_checklist and contract items.
+
+     The following slices have concerns and require extra scrutiny:
+     [list slices where slice_confidence is 'done_with_concerns' with their concerns array]
+     Verify these slices more carefully for the issues flagged.
+
+     Return JSON: { result: 'PASS'|'FAIL', cross_slice_issues: [{ description, affected_slices: [] }], backfill_results: [{ slice_id, result: 'PASS'|'FAIL', missing: [] }] }"
    - **Model**: evaluator_model from state (default: "sonnet")
-3. Parse reviewer result:
-   - No critical findings → **PASS**
+5. Parse reviewer result:
+   - `cross_slice_issues` array is non-empty → **FAIL** (Required Gate)
+   - Any entry in `backfill_results` has `result: "FAIL"` → **FAIL** (Required Gate)
+   - Both arrays clean (empty or all PASS) → **PASS**
+6. Store results in `cross_slice_review.spec` (separate from Phase 3's `slice_review`, does NOT overwrite it):
+   - `cross_slice_review.spec.result`: "PASS" or "FAIL"
+   - `cross_slice_review.spec.cross_slice_issues`: [...]
+   - `cross_slice_review.spec.backfill_results`: [...]
+   Write to each receipt or to a shared `$WORK_DIR/cross-slice-review.json`.
+7. Display:
+   ```
+   Cross-Slice Spec Review:
+      Cross-slice: ✅ 이슈 없음 / ❌ [N]건 발견
+         - [issue description] (affects: SLICE-NNN, SLICE-MMM)
+      보완 (backfill): SLICE-003 ✅ / SLICE-005 ❌ missing [item]
+   ```
+
+### 4-3. Built-in Advisory Gate: Cross-Slice Quality + 보완 Review (v4.0, updated v6.1)
+
+Run cross-slice quality review using a subagent. This is advisory — does NOT block.
+
+**Steps**:
+1. Read all receipt JSON files from `$WORK_DIR/receipts/`. For each receipt, collect:
+   - `slice_review.skipped` (true/false)
+   - `slice_review.code_quality.result` (null or missing → needs backfill)
+   - `slice_review.mode` ("independent" or "self")
+   - `slice_review` presence (missing field = team mode → treat as skipped)
+2. Identify slices requiring backfill (보완) for code quality:
+   - `slice_review.skipped: true` → backfill
+   - `slice_review.code_quality.result` is null or missing → backfill
+   - `slice_review.mode: "self"` → backfill (delegation self-review, less reliable)
+   - No `slice_review` field at all (team mode receipt) → treat as `skipped: true`, include in backfill
+3. Get the full session git diff for cross-slice analysis
+4. Read `evaluator_model` from state file (default: "sonnet"). Spawn a fresh Agent (cross-slice-quality-reviewer):
+   - **Input**: full session git diff + per-slice `changes.git_diff` from receipts (for backfill slices) + plan.md
+   - **Prompt**: "Each slice has already passed individual code quality review in Phase 3 (check receipt slice_review.code_quality).
+
+     Your job is TWO-FOLD:
+     1. Cross-slice quality: review the FULL git diff for cross-cutting concerns — duplication across slices, inconsistent error handling patterns, naming mismatches between modules, anti-patterns that span multiple files.
+     2. Backfill (보완) review: for slices where slice_review.skipped is true, slice_review.code_quality.result is null, OR slice_review.mode is 'self', perform full per-slice code quality review.
+
+     Check: error handling, naming clarity, DRY violations, type safety, test quality (real behavior vs mock behavior), pattern consistency.
+
+     Return JSON: { result: 'PASS'|'WARN', cross_slice_findings: [{ severity: 'critical'|'important'|'suggestion', description, affected_slices: [] }], backfill_findings: [{ slice_id, findings: [{ severity, file, issue, fix }] }] }"
+   - **Model**: evaluator_model from state (default: "sonnet")
+5. Parse reviewer result:
+   - No critical findings in either `cross_slice_findings` or `backfill_findings` → **PASS** (Advisory)
    - Any critical findings → **WARN** (Advisory, does not block)
-4. Update receipts: `code_review.reviewer_result` and `code_review.findings`
-5. Display:
+6. Store results in `cross_slice_review.quality` (separate from Phase 3's `slice_review`):
+   - `cross_slice_review.quality.result`: "PASS" or "WARN"
+   - `cross_slice_review.quality.cross_slice_findings`: [...]
+   - `cross_slice_review.quality.backfill_findings`: [...]
+   Write to each receipt or to a shared `$WORK_DIR/cross-slice-review.json` (appended alongside `spec` field).
+7. Display:
    ```
-   Code Quality Review:
-      Critical: 0 | Important: 2 | Suggestions: 5
-      ⚠️ [important finding 1]
-      ⚠️ [important finding 2]
+   Cross-Slice Quality Review (advisory):
+      Cross-slice: ✅ Critical 0 | ⚠️ Important [N] | Suggestions [N]
+         ⚠️ [cross-slice finding description]
+      보완 (backfill): SLICE-003 ✅ / SLICE-005 ⚠️ [finding]
    ```
 
 ### 4-4. Built-in Required Gate: Verification Evidence (v4.0)
