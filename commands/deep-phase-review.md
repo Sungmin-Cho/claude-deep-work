@@ -68,7 +68,12 @@ If the document does not exist:
 
 ### 3. Load review protocol
 
-Read `references/review-gate.md` from the skill directory. Follow its protocol exactly for all review operations.
+Read `references/phase-review-gate.md` from the skill directory. This protocol defines the unified Fallback chain for all phases.
+Also read `references/review-gate.md` for Structural Review and Adversarial Review details (referenced by phase-review-gate.md).
+
+Follow the Phase Review Gate protocol for reviewer selection:
+- Phase 0~2 (brainstorm, research, plan): Structural + Adversarial + 셀프 + Opus 서브에이전트
+- Phase 3 (implement — manual review only): deep-review → codex/gemini + Opus → Opus only
 
 ### 4. Run structural review
 
@@ -182,15 +187,14 @@ If document modification from Section 6 is significant:
 ### 8. Update state file
 
 Update `$STATE_FILE`:
-- Add or update `review_results.{phase}` (where `{phase}` is the target phase — `research` or `plan`) with:
-  - `judgments`: Claude 종합 판단 결과 array
-  - `judgments_timestamp`: 종합 판단 완료 시각 (ISO timestamp)
-  - `reviewer_status`: 각 리뷰어 실행 결과 (`{ claude, codex?, gemini? }`)
-  - `structural_score`: overall score
-  - `structural_grade`: PASS / WARNING / FAIL
-  - `adversarial_gate`: PASS / WARNING / FAIL / BLOCKED (if adversarial ran)
-  - `review_completed_at`: ISO timestamp
-  - `review_iterations`: number of review rounds performed
+- Add or update `phase_review.{phase}` (where `{phase}` is the target phase) with:
+  - `reviewed`: true
+  - `reviewers`: array of reviewer names (e.g., ["self", "opus-subagent", "codex"])
+  - `self_issues`: count of self-review issues
+  - `external_issues`: count of external review issues
+  - `resolved`: count of resolved issues
+
+Keep backward compatibility: if `review_results.{phase}` exists from a previous session, read from it but write to `phase_review.{phase}`.
 
 ### 9. Display final summary
 
