@@ -92,13 +92,18 @@ git commit -m "refactor: rename deep-work/ path pattern to .deep-work/ in hooks"
 ## Task 2: Folder Rename — Session Init & Migration (deep-work.md)
 
 **Files:**
-- Modify: `commands/deep-work.md:317,320,385,391,394`
+- Modify: `commands/deep-work.md:313,317,320,385,391,394`
 
 - [ ] **Step 1: Update mkdir and WORK_DIR paths**
 
 In `commands/deep-work.md`:
 
 ```markdown
+# Line 313: Change from:
+mkdir -p deep-work
+# To:
+mkdir -p .deep-work
+
 # Line 317: Change from:
 mkdir -p "deep-work/${TASK_FOLDER}"
 # To:
@@ -327,6 +332,8 @@ git commit -m "refactor: rename deep-work/ to .deep-work/ across all command fil
 - Modify: `hooks/scripts/phase-guard-core.test.js:847`
 - Modify: `hooks/scripts/fork-utils.test.js:154`
 - Modify: `hooks/scripts/fork-integration.test.js:91,129,130,167,174,302`
+
+> **Note:** `health/drift/drift.test.js`는 스펙 Section 2-3 "Tests (4)"에 나열되어 있지만, 이미 `.deep-work/` 경로를 사용하므로 변경 불필요. 스펙의 Note에도 이 사실이 명시되어 있음.
 
 - [ ] **Step 1: Update phase-guard-core.test.js**
 
@@ -630,18 +637,16 @@ git commit -m "feat: add phase-review-gate.md unified review gate protocol"
 ## Task 7: Phase Review Gate — Brainstorm Command
 
 **Files:**
-- Modify: `commands/deep-brainstorm.md`
+- Modify: `commands/deep-brainstorm.md:188-204`
 
-- [ ] **Step 1: Find the phase transition point**
+- [ ] **Step 1: Add Phase Review Gate before transition**
 
-Read `commands/deep-brainstorm.md` and locate where brainstorm phase completes and transitions to Research. Look for the section that writes brainstorm.md and transitions.
+In `commands/deep-brainstorm.md`, insert a new section between "5. Present and transition" (line 188) and the state update (line 200). The Phase Review Gate runs after presenting the brainstorm result but before setting `current_phase: research`.
 
-- [ ] **Step 2: Add Phase Review Gate reference**
-
-Insert before the phase transition to Research:
+Insert before line 200 (`Update state file:`):
 
 ```markdown
-### Phase Review Gate
+### 5.1. Phase Review Gate
 
 brainstorm.md 작성 완료 후, Phase Review Gate를 실행한다.
 
@@ -868,6 +873,7 @@ git commit -m "feat: unify deep-phase-review with Phase Review Gate protocol"
 
 **Files:**
 - Modify: `skills/deep-work-workflow/SKILL.md`
+- Modify: `commands/deep-resume.md`
 
 - [ ] **Step 1: Add Phase Review Gate to SKILL.md**
 
@@ -898,7 +904,28 @@ For each phase, add to the "What happens" bullet list:
 
 Already done in Task 5. Verify the `.deep-work/` paths are correct.
 
-- [ ] **Step 4: Update version number**
+- [ ] **Step 4: Add phase_review initialization to deep-resume.md**
+
+Read `commands/deep-resume.md` and locate the section where state file is loaded during session resume.
+
+Add `phase_review` field initialization for existing sessions:
+
+```markdown
+### State 스키마 마이그레이션 (v6.0.2)
+
+Resume 시 state 파일에 `phase_review` 필드가 없으면 빈 객체로 자동 초기화:
+
+If `phase_review` field is missing from state YAML frontmatter:
+- Add `phase_review: {}` to the state file
+- Log: `📋 phase_review 필드 초기화 완료 (v6.0.2 마이그레이션)`
+
+If `review_results` field exists (v5.5 legacy):
+- Read `review_results.{phase}` values
+- Migrate to `phase_review.{phase}.reviewed: true` for phases that have review data
+- Keep `review_results` for backward compatibility (read-only)
+```
+
+- [ ] **Step 5: Update version number**
 
 ```markdown
 # Line 3: Change from:
@@ -907,11 +934,11 @@ version: "6.0.1"
 version: "6.0.2"
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add skills/deep-work-workflow/SKILL.md
-git commit -m "docs: update SKILL.md with Phase Review Gate and .deep-work/ paths (v6.0.2)"
+git add skills/deep-work-workflow/SKILL.md commands/deep-resume.md
+git commit -m "docs: update SKILL.md with Phase Review Gate, add phase_review migration to resume (v6.0.2)"
 ```
 
 ---
@@ -968,11 +995,17 @@ Expected: All tests PASS.
 
 - [ ] **Step 2: Verify no remaining `deep-work/` session path references**
 
+Two grep passes — one with trailing slash, one without (catches `mkdir -p deep-work` pattern):
+
 ```bash
-cd /Users/sungmin/Dev/deep-work && grep -rn '"deep-work/' commands/ hooks/scripts/ skills/ --include='*.md' --include='*.sh' | grep -v 'deep-work/\[' | grep -v 'checkout.*deep-work/' | grep -v 'claude-deep-work' | grep -v 'deep-work/fork/' | head -20
+cd /Users/sungmin/Dev/deep-work && grep -rn 'deep-work/' commands/ hooks/scripts/ skills/ --include='*.md' --include='*.sh' | grep -v 'deep-work/\[' | grep -v 'checkout.*deep-work/' | grep -v 'claude-deep-work' | grep -v 'deep-work/fork/' | grep -v '\.deep-work' | head -20
 ```
 
-Expected: No matches (only branch-name references should remain).
+```bash
+cd /Users/sungmin/Dev/deep-work && grep -rn 'mkdir.*deep-work[^/]' commands/ hooks/scripts/ --include='*.md' --include='*.sh' | grep -v '\.deep-work' | head -10
+```
+
+Expected: No matches for either command (only branch-name and plugin-name references should remain).
 
 - [ ] **Step 3: Verify phase-review-gate.md is complete**
 
