@@ -7,6 +7,21 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v6.0.2
+
+### Phase Review Gate
+- **통합 리뷰 게이트** — 모든 Phase(0-3) 종료 시 셀프 리뷰 + 외부 리뷰 자동 실행. 사용자 확인 후 다음 단계로 전환.
+- **Phase별 Fallback 체인** — Phase 0-2(문서): Structural + Adversarial + Opus 서브에이전트. Phase 3(코드): deep-review → codex/gemini + Opus → 셀프 + Opus.
+- **사용자 확인 UX** — 요약 보기 + 3가지 선택지(자동 수정/현재 진행/상세 보기). 상세 보기에서 항목별 수정/스킵 선택.
+- **Degraded Mode** — 외부 리뷰어 실패 시 자동 fallback.
+- **`/deep-phase-review` 통합** — 수동 리뷰가 자동 게이트와 동일한 Fallback 체인 사용.
+
+### 작업 폴더 이름 변경
+- **세션 폴더 변경** — `deep-work/` → `.deep-work/` (숨김 디렉토리). `.claude/`, `.git/` 등 관례와 일치.
+- **자동 마이그레이션** — 기존 `deep-work/` 폴더는 다음 세션 시작 시 자동 마이그레이션. worktree 안전 체크 포함.
+- **메타데이터 갱신** — state 파일, JSONL 히스토리, fork 메타데이터 경로 일괄 업데이트.
+- **선택적 .gitignore** — 세션 폴더(`.deep-work/20*/`)와 히스토리만 제외, 설정 파일은 유지.
+
 ## [6.0.1] - 2026-04-10
 
 ### 추가 — Superpowers 강점 통합 (Slice Review, Red Flags, Escalation)
