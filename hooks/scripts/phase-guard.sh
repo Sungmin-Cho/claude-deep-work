@@ -160,8 +160,8 @@ JSON
     RESOLVED_PATH_NORM="$(normalize_path "$PROJECT_ROOT_NORM/$FILE_PATH_NORM")"
   fi
 
-  # Allow deep-work/ directory and state file
-  if [[ "$RESOLVED_PATH_NORM" == *"/deep-work/"* ]]; then
+  # Allow .deep-work/ directory and state file
+  if [[ "$RESOLVED_PATH_NORM" == *"/.deep-work/"* ]]; then
     exit 0
   fi
   if [[ "$RESOLVED_PATH_NORM" == *"/.claude/deep-work."*".md" ]]; then
