@@ -309,15 +309,79 @@ Generate a folder name from the task description:
    - Truncate to 30 characters (avoid cutting mid-character)
 3. Combine: `TIMESTAMP-SLUG` (e.g., `20260307-143022-jwt-기반-사용자-인증`)
 
+### Migration: deep-work/ → .deep-work/
+
+Before creating the session folder, check for legacy `deep-work/` directory:
+
+1. Check if `deep-work/` directory exists in the project root:
+   ```bash
+   ls -d deep-work/ 2>/dev/null
+   ```
+
+2. **If `deep-work/` exists AND `.deep-work/` does NOT exist:**
+   - Check for active worktrees referencing `deep-work/`:
+     ```bash
+     git worktree list 2>/dev/null | grep "deep-work/"
+     ```
+   - If worktree found: warn user and skip auto-migration:
+     ```
+     ⚠️ deep-work/ 폴더를 참조하는 활성 worktree가 있습니다.
+        수동으로 마이그레이션해주세요: mv deep-work/ .deep-work/
+     ```
+   - If no worktree: proceed with migration:
+     ```
+     📦 기존 deep-work/ 폴더를 .deep-work/로 마이그레이션합니다.
+     ```
+     ```bash
+     mv deep-work/ .deep-work/
+     ```
+   - Update state file paths:
+     ```bash
+     for f in .claude/deep-work.*.md; do
+       sed -i '' 's|work_dir: deep-work/|work_dir: .deep-work/|g' "$f" 2>/dev/null
+     done
+     ```
+   - Update JSONL history paths (if exists):
+     ```bash
+     if [ -f .deep-work/harness-history/harness-sessions.jsonl ]; then
+       sed -i '' 's|"deep-work/|".deep-work/|g' .deep-work/harness-history/harness-sessions.jsonl
+     fi
+     ```
+
+3. **If BOTH `deep-work/` AND `.deep-work/` exist:**
+   - AskUserQuestion:
+     ```
+     deep-work/와 .deep-work/ 폴더가 모두 존재합니다.
+       a) deep-work/ 내용을 .deep-work/에 병합 후 삭제
+       b) .deep-work/만 사용 (deep-work/ 유지)
+       c) 직접 처리하겠습니다
+     ```
+   - If (a): `cp -r deep-work/* .deep-work/ && rm -rf deep-work/` + state file path update
+   - If (b) or (c): continue without migration
+
+4. **Update .gitignore** (if not already configured):
+   - Check if `.deep-work/20*/` pattern exists in `.gitignore`
+   - If not, suggest adding:
+     ```
+     .gitignore에 .deep-work 세션 폴더 제외 패턴을 추가할까요?
+     ```
+   - If accepted, add:
+     ```gitignore
+     # deep-work session artifacts
+     .deep-work/20*/
+     .deep-work/harness-history/
+     ```
+   - If old `deep-work/` entry exists in `.gitignore`, remove it
+
 ```bash
-mkdir -p deep-work
+mkdir -p .deep-work
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 # Generate SLUG from task description
 TASK_FOLDER="${TIMESTAMP}-${SLUG}"
-mkdir -p "deep-work/${TASK_FOLDER}"
+mkdir -p ".deep-work/${TASK_FOLDER}"
 ```
 
-Set `WORK_DIR` to `deep-work/${TASK_FOLDER}`.
+Set `WORK_DIR` to `.deep-work/${TASK_FOLDER}`.
 
 ### 2.5. Cross-model tool detection
 
@@ -382,16 +446,16 @@ Store tool info: `cross_model_tools: {codex: {available: bool, path: "..."}, gem
 
 Check if session history exists and display assumption health summary on init.
 
-1. **Locate history file**: Look for `$WORK_DIR/../harness-history/harness-sessions.jsonl` (shared across sessions in the `deep-work/` directory). If no history file exists, skip this step silently.
+1. **Locate history file**: Look for `$WORK_DIR/../harness-history/harness-sessions.jsonl` (shared across sessions in the `.deep-work/` directory). If no history file exists, skip this step silently.
 
 2. **Run assumption engine** (report + detect-model):
 
 ```bash
 # Get assumption health report
-echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":"deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":".deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
 
 # Detect if current model is new
-echo '{"action":"detect-model","historyPath":"deep-work/harness-history/harness-sessions.jsonl","model":"<CURRENT_MODEL_ID>"}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+echo '{"action":"detect-model","historyPath":".deep-work/harness-history/harness-sessions.jsonl","model":"<CURRENT_MODEL_ID>"}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
 ```
 
 Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumptions.json`).
