@@ -639,12 +639,12 @@ If the feedback introduces a clearly unrelated requirement (e.g., current task i
 
 1. 현재 세션에 포함 — plan에 추가
 2. 새 세션으로 분리 — 현재 세션 완료 후 진행
-3. 백로그에 저장 — deep-work/backlog.md에 기록
+3. 백로그에 저장 — .deep-work/backlog.md에 기록
 ```
 
 - If option 1: proceed with applying feedback as normal.
 - If option 2: inform user the current session continues unchanged, suggest finishing this session first.
-- If option 3: append the feedback to `deep-work/backlog.md` with timestamp and source session ID. Continue current session unchanged.
+- If option 3: append the feedback to `.deep-work/backlog.md` with timestamp and source session ID. Continue current session unchanged.
 
 If the feedback is clearly related to the current task, skip the AskUserQuestion and proceed directly to applying it.
 

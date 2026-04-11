@@ -115,13 +115,13 @@ Research guides:
 
 ### 1-3. Check for previous Research cache
 
-Search the `deep-work/` directory for the most recent `research.md` from a previous session (not the current session).
+Search the `.deep-work/` directory for the most recent `research.md` from a previous session (not the current session).
 
 If a previous research.md exists:
 
 ```
 📚 이전 리서치 발견:
-   경로: deep-work/[이전 세션]/research.md
+   경로: .deep-work/[이전 세션]/research.md
    작성일: [timestamp]
 
 이전 리서치를 베이스라인으로 활용할까요?
@@ -197,12 +197,12 @@ Read `task_description` from `$STATE_FILE`. If the user's input introduces a cle
 
 1. 현재 세션에 포함 — 리서치 범위 확장
 2. 새 세션으로 분리 — 현재 세션 완료 후 진행
-3. 백로그에 저장 — deep-work/backlog.md에 기록
+3. 백로그에 저장 — .deep-work/backlog.md에 기록
 ```
 
 - Option 1: expand research scope.
 - Option 2: continue current research unchanged.
-- Option 3: append to `deep-work/backlog.md` with timestamp.
+- Option 3: append to `.deep-work/backlog.md` with timestamp.
 
 If the input is related to the current task, proceed without interruption.
 

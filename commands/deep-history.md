@@ -21,7 +21,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 Search for `session-receipt.json` files in all deep-work output directories:
 
 ```bash
-find . -path "*/deep-work/*/session-receipt.json" -type f 2>/dev/null | sort -r
+find . -path "*/.deep-work/*/session-receipt.json" -type f 2>/dev/null | sort -r
 ```
 
 If no session receipts found:

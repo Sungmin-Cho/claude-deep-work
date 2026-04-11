@@ -64,7 +64,7 @@ Read all available session artifacts:
 - `$WORK_DIR/insight-report.md` — insight analysis results (if exists)
 - `$WORK_DIR/file-changes.log` — file modification tracking log (if exists)
 - `$WORK_DIR/plan-diff.md` — plan diff visualization (if exists)
-- `deep-work/harness-history/harness-sessions.jsonl` — assumption engine session history (if exists)
+- `.deep-work/harness-history/harness-sessions.jsonl` — assumption engine session history (if exists)
 
 ### 4. Calculate phase durations
 
@@ -211,7 +211,7 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 Generate assumption health data by running the assumption engine:
 
 ```bash
-echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":"deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":".deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
 ```
 
 Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumptions.json`).

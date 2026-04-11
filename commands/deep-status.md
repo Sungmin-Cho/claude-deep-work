@@ -31,7 +31,7 @@ Fork 관계로 자동 감지된 비교인 경우 출력에 라벨 추가:
 
 #### 기존 비교 플로우
 
-1. List all session folders in `deep-work/` directory
+1. List all session folders in `.deep-work/` directory
 2. If fewer than 2 sessions exist, inform the user:
    ```
    ℹ️ 비교할 세션이 부족합니다. 최소 2개의 세션이 필요합니다.
@@ -98,7 +98,7 @@ If none of the above resolves to an existing state file, display:
 ```
 
 If flags were provided (`--history`, `--assumptions`, `--receipts`, `--report`, `--all`):
-- Skip the default view (Steps 2-4) but still execute the corresponding flag handler sections (Steps 6-10). These features can work without an active session by reading historical data from `deep-work/` directory.
+- Skip the default view (Steps 2-4) but still execute the corresponding flag handler sections (Steps 6-10). These features can work without an active session by reading historical data from `.deep-work/` directory.
 
 If no flags were provided:
 - Skip to [Step 5: Show session history](#5-show-session-history).
@@ -253,18 +253,18 @@ Adjust the "다음 행동" based on the current phase:
 
 ### 5. Show session history
 
-List previous session folders by scanning `deep-work/` directory for subdirectories:
+List previous session folders by scanning `.deep-work/` directory for subdirectories:
 
 ```bash
-ls -d deep-work/*/  2>/dev/null
+ls -d .deep-work/*/  2>/dev/null
 ```
 
 If subdirectories exist, display:
 
 ```
 세션 히스토리:
-   - deep-work/20260307-143022-jwt-기반-인증/ [report.md 존재 여부]
-   - deep-work/20260306-091500-api-리팩토링/ [report.md 존재 여부]
+   - .deep-work/20260307-143022-jwt-기반-인증/ [report.md 존재 여부]
+   - .deep-work/20260306-091500-api-리팩토링/ [report.md 존재 여부]
    ...
 
 TIP: /deep-status --compare 로 두 세션을 비교할 수 있습니다.
@@ -274,7 +274,7 @@ For each folder, check if `report.md` exists and show:
 - `(완료 - 리포트 있음)` if report.md exists
 - `(산출물만 보존)` if report.md doesn't exist
 
-If no subdirectories exist and no flat files (research.md, plan.md) exist in `deep-work/`, skip the history section.
+If no subdirectories exist and no flat files (research.md, plan.md) exist in `.deep-work/`, skip the history section.
 
 ### 6. --receipts: Receipt Dashboard
 
@@ -299,7 +299,7 @@ If `$ARGUMENTS` contains `--history`:
 
 Read the `/deep-history` command file and follow its display logic inline.
 
-If insufficient session data (fewer than 2 completed sessions in `deep-work/harness-history/harness-sessions.jsonl`):
+If insufficient session data (fewer than 2 completed sessions in `.deep-work/harness-history/harness-sessions.jsonl`):
 ```
 ℹ️ 세션 이력이 부족합니다 (최소 2개 완료된 세션 필요).
    /deep-work로 세션을 시작하고 완료하면 이력이 기록됩니다.
@@ -307,7 +307,7 @@ If insufficient session data (fewer than 2 completed sessions in `deep-work/harn
 
 **Quality Score Trend (v5.3)**: After displaying the existing session history, also show the quality score trend:
 
-1. Read `deep-work/harness-history/harness-sessions.jsonl` (shared path)
+1. Read `.deep-work/harness-history/harness-sessions.jsonl` (shared path)
 2. Filter to entries with `status: "finalized"` and `quality_score` not null
 3. If fewer than 2 qualifying sessions, display: `ℹ️ Quality trend는 2개 이상의 완료 세션이 필요합니다.`
 4. Otherwise, invoke the assumption engine and display the ASCII quality trend chart:
@@ -429,7 +429,7 @@ s-aaa11111 [implement] "JWT auth feature" ◀ current
 
 If `$ARGUMENTS` contains `--badge`:
 
-1. Read `harness-sessions.jsonl` from `deep-work/harness-history/` (shared path)
+1. Read `harness-sessions.jsonl` from `.deep-work/harness-history/` (shared path)
 2. Calculate average quality score, session count, and average fidelity from finalized sessions
 3. Generate shields.io badge markdown:
 
