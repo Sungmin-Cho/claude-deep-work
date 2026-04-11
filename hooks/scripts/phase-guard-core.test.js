@@ -844,7 +844,7 @@ describe('artifacts-only fork phase restriction', () => {
   it('should allow plan phase for artifacts-only fork', () => {
     const result = processHook({
       action: 'pre', toolName: 'Write',
-      toolInput: { file_path: 'deep-work/plan.md' },
+      toolInput: { file_path: '.deep-work/plan.md' },
       state: { current_phase: 'plan', fork_mode: 'artifacts-only' },
     });
     assert.notEqual(result.reason?.includes('Non-git fork'), true);
