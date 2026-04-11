@@ -197,6 +197,17 @@ Spec Review: [score]/10
 다음 단계: Research 단계로 진행합니다.
 ```
 
+### 5.1. Phase Review Gate
+
+brainstorm.md 작성 완료 후, Phase Review Gate를 실행한다.
+
+Read `references/phase-review-gate.md` and follow the protocol with:
+- **Phase**: `brainstorm`
+- **Document**: `$WORK_DIR/brainstorm.md`
+- **Self-review checklist**: 문제 정의 명확성, 접근법 비교 충실도, 성공 기준 존재
+
+Phase Review Gate 완료 후 Research로 자동 전환한다.
+
 Update state file:
 - `brainstorm_completed_at`: current timestamp
 - `current_phase: research`
