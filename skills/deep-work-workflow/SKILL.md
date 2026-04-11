@@ -277,9 +277,9 @@ During `/deep-work` initialization:
 
 ## Session History
 
-Each session creates a unique task folder under `deep-work/`:
+Each session creates a unique task folder under `.deep-work/`:
 ```
-deep-work/
+.deep-work/
 ├── 20260307-143022-jwt-기반-인증/
 │   ├── research.md
 │   ├── plan.md

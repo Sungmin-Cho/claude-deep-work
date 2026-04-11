@@ -99,7 +99,7 @@ These commands still work but are now absorbed into the auto-flow. You no longer
 
 ## Output Files
 
-All session artifacts are stored in `deep-work/<task-folder>/`:
+All session artifacts are stored in `.deep-work/<task-folder>/`:
 
 | File | Created | Description |
 |------|---------|-------------|
