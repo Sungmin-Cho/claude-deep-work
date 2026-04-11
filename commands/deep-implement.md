@@ -834,6 +834,32 @@ For `team_mode: team`, the slice execution is distributed across agents:
 
 ---
 
+### Phase Review Gate (전체 구현 완료 후)
+
+모든 슬라이스가 완료된 후, Test 전환 전에 Phase Review Gate를 실행한다.
+
+> **Note:** 이 리뷰는 per-slice Slice Review(Section C-2)와 별개이다. Slice Review는 개별 슬라이스의 spec 준수를 검증하고, Phase Review Gate는 전체 구현의 계획 충실도와 크로스 슬라이스 일관성을 검증한다.
+
+Read `references/phase-review-gate.md` and follow the protocol with:
+- **Phase**: `implement`
+- **Document**: 구현된 코드 전체 (git diff 기준)
+- **Self-review checklist**: 계획 충실도, 크로스 슬라이스 일관성, 미구현 항목
+
+**Phase 3 Fallback 체인 적용:**
+1. deep-review 플러그인 설치 시: `/deep-review` + 셀프 리뷰 (병렬)
+2. codex/gemini 설치 시: 크로스 모델 리뷰 + 셀프 리뷰 + Opus 서브에이전트 (병렬)
+3. 둘 다 미설치: 셀프 리뷰 + Opus 서브에이전트 (병렬)
+
+**사용자 확인 후:**
+- "자동 수정 후 진행" 또는 "현재 상태로 진행" → Test로 자동 전환
+- "상세 보기" → 항목별 수정/스킵 후 전환
+
+**상태 업데이트:**
+`phase_review.implement` 및 `review_results.implement` 필드를 모두 업데이트한다 (phase-review-gate.md Section 7 dual-write 참조).
+`review_state: completed` 로 설정한다.
+
+---
+
 ## Final: Transition to Test
 
 After all slices are complete:

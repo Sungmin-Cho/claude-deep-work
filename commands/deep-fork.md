@@ -144,7 +144,7 @@ FORK_PROJECT_ROOT="$WORKTREE_PATH"
 PARENT_WORK_DIR=$(read_frontmatter_field "$PARENT_STATE" "work_dir")
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 TASK_SLUG=$(echo "$TASK_DESC" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | head -c 30)
-NEW_WORK_DIR="deep-work/${TIMESTAMP}-${TASK_SLUG}-fork-${FORK_SUFFIX}"
+NEW_WORK_DIR=".deep-work/${TIMESTAMP}-${TASK_SLUG}-fork-${FORK_SUFFIX}"
 mkdir -p "$FORK_PROJECT_ROOT/$NEW_WORK_DIR"
 cp -r "$PROJECT_ROOT/$PARENT_WORK_DIR/"* "$FORK_PROJECT_ROOT/$NEW_WORK_DIR/" 2>/dev/null || true
 ```

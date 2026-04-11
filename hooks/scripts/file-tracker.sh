@@ -77,8 +77,8 @@ if [[ "$TOOL_NAME" != "Bash" ]]; then
     RESOLVED_PATH_NORM="$(normalize_path "$PROJECT_ROOT_NORM/$FILE_PATH_NORM")"
   fi
 
-  # deep-work/ 디렉토리 내 문서 파일 제외
-  if [[ "$RESOLVED_PATH_NORM" == *"/deep-work/"* ]]; then
+  # .deep-work/ 디렉토리 내 문서 파일 제외
+  if [[ "$RESOLVED_PATH_NORM" == *"/.deep-work/"* ]]; then
     exit 0
   fi
   # 상태 파일 자체 제외

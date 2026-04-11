@@ -139,13 +139,13 @@ Examples:
 
 **Read assumption snapshot**: Read `assumption_snapshot` from the state file (written at session init by deep-work.md — see Task 7). Include it in the JSONL entry.
 
-**JSONL path**: Use the shared path `deep-work/harness-history/harness-sessions.jsonl` (NOT the per-session folder). This matches all consumers (deep-status, deep-assumptions, deep-report).
+**JSONL path**: Use the shared path `.deep-work/harness-history/harness-sessions.jsonl` (NOT the per-session folder). This matches all consumers (deep-status, deep-assumptions, deep-report).
 
 **Upsert logic** — use Bash to perform atomic upsert with lock:
 
 ```bash
 # Variables: SESSION_ID, ENTRY (the full JSON line), JSONL_FILE
-JSONL_FILE="deep-work/harness-history/harness-sessions.jsonl"
+JSONL_FILE=".deep-work/harness-history/harness-sessions.jsonl"
 LOCKDIR="${JSONL_FILE}.lock.d"
 
 # Acquire lock (consistent with session-end.sh pattern)

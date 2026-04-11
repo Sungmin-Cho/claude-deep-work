@@ -424,155 +424,33 @@ After writing plan.md with slice definitions (including contracts), validate eac
 
 This step is integrated into the Plan Auto-Loop — contract negotiation failures count toward `plan_review_retries`.
 
-### 3.4.5. Claude 자체 재검토 (신규)
+### 3.4.5. Phase Review Gate
 
-plan.md 작성 및 contract negotiation 완료 직후, subagent에게 넘기기 전에 Claude가 직접 점검한다.
+plan.md 작성 완료 후, Phase Review Gate를 실행한다.
 
-**점검 항목:**
-
-1. **Placeholder 스캔**: plan.md에서 Completeness Policy (Section 3.3-1)의 전체 banned pattern 목록을 탐색:
-   - `TBD`, `TODO`, `FIXME`, `PLACEHOLDER`, `implement later`, `fill in details`
-   - Vague directives: `Add appropriate...`, `handle edge cases`, `Write tests for the above`
-   - Cross-references without content: `Similar to SLICE-N`
-   - Empty sections, sections with only headers, `...` or `[etc.]`
-   - Code steps without code blocks (for M/L slices per Code sketch tiering)
-   - References to undefined types/functions
-   발견 시 해당 내용을 구체적으로 채운다. 채울 수 없는 경우 (정보 부족), 해당 항목을 Open Questions로 이동하고 사용자에게 알린다.
-
-2. **내부 일관성**: Slice Checklist의 `files` 목록과 "Files to Modify" 섹션의 파일 목록을 비교. 불일치 시 수정. Execution Order와 Slice 순서가 충돌하는지 확인.
-
-3. **Research 정합성**: `$WORK_DIR/research.md`의 Key Findings와 Constraints를 읽고, plan.md의 Architecture Decision과 모순되는지 확인. 모순 시 plan을 research에 맞게 수정.
-
-   **팀 모드 교차 검증** (team_mode: team이고 partial 파일 로드된 경우):
-   - `research-architecture.md`의 아키텍처 분석이 plan의 Architecture Decision과 일관되는지 확인
-   - `research-patterns.md`의 패턴/컨벤션이 plan의 코드 스케치에 반영되었는지 확인
-   - `research-dependencies.md`의 리스크가 plan의 Risk/Rollback에 반영되었는지 확인
-
-   partial에서 `research.md`에 누락된 세부 사항 발견 시, plan.md에 직접 반영. "누락" 카운트에 포함.
-
-4. **범위 점검**: state file의 `task_description`과 plan.md의 전체 scope를 비교. plan이 task_description 범위를 명백히 초과하면 사용자에게 알림.
-
-5. **누락 점검**: `$WORK_DIR/research.md`의 Risk Assessment에서 식별된 리스크가 plan.md의 Rollback Strategy에 반영되었는지 확인. 누락 시 추가.
-
-   **팀 모드 보충** (team_mode: team이고 partial 파일 로드된 경우):
-   `research-dependencies.md`의 상세 리스크 목록을 추가 확인. `research.md`에 포함되지 않은 리스크가 있으면 plan.md의 Rollback Strategy 또는 Risk 섹션에 추가.
-
-**자동 수정 원칙:**
-- 명백한 결함 (placeholder, 일관성 오류, 누락): 사용자 확인 없이 자동 수정
-- 판단이 필요한 항목 (scope 문제, 아키텍처 선택): AskUserQuestion으로 사용자 판단 요청
-
-**표시:**
-
-수정 완료 후:
-```
-🔍 Plan 자체 재검토 완료:
-   수정: [N]건 (placeholder [N]건, 일관성 [N]건, 누락 [N]건)
-   미수정: 0건
-```
-
-판단 필요 항목이 있을 경우 (AskUserQuestion으로 대기):
-```
-⚠️ 판단 필요: [항목 설명]
-
-  1. 수정 — plan.md에서 해당 부분을 수정합니다
-  2. 유지 — 현재 상태 그대로 진행합니다
-```
-
-사용자 응답을 받은 후 다음 단계 (Structural Review)로 진행한다.
-
-### 3.5. Structural Review + Auto-Loop (v5.1)
-
-Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
-
-Read `evaluator_model` from state file (default: "sonnet").
-
-Follow the **Structural Review Protocol** with these settings:
-- **Phase**: plan
+Read `references/phase-review-gate.md` and follow the protocol with:
+- **Phase**: `plan`
 - **Document**: `$WORK_DIR/plan.md`
-- **Dimensions**: architecture_fit, slice_executability, testability, code_completeness, buildability, rollback_completeness, risk_coverage
-- **Output**: `$WORK_DIR/plan-review.json` + `$WORK_DIR/plan-review.md`
-- **Model**: evaluator_model from state (default: "sonnet")
-- **Max iterations**: 2
+- **Self-review checklist**: placeholder 없음, 연구-계획 추적성, 슬라이스 완성도
 
-If `--skip-review` flag was set (check state file `review_state: skipped`), skip sections 3.5 and 3.6 entirely and proceed to Section 4.
+**Phase 0~2 Fallback 체인 적용:**
+- codex/gemini 설치 시: Structural Review + Adversarial Review + 셀프 리뷰 + Opus 서브에이전트 (병렬)
+- 미설치 시: 셀프 리뷰 + Opus 서브에이전트 (병렬)
 
-Update state file when starting review:
-- `review_state: in_progress`
+**기존 Plan 전용 동작 유지:**
+- Claude 자체 재검토 (placeholder/일관성/누락)는 셀프 리뷰 체크리스트에 통합
+- Structural Review의 auto-fix 스냅샷 계약(review-gate.md Section 1)은 그대로 적용
+- Score < 7 auto-fix 및 반복 제한(3회)은 review-gate.md 프로토콜을 따름
 
-**Auto-Loop (v5.1)**:
+**사용자 확인 후:**
+- "자동 수정 후 진행" 또는 "현재 상태로 진행" → Plan 승인 인터랙션으로 진행
+- "상세 보기" → 항목별 수정/스킵 후 승인 인터랙션으로 진행
 
-Read `plan_review_retries` from state file (default: 0). Read `plan_review_max_retries` (default: 3).
+**Note:** Phase Review Gate 통과 후에도 Plan 승인 인터랙션(기존 Section 4)은 별도로 진행된다. 리뷰 게이트는 품질 검증이고, 승인은 사용자의 방향 확인이다.
 
-```
-plan.md + structural review
-    ↓
-score >= 7? ──YES──→ proceed to Section 3.6 (cross-model) or Section 4
-    │
-    NO
-    ↓
-plan_review_retries < plan_review_max_retries?
-    ├─ YES:
-    │   1. Snapshot: copy plan.md to $WORK_DIR/plan.autofix-v{N}.md
-    │   2. Extract failed dimensions and issues from review JSON
-    │   3. Auto-fix plan.md — 이슈가 지적한 특정 섹션만 수정 (전체 재작성 금지)
-    │      - Append context: "<!-- Auto-fix attempt [N]: [issue summary] -->"
-    │   4. Re-run structural review
-    │   5. Score 하락 시: revert to plan.autofix-v{N}.md, 사용자 수동 수정 요청
-    │   6. Increment plan_review_retries in state file
-    │   7. Display: "Plan 자동 수정 (시도 [N]/[max]): [issues fixed]"
-    │   8. Re-run structural review (loop back)
-    │
-    └─ NO:
-        1. Display:
-           "⛔ Plan 자동 수정 실패 (3회 시도).
-            남은 문제: [issue list]
-            수동으로 plan.md를 수정한 후 /deep-phase-review를 실행하세요."
-        2. Set review_state: "auto_loop_failed"
-        3. Proceed to Section 4 (user can manually fix and approve)
-```
-
-After structural review completes (whether by auto-loop or direct pass):
-- Update `review_results.plan.spec_score` in state file
-- If score < 5 and auto-loop exhausted: display warning but allow manual override at approval
-- Display: `Plan Structural Review: [score]/10 ([retries] auto-fix, [iterations] review iterations)`
-
-### 3.6. Adversarial Cross-Model Review
-
-**Prerequisites**: Structural review (Section 3.5) must have completed.
-
-Read state file `cross_model_enabled` field.
-- If `{codex: false, gemini: false}` or field missing: skip this section entirely.
-- If at least one model enabled: proceed.
-
-Read `references/review-gate.md` and follow the **Adversarial Review Protocol**.
-
-**Progress display during execution:**
-```
-크로스 모델 리뷰 진행 중...
-   ⏳ [Model] 리뷰 중... (예상 30-60초)
-```
-
-Each model completion:
-```
-   ✅ [Model] 리뷰 완료 ([N]초)
-```
-
-After all models complete, Claude synthesizes results following the protocol's synthesis rules.
-
-**Do NOT display individual conflict AskUserQuestion.** Instead, proceed to Step 3.7.
-
-Save results: `$WORK_DIR/plan-cross-review.json`
-Update state: `review_results.plan.model_scores`, `review_results.plan.reviewer_status`
-
-### 3.7. Claude 종합 판단 (신규)
-
-Read `references/review-gate.md`의 **종합 판단 + 일괄 확인 프로토콜** (Section 4-1)을 따른다.
-
-**Phase**: plan
-**Document**: `$WORK_DIR/plan.md`
-**Inputs**: Step 3.5의 structural review 결과 + Step 3.6의 cross-model review 결과 (있을 경우)
-
-Claude가 모든 리뷰 결과를 종합 분석하여 각 이슈에 대해 `accept`/`reject`/`partial` 판단을 생성한다.
+**상태 업데이트:**
+`phase_review.plan` 및 `review_results.plan` 필드를 모두 업데이트한다 (phase-review-gate.md Section 7 dual-write 참조).
+`review_state: completed` 로 설정한다.
 
 ### 3.8. 전체 요약 + 사용자 일괄 확인 (신규)
 
@@ -639,12 +517,12 @@ If the feedback introduces a clearly unrelated requirement (e.g., current task i
 
 1. 현재 세션에 포함 — plan에 추가
 2. 새 세션으로 분리 — 현재 세션 완료 후 진행
-3. 백로그에 저장 — deep-work/backlog.md에 기록
+3. 백로그에 저장 — .deep-work/backlog.md에 기록
 ```
 
 - If option 1: proceed with applying feedback as normal.
 - If option 2: inform user the current session continues unchanged, suggest finishing this session first.
-- If option 3: append the feedback to `deep-work/backlog.md` with timestamp and source session ID. Continue current session unchanged.
+- If option 3: append the feedback to `.deep-work/backlog.md` with timestamp and source session ID. Continue current session unchanged.
 
 If the feedback is clearly related to the current task, skip the AskUserQuestion and proceed directly to applying it.
 

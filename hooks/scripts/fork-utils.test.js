@@ -151,7 +151,7 @@ describe('register_fork_session', () => {
 
   it('should register fork session with fork_parent and fork_generation', () => {
     writeRegistryFile({ version: 1, shared_files: [], sessions: {} });
-    bash('register_fork_session "s-child001" "s-parent01" 1 "test task" "deep-work/20260407-fork/"');
+    bash('register_fork_session "s-child001" "s-parent01" 1 "test task" ".deep-work/20260407-fork/"');
     const reg = readRegistryFile();
     assert.equal(reg.sessions['s-child001'].fork_parent, 's-parent01');
     assert.equal(reg.sessions['s-child001'].fork_generation, 1);

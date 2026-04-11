@@ -7,6 +7,21 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v6.0.2
+
+### Phase Review Gate
+- **Unified Review Gate** — Every phase (0-3) now runs self-review + external review before transitioning. User confirms results before proceeding.
+- **Phase-specific Fallback Chain** — Phase 0-2 (documents): Structural + Adversarial + Opus subagent. Phase 3 (code): deep-review plugin → codex/gemini + Opus → self + Opus.
+- **User Confirmation UX** — Summary view with 3 options: auto-fix, proceed as-is, show details. Detail view allows per-issue fix/skip.
+- **Degraded Mode** — Graceful fallback when external reviewers fail.
+- **`/deep-phase-review` unified** — Manual review now uses the same Fallback chain as automatic gates.
+
+### Work Folder Rename
+- **Session folder renamed** — `deep-work/` → `.deep-work/` (hidden directory). Matches `.claude/`, `.git/` conventions.
+- **Auto-migration** — Existing `deep-work/` folders are automatically migrated on next session start. Worktree safety check included.
+- **Metadata update** — State files, JSONL history, and fork metadata paths are updated during migration.
+- **Selective .gitignore** — Only session folders (`.deep-work/20*/`) and history are excluded, not config files.
+
 ## [6.0.1] - 2026-04-10
 
 ### Added — Superpowers Integration (Slice Review, Red Flags, Escalation)

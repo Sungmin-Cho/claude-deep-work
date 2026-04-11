@@ -88,7 +88,7 @@ describe('Atomic fork registration', () => {
     });
 
     // Fork
-    bash('register_fork_session "s-child001" "s-parent01" 1 "child task" "deep-work/fork-1/"');
+    bash('register_fork_session "s-child001" "s-parent01" 1 "child task" ".deep-work/fork-1/"');
 
     // Verify registry
     const reg = readRegistryFile();
@@ -126,8 +126,8 @@ describe('Multiple forks from same parent', () => {
       task_description: 'multi-fork parent',
     });
 
-    bash('register_fork_session "s-fork-a01" "s-parent02" 1 "fork A" "deep-work/fork-a/"');
-    bash('register_fork_session "s-fork-b01" "s-parent02" 1 "fork B" "deep-work/fork-b/"');
+    bash('register_fork_session "s-fork-a01" "s-parent02" 1 "fork A" ".deep-work/fork-a/"');
+    bash('register_fork_session "s-fork-b01" "s-parent02" 1 "fork B" ".deep-work/fork-b/"');
 
     const reg = readRegistryFile();
     assert.equal(reg.sessions['s-fork-a01'].fork_parent, 's-parent02');
@@ -164,14 +164,14 @@ describe('Fork chain (grandchild)', () => {
     });
 
     // First fork (gen 1)
-    bash('register_fork_session "s-gen1-001" "s-root0001" 1 "gen 1 task" "deep-work/gen1/"');
+    bash('register_fork_session "s-gen1-001" "s-root0001" 1 "gen 1 task" ".deep-work/gen1/"');
     writeStateFile('s-gen1-001', {
       current_phase: 'plan',
       task_description: 'gen 1 task',
     });
 
     // Second fork from gen 1 (gen 2)
-    bash('register_fork_session "s-gen2-001" "s-gen1-001" 2 "gen 2 task" "deep-work/gen2/"');
+    bash('register_fork_session "s-gen2-001" "s-gen1-001" 2 "gen 2 task" ".deep-work/gen2/"');
 
     const reg = readRegistryFile();
     assert.equal(reg.sessions['s-gen1-001'].fork_generation, 1);
@@ -299,7 +299,7 @@ describe('Fork edge cases', () => {
   it('should handle missing parent state file gracefully during registration', () => {
     writeRegistryFile({ version: 1, shared_files: [], sessions: {} });
     // Register fork with no parent state file (parent might have been cleaned up)
-    bash('register_fork_session "s-orphan01" "s-gone0001" 1 "orphan task" "deep-work/orphan/"');
+    bash('register_fork_session "s-orphan01" "s-gone0001" 1 "orphan task" ".deep-work/orphan/"');
     const reg = readRegistryFile();
     assert.equal(reg.sessions['s-orphan01'].fork_parent, 's-gone0001');
     assert.equal(reg.sessions['s-orphan01'].fork_generation, 1);
