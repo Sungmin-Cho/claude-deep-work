@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "6.0.1"
+version: "6.0.2"
 description: |
   Evidence-driven development protocol with auto-flow orchestration.
   Use when: "deep work", "plan before code", "TDD", "evidence-driven",
@@ -45,6 +45,16 @@ description: |
 - **에러 로깅**: /dev/null → `.claude/deep-work-guard-errors.log` 파일 기록
 - **Node.js 25 호환**: file-tracker.sh argv 인덱싱 수정 (receipt 생성 무음 실패 해결)
 - **Assumption Engine 수정**: CLI 버그, threshold 전달, dedup 순서 (keep-latest), 입력 가드
+
+## v6.0.2 Phase Review Gate & Folder Rename
+
+**v6.0.2 신규 기능:**
+- **Phase Review Gate**: 모든 Phase(0~3) 종료 시 통합 리뷰 게이트 자동 실행. 셀프 리뷰 + 외부 리뷰(deep-review/codex/gemini/Opus) 후 사용자 확인
+- **Phase별 Fallback 체인**: Phase 0~2(문서)는 Structural+Adversarial, Phase 3(코드)는 deep-review 우선
+- **사용자 확인 UX**: 요약 → 선택지(자동 수정/현재 진행/상세 보기)
+- **Degraded Mode**: 외부 리뷰어 실패 시 자동 fallback
+- **세션 폴더 이름 변경**: `deep-work/` → `.deep-work/` (숨김 폴더). 마이그레이션 자동 처리
+- **State 스키마 확장**: `phase_review` 필드 추가 (기존 `review_results` 하위 호환)
 
 ## v5.5 Review Flow Enhancement
 
@@ -105,6 +115,7 @@ The Deep Work workflow prevents these by **strictly separating brainstorming, an
 - 2-3 approach comparison with pros/cons
 - Spec-reviewer subagent validates the brainstorm document
 - Documentation in `$WORK_DIR/brainstorm.md`
+- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
 
 **What's blocked**: All code file modifications (enforced by hook)
 **Skip**: Use `--skip-brainstorm` to start directly at Research.
@@ -118,6 +129,7 @@ The Deep Work workflow prevents these by **strictly separating brainstorming, an
 - Identification of all relevant files, dependencies, and risk areas
 - Documentation of everything in `$WORK_DIR/research.md`
 - **Output begins with Executive Summary and Key Findings** (pyramid principle)
+- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
 
 **What's blocked**: All code file modifications (enforced by hook)
 
@@ -146,6 +158,7 @@ For detailed guidance, see [Research Guide](references/research-guide.md) or [Ze
 - **No placeholders**: Plan must pass the Completeness Policy — no TBD, TODO, or vague directives
 - **Research traceability**: Architecture decisions reference tagged research findings [RF-NNN], [RA-NNN]
 - Create a checklist-style task list in `$WORK_DIR/plan.md`
+- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
 
 **What's blocked**: All code file modifications (enforced by hook)
 
@@ -180,6 +193,7 @@ For detailed guidance, see [Planning Guide](references/planning-guide.md).
 - **Pre-flight Check**: Before each slice's TDD cycle, verify prerequisites (files exist, commands work). Problems surface immediately via AskUserQuestion.
 - **Status Reporting**: Each slice records `slice_confidence` (done/done_with_concerns) and specific concerns in the receipt.
 - **Red Flags**: Rationalization prevention tables in implement and test phases. Complements hook-based hard gates with soft behavioral guidance.
+- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
 
 **What's allowed**: All tools — code modification is now permitted
 

@@ -85,6 +85,19 @@ Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
 
 Stop here.
 
+### 1.4. State 스키마 마이그레이션 (v6.0.2)
+
+Resume 시 state 파일에 `phase_review` 필드가 없으면 빈 객체로 자동 초기화:
+
+If `phase_review` field is missing from state YAML frontmatter:
+- Add `phase_review: {}` to the state file
+- Log: `📋 phase_review 필드 초기화 완료 (v6.0.2 마이그레이션)`
+
+If `review_results` field exists (v5.5 legacy):
+- Read `review_results.{phase}` values
+- Migrate to `phase_review.{phase}.reviewed: true` for phases that have review data
+- Keep `review_results` for backward compatibility (read-only)
+
 ### 1.5. Worktree restoration (v4.1)
 
 If `worktree_enabled` is `true` in the state file:
