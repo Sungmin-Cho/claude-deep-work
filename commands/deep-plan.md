@@ -449,7 +449,8 @@ Read `references/phase-review-gate.md` and follow the protocol with:
 **Note:** Phase Review Gate 통과 후에도 Plan 승인 인터랙션(기존 Section 4)은 별도로 진행된다. 리뷰 게이트는 품질 검증이고, 승인은 사용자의 방향 확인이다.
 
 **상태 업데이트:**
-`phase_review.plan` 필드를 업데이트한다 (phase-review-gate.md Section 7 참조).
+`phase_review.plan` 및 `review_results.plan` 필드를 모두 업데이트한다 (phase-review-gate.md Section 7 dual-write 참조).
+`review_state: completed` 로 설정한다.
 
 ### 3.8. 전체 요약 + 사용자 일괄 확인 (신규)
 

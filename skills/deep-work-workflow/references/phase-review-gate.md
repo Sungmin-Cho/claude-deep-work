@@ -177,6 +177,15 @@ phase_review:
 
 기존 세션 resume 시 `phase_review` 필드가 없으면 빈 객체 `{}` 로 자동 초기화한다.
 
+**Dual-write (하위 호환):** `phase_review` 업데이트 시 `review_results`와 `review_state`도 함께 업데이트한다:
+- `review_state: completed`
+- `review_results.{phase}.score`: structural review 점수 (있으면)
+- `review_results.{phase}.iterations`: 리뷰 반복 횟수
+- `review_results.{phase}.judgments`: 판단 결과 array (있으면)
+- `review_results.{phase}.judgments_timestamp`: ISO timestamp
+
+이는 `review_results`를 읽는 기존 하류 로직(plan 승인, status, resume)과의 호환을 보장한다.
+
 기존 `review_results.{phase}` 필드가 있는 경우:
 - `phase_review.{phase}.reviewed: true` 로 마이그레이션
 - `review_results` 필드는 하위 호환성을 위해 유지 (읽기만, 신규 쓰기는 `phase_review`로)

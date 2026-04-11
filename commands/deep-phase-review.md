@@ -73,7 +73,8 @@ Also read `references/review-gate.md` for Structural Review and Adversarial Revi
 
 Follow the Phase Review Gate protocol for reviewer selection:
 - Phase 0~2 (brainstorm, research, plan): Structural + Adversarial + 셀프 + Opus 서브에이전트
-- Phase 3 (implement — manual review only): deep-review → codex/gemini + Opus → Opus only
+
+> **Note:** Phase 3 (implement) 리뷰는 `/deep-implement` 커맨드의 Phase Review Gate에서 자동 실행된다. `/deep-phase-review`는 문서 Phase(0~2) 전용이다.
 
 ### 4. Run structural review
 

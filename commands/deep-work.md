@@ -338,7 +338,7 @@ Before creating the session folder, check for legacy `deep-work/` directory:
    - Update state file paths:
      ```bash
      for f in .claude/deep-work.*.md; do
-       sed -i '' 's|work_dir: deep-work/|work_dir: .deep-work/|g' "$f" 2>/dev/null
+       sed -i '' 's|work_dir: deep-work/|work_dir: .deep-work/|g; s|work_dir: "deep-work/|work_dir: ".deep-work/|g' "$f" 2>/dev/null
      done
      ```
    - Update JSONL history paths (if exists):
@@ -895,6 +895,7 @@ review_results:
   brainstorm: {score: 0, iterations: 0, timestamp: ""}
   research: {score: 0, iterations: 0, timestamp: ""}
   plan: {spec_score: 0, model_scores: {}, conflicts: 0, waivers: 0, timestamp: ""}
+phase_review: {}
 review_gate_overridden: false
 assumption_snapshot:
   phase_guard_blocks_edits: <current_enforcement>

@@ -559,7 +559,8 @@ Read `references/phase-review-gate.md` and follow the protocol with:
 옵션 4 선택 시: 기존 review-gate.md Section 4-1의 Research 전용 옵션 처리를 따른다.
 
 **상태 업데이트:**
-`phase_review.research` 필드를 업데이트한다 (phase-review-gate.md Section 7 참조).
+`phase_review.research` 및 `review_results.research` 필드를 모두 업데이트한다 (phase-review-gate.md Section 7 dual-write 참조).
+`review_state: completed` 로 설정한다.
 
 ## 5. Guide the user
 

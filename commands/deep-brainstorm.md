@@ -184,6 +184,7 @@ If `--skip-review` flag was set during session init (check state file `review_st
 After review completes, update state file:
 - `review_state: completed`
 - `review_results.brainstorm`: `{score: N, iterations: N, timestamp: "ISO"}`
+- `phase_review.brainstorm`: `{ reviewed: true, reviewers: [...], self_issues: N, external_issues: N, resolved: N }`
 
 ### 5. Present and transition
 
@@ -206,7 +207,8 @@ Read `references/phase-review-gate.md` and follow the protocol with:
 - **Document**: `$WORK_DIR/brainstorm.md`
 - **Self-review checklist**: 문제 정의 명확성, 접근법 비교 충실도, 성공 기준 존재
 
-Phase Review Gate 완료 후 Research로 자동 전환한다.
+**상태 업데이트:**
+`phase_review.brainstorm` 및 `review_results.brainstorm` 필드를 모두 업데이트한다 (phase-review-gate.md Section 7 참조).
 
 Update state file:
 - `brainstorm_completed_at`: current timestamp
