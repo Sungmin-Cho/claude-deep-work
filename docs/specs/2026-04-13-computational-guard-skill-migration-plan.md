@@ -58,9 +58,11 @@ if [[ "$WORKTREE_ENABLED" == "true" && -n "$WORKTREE_PATH" && -n "$_OWN_FILE_NOR
   WORKTREE_PATH_NORM="$(normalize_path "$WORKTREE_PATH")"
 
   if [[ "$_OWN_FILE_NORM" != "$WORKTREE_PATH_NORM"/* && "$_OWN_FILE_NORM" != "$WORKTREE_PATH_NORM" ]]; then
+    # Meta directory exceptions — anchored to PROJECT_ROOT (C-3: prevents bypass via external .claude/ paths)
     _IS_META=false
+    _PROJECT_ROOT_NORM="$(normalize_path "$PROJECT_ROOT")"
     for _meta_pat in ".claude/" ".deep-work/" ".deep-review/" ".deep-wiki/"; do
-      if [[ "$_OWN_FILE_NORM" == *"$_meta_pat"* ]]; then
+      if [[ "$_OWN_FILE_NORM" == "$_PROJECT_ROOT_NORM/$_meta_pat"* ]]; then
         _IS_META=true
         break
       fi
@@ -86,49 +88,56 @@ fi
 
 ```bash
 # ─── File path extraction (all phases, for worktree guard + ownership) ──
-if [[ -n "$CURRENT_SESSION_ID" ]]; then
-  _OWN_FILE=""
-  if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
-    if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-      _OWN_FILE="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-    fi
-  elif [[ "$TOOL_NAME" == "Bash" ]]; then
-    _BASH_CMD="$(echo "$TOOL_INPUT" | node -e "
-      process.stdin.setEncoding('utf8');let d='';
-      process.stdin.on('data',c=>d+=c);
-      process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(d).command||'')}catch(e){}});
-    " 2>/dev/null || echo "")"
-    if [[ -n "$_BASH_CMD" ]]; then
-      _OWN_FILE="$(printf '%s' "$_BASH_CMD" | node -e "
-        const {detectBashFileWrite,extractBashTargetFile}=require(process.argv[1]);
-        let d='';process.stdin.on('data',c=>d+=c);
-        process.stdin.on('end',()=>{
-          const r=detectBashFileWrite(d);
-          if(r.isFileWrite){const f=extractBashTargetFile(d);if(f)process.stdout.write(f);}
-        });
-      " "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null || echo "")"
-    fi
+# NOTE: 파일 경로 추출은 CURRENT_SESSION_ID와 무관하게 실행해야 한다 (F-02).
+# Session ID가 없어도 P0 worktree guard는 작동해야 하므로, 경로 추출을
+# session ID 조건 밖으로 분리하고, ownership check만 session ID 안에 유지한다.
+_OWN_FILE=""
+if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
+  if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
+    _OWN_FILE="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
   fi
+elif [[ "$TOOL_NAME" == "Bash" ]]; then
+  _BASH_CMD="$(echo "$TOOL_INPUT" | node -e "
+    process.stdin.setEncoding('utf8');let d='';
+    process.stdin.on('data',c=>d+=c);
+    process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(d).command||'')}catch(e){}});
+  " 2>/dev/null || echo "")"
+  if [[ -n "$_BASH_CMD" ]]; then
+    _OWN_FILE="$(printf '%s' "$_BASH_CMD" | node -e "
+      const {detectBashFileWrite,extractBashTargetFile}=require(process.argv[1]);
+      let d='';process.stdin.on('data',c=>d+=c);
+      process.stdin.on('end',()=>{
+        const r=detectBashFileWrite(d);
+        if(r.isFileWrite){const f=extractBashTargetFile(d);if(f)process.stdout.write(f);}
+      });
+    " "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null || echo "")"
+  fi
+fi
 
-  if [[ -n "$_OWN_FILE" ]]; then
-    _OWN_FILE_NORM="$(normalize_path "$_OWN_FILE")"
-    if [[ "$_OWN_FILE_NORM" =~ ^[A-Za-z]:/ ]] || [[ "$_OWN_FILE_NORM" == /* ]]; then
-      : # already absolute
-    else
-      _OWN_FILE_NORM="$(normalize_path "$(normalize_path "$PROJECT_ROOT")/$_OWN_FILE_NORM")"
-    fi
-    # Ownership check only in implement phase
-    if [[ "$CURRENT_PHASE" == "implement" ]]; then
-      OWNERSHIP_RESULT=""
-      if ! OWNERSHIP_RESULT="$(check_file_ownership "$CURRENT_SESSION_ID" "$_OWN_FILE_NORM" 2>/dev/null)"; then
-        block_ownership "$_OWN_FILE" "$OWNERSHIP_RESULT"
-      fi
+if [[ -n "$_OWN_FILE" ]]; then
+  _OWN_FILE_NORM="$(normalize_path "$_OWN_FILE")"
+  if [[ "$_OWN_FILE_NORM" =~ ^[A-Za-z]:/ ]] || [[ "$_OWN_FILE_NORM" == /* ]]; then
+    : # already absolute
+  else
+    _OWN_FILE_NORM="$(normalize_path "$(normalize_path "$PROJECT_ROOT")/$_OWN_FILE_NORM")"
+  fi
+fi
+
+# Ownership check: implement phase + session ID required
+if [[ -n "$CURRENT_SESSION_ID" && -n "$_OWN_FILE_NORM" ]]; then
+  if [[ "$CURRENT_PHASE" == "implement" ]]; then
+    OWNERSHIP_RESULT=""
+    if ! OWNERSHIP_RESULT="$(check_file_ownership "$CURRENT_SESSION_ID" "$_OWN_FILE_NORM" 2>/dev/null)"; then
+      block_ownership "$_OWN_FILE" "$OWNERSHIP_RESULT"
     fi
   fi
 fi
 ```
 
-핵심 변경: 파일 경로 추출을 implement 조건 밖으로 이동하고, ownership check만 implement 안에 유지.
+핵심 변경:
+- 파일 경로 추출을 session ID 및 implement 조건 밖으로 이동 (F-02: session ID 없어도 P0 작동)
+- Ownership check만 session ID + implement 안에 유지
+- **F-17: non-implement 블록(기존 line 131-209)의 `FILE_PATH` 추출도 상단의 `_OWN_FILE_NORM`으로 통합해야 함.** 기존 코드의 `FILE_PATH` 변수를 `_OWN_FILE_NORM`으로 교체하고, 중복 추출 코드를 제거한다.
 
 - [ ] **Step 3: Commit**
 
@@ -284,7 +293,7 @@ describe('P0: Worktree Path Guard', () => {
     assert.equal(result.exitCode, 0);
   });
 
-  it('blocks in non-implement phases too', () => {
+  it('blocks in non-implement phases too with Worktree Guard reason (F-09)', () => {
     const sid = 's-test5';
     const worktreePath = path.join(tmpDir, '.worktrees', 'dw', 'test-branch');
     fs.mkdirSync(worktreePath, { recursive: true });
@@ -296,14 +305,58 @@ describe('P0: Worktree Path Guard', () => {
     });
     writePointerFile(sid);
 
-    // In research phase, Write outside worktree should be blocked by worktree guard
-    // (even though phase-guard also blocks Write in non-implement phases,
-    //  the worktree guard should fire first)
     const result = runPhaseGuard('Write', {
       file_path: path.join(tmpDir, 'src', 'outside.ts'),
     });
 
     assert.equal(result.exitCode, 2);
+    // F-09: Verify it's the Worktree Guard blocking, not the phase guard
+    assert.ok(result.stdout.includes('Worktree Guard'));
+  });
+
+  // F-08: Bash tool worktree guard tests
+  it('blocks Bash file write outside worktree path', () => {
+    const sid = 's-test6';
+    const worktreePath = path.join(tmpDir, '.worktrees', 'dw', 'test-branch');
+    fs.mkdirSync(worktreePath, { recursive: true });
+
+    writeStateFile(sid, {
+      current_phase: 'implement',
+      worktree_enabled: 'true',
+      worktree_path: `"${worktreePath}"`,
+      tdd_mode: 'relaxed',
+    });
+    writePointerFile(sid);
+
+    const outsidePath = path.join(tmpDir, 'src', 'outside.ts');
+    const result = runPhaseGuard('Bash', {
+      command: `echo "content" > "${outsidePath}"`,
+    });
+
+    assert.equal(result.exitCode, 2);
+    assert.ok(result.stdout.includes('Worktree Guard'));
+  });
+
+  it('blocks external .claude/ path (C-3: prevents substring bypass)', () => {
+    const sid = 's-test7';
+    const worktreePath = path.join(tmpDir, '.worktrees', 'dw', 'test-branch');
+    fs.mkdirSync(worktreePath, { recursive: true });
+
+    writeStateFile(sid, {
+      current_phase: 'implement',
+      worktree_enabled: 'true',
+      worktree_path: `"${worktreePath}"`,
+      tdd_mode: 'relaxed',
+    });
+    writePointerFile(sid);
+
+    // External .claude/ path should NOT be allowed — only PROJECT_ROOT/.claude/ is exempt
+    const result = runPhaseGuard('Write', {
+      file_path: '/tmp/evil/.claude/malicious-config.json',
+    });
+
+    assert.equal(result.exitCode, 2);
+    assert.ok(result.stdout.includes('Worktree Guard'));
   });
 });
 ```
@@ -311,7 +364,7 @@ describe('P0: Worktree Path Guard', () => {
 - [ ] **Step 2: 테스트 실행 및 통과 확인**
 
 Run: `cd /Users/sungmin/Dev/deep-work && node --test hooks/scripts/worktree-guard.test.js`
-Expected: 5 tests pass
+Expected: 8 tests pass (원래 5건 + Bash 1건 + non-implement guard 구분 1건 + 외부 .claude 우회 방지 1건)
 
 - [ ] **Step 3: Commit**
 
@@ -346,8 +399,11 @@ source "$SCRIPT_DIR/utils.sh"
 
 init_deep_work_state
 
-# ─── Read tool input from stdin ─────────────────────────────
-TOOL_INPUT="$(cat)"
+# ─── Read tool input from environment variable (F-04) ───────
+# PostToolUse hooks 배열에서 앞선 hook(file-tracker.sh)이 stdin을 소비할 수 있으므로,
+# stdin 대신 환경변수 $CLAUDE_TOOL_INPUT을 통해 tool input을 받는다.
+TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
+[[ -z "$TOOL_INPUT" ]] && exit 0
 
 # ─── 1. State 파일 대상인지 확인 ────────────────────────────
 FILE_PATH=""
@@ -381,7 +437,8 @@ echo "$NEW_PHASE" > "$CACHE_FILE"
 WORKTREE_ENABLED="$(read_frontmatter_field "$FILE_PATH" "worktree_enabled")"
 WORKTREE_PATH="$(read_frontmatter_field "$FILE_PATH" "worktree_path")"
 TEAM_MODE="$(read_frontmatter_field "$FILE_PATH" "team_mode")"
-CROSS_MODEL="$(read_frontmatter_field "$FILE_PATH" "cross_model")"
+# C-4: 기존 state schema는 cross_model_enabled (bool) + cross_model_tools (list)를 사용
+CROSS_MODEL_ENABLED="$(read_frontmatter_field "$FILE_PATH" "cross_model_enabled")"
 TDD_MODE="$(read_frontmatter_field "$FILE_PATH" "tdd_mode")"
 
 # ─── 7. Checklist injection (stdout → LLM context) ────────
@@ -402,8 +459,8 @@ if [[ "$TEAM_MODE" == "team" ]]; then
   HAS_CONDITIONS=true
 fi
 
-if [[ -n "$CROSS_MODEL" && "$CROSS_MODEL" != "false" && "$CROSS_MODEL" != "none" ]]; then
-  OUTPUT+="🔄 cross_model: $CROSS_MODEL"$'\n'
+if [[ "$CROSS_MODEL_ENABLED" == "true" ]]; then
+  OUTPUT+="🔄 cross_model_enabled: true"$'\n'
   OUTPUT+="   → 교차 검증 실행 필요"$'\n'
   HAS_CONDITIONS=true
 fi
@@ -448,15 +505,11 @@ git commit -m "feat(hooks): add P1 phase transition injector — condition conte
 
 `hooks/hooks.json`의 PostToolUse hooks 배열 (line 36-47)에 새 hook을 추가한다. 기존 `file-tracker.sh`와 `sensor-trigger.js` 뒤에 추가:
 
-```json
-          {
-            "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-transition.sh",
-            "timeout": 3
-          }
-```
+P1 phase-transition hook은 **별도 PostToolUse 항목**으로 등록한다. 이유:
+- **F-18**: State 파일은 Write/Edit으로만 수정되므로 Bash를 matcher에서 제외하여 불필요한 hook 실행 방지
+- **F-04**: stdin 소비 문제를 회피하기 위해 `CLAUDE_TOOL_INPUT`을 환경변수로 전달
 
-최종 PostToolUse 섹션:
+기존 PostToolUse 배열 **뒤에** 새 항목을 추가:
 
 ```json
     "PostToolUse": [
@@ -472,10 +525,15 @@ git commit -m "feat(hooks): add P1 phase transition injector — condition conte
             "type": "command",
             "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sensor-trigger.js",
             "timeout": 3
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
           {
             "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-transition.sh",
+            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_INPUT=$CLAUDE_TOOL_USE_INPUT bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-transition.sh",
             "timeout": 3
           }
         ]
@@ -483,7 +541,7 @@ git commit -m "feat(hooks): add P1 phase transition injector — condition conte
     ],
 ```
 
-**Note**: `phase-transition.sh`는 stdin에서 tool input을 읽으므로 `$TOOL_INPUT` 인자가 필요 없다. `DEEP_WORK_SESSION_ID`만 전달.
+**Note**: `phase-transition.sh`는 `$CLAUDE_TOOL_INPUT` 환경변수에서 tool input을 읽는다 (stdin 아님). `$CLAUDE_TOOL_USE_INPUT`은 Claude Code hook 런타임이 제공하는 환경변수.
 
 - [ ] **Step 2: Commit**
 
@@ -1049,6 +1107,43 @@ git commit -m "feat(skills): create deep-work-orchestrator skill — auto-flow d
 
 ---
 
+## Phase B-1: Resume 호환성 (C-2, F-12)
+
+### Task 17-A: deep-resume를 Skill dispatch 기반으로 수정
+
+**Files:**
+- Modify: `commands/deep-resume.md`
+
+- [ ] **Step 1: deep-resume의 phase command 직접 참조를 Skill 호출로 교체**
+
+현재 `deep-resume.md`는 phase command 파일을 직접 Read하여 특정 Step부터 이어서 실행한다 (line 221-262). Phase C에서 이 파일들이 thin wrapper로 바뀌면 resume이 깨진다 (C-2).
+
+수정 방향:
+- Resume 시 `current_phase`를 확인하고, 해당 phase의 **Skill**을 호출하도록 변경
+- `Skill("deep-research", args="--session={SESSION_ID} --resume")` 형태
+- 각 phase Skill의 State 로드 섹션에서 `--resume` 플래그를 인식하여 기존 산출물을 이어서 작업
+- Phase command 파일의 특정 Step을 직접 참조하는 모든 코드를 Skill 호출로 교체
+
+- [ ] **Step 2: Phase cache 재초기화 로직 추가 (F-12)**
+
+Resume 시 stale cache를 방지하기 위해 cache를 현재 phase로 재초기화:
+
+```markdown
+# deep-resume.md 내 cache 재초기화 지시 추가:
+Resume 시 첫 동작으로:
+1. Session ID 확인
+2. `.claude/.phase-cache-{SESSION_ID}` 파일이 있으면 삭제 (다음 phase 전환 시 P1이 정상 발동하도록)
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add commands/deep-resume.md
+git commit -m "refactor(commands): update deep-resume to Skill dispatch — prevents C-2 breakage"
+```
+
+---
+
 ## Phase C: Command → Thin Wrapper 전환
 
 ### Task 18: deep-brainstorm.md → thin wrapper
@@ -1062,7 +1157,7 @@ git commit -m "feat(skills): create deep-work-orchestrator skill — auto-flow d
 
 ```markdown
 ---
-allowed-tools: Read, Write, Bash, Glob, Grep, Agent, AskUserQuestion
+allowed-tools: Skill, Read, Write, Bash, Glob, Grep, Agent, AskUserQuestion
 ---
 
 # /deep-brainstorm
@@ -1071,6 +1166,8 @@ Phase 0: 문제 정의 및 접근법 탐색 — 왜(why)를 먼저 탐구.
 
 Skill("deep-brainstorm", args="$ARGUMENTS")
 ```
+
+> **C-1**: 모든 thin wrapper의 `allowed-tools`에 `Skill`을 명시적으로 포함해야 한다. Skill tool이 allowlist에 없으면 dispatch가 차단된다.
 
 - [ ] **Step 2: Commit**
 
@@ -1090,7 +1187,7 @@ git commit -m "refactor(commands): convert deep-brainstorm to thin wrapper → S
 
 ```markdown
 ---
-allowed-tools: Read, Grep, Glob, Agent, Write, Bash, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Skill, Read, Grep, Glob, Agent, Write, Bash, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 ---
 
 # /deep-research
@@ -1118,7 +1215,7 @@ git commit -m "refactor(commands): convert deep-research to thin wrapper → Ski
 
 ```markdown
 ---
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 ---
 
 # /deep-plan
@@ -1146,7 +1243,7 @@ git commit -m "refactor(commands): convert deep-plan to thin wrapper → Skill d
 
 ```markdown
 ---
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent
 ---
 
 # /deep-test
@@ -1174,7 +1271,7 @@ git commit -m "refactor(commands): convert deep-test to thin wrapper → Skill d
 
 ```markdown
 ---
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 ---
 
 # /deep-implement
@@ -1204,7 +1301,7 @@ git commit -m "refactor(commands): convert deep-implement to thin wrapper → Sk
 
 ```markdown
 ---
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Skill, Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 ---
 
 # /deep-work
