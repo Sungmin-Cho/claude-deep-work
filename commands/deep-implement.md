@@ -840,7 +840,7 @@ For `team_mode: team`, the slice execution is distributed across agents:
 
 > **Note:** 이 리뷰는 per-slice Slice Review(Section C-2)와 별개이다. Slice Review는 개별 슬라이스의 spec 준수를 검증하고, Phase Review Gate는 전체 구현의 계획 충실도와 크로스 슬라이스 일관성을 검증한다.
 
-Read `references/phase-review-gate.md` and follow the protocol with:
+Read `skills/shared/references/phase-review-gate.md` and follow the protocol with:
 - **Phase**: `implement`
 - **Document**: 구현된 코드 전체 (git diff 기준)
 - **Self-review checklist**: 계획 충실도, 크로스 슬라이스 일관성, 미구현 항목

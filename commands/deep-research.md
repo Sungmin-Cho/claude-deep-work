@@ -538,7 +538,7 @@ When research is complete, update `$STATE_FILE`:
 
 research.md 작성 완료 후, Phase Review Gate를 실행한다.
 
-Read `references/phase-review-gate.md` and follow the protocol with:
+Read `skills/shared/references/phase-review-gate.md` and follow the protocol with:
 - **Phase**: `research`
 - **Document**: `$WORK_DIR/research.md`
 - **Self-review checklist**: 아키텍처 분석 완성도, 패턴 식별, 리스크 누락

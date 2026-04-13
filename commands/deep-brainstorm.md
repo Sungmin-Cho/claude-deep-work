@@ -169,7 +169,7 @@ Research 단계에서 코드베이스를 분석하여 이 접근 방식의 실�
 
 ### 4. Structural Review
 
-Read `references/review-gate.md` from the skill directory (located at `skills/deep-work-workflow/references/review-gate.md`).
+Read `skills/shared/references/review-gate.md` from the plugin root.
 
 Follow the **Structural Review Protocol** with these settings:
 - **Phase**: brainstorm
@@ -202,7 +202,7 @@ Spec Review: [score]/10
 
 brainstorm.md 작성 완료 후, Phase Review Gate를 실행한다.
 
-Read `references/phase-review-gate.md` and follow the protocol with:
+Read `skills/shared/references/phase-review-gate.md` and follow the protocol with:
 - **Phase**: `brainstorm`
 - **Document**: `$WORK_DIR/brainstorm.md`
 - **Self-review checklist**: 문제 정의 명확성, 접근법 비교 충실도, 성공 기준 존재

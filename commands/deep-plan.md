@@ -121,7 +121,7 @@ If `iteration_count` is 0, skip this section entirely.
 
 ### 1-3. Template suggestion (optional)
 
-Read `references/plan-templates.md` from the skill directory to check for matching templates.
+Read `skills/shared/references/plan-templates.md` from the plugin root to check for matching templates.
 
 Analyze the task description and research.md to identify the most appropriate template:
 
@@ -428,7 +428,7 @@ This step is integrated into the Plan Auto-Loop — contract negotiation failure
 
 plan.md 작성 완료 후, Phase Review Gate를 실행한다.
 
-Read `references/phase-review-gate.md` and follow the protocol with:
+Read `skills/shared/references/phase-review-gate.md` and follow the protocol with:
 - **Phase**: `plan`
 - **Document**: `$WORK_DIR/plan.md`
 - **Self-review checklist**: placeholder 없음, 연구-계획 추적성, 슬라이스 완성도
