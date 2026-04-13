@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
 description: "Resume an active deep work session — restores context and continues from where you left off"
 ---
 
@@ -201,62 +201,66 @@ Assumption 조정: [N]건 또는 없음
 
 Omit lines that don't apply to the current phase (e.g., don't show 체크리스트 for research phase). (If `preset` is empty or not set, omit the 프리셋 line.) If `evaluator_model` is empty or not set, omit the 평가자 모델 line. If `assumption_adjustments` is empty or not set, show "없음". If `skipped_phases` is empty or not set, show "없음".
 
+### 3.5. Phase cache cleanup (v6.1)
+
+Before dispatching to the phase skill, delete any stale phase cache to ensure a clean resume:
+
+```bash
+rm -f .claude/.phase-cache-${SESSION_ID} 2>/dev/null
+```
+
+Where `${SESSION_ID}` is the resolved session ID from Step 1.
+
 ### 4. Auto-continue
 
-Execute the appropriate action based on the current phase:
+Execute the appropriate phase skill based on the current phase. Each skill handles its own resume logic (review state detection, checkpoint restoration, etc.) internally.
+
+#### `brainstorm`
+
+```
+Skill("deep-brainstorm", args="--session={SESSION_ID} --resume")
+```
 
 #### `research`
 
-- If `review_state` is `"in_progress"`:
-  Resume using the review-aware flow below, then return to normal research flow.
+Research phase는 Orchestrator의 Review + Approval Workflow를 거쳐야 current_phase가 진전합니다.
+Phase skill을 직접 호출하면 current_phase가 변경되지 않아 dead-end가 됩니다.
+**Orchestrator를 경유하여 resume합니다:**
 
-  1. Check if `review_results.research.judgments_timestamp` exists in state file
-  2. **If exists**: Compare with `$WORK_DIR/research.md` file modification time
-     - If `research.md` was modified **after** `judgments_timestamp` → judgments are invalidated. Clear `review_results.research.judgments` and `judgments_timestamp`. Read the `/deep-research` command file and resume from its review flow start (Step 4.5).
-     - If `research.md` was **not** modified after timestamp → existing judgments are valid. Read the `/deep-research` command file and resume from user confirmation step (Step 4.7).
-  3. **If not exists**: No prior judgments. Read the `/deep-research` command file and resume from its review flow start (Step 4.5).
+```
+Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=research")
+```
 
-  **IMPORTANT**: Route to `/deep-research`'s review flow, NOT to `/deep-phase-review`.
-
-- Otherwise:
-  Read the `/deep-research` command file (located at the same directory level as this command) and follow all its steps. If research.md already has partial content, the research command's cache/incremental logic will handle it.
+Orchestrator가 research skill 호출 → review → approval → plan 진전까지 처리합니다.
 
 #### `plan`
 
-- If `review_state` is `"in_progress"`:
-  Resume using the review-aware flow below, then return to normal plan flow.
-
-  1. Check if `review_results.plan.judgments_timestamp` exists in state file
-  2. **If exists**: Compare with `$WORK_DIR/plan.md` file modification time
-     - If `plan.md` was modified **after** `judgments_timestamp` → judgments are invalidated. Clear `review_results.plan.judgments` and `judgments_timestamp`. Read the `/deep-plan` command file and resume from its review flow start (Step 3.5).
-     - If `plan.md` was **not** modified after timestamp → existing judgments are valid. Read the `/deep-plan` command file and resume from user confirmation step (Step 3.8).
-  3. **If not exists**: No prior judgments. Read the `/deep-plan` command file and resume from its review flow start (Step 3.5).
-
-  **IMPORTANT**: Route to `/deep-plan`'s review flow, NOT to `/deep-phase-review`.
-
-- If `$WORK_DIR/plan.md` does **not** exist:
-  Read the `/deep-plan` command file and follow all its steps.
-
-- If `$WORK_DIR/plan.md` **exists** and `plan_approved` is `false`:
-  Read the plan.md content and present it for review:
-  ```
-  이전에 작성된 계획서가 있습니다.
-
-  [plan.md의 Plan Summary 섹션 표시]
-
-  피드백을 주시거나, "승인" / "approve"를 입력하여 다음 단계로 진행하세요.
-  ```
-  Wait for user input using AskUserQuestion.
-  - If the user provides feedback: apply it to plan.md (same as deep-plan.md Section 4-1 interactive loop)
-  - If the user approves: follow deep-plan.md Section 5 (handle approval → auto-implement)
+Plan phase도 Research와 동일하게 Orchestrator의 Review + Approval Workflow가 필요합니다.
+**Orchestrator를 경유하여 resume합니다:**
 
 - If `plan_approved` is `true`:
   The session is in an inconsistent state (plan approved but phase is still `plan`). Update `current_phase: implement` in the state file and proceed to implement logic below.
 
+- Otherwise:
+  ```
+  Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=plan")
+  ```
+
 #### `implement`
 
-Read the `/deep-implement` command file and follow its steps. **Important**: Always enter through Section 0 (Resume detection / checkpoint support), NOT through Section 0-pre (Model Routing). This ensures checkpoint-based resume regardless of `model_routing` settings. The resume detection in Section 0 will identify completed `[x]` tasks and start from the first incomplete task.
+```
+Skill("deep-implement", args="--session={SESSION_ID} --resume")
+```
 
 #### `test`
 
-Read the `/deep-test` command file and follow all its steps.
+- If `test_passed` is `true`:
+  Test가 이미 통과된 세션. `/deep-finish`로 세션을 완료합니다.
+  ```
+  Read `/deep-finish` and follow its instructions.
+  ```
+
+- Otherwise:
+  ```
+  Skill("deep-test", args="--session={SESSION_ID}")
+  ```

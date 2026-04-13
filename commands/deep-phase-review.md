@@ -68,8 +68,8 @@ If the document does not exist:
 
 ### 3. Load review protocol
 
-Read `references/phase-review-gate.md` from the skill directory. This protocol defines the unified Fallback chain for all phases.
-Also read `references/review-gate.md` for Structural Review and Adversarial Review details (referenced by phase-review-gate.md).
+Read `skills/shared/references/phase-review-gate.md` from the plugin root. This protocol defines the unified Fallback chain for all phases.
+Also read `skills/shared/references/review-gate.md` for Structural Review and Adversarial Review details (referenced by phase-review-gate.md).
 
 Follow the Phase Review Gate protocol for reviewer selection:
 - Phase 0~2 (brainstorm, research, plan): Structural + Adversarial + 셀프 + Opus 서브에이전트

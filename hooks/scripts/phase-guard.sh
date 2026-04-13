@@ -54,6 +54,8 @@ ACTIVE_SLICE="$(read_frontmatter_field "$STATE_FILE" "active_slice")"
 TDD_STATE="$(read_frontmatter_field "$STATE_FILE" "tdd_state")"
 TDD_OVERRIDE="$(read_frontmatter_field "$STATE_FILE" "tdd_override")"
 SKIPPED_PHASES="$(read_frontmatter_field "$STATE_FILE" "skipped_phases")"
+WORKTREE_ENABLED="$(read_frontmatter_field "$STATE_FILE" "worktree_enabled")"
+WORKTREE_PATH="$(read_frontmatter_field "$STATE_FILE" "worktree_path")"
 
 # ─── FAST PATH: idle or empty phase → allow ──────────────────
 
@@ -68,41 +70,76 @@ TOOL_INPUT="$(cat)"
 # Detect tool name from environment (set by hooks system)
 TOOL_NAME="${CLAUDE_TOOL_NAME:-}"
 
-# ─── Ownership check: implement phase ────────────────────────
-if [[ "$CURRENT_PHASE" == "implement" && -n "$CURRENT_SESSION_ID" ]]; then
-  _OWN_FILE=""
-  if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
-    if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-      _OWN_FILE="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-    fi
-  elif [[ "$TOOL_NAME" == "Bash" ]]; then
-    _BASH_CMD="$(echo "$TOOL_INPUT" | node -e "
-      process.stdin.setEncoding('utf8');let d='';
-      process.stdin.on('data',c=>d+=c);
-      process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(d).command||'')}catch(e){}});
-    " 2>/dev/null || echo "")"
-    if [[ -n "$_BASH_CMD" ]]; then
-      _OWN_FILE="$(printf '%s' "$_BASH_CMD" | node -e "
-        const {detectBashFileWrite,extractBashTargetFile}=require(process.argv[1]);
-        let d='';process.stdin.on('data',c=>d+=c);
-        process.stdin.on('end',()=>{
-          const r=detectBashFileWrite(d);
-          if(r.isFileWrite){const f=extractBashTargetFile(d);if(f)process.stdout.write(f);}
-        });
-      " "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null || echo "")"
-    fi
+# ─── File path extraction (all phases, for worktree guard + ownership) ──
+# NOTE: 파일 경로 추출은 CURRENT_SESSION_ID와 무관하게 실행해야 한다 (F-02).
+# Session ID가 없어도 P0 worktree guard는 작동해야 하므로, 경로 추출을
+# session ID 조건 밖으로 분리하고, ownership check만 session ID 안에 유지한다.
+_OWN_FILE=""
+if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
+  if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
+    _OWN_FILE="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
   fi
+elif [[ "$TOOL_NAME" == "Bash" ]]; then
+  _BASH_CMD="$(echo "$TOOL_INPUT" | node -e "
+    process.stdin.setEncoding('utf8');let d='';
+    process.stdin.on('data',c=>d+=c);
+    process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(d).command||'')}catch(e){}});
+  " 2>/dev/null || echo "")"
+  if [[ -n "$_BASH_CMD" ]]; then
+    _OWN_FILE="$(printf '%s' "$_BASH_CMD" | node -e "
+      const {detectBashFileWrite,extractBashTargetFile}=require(process.argv[1]);
+      let d='';process.stdin.on('data',c=>d+=c);
+      process.stdin.on('end',()=>{
+        const r=detectBashFileWrite(d);
+        if(r.isFileWrite){const f=extractBashTargetFile(d);if(f)process.stdout.write(f);}
+      });
+    " "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null || echo "")"
+  fi
+fi
 
-  if [[ -n "$_OWN_FILE" ]]; then
-    _OWN_FILE_NORM="$(normalize_path "$_OWN_FILE")"
-    if [[ "$_OWN_FILE_NORM" =~ ^[A-Za-z]:/ ]] || [[ "$_OWN_FILE_NORM" == /* ]]; then
-      : # already absolute
-    else
-      _OWN_FILE_NORM="$(normalize_path "$(normalize_path "$PROJECT_ROOT")/$_OWN_FILE_NORM")"
-    fi
+_OWN_FILE_NORM=""
+if [[ -n "$_OWN_FILE" ]]; then
+  _OWN_FILE_NORM="$(normalize_path "$_OWN_FILE")"
+  if [[ "$_OWN_FILE_NORM" =~ ^[A-Za-z]:/ ]] || [[ "$_OWN_FILE_NORM" == /* ]]; then
+    : # already absolute
+  else
+    _OWN_FILE_NORM="$(normalize_path "$(normalize_path "$PROJECT_ROOT")/$_OWN_FILE_NORM")"
+  fi
+fi
+
+# Ownership check: implement phase + session ID required
+if [[ -n "$CURRENT_SESSION_ID" && -n "$_OWN_FILE_NORM" ]]; then
+  if [[ "$CURRENT_PHASE" == "implement" ]]; then
     OWNERSHIP_RESULT=""
     if ! OWNERSHIP_RESULT="$(check_file_ownership "$CURRENT_SESSION_ID" "$_OWN_FILE_NORM" 2>/dev/null)"; then
       block_ownership "$_OWN_FILE" "$OWNERSHIP_RESULT"
+    fi
+  fi
+fi
+
+# ─── P0: WORKTREE PATH ENFORCEMENT ─────────────────────────
+# Blocks Write/Edit/Bash to files outside the active worktree path.
+# Meta directories (.claude/, .deep-work/, .deep-review/, .deep-wiki/) are exempt.
+
+if [[ "$WORKTREE_ENABLED" == "true" && -n "$WORKTREE_PATH" && -n "$_OWN_FILE_NORM" ]]; then
+  WORKTREE_PATH_NORM="$(normalize_path "$WORKTREE_PATH")"
+
+  if [[ "$_OWN_FILE_NORM" != "$WORKTREE_PATH_NORM"/* && "$_OWN_FILE_NORM" != "$WORKTREE_PATH_NORM" ]]; then
+    # Meta directory exceptions — anchored to PROJECT_ROOT (C-3: prevents bypass via external .claude/ paths)
+    _IS_META=false
+    _PROJECT_ROOT_NORM="$(normalize_path "$PROJECT_ROOT")"
+    for _meta_pat in ".claude/" ".deep-work/" ".deep-review/" ".deep-wiki/"; do
+      if [[ "$_OWN_FILE_NORM" == "$_PROJECT_ROOT_NORM/$_meta_pat"* ]]; then
+        _IS_META=true
+        break
+      fi
+    done
+
+    if [[ "$_IS_META" == "false" ]]; then
+      cat <<JSON
+{"decision":"block","reason":"⛔ Worktree Guard: worktree 외부 파일 수정 차단\n\n대상: $_OWN_FILE\n허용 경로: $WORKTREE_PATH/\n\nworktree 내에서 작업해주세요."}
+JSON
+      exit 2
     fi
   fi
 fi
@@ -134,14 +171,9 @@ if [[ "$CURRENT_PHASE" != "implement" && "$TOOL_NAME" != "Bash" ]]; then
     exit 0
   fi
 
-  # Extract file_path for block message
-  FILE_PATH=""
-  if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-    FILE_PATH="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-  fi
-
+  # F-17: Use _OWN_FILE/_OWN_FILE_NORM from unified extraction above (no duplicate grep)
   # If no file_path: block for Write/Edit/MultiEdit (fail-closed), allow others
-  if [[ -z "$FILE_PATH" ]]; then
+  if [[ -z "$_OWN_FILE" ]]; then
     if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
       cat <<JSON
 {"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${CURRENT_PHASE} 단계입니다. 파일 경로를 확인할 수 없어 차단되었습니다.\n\n다시 시도해주세요."}
@@ -151,28 +183,19 @@ JSON
     exit 0
   fi
 
-  FILE_PATH_NORM="$(normalize_path "$FILE_PATH")"
-  RESOLVED_PATH_NORM="$FILE_PATH_NORM"
-  PROJECT_ROOT_NORM="$(normalize_path "$PROJECT_ROOT")"
-  if [[ "$FILE_PATH_NORM" =~ ^[A-Za-z]:/ ]] || [[ "$FILE_PATH_NORM" == /* ]]; then
-    RESOLVED_PATH_NORM="$FILE_PATH_NORM"
-  else
-    RESOLVED_PATH_NORM="$(normalize_path "$PROJECT_ROOT_NORM/$FILE_PATH_NORM")"
-  fi
-
   # Allow .deep-work/ directory and state file
-  if [[ "$RESOLVED_PATH_NORM" == *"/.deep-work/"* ]]; then
+  if [[ "$_OWN_FILE_NORM" == *"/.deep-work/"* ]]; then
     exit 0
   fi
-  if [[ "$RESOLVED_PATH_NORM" == *"/.claude/deep-work."*".md" ]]; then
+  if [[ "$_OWN_FILE_NORM" == *"/.claude/deep-work."*".md" ]]; then
     exit 0
   fi
 
   # File ownership check (multi-session protection)
   if [[ -n "$CURRENT_SESSION_ID" ]]; then
     OWNERSHIP_RESULT=""
-    if ! OWNERSHIP_RESULT="$(check_file_ownership "$CURRENT_SESSION_ID" "$RESOLVED_PATH_NORM" 2>/dev/null)"; then
-      block_ownership "$FILE_PATH" "$OWNERSHIP_RESULT"
+    if ! OWNERSHIP_RESULT="$(check_file_ownership "$CURRENT_SESSION_ID" "$_OWN_FILE_NORM" 2>/dev/null)"; then
+      block_ownership "$_OWN_FILE" "$OWNERSHIP_RESULT"
     fi
   fi
 
@@ -203,7 +226,7 @@ JSON
   esac
 
   cat <<JSON
-{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${PHASE_LABEL} 단계입니다. 코드 파일 수정이 차단되었습니다.\n\n수정 시도된 파일: ${FILE_PATH}\n\n${NEXT_STEP}"}
+{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${PHASE_LABEL} 단계입니다. 코드 파일 수정이 차단되었습니다.\n\n수정 시도된 파일: ${_OWN_FILE}\n\n${NEXT_STEP}"}
 JSON
   exit 2
 fi
