@@ -7,6 +7,36 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v6.1.0
+
+### 3-Layer Architecture + Computational Guard
+
+2026-04-12 세션의 Inferential Enforcement 실패 3건(worktree 격리 미적용, team 모드 미적용, codex 미실행)을 구조적으로 해결.
+
+#### 추가
+- **P0 Worktree Path Guard** — PreToolUse hook으로 worktree 외부 Write/Edit/Bash를 hard block. 메타 디렉토리(`.claude/`, `.deep-work/`)는 PROJECT_ROOT 기준으로 예외 처리. 모든 phase에서 session ID 없이도 작동.
+- **P1 Phase Transition Injector** — PostToolUse hook으로 `current_phase` 변경 시 worktree_path, team_mode, cross_model_enabled, tdd_mode를 LLM context에 자동 주입. Cache 파일로 전환 감지, `CLAUDE_TOOL_INPUT` 환경변수로 stdin 안전성 확보.
+- **6개 Phase Skill** — 각 phase별 독립 SKILL.md (brainstorm 120줄, research 183줄, plan 165줄, implement 187줄, test 147줄, orchestrator 230줄). 기존 command 대비 context 로드 45-81% 축소.
+- **Review + Approval Workflow** — Research/Plan 완료 후 6단계 프로토콜: 자동 리뷰 → main 에이전트 판단 → 사용자 승인 → 수정 → 최종 확인. Orchestrator가 current_phase 관리.
+- **`review-approval-workflow.md`** reference — Research/Plan 리뷰 게이트 공유 프로토콜 문서.
+
+#### 변경
+- **Command → Thin Wrapper** — 6개 core phase command를 `Skill()` 호출 1줄로 축소. 모든 wrapper의 `allowed-tools`에 `Skill` 포함.
+- **References 경로 통합** — `skills/deep-work-workflow/references/` → `skills/shared/references/` (14개 파일). 모든 command/skill 경로 업데이트.
+- **`deep-resume` 업데이트** — Research/Plan resume를 orchestrator 경유로 변경 (dead-end 방지). test_passed 시 `/deep-finish`로 라우팅.
+- **`deep-test` phase 전환** — 성공 시 `current_phase: idle` 미설정. Orchestrator/finish가 idle 전환 담당.
+- **Receipt 계약** — `status: "complete"` 필드를 implement receipt에 필수 명시 (deep-test gate 의존).
+- **Drift gate fallback** — `plan_approved_at` fallback 체인: timestamp → plan.md mtime → 24시간 커밋 window.
+- **`cross_model_enabled` 파싱** — nested YAML mapping 지원 (`grep -A3` fallback).
+- **`session-end.sh`** — 세션 종료 시 phase cache 정리 (stale P1 injection 방지).
+
+#### 아키텍처
+```
+Layer 1: Commands (thin wrappers) → Skill dispatch
+Layer 2: Skills (execution logic) → 100-230줄 SKILL.md + 공유 references
+Layer 3: Hooks (enforcement) → P0 hard block + P1 context injection
+```
+
 ## v6.0.2
 
 ### Phase Review Gate

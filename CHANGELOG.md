@@ -7,6 +7,36 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v6.1.0
+
+### 3-Layer Architecture + Computational Guard
+
+Resolves inferential enforcement failures from 2026-04-12 session (worktree isolation bypass, team mode bypass, codex bypass).
+
+#### Added
+- **P0 Worktree Path Guard** — PreToolUse hook that hard-blocks Write/Edit/Bash outside the active worktree path. Meta directories (`.claude/`, `.deep-work/`) are exempt, anchored to PROJECT_ROOT to prevent external path bypass. Works across all phases, independent of session ID.
+- **P1 Phase Transition Injector** — PostToolUse hook that injects worktree_path, team_mode, cross_model_enabled, and tdd_mode into LLM context when `current_phase` changes. Uses cache file for transition detection, `CLAUDE_TOOL_INPUT` env var for stdin safety.
+- **6 Phase Skills** — Independent SKILL.md for each phase (brainstorm 120L, research 183L, plan 165L, implement 187L, test 147L, orchestrator 230L). Context load reduced 45-81% from original commands.
+- **Review + Approval Workflow** — 6-step protocol for Research and Plan: auto review → main agent judgment → user approval → modification → final confirmation. Orchestrator manages `current_phase` for these phases.
+- **`review-approval-workflow.md`** reference — Shared protocol document for Research/Plan review gates.
+
+#### Changed
+- **Command → Thin Wrapper** — 6 core phase commands reduced to single `Skill()` dispatch calls. `Skill` added to `allowed-tools` in all wrappers.
+- **References relocated** — `skills/deep-work-workflow/references/` → `skills/shared/references/` (14 files). All command/skill paths updated.
+- **`deep-resume` updated** — Research/Plan resume routed through orchestrator (prevents dead-end). Test-passed resume routes to `/deep-finish`.
+- **`deep-test` phase transition** — No longer sets `current_phase: idle` on success. Orchestrator/finish handles idle transition.
+- **Receipt contract** — `status: "complete"` field explicitly required in implement receipts (deep-test gate dependency).
+- **Drift gate fallback** — `plan_approved_at` fallback chain: timestamp → plan.md mtime → 24h commit window.
+- **`cross_model_enabled` parsing** — Nested YAML mapping support via `grep -A3` fallback in phase-transition.sh.
+- **`session-end.sh`** — Phase cache cleanup on session end (stale P1 injection prevention).
+
+#### Architecture
+```
+Layer 1: Commands (thin wrappers) → Skill dispatch
+Layer 2: Skills (execution logic) → 100-230 line SKILL.md + shared references
+Layer 3: Hooks (enforcement) → P0 hard block + P1 context injection
+```
+
 ## v6.0.2
 
 ### Phase Review Gate

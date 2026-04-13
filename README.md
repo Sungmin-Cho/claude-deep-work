@@ -14,8 +14,8 @@ deep-work is the **core harness engine** in the [Deep Suite](https://github.com/
 
 In the 2×2 matrix (Guide/Sensor × Computational/Inferential), deep-work covers:
 
-- **Computational Guides**: Phase Guard hook (physically blocks edits), TDD state machine (RED→GREEN), topology templates (phase-specific guides)
-- **Computational Sensors**: Linter/typecheck pipeline, coverage, mutation testing, 4 drift sensors, fitness rules, review-check sensor
+- **Computational Guides**: Phase Guard hook (physically blocks edits), **Worktree Guard** (P0, hard-blocks writes outside worktree), TDD state machine (RED→GREEN), topology templates (phase-specific guides)
+- **Computational Sensors**: Linter/typecheck pipeline, coverage, mutation testing, 4 drift sensors, fitness rules, review-check sensor, **Phase Transition Injector** (P1, condition context injection)
 - **Inferential Guides**: Research/plan/brainstorm documents, Sprint Contract
 - **Self-Correction Loop**: SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN with per-sensor 3-round independent limit
 
@@ -403,14 +403,15 @@ The plugin detects language from user messages or the Claude Code `language` set
 
 ## Hooks
 
-Three hooks manage the session lifecycle:
+Hooks manage the session lifecycle and computational enforcement:
 
 | Hook | Script | Trigger | Purpose |
 |------|--------|---------|---------|
 | SessionStart | `update-check.sh` | startup/resume/clear/compact | Git-based version update check |
-| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/Bash | Blocks code edits during research/plan/test phases; Bash file-write detection |
+| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/Bash | Phase-based edit blocking + **P0 Worktree Path Guard** (hard-blocks writes outside worktree) |
 | PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit/Bash | Tracks file modifications during implement phase, updates receipts |
-| Stop | `session-end.sh` | CLI session end | Reminds about active sessions, shows worktree info, sends notifications |
+| PostToolUse | `phase-transition.sh` | Write/Edit/MultiEdit | **P1 Phase Transition Injector** — injects worktree/team/cross_model conditions on phase change |
+| Stop | `session-end.sh` | CLI session end | Reminds about active sessions, shows worktree info, cleans phase cache |
 
 ### Phase Guard
 

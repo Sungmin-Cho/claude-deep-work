@@ -354,14 +354,15 @@ plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다
 
 ## Hooks
 
-세션 라이프사이클을 관리하는 4개의 훅:
+세션 라이프사이클과 computational enforcement를 관리하는 훅:
 
 | 훅 | 스크립트 | 트리거 | 용도 |
 |-----|--------|--------|------|
 | SessionStart | `update-check.sh` | 세션 시작 | Git 기반 자동 업데이트 확인 |
-| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/**Bash** | Phase 차단 + TDD 강제 + Bash 파일쓰기 탐지 |
+| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/**Bash** | Phase 차단 + TDD 강제 + **P0 Worktree Guard** (worktree 외부 쓰기 hard block) |
 | PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit/**Bash** | 파일 변경 추적 + receipt 수집 |
-| Stop | `session-end.sh` | CLI 세션 종료 | 활성 세션 알림 및 노티피케이션 |
+| PostToolUse | `phase-transition.sh` | Write/Edit/MultiEdit | **P1 Phase Transition Injector** — phase 전환 시 조건 context injection |
+| Stop | `session-end.sh` | CLI 세션 종료 | 활성 세션 알림 + phase cache 정리 |
 
 ### Phase Guard
 
