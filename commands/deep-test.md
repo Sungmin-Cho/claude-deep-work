@@ -1,5 +1,5 @@
 ---
-allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent, AskUserQuestion
 ---
 
 # /deep-test
