@@ -52,8 +52,15 @@ echo "$NEW_PHASE" > "$CACHE_FILE"
 WORKTREE_ENABLED="$(read_frontmatter_field "$FILE_PATH" "worktree_enabled")"
 WORKTREE_PATH="$(read_frontmatter_field "$FILE_PATH" "worktree_path")"
 TEAM_MODE="$(read_frontmatter_field "$FILE_PATH" "team_mode")"
-# C-4: 기존 state schema는 cross_model_enabled (bool) + cross_model_tools (list)를 사용
+# cross_model_enabled: nested mapping (codex: true/false, gemini: true/false) 또는 scalar (true/false)
+# read_frontmatter_field는 same-line scalar만 추출하므로, nested mapping 대비 grep으로 보완
 CROSS_MODEL_ENABLED="$(read_frontmatter_field "$FILE_PATH" "cross_model_enabled")"
+if [[ -z "$CROSS_MODEL_ENABLED" ]]; then
+  # Nested mapping인 경우: cross_model_enabled: 아래 줄에 codex: true 또는 gemini: true가 있는지 확인
+  if grep -A3 '^cross_model_enabled:' "$FILE_PATH" 2>/dev/null | grep -q 'true'; then
+    CROSS_MODEL_ENABLED="true"
+  fi
+fi
 TDD_MODE="$(read_frontmatter_field "$FILE_PATH" "tdd_mode")"
 
 # ─── 7. Checklist injection (stdout → LLM context) ────────

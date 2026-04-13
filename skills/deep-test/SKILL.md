@@ -47,7 +47,10 @@ plan.md의 모든 SLICE-NNN에 대해 `$WORK_DIR/receipts/SLICE-NNN.json` 존재
 ## Step 2: Required Gate — Plan Alignment (Drift Detection)
 
 1. plan.md에서 파일 목록 + 체크리스트 + 설계 지침 파싱
-2. `plan_approved_at` 기반 baseline 커밋 결정
+2. Baseline 커밋 결정 (우선순위):
+   - `plan_approved_at` timestamp → 해당 시점의 가장 가까운 커밋
+   - fallback: plan.md 파일의 mtime → 해당 시점 커밋
+   - fallback: 최근 24시간 이내 커밋 window
 3. `git diff --name-only [baseline]..HEAD`로 변경 파일 비교
 4. 각 plan 항목 분류: Implemented / Not implemented / Out of scope / Design drift
 5. `$WORK_DIR/drift-report.md` + `fidelity-score.txt` 생성
@@ -114,12 +117,12 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 ## All Pass
 
 1. State 업데이트:
-   - **`current_phase: idle`**
    - `test_passed: true`
    - `test_completed_at`: current ISO timestamp
+   - **`current_phase`는 변경하지 않음** (test 유지). Orchestrator 또는 `/deep-finish`가 idle로 전환.
 2. 완료 메시지:
    ```
-   모든 검증 통과! 세션이 완료되었습니다.
+   모든 검증 통과! `/deep-finish`로 세션을 완료하세요.
    상세 결과: $WORK_DIR/test-results.md
    ```
 3. 알림: `notify.sh "$STATE_FILE" "test" "passed"`

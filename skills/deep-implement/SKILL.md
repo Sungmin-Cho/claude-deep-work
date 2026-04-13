@@ -127,6 +127,7 @@ per-slice diff: `git diff $git_before -- [slice files]`
 ### Step D: Receipt 수집
 
 `$WORK_DIR/receipts/SLICE-NNN.json` 생성:
+- **status: "complete"** (필수 — deep-test의 Receipt Completeness gate가 이 필드를 검증)
 - tdd, changes (git diff), sensor_results, spec_compliance, slice_review
 - harness_metadata (model_id, rework_count, tests_passed_first_try 등)
 - slice_confidence: done / done_with_concerns + concerns 배열

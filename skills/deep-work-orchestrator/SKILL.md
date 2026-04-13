@@ -187,7 +187,11 @@ Skill("deep-plan", args=ARGS)
 완료 후: **Review + Approval Workflow 실행** (Research와 동일 패턴).
 → 상세: Read("skills/shared/references/review-approval-workflow.md")
 
-승인 → `current_phase: implement` 설정 → 3-4.
+승인 → State 업데이트:
+- `current_phase: implement`
+- `plan_approved: true`
+- `plan_approved_at`: current ISO timestamp (drift baseline으로 사용)
+→ 3-4.
 
 ## 3-4. Implement
 
@@ -203,10 +207,10 @@ Skill("deep-test", args=ARGS)
 
 `/deep-test`가 내부적으로 implement-test retry loop 관리 (max 3회).
 
-**All pass** (`current_phase` → idle, `test_passed: true`): → 3-6.
+**All pass** (`test_passed: true`, `current_phase`는 test 유지): → 3-6.
 **Retry exhausted**: auto-flow 중단. 사용자 수동 개입.
 
-> current_phase 변경 주체: Test Phase Skill이 직접 `idle`로 전환.
+> current_phase 변경 주체: Test Phase Skill은 `current_phase`를 변경하지 않음. Orchestrator가 finish 후 idle로 전환.
 
 ## 3-6. Finish
 
@@ -217,6 +221,8 @@ Read `/deep-finish` → 완료 옵션 제시:
 - **Discard**: branch/worktree 삭제
 
 세션 히스토리 기록 (JSONL), Session Quality Score 계산.
+
+Finish 완료 후: `current_phase: idle` 설정.
 Registry 해제: `unregister_session "$SESSION_ID"`.
 
 # current_phase 변경 주체 정리

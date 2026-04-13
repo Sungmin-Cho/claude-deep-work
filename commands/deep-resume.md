@@ -223,35 +223,28 @@ Skill("deep-brainstorm", args="--session={SESSION_ID} --resume")
 
 #### `research`
 
-- If `review_state` is `"in_progress"`:
-  ```
-  Skill("deep-research", args="--session={SESSION_ID} --resume --review-in-progress")
-  ```
+Research phase는 Orchestrator의 Review + Approval Workflow를 거쳐야 current_phase가 진전합니다.
+Phase skill을 직접 호출하면 current_phase가 변경되지 않아 dead-end가 됩니다.
+**Orchestrator를 경유하여 resume합니다:**
 
-- Otherwise:
-  ```
-  Skill("deep-research", args="--session={SESSION_ID}")
-  ```
+```
+Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=research")
+```
+
+Orchestrator가 research skill 호출 → review → approval → plan 진전까지 처리합니다.
 
 #### `plan`
 
-- If `review_state` is `"in_progress"`:
-  ```
-  Skill("deep-plan", args="--session={SESSION_ID} --resume --review-in-progress")
-  ```
-
-- If `$WORK_DIR/plan.md` does **not** exist:
-  ```
-  Skill("deep-plan", args="--session={SESSION_ID}")
-  ```
-
-- If `$WORK_DIR/plan.md` **exists** and `plan_approved` is `false`:
-  ```
-  Skill("deep-plan", args="--session={SESSION_ID} --resume")
-  ```
+Plan phase도 Research와 동일하게 Orchestrator의 Review + Approval Workflow가 필요합니다.
+**Orchestrator를 경유하여 resume합니다:**
 
 - If `plan_approved` is `true`:
   The session is in an inconsistent state (plan approved but phase is still `plan`). Update `current_phase: implement` in the state file and proceed to implement logic below.
+
+- Otherwise:
+  ```
+  Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=plan")
+  ```
 
 #### `implement`
 
