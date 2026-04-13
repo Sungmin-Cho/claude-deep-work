@@ -254,6 +254,13 @@ Skill("deep-implement", args="--session={SESSION_ID} --resume")
 
 #### `test`
 
-```
-Skill("deep-test", args="--session={SESSION_ID}")
-```
+- If `test_passed` is `true`:
+  Test가 이미 통과된 세션. `/deep-finish`로 세션을 완료합니다.
+  ```
+  Read `/deep-finish` and follow its instructions.
+  ```
+
+- Otherwise:
+  ```
+  Skill("deep-test", args="--session={SESSION_ID}")
+  ```
