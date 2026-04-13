@@ -1,7 +1,7 @@
 {
   "name": "deep-work",
-  "version": "6.0.2",
-  "description": "Evidence-Driven Development Protocol — auto-flow orchestration with TDD enforcement, Health Engine (drift detection + fitness functions), slice-based execution, and receipt validation",
+  "version": "6.1.0",
+  "description": "Evidence-Driven Development Protocol — 3-layer architecture with Skill-based phase dispatch, computational enforcement (worktree guard + phase transition injection), TDD enforcement, and receipt validation",
   "author": {
     "name": "sungmin"
   },
