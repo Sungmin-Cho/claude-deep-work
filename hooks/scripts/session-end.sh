@@ -23,6 +23,18 @@ fi
 CURRENT_PHASE="$(read_frontmatter_field "$STATE_FILE" "current_phase")"
 TASK_DESC="$(read_frontmatter_field "$STATE_FILE" "task_description")"
 
+# ─── Phase cache cleanup ──────────────────────────────────
+# Prevent stale cache on next resume
+SESSION_ID="${DEEP_WORK_SESSION_ID:-}"
+if [[ -z "$SESSION_ID" ]]; then
+  _PTR="$PROJECT_ROOT/.claude/deep-work-current-session"
+  [[ -f "$_PTR" ]] && SESSION_ID="$(tr -d '\n\r' < "$_PTR")"
+fi
+if [[ -n "$SESSION_ID" ]]; then
+  PHASE_CACHE="$PROJECT_ROOT/.claude/.phase-cache-${SESSION_ID}"
+  [[ -f "$PHASE_CACHE" ]] && rm -f "$PHASE_CACHE"
+fi
+
 # idle이거나 비어있으면 활성 세션 없음 → 종료
 if [[ -z "$CURRENT_PHASE" || "$CURRENT_PHASE" == "idle" ]]; then
   exit 0
