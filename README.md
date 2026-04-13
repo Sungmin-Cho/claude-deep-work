@@ -410,6 +410,7 @@ Hooks manage the session lifecycle and computational enforcement:
 | SessionStart | `update-check.sh` | startup/resume/clear/compact | Git-based version update check |
 | PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/Bash | Phase-based edit blocking + **P0 Worktree Path Guard** (hard-blocks writes outside worktree) |
 | PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit/Bash | Tracks file modifications during implement phase, updates receipts |
+| PostToolUse | `sensor-trigger.js` | Write/Edit/MultiEdit/Bash | Triggers computational sensor pipeline (lint, typecheck, review-check) |
 | PostToolUse | `phase-transition.sh` | Write/Edit/MultiEdit | **P1 Phase Transition Injector** — injects worktree/team/cross_model conditions on phase change |
 | Stop | `session-end.sh` | CLI session end | Reminds about active sessions, shows worktree info, cleans phase cache |
 
@@ -417,6 +418,7 @@ Hooks manage the session lifecycle and computational enforcement:
 
 | Phase | Code Changes | Doc Changes | File Tracking |
 |-------|-------------|-------------|---------------|
+| Brainstorm | ❌ Blocked | ✅ Allowed | — |
 | Research | ❌ Blocked | ✅ Allowed | — |
 | Plan | ❌ Blocked | ✅ Allowed | — |
 | Implement | ✅ Allowed | ✅ Allowed | ✅ Tracked |
