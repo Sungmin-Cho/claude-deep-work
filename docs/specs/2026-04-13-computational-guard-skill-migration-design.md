@@ -26,6 +26,25 @@
 
 ## Architecture
 
+### Skill 런타임 동작 (Claude Code)
+
+Claude Code의 `Skill` tool은 다음과 같이 동작한다:
+
+- `Skill("deep-research", args="--session=abc")` 호출 시, 해당 skill의 SKILL.md 내용이 **현재 대화 context에 로드**됨
+- `args`는 SKILL.md 내부에서 `$ARGUMENTS`로 접근 가능
+- **별도 context window를 생성하지 않음** — 동일 context 내에서 실행
+
+따라서 Skill 전환이 제공하는 이점은:
+- **context 길이 축소**: 이전 phase의 수백 줄 지시문이 사라지고, 현재 phase SKILL.md만 활성
+- **조건의 fresh 로드**: 호출 시점에 args로 조건이 명시적으로 전달
+- **명시적 dispatch point**: "Read and follow"라는 텍스트 지시 대신 tool 호출이라는 구조적 경계
+
+Skill 전환이 제공하지 **않는** 것:
+- 완전한 context 격리 (별도 context window)
+- args의 구조적/타입 검증 (LLM이 텍스트로 해석)
+
+이 한계를 보완하기 위해 3중 방어(Skill args + state 자동 로드 + hook enforcement)를 적용한다.
+
 ### 3-Layer Design
 
 ```
@@ -62,9 +81,11 @@ Layer 3: Computational Enforcement (Hooks)
 
 조건 전달의 3중 보장:
 
-1. **1차 — Skill args 명시적 전달**: Orchestrator가 `Skill("deep-research", args="--session=abc --worktree=/path --team")` 형태로 호출
-2. **2차 — Skill 내 state 자동 로드**: 각 Skill 진입 시 첫 동작으로 state 파일 읽기 (args 없을 때 fallback)
-3. **3차 — Hook computational enforcement**: P0 worktree hard block + P1 phase 전환 injection
+1. **1차 — Skill args 명시적 전달**: Orchestrator가 `Skill("deep-research", args="--session=abc --worktree=/path --team")` 형태로 호출. args는 SKILL.md 내부에서 `$ARGUMENTS`로 접근.
+2. **2차 — Skill 내 state 자동 로드**: 각 Skill 진입 시 첫 동작으로 state 파일 읽기. Standalone 호출 시 primary path, auto-flow 시 args의 fallback.
+3. **3차 — Hook computational enforcement**: P0 worktree hard block + P1 phase 전환 injection. Skill 전환과 독립적으로 작동하는 코드 레벨 강제.
+
+> **Note**: Skill 호출은 별도 context window를 생성하지 않으므로, 1차 방어가 "구조적 보장"이 아닌 "context 내 명시적 전달"임을 인지해야 한다. 핵심 조건(worktree path)은 3차 hook에서 computational하게 보장된다.
 
 ### Data Flow
 
@@ -183,6 +204,11 @@ Phase cache 파일로 이전 phase를 추적:
 .claude/.phase-cache-{SESSION_ID}   ← 마지막으로 확인된 phase 값
 ```
 
+**Stale cache 방지**:
+- `session-end.sh`에서 세션 종료 시 cache 파일 삭제
+- `deep-resume` 시 cache 파일을 현재 state의 `current_phase`로 재초기화
+- Cache 파일이 존재하지 않으면 항상 injection 발동 (fail-open → 불필요한 injection은 무해)
+
 ### Script Flow
 
 ```bash
@@ -246,6 +272,14 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ```
 
+### PostToolUse stdout의 LLM context 주입
+
+Claude Code의 hook 런타임에서:
+- **PreToolUse**: stdout으로 `{"decision":"block","reason":"..."}` JSON을 반환하면 tool 실행을 차단 (documented protocol)
+- **PostToolUse**: stdout 출력이 tool 실행 결과의 일부로 LLM에게 표시됨 (Claude Code documented behavior)
+
+P1은 이 PostToolUse stdout → LLM context 경로를 활용한다. 기존 `file-tracker.sh`는 side-effect만 수행하고 stdout을 사용하지 않지만, 이는 설계 선택이지 기술적 제약이 아니다.
+
 ### P0 + P1 관계
 
 ```
@@ -298,16 +332,18 @@ description: "Phase N — {한줄 설명}"
 | Solo/Team 분기 판단 | TDD 상태 머신 규칙 |
 | 산출물 파일명/위치 정의 | 템플릿, 프롬프트, 체크리스트 |
 
-### Phase별 예상 줄 수
+### Phase별 예상 줄 수 (context 로드 기준)
 
-| Phase | Command (현재) | Skill (제안) | 축소율 |
-|-------|---------------|-------------|-------|
+아래 축소율은 **한 번에 LLM context에 로드되는 지시문 줄 수**의 감소를 나타낸다. 시스템 전체의 총 instruction 줄 수는 동일하거나 소폭 증가한다 (각 Skill의 state 로드 boilerplate 반복 + reference 파일 유지). 핵심 이점은 "전체 복잡도 감소"가 아니라 **attention 집중도 향상**이다.
+
+| Phase | Command (현재, 한번에 로드) | Skill (제안, 한번에 로드) | Context 축소율 |
+|-------|---------------------------|-------------------------|--------------|
 | deep-brainstorm | 217줄 | ~100줄 | 54% |
 | deep-research | 612줄 | ~150줄 | 76% |
 | deep-plan | 736줄 | ~150줄 | 80% |
 | deep-implement | 890줄 | ~200줄 | 78% |
 | deep-test | 726줄 | ~120줄 | 83% |
-| deep-work (orchestrator) | 1,193줄 | ~200줄 | 83% |
+| deep-work (orchestrator) | 1,193줄 | ~250줄 | 79% |
 
 ### References Directory
 
@@ -323,6 +359,7 @@ skills/shared/references/
   model-routing-guide.md
   phase-review-gate.md
   review-gate.md
+  review-approval-workflow.md   ← 신규: Research/Plan 리뷰 6단계 프로토콜
   solid-guide.md
   solid-prompt-guide.md
   notification-guide.md
@@ -387,45 +424,69 @@ Skill("deep-test", args=ARGS)
 
 ### Review + Approval Workflow (Research, Plan)
 
-Research와 Plan 완료 후 실행되는 6단계 워크플로우:
+Research와 Plan 완료 후 실행되는 6단계 워크플로우.
+상세 프로토콜은 `shared/references/review-approval-workflow.md`에 정의 (신규 reference).
+Orchestrator SKILL.md에는 아래 요약만 포함하여 줄 수를 제어한다.
+
+**Orchestrator 내 요약 (SKILL.md에 포함되는 부분):**
 
 ```
-1. Phase Skill 실행 → 산출물 생성
-
-2. Auto Review
-   - Agent(subagent-opus): 구조적 리뷰
-   - Agent(codex): 교차 검증 (설치된 경우)
-   → findings 수집
-
-3. Main 에이전트 판단
-   - 모든 findings를 읽고 자체 판단
-   - 각 finding에 대해 동의/비동의 + 근거 정리
-
-4. 1차 승인 요청 (수정 항목)
-   AskUserQuestion:
-     "리뷰 결과 중 반영이 필요하다고 판단한 항목:
-
-      반영 제안:
-      1. {finding} — (동의 근거)
-      2. {finding} — (동의 근거)
-
-      반영하지 않는 항목:
-      - {finding} — (비동의 근거)
-
-      → 전체 승인 / 선택 승인 / 거부"
-
-5. 수정 적용
-   - 사용자가 승인한 항목만 산출물에 반영
-
-6. 2차 승인 요청 (최종 확인 + 다음 phase)
-   AskUserQuestion:
-     "수정 완료. 최종 문서를 확인해주세요.
-      1) 승인 — 다음 phase로 진행
-      2) 추가 수정 요청
-      3) 이 phase 재실행"
-
-   승인 → current_phase 업데이트 → 다음 Skill 호출
+Phase Skill 완료 후:
+1. 산출물 Read → Auto Review (subagent-opus + codex)
+2. Main 에이전트가 findings 판단 → 동의/비동의 분류
+3. 1차 승인: 수정 항목을 사용자에게 제시 (AskUserQuestion)
+4. 승인된 항목 반영
+5. 2차 승인: 최종 문서 확인 + 다음 phase 진행 (AskUserQuestion)
+→ 상세: Read("shared/references/review-approval-workflow.md")
 ```
+
+**Reference 파일에 포함되는 상세 프로토콜:**
+
+```
+# Review + Approval Workflow (shared/references/review-approval-workflow.md)
+
+## Step 1: 산출물 로드
+- Phase Skill 완료 후, Orchestrator가 산출물(research.md / plan.md)을 Read
+- 산출물의 핵심 내용을 context에 확보
+
+## Step 2: Auto Review
+- Agent(subagent-opus): 구조적 리뷰 (산출물 경로 전달)
+- Agent(codex): 교차 검증 (설치된 경우, 산출물 경로 전달)
+- 두 리뷰어의 findings를 수집
+
+## Step 3: Main 에이전트 판단
+- 모든 findings를 읽고 자체 판단
+- 각 finding에 대해 동의/비동의 + 근거 정리
+- 동의 항목: 수정 대상으로 분류
+- 비동의 항목: 비동의 근거와 함께 표시
+
+## Step 4: 1차 승인 요청 (수정 항목)
+AskUserQuestion:
+  "리뷰 결과 중 반영이 필요하다고 판단한 항목:
+
+   반영 제안:
+   1. {finding} — (동의 근거)
+   2. {finding} — (동의 근거)
+
+   반영하지 않는 항목:
+   - {finding} — (비동의 근거)
+
+   → 전체 승인 / 선택 승인 / 거부"
+
+## Step 5: 수정 적용
+- 사용자가 승인한 항목만 산출물에 반영
+
+## Step 6: 2차 승인 요청 (최종 확인 + 다음 phase)
+AskUserQuestion:
+  "수정 완료. 최종 문서를 확인해주세요.
+   1) 승인 — 다음 phase로 진행
+   2) 추가 수정 요청
+   3) 이 phase 재실행"
+
+승인 → current_phase 업데이트 → 다음 Skill 호출
+```
+
+> **Context 관리 주의**: Orchestrator가 Phase Skill 완료 후 산출물을 Read해야 한다. 이는 Skill 전환의 context 축소 이점을 일부 상쇄하지만, 리뷰를 위해 필수적인 비용이다. 산출물의 요약본(executive summary)만 Read하는 것도 고려할 수 있다.
 
 ### current_phase 변경 주체
 
@@ -466,12 +527,20 @@ Skill("deep-{phase}", args="$ARGUMENTS")
 
 ### 변환하지 않는 Commands
 
-다음 14개 utility commands는 구조 변경 없이 유지:
+다음 utility commands는 Skill 전환 대상이 아니며 command 구조를 유지한다:
 
 deep-status, deep-finish, deep-fork, deep-resume, deep-report,
 deep-receipt, deep-insight, deep-assumptions, deep-debug,
 deep-cleanup, deep-history, deep-slice, deep-phase-review,
 deep-mutation-test, deep-sensor-scan, drift-check, solid-review
+
+> **주의: References 경로 수정 필요**. 위 commands 중 `skills/deep-work-workflow/references/`를 참조하는 파일들은 `skills/shared/references/`로 경로를 업데이트해야 한다. 확인된 참조:
+> - `deep-brainstorm.md`: `references/review-gate.md`
+> - `deep-phase-review.md`: `references/phase-review-gate.md`
+> - `solid-review.md`: `references/solid-guide.md`
+> - `deep-plan.md` (thin wrapper 전환 대상이지만, 전환 전 과도기에 영향)
+>
+> Migration Phase B에서 references 이동 시 함께 처리한다.
 
 ---
 
@@ -487,7 +556,9 @@ Phase A: Hooks (P0 + P1)
 
 Phase B: Skill 인프라 구축
   → 디렉토리 생성, SKILL.md 작성
-  → references/ 이동
+  → references/ 이동 (deep-work-workflow/references/ → shared/references/)
+  → utility commands의 references 경로 업데이트
+  → review-approval-workflow.md 신규 생성
   → 신규: 6개 skill directory + shared/references/
 
 Phase C: Command → Thin Wrapper
