@@ -36,6 +36,36 @@ $ARGUMENTS에 `--incremental` 포함 시: `last_research_commit` 기준 git diff
 ### Previous research cache
 `.deep-work/` 내 이전 세션 research.md 발견 시 → 베이스라인 활용 여부를 사용자에게 질문.
 
+## Cross-Plugin Context
+
+Phase 1 Research 시작 시 외부 플러그인 데이터를 참조한다. 이 데이터는 "참고" 수준이며, 현재 작업과 관련 없으면 무시한다.
+
+### Harnessability Context
+
+`.deep-dashboard/harnessability-report.json`이 존재하면:
+1. 파일 읽기 및 freshness 확인:
+   - `generated_at` 필드가 있으면 현재 시점과 비교
+   - 7일 이상 경과한 리포트는 "stale harnessability report — skip" 경고 후 건너뜀
+   - `generated_at` 필드가 없으면 그대로 사용 (하위 호환)
+2. 점수가 낮은 차원(< 5.0)을 research context에 포함:
+   ```
+   이 프로젝트의 harnessability 진단 결과:
+   - <dimension>: <score>/10 → <suggestion>
+   이 작업에서 관련 영역을 개선할 수 있으면 함께 고려.
+   ```
+3. 이 정보는 이후 Section 2의 Topology Detection에서 참조 가능. 여기서는 research context에 텍스트로만 포함.
+
+### Evolve Insights Context
+
+`.deep-evolve/evolve-insights.json`이 존재하면:
+1. 파일 읽기
+2. `insights_for_deep_work` 항목을 research context에 포함:
+   ```
+   deep-evolve 메타 아카이브 기반 인사이트:
+   - <pattern>: <evidence> → <suggestion>
+   ```
+3. 이 인사이트는 "참고" 수준 — 현재 작업과 관련 없으면 무시
+
 # Section 2: Phase 실행
 
 ## 모드 분기
