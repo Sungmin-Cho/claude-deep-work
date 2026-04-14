@@ -166,9 +166,9 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 
 ### Phase 1: Research
 
-**Cross-Plugin Context (v6.2):** Research 시작 시 외부 플러그인 데이터를 참조:
-- `.deep-dashboard/harnessability-report.json` — 점수 낮은 차원(< 5.0)을 context에 포함 (7일 이상 경과 시 skip)
-- `.deep-evolve/evolve-insights.json` — meta-archive 기반 인사이트를 참고 수준으로 포함
+**Cross-Plugin Context (v6.2):** References external plugin data at the start of Research:
+- `.deep-dashboard/harnessability-report.json` — includes low-scoring dimensions (< 5.0) in context (skipped if > 7 days stale)
+- `.deep-evolve/evolve-insights.json` — includes meta-archive based insights as advisory context
 
 Systematically analyzes the codebase across 6 areas:
 
