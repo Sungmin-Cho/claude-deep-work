@@ -166,6 +166,10 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 
 ### Phase 1: Research
 
+**Cross-Plugin Context (v6.2):** Research 시작 시 외부 플러그인 데이터를 참조:
+- `.deep-dashboard/harnessability-report.json` — 점수 낮은 차원(< 5.0)을 context에 포함 (7일 이상 경과 시 skip)
+- `.deep-evolve/evolve-insights.json` — meta-archive 기반 인사이트를 참고 수준으로 포함
+
 Systematically analyzes the codebase across 6 areas:
 
 1. **Architecture & Structure** — Project structure, architecture patterns, module boundaries
