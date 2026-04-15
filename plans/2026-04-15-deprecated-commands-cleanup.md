@@ -8,7 +8,11 @@
 
 **Tech Stack:** Markdown(.md), YAML frontmatter, Node.js(hooks), Bash(hooks), JSON(plugin manifest).
 
-**Spec reference:** `specs/2026-04-15-deprecated-commands-cleanup-design.md` (v2, commit `bc08683`).
+**Spec reference:** `specs/2026-04-15-deprecated-commands-cleanup-design.md` (v3, post-plan-review revision).
+
+**Plan revision history:**
+- v1 (commit `3b9dc67`) — 초기 46-태스크 plan.
+- v2 (현재) — 3-way plan review 수용: Task 36/37 CHANGELOG anchor 정정(Critical 2건), Task 6/14 본문 편집 단계 추가, Task 24 정책 통일, SKILL.md L256 + README "What changed" 신규 Task 추가, 검증 범위 확장.
 
 ---
 
@@ -30,7 +34,7 @@
 
 **Skill 2개** — `skills/deep-test/SKILL.md` (L150), `skills/deep-work-workflow/SKILL.md` (L83-87, L238-253, L318-321).
 
-**README 2개** — `README.md` (L54, L80-98, L335-336, L575), `README.ko.md` (L54, L80-98, L460-461, L566).
+**README 2개** — `README.md` (L54, L80-98, L335-336, L568-572, L575 → Task 27/28/29/34.5/30), `README.ko.md` (L54, L80-98, L460-461, L559-563, L566 → Task 31/32/33/34.6/34).
 
 **CHANGELOG 2개** — `CHANGELOG.md`, `CHANGELOG.ko.md` (v6.2.1 섹션 신설).
 
@@ -167,10 +171,11 @@ Expected: `6:> **Internal (v6.2.1)** — ...`
 
 ---
 
-## Task 6: Internal 블록 교체 — deep-report
+## Task 6: Internal 블록 교체 + 본문 안내 보강 — deep-report
 
 **Files:**
-- Modify: `commands/deep-report.md:6-7`
+- Modify: `commands/deep-report.md:6-7` (블록)
+- Modify: `commands/deep-report.md:271` (본문 사용자 안내)
 
 - [ ] **Step 1: 블록 교체**
 
@@ -188,10 +193,27 @@ new_string:
 > 참조처: `commands/deep-status.md` §8 (`Read the /deep-report command file and follow its logic`).
 ```
 
-- [ ] **Step 2: 검증**
+- [ ] **Step 2: 본문 사용자 안내 양방향 경로 표기**
+
+Edit `commands/deep-report.md`:
+
+old_string:
+```
+리포트를 검토하고 필요시 /deep-report 로 재생성할 수 있습니다.
+```
+
+new_string:
+```
+리포트를 검토하고 필요 시 `/deep-status --report` 또는 `/deep-report`로 재생성할 수 있습니다.
+```
+
+- [ ] **Step 3: 검증**
 
 Run: `grep -n "Deprecated in v5.2" /Users/sungmin/Dev/deep-work/commands/deep-report.md`
 Expected: (empty)
+
+Run: `grep -n "/deep-status --report" /Users/sungmin/Dev/deep-work/commands/deep-report.md`
+Expected: 1 match in body text (L271 근방).
 
 ---
 
@@ -401,10 +423,11 @@ Expected: (empty)
 
 ---
 
-## Task 14: Utility 블록 교체 — deep-resume
+## Task 14: Utility 블록 교체 + 본문 안내 보강 — deep-resume
 
 **Files:**
-- Modify: `commands/deep-resume.md:6-7`
+- Modify: `commands/deep-resume.md:6-7` (블록)
+- Modify: `commands/deep-resume.md:82` (본문 사용자 안내)
 
 - [ ] **Step 1: 블록 교체**
 
@@ -422,10 +445,27 @@ new_string:
 > 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
 ```
 
-- [ ] **Step 2: 검증**
+- [ ] **Step 2: 본문 사용자 안내 양방향 경로 표기**
+
+Edit `commands/deep-resume.md`:
+
+old_string:
+```
+리포트 확인: /deep-report
+```
+
+new_string:
+```
+리포트 확인: `/deep-status --report` (또는 `/deep-report`)
+```
+
+- [ ] **Step 3: 검증**
 
 Run: `grep -n "Deprecated in v5.2" /Users/sungmin/Dev/deep-work/commands/deep-resume.md`
 Expected: (empty)
+
+Run: `grep -n "/deep-status --report" /Users/sungmin/Dev/deep-work/commands/deep-resume.md`
+Expected: 1 match (L82 근방).
 
 ---
 
@@ -590,7 +630,7 @@ Expected: (empty)
 ## Task 21: SKILL.md 섹션 제목 수정 — Plan Alignment Check
 
 **Files:**
-- Modify: `skills/deep-work-workflow/SKILL.md:238`
+- Modify: `skills/deep-work-workflow/SKILL.md` (Plan Alignment Check 섹션; Task 20 이후 라인 드리프트로 최초 L238 → 실제 L247 근방)
 
 - [ ] **Step 1: 제목 교체**
 
@@ -608,15 +648,15 @@ new_string:
 
 - [ ] **Step 2: 검증**
 
-Run: `grep -n "Plan Alignment Check" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
-Expected: L238 contains `Quality Gate`.
+Run: `grep -c "Plan Alignment Check.*Quality Gate" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
+Expected: `1` (라인번호 무관, 1개 매치).
 
 ---
 
 ## Task 22: SKILL.md 섹션 제목 수정 — SOLID Design Review
 
 **Files:**
-- Modify: `skills/deep-work-workflow/SKILL.md:243`
+- Modify: `skills/deep-work-workflow/SKILL.md` (SOLID Design Review 섹션)
 
 - [ ] **Step 1: 제목 교체**
 
@@ -634,15 +674,15 @@ new_string:
 
 - [ ] **Step 2: 검증**
 
-Run: `grep -n "SOLID Design Review" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
-Expected: L243 contains `Quality Gate`.
+Run: `grep -c "SOLID Design Review.*Quality Gate" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
+Expected: `1`.
 
 ---
 
 ## Task 23: SKILL.md 섹션 제목 수정 — Code Insight Analysis
 
 **Files:**
-- Modify: `skills/deep-work-workflow/SKILL.md:248`
+- Modify: `skills/deep-work-workflow/SKILL.md` (Code Insight Analysis 섹션)
 
 - [ ] **Step 1: 제목 교체**
 
@@ -660,15 +700,17 @@ new_string:
 
 - [ ] **Step 2: 검증**
 
-Run: `grep -n "Code Insight Analysis" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
-Expected: L248 contains `Quality Gate`.
+Run: `grep -c "Code Insight Analysis.*Quality Gate" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
+Expected: `1`.
 
 ---
 
 ## Task 24: SKILL.md 섹션 제목 수정 — Session Report
 
 **Files:**
-- Modify: `skills/deep-work-workflow/SKILL.md:253`
+- Modify: `skills/deep-work-workflow/SKILL.md` (Session Report 섹션 제목)
+
+정책: `/deep-report`와 `/deep-status --report` **둘 다** 공식 수동 경로(§3 D-1). 제목·본문(L256 "Manual: /deep-report or /deep-status --report")·커맨드 본문(Task 6) 3위치 모두 양방향 표기로 통일.
 
 - [ ] **Step 1: 제목 교체**
 
@@ -681,20 +723,25 @@ old_string:
 
 new_string:
 ```
-### Session Report (/deep-report) — *Internal — auto-generated after test pass; manual: /deep-status --report*
+### Session Report (/deep-report) — *Internal — auto-generated after test pass; manual: /deep-report or /deep-status --report*
 ```
 
 - [ ] **Step 2: 검증**
 
-Run: `grep -n "Session Report" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
-Expected: L253 contains `Internal`.
+Run: `grep -c "Session Report.*Internal" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
+Expected: `1`.
+
+Run: `grep -c "manual: /deep-report or /deep-status --report" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
+Expected: `1` (제목과 본문 L256이 같은 표기).
+
+> 본문 L256 `Manual: /deep-report or /deep-status --report`는 이미 양방향이므로 **유지한다**. 별도 Edit 불필요.
 
 ---
 
 ## Task 25: SKILL.md Session Resume 섹션 재작성
 
 **Files:**
-- Modify: `skills/deep-work-workflow/SKILL.md:318-321`
+- Modify: `skills/deep-work-workflow/SKILL.md` (Session Resume 섹션, Task 20 드리프트로 최초 L318 → 실제 L327 근방)
 
 - [ ] **Step 1: 섹션 교체**
 
@@ -717,11 +764,11 @@ new_string:
 
 - [ ] **Step 2: 검증**
 
-Run: `grep -n "## Session Resume" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
-Expected: L318 = `## Session Resume (/deep-resume)` (no `deprecated`).
+Run: `grep -c "## Session Resume (/deep-resume)" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
+Expected: `1`.
 
 Run: `grep -c "deprecated" /Users/sungmin/Dev/deep-work/skills/deep-work-workflow/SKILL.md`
-Expected: `0`
+Expected: `0`.
 
 ---
 
@@ -1080,6 +1127,80 @@ Expected: 1 match.
 
 ---
 
+## Task 34.5: README.md — "What changed" bullets 갱신
+
+**Files:**
+- Modify: `README.md:568-572`
+
+- [ ] **Step 1: bullets 교체**
+
+Edit `README.md`:
+
+old_string:
+```
+### What changed
+- **SKILL.md reduced**: 461 lines → 280 lines (clearer, less redundant)
+- **13 commands deprecated**: Still functional but absorbed into the auto-flow
+- **`/deep-status` expanded**: Replaces `/deep-report`, `/deep-receipt`, `/deep-history`, `/deep-assumptions` with flags
+- **`/deep-test` expanded**: Auto-runs drift-check, SOLID review, and insight analysis
+```
+
+new_string:
+```
+### What changed
+- **SKILL.md reduced**: 461 lines → 280 lines (clearer, less redundant)
+- **13 commands reclassified (v6.2.1)**: Quality Gate (3) / Internal (6) / Escape hatch (1) / Utility (2) / Special utility (1 moved). No commands removed; manual invocation remains supported.
+- **`/deep-status` expanded**: Routes `--report` / `--receipts` / `--history` / `--assumptions` flags to the same implementations as the standalone commands. Both manual paths work.
+- **`/deep-test` expanded**: Auto-runs drift-check, SOLID review, and insight analysis
+```
+
+- [ ] **Step 2: 검증**
+
+Run: `grep -n "13 commands reclassified (v6.2.1)" /Users/sungmin/Dev/deep-work/README.md`
+Expected: 1 match.
+
+Run: `grep -n "13 commands deprecated" /Users/sungmin/Dev/deep-work/README.md`
+Expected: (empty)
+
+---
+
+## Task 34.6: README.ko.md — "변경 사항" bullets 갱신
+
+**Files:**
+- Modify: `README.ko.md:559-563`
+
+- [ ] **Step 1: bullets 교체**
+
+Edit `README.ko.md`:
+
+old_string:
+```
+### 변경 사항
+- **SKILL.md 축소**: 461줄 → 280줄 (더 명확하고 덜 중복)
+- **13개 커맨드 deprecated**: 여전히 동작하지만 auto-flow에 흡수
+- **`/deep-status` 확장**: `/deep-report`, `/deep-receipt`, `/deep-history`, `/deep-assumptions`를 플래그로 대체
+- **`/deep-test` 확장**: drift-check, SOLID 리뷰, insight 분석을 자동 실행
+```
+
+new_string:
+```
+### 변경 사항
+- **SKILL.md 축소**: 461줄 → 280줄 (더 명확하고 덜 중복)
+- **13개 커맨드 재분류 (v6.2.1)**: Quality Gate (3) / Internal (6) / Escape hatch (1) / Utility (2) / Special utility (1 이동). 삭제된 커맨드 없음; 수동 호출은 계속 공식 경로입니다.
+- **`/deep-status` 확장**: `--report` / `--receipts` / `--history` / `--assumptions` 플래그가 standalone 커맨드와 동일 구현으로 라우팅됩니다. 양쪽 경로 모두 동작합니다.
+- **`/deep-test` 확장**: drift-check, SOLID 리뷰, insight 분석을 자동 실행
+```
+
+- [ ] **Step 2: 검증**
+
+Run: `grep -n "13개 커맨드 재분류 (v6.2.1)" /Users/sungmin/Dev/deep-work/README.ko.md`
+Expected: 1 match.
+
+Run: `grep -n "13개 커맨드 deprecated" /Users/sungmin/Dev/deep-work/README.ko.md`
+Expected: (empty)
+
+---
+
 ## Task 35: README 커밋
 
 - [ ] **Step 1: 커밋**
@@ -1097,28 +1218,26 @@ Expected: 2 files changed.
 ## Task 36: CHANGELOG.md v6.2.1 항목 추가
 
 **Files:**
-- Modify: `CHANGELOG.md` (상단 Unreleased/최상위 바로 아래, v6.2.0 바로 위)
+- Modify: `CHANGELOG.md` (v6.2.0 섹션 **바로 위**에 삽입)
 
-- [ ] **Step 1: 현재 최상위 확인**
+**Keep a Changelog 관례**: Intro 문구(`All notable changes...`, `The format is based on [Keep a Changelog]...`)가 `# Changelog` 헤더 바로 아래에 있어야 하고, 릴리즈 엔트리는 그 뒤에 최신순으로 나열. 따라서 anchor를 `## [6.2.0] — 2026-04-14`로 잡아 그 **앞**에 v6.2.1 블록을 끼워넣는다.
 
-Run: `head -20 /Users/sungmin/Dev/deep-work/CHANGELOG.md`
-Expected: `# Changelog` 헤더 + 이후 v6.2.0 또는 Unreleased 섹션.
+- [ ] **Step 1: 현재 구조 확인**
+
+Run: `sed -n '1,12p' /Users/sungmin/Dev/deep-work/CHANGELOG.md`
+Expected: L3 `# Changelog`, L5-8 intro 문구, L10 `## [6.2.0] — 2026-04-14`.
 
 - [ ] **Step 2: v6.2.1 섹션 삽입**
-
-`CHANGELOG.md` 파일의 `# Changelog` 헤더 바로 아래에 다음 블록을 삽입한다 (기존 최상위 엔트리 앞).
 
 Edit `CHANGELOG.md`:
 
 old_string:
 ```
-# Changelog
+## [6.2.0] — 2026-04-14
 ```
 
 new_string:
 ```
-# Changelog
-
 ## [6.2.1] — 2026-04-15
 
 ### Changed
@@ -1128,40 +1247,51 @@ new_string:
   - `hooks/scripts/assumption-engine.js`: `/deep-assumptions` → `/deep-status --assumptions`
   - `hooks/scripts/session-end.sh`: `/deep-report` → `/deep-status --report`
   - `skills/deep-test/SKILL.md`: same alignment
-- **README** (en/ko): "Deprecated Commands (13)" single table replaced by five category tables; body references to `/deep-cleanup`/`/deep-resume` in the Worktree Isolation section reframed as standalone utilities.
+- **Session Report manual policy**: both `/deep-report` and `/deep-status --report` remain supported manual entry points. Wording is unified across `skills/deep-work-workflow/SKILL.md` heading + body, `commands/deep-report.md` body, and `commands/deep-resume.md` body.
+- **README** (en/ko): "Deprecated Commands (13)" single table replaced by five category tables; "What changed" bullets updated to reflect reclassification (not deprecation); body references to `/deep-cleanup`/`/deep-resume` in the Worktree Isolation section reframed as standalone utilities.
 - **`skills/deep-work-workflow/SKILL.md`** classification section rewritten into 6 categories (Primary / Special / Quality Gate / Internal / Escape hatch / Utility).
 
 ### Not changed
 - **No commands removed.** `/deep-cleanup` and `/deep-resume` continue to be the sole path for worktree scan/fork cleanup and for active-session selection/worktree restore/phase dispatch respectively. Their feature migration is tracked as a follow-up.
 - **No functional behavior changed.** Existing slash commands continue to work exactly as before; only labels, wordings, and version numbers changed.
 - Historical `v5.2` deprecated notes in earlier sections are preserved as-is.
+
+## [6.2.0] — 2026-04-14
 ```
 
 - [ ] **Step 3: 검증**
 
 Run: `grep -n "## \[6.2.1\]" /Users/sungmin/Dev/deep-work/CHANGELOG.md`
-Expected: 1 match near top.
+Expected: 1 match before `## [6.2.0]`.
+
+Run: `grep -n "All notable changes" /Users/sungmin/Dev/deep-work/CHANGELOG.md`
+Expected: line number < v6.2.1 line (intro가 여전히 헤더 아래에 유지됨).
 
 ---
 
 ## Task 37: CHANGELOG.ko.md v6.2.1 항목 추가
 
 **Files:**
-- Modify: `CHANGELOG.ko.md`
+- Modify: `CHANGELOG.ko.md` (v6.2.0 섹션 **바로 위**에 삽입)
 
-- [ ] **Step 1: v6.2.1 섹션 삽입**
+**주의**: `CHANGELOG.ko.md`의 헤더도 영어 파일과 동일한 `# Changelog`이다(번역되지 않음, L3 확인). 따라서 anchor는 `## [6.2.0] — 2026-04-14`(영어 파일과 동일 형식)로 잡는다.
+
+- [ ] **Step 1: 현재 구조 확인**
+
+Run: `sed -n '1,12p' /Users/sungmin/Dev/deep-work/CHANGELOG.ko.md`
+Expected: L3 `# Changelog`, L10 `## [6.2.0] — 2026-04-14`.
+
+- [ ] **Step 2: v6.2.1 섹션 삽입**
 
 Edit `CHANGELOG.ko.md`:
 
 old_string:
 ```
-# 변경 로그
+## [6.2.0] — 2026-04-14
 ```
 
 new_string:
 ```
-# 변경 로그
-
 ## [6.2.1] — 2026-04-15
 
 ### 변경됨
@@ -1171,19 +1301,25 @@ new_string:
   - `hooks/scripts/assumption-engine.js`: `/deep-assumptions` → `/deep-status --assumptions`
   - `hooks/scripts/session-end.sh`: `/deep-report` → `/deep-status --report`
   - `skills/deep-test/SKILL.md`: 동일 정렬
-- **README**(en/ko): "Deprecated Commands (13)" 단일 표를 5개 카테고리 표로 분리; Worktree Isolation 섹션의 `/deep-cleanup`/`/deep-resume` 본문을 standalone utility로 재서술.
+- **Session Report 수동 경로 정책**: `/deep-report`와 `/deep-status --report` **둘 다** 공식 수동 경로로 유지. `skills/deep-work-workflow/SKILL.md` 제목·본문, `commands/deep-report.md` 본문, `commands/deep-resume.md` 본문 3위치 일관 표기.
+- **README**(en/ko): "Deprecated Commands (13)" 단일 표를 5개 카테고리 표로 분리; "What changed" bullets를 재분류 서술로 갱신(deprecated 아님); Worktree Isolation 섹션의 `/deep-cleanup`/`/deep-resume` 본문을 standalone utility로 재서술.
 - **`skills/deep-work-workflow/SKILL.md`** 분류 섹션을 6개 카테고리로 재작성.
 
 ### 변경 없음
 - **삭제된 커맨드 없음.** `/deep-cleanup`과 `/deep-resume`은 각각 worktree 스캔/fork 정리, active 세션 선택/worktree 복원/phase dispatch의 유일한 경로로 계속 남습니다. 기능 이관은 follow-up으로 추적.
 - **functional 동작 변경 없음.** 기존 슬래시 커맨드는 모두 이전과 동일하게 동작; 라벨·문구·버전 번호만 변경.
 - 이전 섹션의 `v5.2` deprecated 기록은 역사로 보존.
+
+## [6.2.0] — 2026-04-14
 ```
 
-- [ ] **Step 2: 검증**
+- [ ] **Step 3: 검증**
 
 Run: `grep -n "## \[6.2.1\]" /Users/sungmin/Dev/deep-work/CHANGELOG.ko.md`
-Expected: 1 match near top.
+Expected: 1 match before `## [6.2.0]`.
+
+Run: `grep -n "All notable changes" /Users/sungmin/Dev/deep-work/CHANGELOG.ko.md`
+Expected: line number < v6.2.1 line (intro가 여전히 헤더 아래에 유지됨).
 
 ---
 
@@ -1316,37 +1452,68 @@ If any assertion fails: 수정된 파일 diff 확인 후 `hooks/scripts/phase-gu
 
 ## Task 44: 검증 — grep 체크리스트
 
-- [ ] **Step 1: 잔존 "Deprecated in v5.2" 검색**
+- [ ] **Step 1: 잔존 "Deprecated in v5.2" 검색** (spec/plan 자체 파일 제외)
 
 Run: `cd /Users/sungmin/Dev/deep-work && grep -rn "Deprecated in v5.2" commands/ skills/ README.md README.ko.md 2>/dev/null`
 Expected: (empty — no matches)
 
 - [ ] **Step 2: 잔존 "Deprecated commands (13)" 검색**
 
-Run: `cd /Users/sungmin/Dev/deep-work && grep -rn "Deprecated commands (13)\|Deprecated 커맨드 (13개)" skills/ README.md README.ko.md 2>/dev/null`
+Run: `cd /Users/sungmin/Dev/deep-work && grep -rEn "Deprecated commands \(13\)|Deprecated 커맨드 \(13개\)" skills/ README.md README.ko.md 2>/dev/null`
 Expected: (empty)
 
-- [ ] **Step 3: /deep-report / /deep-assumptions 사용자 안내 확인 (Internal 본문 참조는 유지 OK)**
+- [ ] **Step 3: 사용자 안내 hook·skill 갱신 확인 + 커맨드 본문 회귀 확인**
 
-Run: `cd /Users/sungmin/Dev/deep-work && grep -rn "/deep-report\|/deep-assumptions" hooks/ skills/deep-test/SKILL.md`
-Expected: hook 문자열(`/deep-report`, `/deep-assumptions`)은 남지 않음. skills/deep-test/SKILL.md L122·L125의 `/deep-finish`는 존재; L150은 `/deep-status --report`로 변경됨.
+Run: `cd /Users/sungmin/Dev/deep-work && grep -Ern "/deep-report|/deep-assumptions" hooks/ skills/deep-test/SKILL.md`
+Expected: hook(`assumption-engine.js`, `session-end.sh`)는 `/deep-status --*`로만 등장. `skills/deep-test/SKILL.md`의 `/deep-finish`는 L122·L125 유지, L150은 `/deep-status --report`.
 
-- [ ] **Step 4: 버전 일관성 확인**
+Run: `cd /Users/sungmin/Dev/deep-work && grep -En "/deep-report" commands/deep-report.md commands/deep-resume.md`
+Expected: 본문 안내가 `/deep-status --report` 또는 양방향(`/deep-status --report (또는 /deep-report)`) 형식으로 나타남. 단독 `/deep-report` 안내(`리포트 확인: /deep-report`)는 남지 않음.
+
+- [ ] **Step 4: `/deep-cleanup` / `/deep-resume` 최종 출현 위치 검증** (spec §5 Step 15 3항)
+
+Run: `cd /Users/sungmin/Dev/deep-work && grep -Ern "/deep-cleanup|/deep-resume" commands/ skills/ README.md README.ko.md CHANGELOG.md CHANGELOG.ko.md`
+Expected: 다음 파일에만 등장 — `commands/deep-cleanup.md`, `commands/deep-resume.md`, `skills/deep-work-workflow/SKILL.md`(Session Resume 섹션 + CHANGELOG 주석), `README.md` L335-336, `README.ko.md` L460-461, `CHANGELOG.md`·`CHANGELOG.ko.md` v6.2.1 및 과거 섹션. 예기치 않은 위치(예: `skills/shared/references/`)에 잔재 없을 것.
+
+- [ ] **Step 5: 버전 일관성 확인**
 
 Run: `cd /Users/sungmin/Dev/deep-work && grep -Hn '"version"\|deep-work v' .claude-plugin/plugin.json package.json CLAUDE.md | head -5`
 Expected: 모두 v6.2.1.
 
+- [ ] **Step 6: Session Report 3위치 양방향 표기 일관성 확인**
+
+Run: `cd /Users/sungmin/Dev/deep-work && grep -En "/deep-report|/deep-status --report" skills/deep-work-workflow/SKILL.md commands/deep-report.md commands/deep-resume.md | grep -Ei "manual|리포트|확인|재생성"`
+Expected: 3파일 모두 양방향(`/deep-report` + `/deep-status --report`) 표기. 한쪽만 남은 경우 없음.
+
 ---
 
-## Task 45: 검증 — /deep-status smoke test (수동)
+## Task 45: 검증 — /deep-status smoke test (수동 + 자동 대안)
 
-**사용자 수동 검증.** 본 plan은 파일 수정만 수행하므로 smoke test는 사용자 또는 reviewer가 다음을 수동 실행한다.
+본 plan은 파일 수정만 수행하므로 최종 동작 smoke test는 실행 환경에 따라 수동/자동으로 나뉜다.
 
 - [ ] **Step 1: 활성 세션 없이 `/deep-status --all` 호출** → `ℹ️ 활성화된 Deep Work 세션이 없습니다` 메시지 + 플래그 기반 과거 이력 표시가 정상 작동하는지 확인 (Internal 커맨드 파일을 `Read`해서 로직 흡수).
 
-- [ ] **Step 2: 테스트 픽스처가 있다면 `/deep-status --receipts`, `--history`, `--report`, `--assumptions`를 각각 호출**하여 display logic 섹션(본 plan이 건드리지 않은 부분)이 정상 렌더되는지 확인.
+- [ ] **Step 2a: 활성 세션이 있는 경우 — `/deep-status --receipts`, `--history`, `--report`, `--assumptions`를 각각 호출**하여 display logic 섹션이 정상 렌더되는지 확인.
 
-- [ ] **Step 3: 문제 발견 시** — 해당 커맨드 파일의 display logic 섹션이 본 plan 수정으로 인해 영향받지 않았음을 `git diff 5dd4e8b..HEAD -- commands/deep-receipt.md` 등으로 재확인. 블록 교체 규칙을 준수했으면 회귀 없음.
+- [ ] **Step 2b: 활성 세션이 없는 경우 — diff 기반 display logic 미수정 자동 검증**
+
+Run:
+```
+cd /Users/sungmin/Dev/deep-work
+for f in commands/deep-receipt.md commands/deep-report.md commands/deep-history.md commands/deep-assumptions.md; do
+  echo "=== $f ==="
+  git diff 5dd4e8b..HEAD -- "$f" | grep -E '^\+' | grep -vE '^\+\+\+' | head -20
+done
+```
+
+Expected: 각 파일의 변경 라인(+로 시작)이 **오직**:
+- L6-7 quote block 교체 줄
+- Task 6의 경우 L271 본문 안내 한 줄 (deep-report.md만)
+- frontmatter는 변경 없음
+
+display logic(§6 이후의 dashboard/report 렌더 로직 섹션)에 `+` 라인이 있으면 회귀. plan 범위 위반이므로 즉시 rollback 후 재실행.
+
+- [ ] **Step 3: 문제 발견 시** — 블록 교체 규칙 위반. `git reset --hard` 전에 어떤 Task가 범위를 넘었는지 `git blame -- <파일>`로 식별.
 
 ---
 
@@ -1355,18 +1522,21 @@ Expected: 모두 v6.2.1.
 - [ ] **Step 1: 커밋 히스토리 확인**
 
 Run: `cd /Users/sungmin/Dev/deep-work && git log --oneline 5dd4e8b..HEAD`
-Expected (approximate):
+Expected (구현 단계의 8개 커밋 + 그 앞에 이미 존재하는 spec/plan 작성 커밋들):
 ```
-<sha> chore: bump to v6.2.1
-<sha> docs(changelog): add v6.2.1 entry for command classification cleanup
-<sha> docs(readme): restructure command tables into 5 categories, revise body references
-<sha> docs(skill): rewrite deep-work-workflow classification into 6 categories
-<sha> refactor(hooks,skill): route user-facing guidance to /deep-status flags
-<sha> docs(commands): relabel deep-slice as escape hatch, deep-cleanup/resume as utility
-<sha> docs(commands): relabel Internal commands with auto-call + manual-ok wording
-<sha> docs(commands): relabel Quality Gate commands (drift-check, solid-review, deep-insight)
-<sha> docs(spec): v2 — narrow to relabeling-only after 3-way review
-<sha> docs(spec): cleanup of deprecated command labels for v6.3.0  [v1 spec, pre-review]
+<sha> chore: bump to v6.2.1                                                         [Task 42]
+<sha> docs(changelog): add v6.2.1 entry for command classification cleanup          [Task 38]
+<sha> docs(readme): restructure command tables into 5 categories, revise body refs  [Task 35]
+<sha> docs(skill): rewrite deep-work-workflow classification into 6 categories      [Task 26]
+<sha> refactor(hooks,skill): route user-facing guidance to /deep-status flags       [Task 19]
+<sha> docs(commands): relabel deep-slice as escape hatch, deep-cleanup/resume...    [Task 15]
+<sha> docs(commands): relabel Internal commands with auto-call + manual-ok wording  [Task 11]
+<sha> docs(commands): relabel Quality Gate commands (drift-check, solid-review,...) [Task 4]
+<sha> docs(plan): v2 — post-plan-review revisions                                   [pre-impl, already committed]
+<sha> docs(plan): bite-sized implementation plan for v6.2.1 cleanup                 [pre-impl, already committed]
+<sha> docs(spec): v3 — plan-review revisions                                        [pre-impl, already committed]
+<sha> docs(spec): v2 — narrow to relabeling-only after 3-way review                 [pre-impl, already committed]
+<sha> docs(spec): cleanup of deprecated command labels for v6.3.0                   [pre-impl, already committed]
 ```
 
 - [ ] **Step 2: diff 요약 확인**
@@ -1415,8 +1585,21 @@ Expected: 11 command files + 2 README + 2 CHANGELOG + 2 hook + 2 skill + 3 manif
 
 **4. 누락 리스크:**
 - `README.md` L575 / `README.ko.md` L566 "Deprecated commands still work" 문구는 스펙 §4.2에 명시되지 않았지만 본 plan Task 30·34에서 커버 (일관성 유지).
+- `README.md` L568-572 / `README.ko.md` L559-563 "What changed" bullets는 plan v2에서 Task 34.5·34.6 신규 추가로 커버.
 - `session-end.sh` L85의 주석 `Consumers (deep-status, deep-work, deep-report, deep-assumptions) all read from this path`는 코드 참조이므로 유지 (Task 17 Step 2 검증에 명시).
-- Spec §7 Out-of-scope의 실제 기능 이관 작업은 본 plan에서 수행하지 않음(의도됨).
+- `README.ko.md` L561 과거 릴리즈 노트의 `13개 커맨드 deprecated`는 Task 34.6에서 `13개 커맨드 재분류`로 갱신. 반면 `CHANGELOG.md`·`CHANGELOG.ko.md`의 v5.2 이전 섹션은 **역사로 유지**(spec §4.5 원칙).
+- Spec §7 Out-of-scope의 실제 기능 이관 작업은 본 plan에서 수행하지 않음(의도됨). `/deep-cleanup`·`/deep-resume` 파일 삭제 Task 없음 확인.
+
+**5. 라인번호 드리프트 내성:**
+- Task 20(SKILL.md L83-86 → 13줄 확장) 이후 Task 21-25가 같은 파일을 수정. Edit은 old_string 매칭이므로 드리프트에 면역이나, 검증 Step의 Expected는 라인번호 무관 `grep -c "... pattern ..."` 형식으로 통일(v2에서 수정).
+- Task 28(README.md L80-98 19줄 → 5개 섹션 수십 줄 확장) 이후 Task 29(L335-336) 및 Task 34.5(L568-572)가 같은 파일을 수정. 동일한 이유로 Edit 안전. 검증 grep은 라인번호 대신 내용 매칭.
+
+**6. 커밋 세분화 근거:**
+- spec §5 Step 16은 4개 커밋 제안. plan은 8개로 세분화: quality-gate / internal / escape-hatch+utility / hooks-skill / skill-workflow / readme / changelog / manifest. 이유:
+  - 각 그룹이 독립적으로 rollback 가능.
+  - 리뷰 시 카테고리별 변경 범위가 명확.
+  - git log에서 각 커밋 메시지가 변경 의도를 직관적으로 전달.
+- Spec deviation 아님 (더 촘촘한 분리).
 
 ---
 
