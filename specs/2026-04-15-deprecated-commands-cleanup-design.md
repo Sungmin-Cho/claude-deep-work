@@ -114,7 +114,7 @@
 
 ### 4.1. `skills/deep-work-workflow/SKILL.md`
 
-**L83–L87 분류 섹션**: "Primary commands (7)" / "Deprecated commands (13)"를 다음 5-카테고리 구조로 전면 교체:
+**L83–L87 분류 섹션**: "Primary commands (7)" / "Deprecated commands (13)"를 다음 6-카테고리 구조로 전면 교체:
 ```
 **Primary workflow (7):** deep-work, deep-research, deep-plan, deep-implement, deep-test, deep-status, deep-debug
 **Special utility (4):** deep-fork, deep-mutation-test, deep-phase-review, deep-sensor-scan
