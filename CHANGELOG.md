@@ -7,6 +7,11 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.3] — 2026-04-16
+
+### Changed
+- **trigger-eval.json v6.2 update**: Benchmark test set expanded from 31 to 54 samples (true 21 + false 33). Added 10 true samples for v6.2 features (Session Fork, Mutation Test, Brainstorm, Team Mode, Assumption Engine, Worktree, English queries, semantic-only trigger, Debug). Added 13 false samples (homophone disambiguation, meta-queries, English hard negatives, standalone command invocations). Reclassified 5 existing true samples to false (SOLID review, drift check, deep-status, quality gate config, preset setup) — standalone commands should not trigger full workflow sessions.
+
 ## [6.2.2] — 2026-04-16
 
 ### Fixed

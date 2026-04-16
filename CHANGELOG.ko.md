@@ -7,6 +7,11 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.3] — 2026-04-16
+
+### 변경됨
+- **trigger-eval.json v6.2 업데이트**: 벤치마크 테스트셋을 31개에서 54개로 확장 (true 21 + false 33). v6.2 신규 기능 대응 true 10개 추가 (Session Fork, Mutation Test, Brainstorm, Team Mode, Assumption Engine, Worktree, 영어 쿼리, semantic-only 트리거, Debug). false 13개 추가 (동음이의어, 메타 쿼리, 영어 hard negative, standalone 커맨드). 기존 true 5개를 false로 재분류 (SOLID 리뷰, drift check, deep-status, quality gate 설정, 프리셋 설정) — standalone 커맨드는 full workflow 트리거가 아님.
+
 ## [6.2.2] — 2026-04-16
 
 ### 수정됨

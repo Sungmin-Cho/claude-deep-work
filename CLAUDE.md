@@ -1,4 +1,4 @@
-# deep-work v6.2.2
+# deep-work v6.2.3
 
 Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인.
 

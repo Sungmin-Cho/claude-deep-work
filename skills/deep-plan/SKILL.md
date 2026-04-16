@@ -1,6 +1,6 @@
 ---
 name: deep-plan
-version: "6.2.2"
+version: "6.2.3"
 description: "Phase 2 — Plan: create a detailed implementation plan"
 ---
 

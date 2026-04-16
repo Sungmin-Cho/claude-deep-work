@@ -1,6 +1,6 @@
 ---
 name: deep-test
-version: "6.2.2"
+version: "6.2.3"
 description: "Phase 4 — Test: comprehensive verification + implement-test retry loop"
 ---
 
