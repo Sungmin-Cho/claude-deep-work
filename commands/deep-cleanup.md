@@ -3,8 +3,8 @@ allowed-tools: Read, Bash, AskUserQuestion
 description: "Clean up stale deep-work worktrees — scan and delete old worktrees"
 ---
 
-> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
-> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+> **Utility (v6.2.1)** — standalone 명령. `/deep-work` init이 stale 세션 일부를 감지하지만, `git worktree list` 스캔·stale/active 분류·dirty 트리 삭제 확인·fork worktree 및 registry 정리는 이 커맨드가 유일한 경로입니다.
+> 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
 
 # Deep Work Worktree Cleanup (v4.1)
 

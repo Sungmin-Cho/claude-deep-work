@@ -7,6 +7,24 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.1] — 2026-04-15
+
+### 변경됨
+- **커맨드 분류 정리**: `Deprecated in v5.2` 블록을 가진 11개 커맨드와 같은 표에 함께 분류되었던 2개(`deep-brainstorm`, `deep-phase-review`)를 5개 카테고리로 재분류 — Quality Gate(3), Internal(6), Escape hatch(1), Utility(2), Special utility(`/deep-phase-review` 이동).
+- **`/deep-finish` 표현**: "자동 호출이 주 경로이며, test 통과 후 수동 호출도 공식 경로"로 재서술 (deprecated 아님).
+- **Hook/skill 사용자 안내**가 `/deep-status` 플래그로 라우팅:
+  - `hooks/scripts/assumption-engine.js`: `/deep-assumptions` → `/deep-status --assumptions`
+  - `hooks/scripts/session-end.sh`: `/deep-report` → `/deep-status --report`
+  - `skills/deep-test/SKILL.md`: 동일 정렬
+- **Session Report 수동 경로 정책**: `/deep-report`와 `/deep-status --report` **둘 다** 공식 수동 경로로 유지. `skills/deep-work-workflow/SKILL.md` 제목·본문, `commands/deep-report.md` 본문, `commands/deep-resume.md` 본문 3위치 일관 표기.
+- **README**(en/ko): "Deprecated Commands (13)" 단일 표를 5개 카테고리 표로 분리; "What changed" bullets를 재분류 서술로 갱신(deprecated 아님); Worktree Isolation 섹션의 `/deep-cleanup`/`/deep-resume` 본문을 standalone utility로 재서술.
+- **`skills/deep-work-workflow/SKILL.md`** 분류 섹션을 6개 카테고리로 재작성.
+
+### 변경 없음
+- **삭제된 커맨드 없음.** `/deep-cleanup`과 `/deep-resume`은 각각 worktree 스캔/fork 정리, active 세션 선택/worktree 복원/phase dispatch의 유일한 경로로 계속 남습니다. 기능 이관은 follow-up으로 추적.
+- **functional 동작 변경 없음.** 기존 슬래시 커맨드는 모두 이전과 동일하게 동작; 라벨·문구·버전 번호만 변경.
+- 이전 섹션의 `v5.2` deprecated 기록은 역사로 보존.
+
 ## [6.2.0] — 2026-04-14
 
 ### 추가

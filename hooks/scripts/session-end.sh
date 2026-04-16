@@ -61,7 +61,7 @@ if [[ "$WORKTREE_ENABLED" == "true" && -n "$WORKTREE_BRANCH" ]]; then
 fi
 
 cat <<JSON
-{"message":"Deep Work 세션이 활성 상태입니다.\n\n  Phase: ${PHASE_KO}\n  Task: ${TASK_DESC}${WORKTREE_MSG}\n\n다음 세션에서 /deep-status로 진행 상황을 확인하거나,\n작업이 완료되었다면 /deep-report로 리포트를 생성하세요."}
+{"message":"Deep Work 세션이 활성 상태입니다.\n\n  Phase: ${PHASE_KO}\n  Task: ${TASK_DESC}${WORKTREE_MSG}\n\n다음 세션에서 /deep-status로 진행 상황을 확인하거나,\n작업이 완료되었다면 /deep-status --report로 리포트를 확인하세요."}
 JSON
 
 # ─── 알림 전송 (fire-and-forget) ───────────────────────────

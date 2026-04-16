@@ -1,6 +1,6 @@
 ---
 name: deep-test
-version: "6.1.0"
+version: "6.2.1"
 description: "Phase 4 — Test: comprehensive verification + implement-test retry loop"
 ---
 
@@ -147,4 +147,4 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 1. 누적 실패 이력 표시
 2. `current_phase: implement` 유지 (사용자 수동 수정)
 3. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
-4. 안내: `/deep-test`로 재실행 또는 `/deep-report`로 결과 정리
+4. 안내: `/deep-test`로 재실행 또는 `/deep-status --report`로 결과 정리

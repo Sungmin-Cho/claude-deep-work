@@ -51,7 +51,7 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 # The auto-flow orchestrates: Brainstorm → Research → Plan → [user approves] → Implement → Test → Report
 # Plan approval is the ONLY required interaction
 
-# Check unified status (replaces /deep-report, /deep-receipt, /deep-history, /deep-assumptions)
+# Unified status — flags route to the same implementations as the standalone /deep-report, /deep-receipt, /deep-history, /deep-assumptions
 /deep-status              # current progress
 /deep-status --report     # session report
 /deep-status --receipts   # receipt dashboard
@@ -77,25 +77,52 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 | `/deep-status` | **Unified view** — current progress, report, receipts, history, assumptions. Flags: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
 | `/deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix (auto-triggers on failures) |
 
-### Deprecated Commands (13)
+### Special Utility (4)
 
-These commands still work but are now absorbed into the auto-flow. You no longer need to call them manually.
+Phase or toolchain helpers, run manually when needed.
 
-| Command | Absorbed into |
-|---------|---------------|
-| `/deep-brainstorm` | `/deep-work` auto-flow (Phase 0) |
-| `/deep-phase-review` | Phase document review (standalone command) |
-| `/deep-receipt` | `/deep-status --receipts` |
-| `/deep-slice` | `/deep-implement` (auto-managed internally) |
-| `/deep-insight` | `/deep-test` (auto-runs as advisory gate) |
-| `/deep-finish` | `/deep-work` (final stage of auto-flow) |
-| `/deep-cleanup` | `/deep-work` init (auto-runs at session start) |
-| `/deep-history` | `/deep-status --history` |
-| `/deep-assumptions` | `/deep-status --assumptions` |
-| `/deep-resume` | `/deep-work` (auto-detects active session) |
-| `/deep-report` | `/deep-status --report` |
-| `/drift-check` | `/deep-test` (auto-runs as required gate) |
-| `/solid-review` | `/deep-test` (auto-runs as advisory gate) |
+| Command | Purpose |
+|---------|---------|
+| `/deep-fork` | Fork a session to explore a different approach |
+| `/deep-mutation-test` | Mutation testing on changed files |
+| `/deep-phase-review` | Manual Phase document review (brainstorm/research/plan) |
+| `/deep-sensor-scan` | Run linters, type checkers, coverage tools independently |
+
+### Quality Gate (3) — auto-runs in /deep-test, standalone available
+
+| Command | Role in /deep-test | Standalone |
+|---------|---------------------|------------|
+| `/drift-check` | Required Gate — plan alignment | `/drift-check [plan-file]` |
+| `/solid-review` | Advisory Gate — SOLID principles | `/solid-review [target]` |
+| `/deep-insight` | Insight Tier — metrics/complexity | `/deep-insight [target]` |
+
+### Internal (6) — auto-runs, manual supported
+
+These commands are called by the orchestrator or `/deep-status`. Manual invocation remains a first-class path (especially `/deep-finish` after tests pass).
+
+| Command | Called by |
+|---------|-----------|
+| `/deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
+| `/deep-finish` | orchestrator Step 3-6 (`Read`); manual after test pass |
+| `/deep-report` | `/deep-status --report` (`Read`) |
+| `/deep-receipt` | `/deep-status --receipts` (`Read`) |
+| `/deep-history` | `/deep-status --history` (`Read`) |
+| `/deep-assumptions` | `/deep-status --assumptions` (`Read`) |
+
+### Escape Hatch (1)
+
+| Command | Surfaced by |
+|---------|-------------|
+| `/deep-slice` | `phase-guard` TDD block message (`spike`, `reset`) |
+
+### Utility (2) — standalone, feature migration pending
+
+These commands are the sole path for certain behaviors. They will be removed once their functionality is migrated (see `/deep-work --resume=<session-id>` and `/deep-status --cleanup` roadmap).
+
+| Command | Unique capability |
+|---------|-------------------|
+| `/deep-cleanup` | `git worktree list` scan, stale/active classification, fork/registry cleanup |
+| `/deep-resume` | Active session selection, worktree context restore, phase-specific resume dispatch |
 
 ## Output Files
 
@@ -332,8 +359,8 @@ Sessions now run in an isolated git worktree by default. This prevents accidenta
 - `/deep-work` creates a worktree at `.worktrees/dw/<slug>/` with a dedicated branch
 - All work happens inside the worktree — main branch stays clean
 - `/deep-finish` offers 4 completion options: merge, PR, keep branch, or discard
-- `/deep-cleanup` removes stale worktrees (7+ days old, no active session)
-- `/deep-resume` automatically detects and restores worktree context
+- `/deep-cleanup` removes stale worktrees (7+ days old, no active session) — **standalone utility**
+- `/deep-resume` restores worktree context and dispatches into the correct phase — **standalone utility**; `/deep-work` init also auto-detects stale sessions
 - Opt-out with `--no-branch` flag or `git_branch: false` in preset
 
 ### Session Lifecycle
@@ -567,12 +594,12 @@ deep-work v5.2 consolidates the entire workflow into a single `/deep-work` comma
 
 ### What changed
 - **SKILL.md reduced**: 461 lines → 280 lines (clearer, less redundant)
-- **13 commands deprecated**: Still functional but absorbed into the auto-flow
-- **`/deep-status` expanded**: Replaces `/deep-report`, `/deep-receipt`, `/deep-history`, `/deep-assumptions` with flags
+- **13 commands reclassified (v6.2.1)**: Quality Gate (3) / Internal (6) / Escape hatch (1) / Utility (2) / Special utility (1 moved). No commands removed; manual invocation remains supported.
+- **`/deep-status` expanded**: Routes `--report` / `--receipts` / `--history` / `--assumptions` flags to the same implementations as the standalone commands. Both manual paths work.
 - **`/deep-test` expanded**: Auto-runs drift-check, SOLID review, and insight analysis
 
 ### Migration from v5.1
-No action needed. Your existing presets and session state are fully compatible. Deprecated commands still work — they just invoke the same logic that the auto-flow would.
+No action needed. Your existing presets and session state are fully compatible. Previously "deprecated" commands are reclassified in v6.2.1 as Quality Gate / Internal / Escape hatch / Utility — they continue to work and remain first-class where auto-flow hands control back to you (e.g., `/deep-finish` after tests pass).
 
 ## Health Engine + Architecture Fitness
 
