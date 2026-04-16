@@ -3,8 +3,8 @@ allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestio
 description: "Resume an active deep work session — restores context and continues from where you left off"
 ---
 
-> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
-> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+> **Utility (v6.2.1)** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
+> 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
 
 # Deep Work Session Resume
 
@@ -79,7 +79,7 @@ Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
 ```
 ℹ️ 완료된 세션입니다.
 
-리포트 확인: /deep-report
+리포트 확인: `/deep-status --report` (또는 `/deep-report`)
 새 세션 시작: /deep-work <작업 설명>
 ```
 

@@ -3,8 +3,8 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 description: "Slice management — view status, activate, deactivate slices"
 ---
 
-> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
-> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+> **Escape hatch utility (v6.2.1)** — TDD 블록 시 `phase-guard`가 안내하는 수동 slice 개입 경로 (`spike`, `reset`, `model`). `/deep-implement` auto-flow가 정상 동작할 때는 대부분 자동 관리됩니다.
+> 참조처: `hooks/scripts/phase-guard-core.js` L110-L123 (TDD 블록 메시지에서 `/deep-slice spike/reset` 안내).
 
 # Slice Management (v4.0)
 
