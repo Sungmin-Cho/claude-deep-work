@@ -3,8 +3,8 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 description: "Receipt management — view, dashboard, export receipts"
 ---
 
-> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
-> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+> **Internal (v6.2.1)** — `/deep-status --receipts`가 이 파일의 display logic을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> 참조처: `commands/deep-status.md` §6 (`Read the /deep-receipt command file and follow its display logic inline`).
 
 # Receipt Management (v4.0)
 

@@ -3,8 +3,8 @@ allowed-tools: Read, Write, Glob, Bash
 description: "Generate or view the deep work session report"
 ---
 
-> **Deprecated in v5.2** — 이 커맨드는 `/deep-work` auto-flow에서 자동 실행됩니다.
-> 수동 호출도 여전히 가능합니다. 통합 워크플로우는 `/deep-work`을 참고하세요.
+> **Internal (v6.2.1)** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> 참조처: `commands/deep-status.md` §8 (`Read the /deep-report command file and follow its logic`).
 
 # Deep Work Session Report
 
@@ -268,7 +268,7 @@ Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumpt
 작업: [task_description]
 총 소요 시간: [total duration]
 
-리포트를 검토하고 필요시 /deep-report 로 재생성할 수 있습니다.
+리포트를 검토하고 필요 시 `/deep-status --report` 또는 `/deep-report`로 재생성할 수 있습니다.
 ```
 
 ### 7. Git commit suggestion (if applicable)
