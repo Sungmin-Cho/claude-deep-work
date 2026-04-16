@@ -80,10 +80,17 @@ Plan 승인이 유일한 필수 인터랙션입니다.
 - **Assumption Engine Quality Integration**: 품질 점수 기반 규칙 자가 최적화 (cohort 분석, 3세션 minimum gate)
 - **Quality Badge**: `/deep-status --badge`로 shields.io 뱃지 생성
 
-**Primary commands (7):** `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement`, `/deep-test`, `/deep-status`, `/deep-debug`
+**Primary workflow (7):** `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement`, `/deep-test`, `/deep-status`, `/deep-debug`
 
-**Deprecated commands (13):** 자동 흐름에 흡수됨. 수동 호출 가능하지만 불필요.
-- brainstorm, review, receipt, slice, insight, finish, cleanup, history, assumptions, resume, report, drift-check, solid-review
+**Special utility (4):** `/deep-fork`, `/deep-mutation-test`, `/deep-phase-review`, `/deep-sensor-scan`
+
+**Quality Gate (3):** `/drift-check`, `/solid-review`, `/deep-insight` — `/deep-test`가 자동 실행; standalone 호출 가능.
+
+**Internal (6):** `/deep-brainstorm`, `/deep-finish`, `/deep-report`, `/deep-receipt`, `/deep-history`, `/deep-assumptions` — orchestrator 또는 `/deep-status`가 내부 참조. 수동 호출도 공식 경로.
+
+**Escape hatch (1):** `/deep-slice` — `phase-guard`가 TDD 블록 시 안내 (`spike`, `reset`).
+
+**Utility (2):** `/deep-cleanup`, `/deep-resume` — standalone 기능. 향후 이관 후 삭제 예정.
 
 **Core mechanisms:**
 - Phase Guard (hook-enforced code blocking)
@@ -235,22 +242,22 @@ For detailed guidance, see [Testing Guide](skills/shared/references/testing-guid
 
 ## Quality Gates & Utilities
 
-### Plan Alignment Check (/drift-check) — *deprecated, auto-runs in /deep-test*
+### Plan Alignment Check (/drift-check) — *Quality Gate — auto-runs in /deep-test; standalone: /drift-check [plan-file]*
 
 Compares plan.md items with actual git diff. Reports implemented, missing, out-of-scope, and design drift.
 Standalone mode available: `/drift-check [plan-file]`.
 
-### SOLID Design Review (/solid-review) — *deprecated, auto-runs in /deep-test*
+### SOLID Design Review (/solid-review) — *Quality Gate — auto-runs in /deep-test; standalone: /solid-review [target]*
 
 Evaluates code against the 5 SOLID design principles with a per-principle scorecard.
 Standalone mode available: `/solid-review [target]`. See [SOLID Guide](skills/shared/references/solid-guide.md).
 
-### Code Insight Analysis (/deep-insight) — *deprecated, auto-runs in /deep-test*
+### Code Insight Analysis (/deep-insight) — *Quality Gate — auto-runs in /deep-test; standalone: /deep-insight [target]*
 
 Measures file metrics, complexity indicators, and dependency graphs. Never blocks workflow.
 Standalone mode available: `/deep-insight [target]`. See [Insight Guide](skills/shared/references/insight-guide.md).
 
-### Session Report (/deep-report) — *deprecated, use /deep-status --report*
+### Session Report (/deep-report) — *Internal — auto-generated after test pass; manual: /deep-report or /deep-status --report*
 
 Generates a comprehensive session report (research, plan, implementation, test outcomes, phase durations).
 Auto-generated after all tests pass. Manual: `/deep-report` or `/deep-status --report`.
@@ -315,10 +322,9 @@ First run saves setup answers to `.claude/deep-work-profile.yaml` as `default` p
 
 **Flags**: `--profile=quick`, `--team`, `--zero-base`, `--skip-research`, `--no-branch`, `--setup`
 
-## Session Resume — *deprecated, auto-detected in /deep-work*
+## Session Resume (/deep-resume)
 
-`/deep-work` 실행 시 기존 활성 세션이 감지되면 자동으로 resume 옵션을 제시합니다.
-`/deep-resume`는 여전히 수동으로 호출 가능합니다.
+`/deep-work` 진입 시 stale 세션은 자동 감지되지만, active 세션 선택·worktree 컨텍스트 복원·phase별 resume dispatch는 `/deep-resume`을 통해서만 가능합니다.
 
 ## State Management
 
