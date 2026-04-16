@@ -7,6 +7,24 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.1] — 2026-04-15
+
+### Changed
+- **Command classification cleanup**: 11 commands previously labeled `Deprecated in v5.2` and 2 more (`deep-brainstorm`, `deep-phase-review`) in the same table are now reclassified into five accurate categories: Quality Gate (3), Internal (6), Escape hatch (1), Utility (2), and Special utility (`/deep-phase-review` moved out).
+- **`/deep-finish` framing**: now described as "auto-call is primary, manual invocation remains a first-class path after test pass" rather than deprecated.
+- **Hook/skill user-facing guidance** now routes to `/deep-status` flags:
+  - `hooks/scripts/assumption-engine.js`: `/deep-assumptions` → `/deep-status --assumptions`
+  - `hooks/scripts/session-end.sh`: `/deep-report` → `/deep-status --report`
+  - `skills/deep-test/SKILL.md`: same alignment
+- **Session Report manual policy**: both `/deep-report` and `/deep-status --report` remain supported manual entry points. Wording is unified across `skills/deep-work-workflow/SKILL.md` heading + body, `commands/deep-report.md` body, and `commands/deep-resume.md` body.
+- **README** (en/ko): "Deprecated Commands (13)" single table replaced by five category tables; "What changed" bullets updated to reflect reclassification (not deprecation); body references to `/deep-cleanup`/`/deep-resume` in the Worktree Isolation section reframed as standalone utilities.
+- **`skills/deep-work-workflow/SKILL.md`** classification section rewritten into 6 categories (Primary / Special / Quality Gate / Internal / Escape hatch / Utility).
+
+### Not changed
+- **No commands removed.** `/deep-cleanup` and `/deep-resume` continue to be the sole path for worktree scan/fork cleanup and for active-session selection/worktree restore/phase dispatch respectively. Their feature migration is tracked as a follow-up.
+- **No functional behavior changed.** Existing slash commands continue to work exactly as before; only labels, wordings, and version numbers changed.
+- Historical `v5.2` deprecated notes in earlier sections are preserved as-is.
+
 ## [6.2.0] — 2026-04-14
 
 ### Added
