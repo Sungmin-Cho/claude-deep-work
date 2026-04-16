@@ -1244,7 +1244,7 @@ function autoAdjust(sessions, currentConfig, options) {
     const lines = activeAdjustments.map(a =>
       `  - ${a.field}: ${a.from} → ${a.to} (score ${a.score.toFixed(2)}, ${a.reason})`
     );
-    notification = `Assumption Engine auto-adjustment:\n${lines.join('\n')}\n  Floors guaranteed. Run /deep-assumptions for details.`;
+    notification = `Assumption Engine auto-adjustment:\n${lines.join('\n')}\n  Floors guaranteed. Run /deep-status --assumptions for details.`;
   }
 
   return { adjustments, coldStart: false, notification };
