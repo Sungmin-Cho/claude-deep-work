@@ -17,7 +17,7 @@ init_deep_work_state
 # ─── Read tool input from environment variable (F-04) ───────
 # PostToolUse hooks 배열에서 앞선 hook(file-tracker.sh)이 stdin을 소비할 수 있으므로,
 # stdin 대신 환경변수 $CLAUDE_TOOL_INPUT을 통해 tool input을 받는다.
-TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
+TOOL_INPUT="${CLAUDE_TOOL_USE_INPUT:-${CLAUDE_TOOL_INPUT:-}}"
 [[ -z "$TOOL_INPUT" ]] && exit 0
 
 # ─── 1. State 파일 대상인지 확인 ────────────────────────────

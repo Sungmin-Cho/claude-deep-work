@@ -385,7 +385,9 @@ plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다
 
 ## Hooks
 
-세션 라이프사이클과 computational enforcement를 관리하는 훅:
+세션 라이프사이클과 computational enforcement를 관리하는 훅.
+
+> **Windows**: Hook 스크립트 실행에 `bash`가 PATH에 필요합니다 (Git for Windows 또는 WSL).
 
 | 훅 | 스크립트 | 트리거 | 용도 |
 |-----|--------|--------|------|

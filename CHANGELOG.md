@@ -7,6 +7,16 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.2] — 2026-04-16
+
+### Fixed
+- **Cross-platform hooks compatibility**: Removed POSIX inline env var assignments (`FOO=bar command`) from all 5 hook commands in `hooks.json`. Windows `cmd.exe` cannot parse this syntax, causing all hooks to fail silently. Scripts now read Claude Code's native env vars (`CLAUDE_TOOL_USE_TOOL_NAME`, `CLAUDE_TOOL_USE_INPUT`) directly with backwards-compatible fallback.
+
+### Changed
+- `hooks/scripts/phase-guard.sh`: reads `CLAUDE_TOOL_USE_TOOL_NAME` with `CLAUDE_TOOL_NAME` fallback
+- `hooks/scripts/file-tracker.sh`: reads `CLAUDE_TOOL_USE_TOOL_NAME` with `CLAUDE_TOOL_NAME` fallback
+- `hooks/scripts/phase-transition.sh`: reads `CLAUDE_TOOL_USE_INPUT` with `CLAUDE_TOOL_INPUT` fallback
+
 ## [6.2.1] — 2026-04-15
 
 ### Changed

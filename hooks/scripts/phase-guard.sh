@@ -68,7 +68,7 @@ fi
 TOOL_INPUT="$(cat)"
 
 # Detect tool name from environment (set by hooks system)
-TOOL_NAME="${CLAUDE_TOOL_NAME:-}"
+TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
 # ─── File path extraction (all phases, for worktree guard + ownership) ──
 # NOTE: 파일 경로 추출은 CURRENT_SESSION_ID와 무관하게 실행해야 한다 (F-02).

@@ -38,7 +38,7 @@ fi
 # ─── 도구 입력 파싱 ──────────────────────────────────────────
 
 TOOL_INPUT="$(cat)"
-TOOL_NAME="${CLAUDE_TOOL_NAME:-}"
+TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
 FILE_PATH=""
 

@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh",
             "timeout": 5
           }
         ]
@@ -36,12 +36,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_NAME=$CLAUDE_TOOL_USE_TOOL_NAME bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh",
             "timeout": 3
           },
           {
             "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sensor-trigger.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sensor-trigger.js",
             "timeout": 3
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} CLAUDE_TOOL_INPUT=$CLAUDE_TOOL_USE_INPUT bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-transition.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-transition.sh",
             "timeout": 3
           }
         ]
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DEEP_WORK_SESSION_ID=${DEEP_WORK_SESSION_ID:-} bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh",
             "timeout": 5
           }
         ]

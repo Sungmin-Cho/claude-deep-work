@@ -434,7 +434,9 @@ The plugin detects language from user messages or the Claude Code `language` set
 
 ## Hooks
 
-Hooks manage the session lifecycle and computational enforcement:
+Hooks manage the session lifecycle and computational enforcement.
+
+> **Windows**: Hook scripts require `bash` in PATH (Git for Windows or WSL).
 
 | Hook | Script | Trigger | Purpose |
 |------|--------|---------|---------|
