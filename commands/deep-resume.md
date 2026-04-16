@@ -79,7 +79,7 @@ Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
 ```
 ℹ️ 완료된 세션입니다.
 
-리포트 확인: `/deep-status --report` (또는 `/deep-report`)
+리포트 확인: `/deep-status --report` · 재생성: `/deep-report`
 새 세션 시작: /deep-work <작업 설명>
 ```
 

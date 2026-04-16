@@ -268,7 +268,7 @@ Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumpt
 작업: [task_description]
 총 소요 시간: [total duration]
 
-리포트를 검토하고 필요 시 `/deep-status --report` 또는 `/deep-report`로 재생성할 수 있습니다.
+리포트를 검토하고 필요 시 `/deep-report`로 재생성하거나, `/deep-status --report`로 확인할 수 있습니다.
 ```
 
 ### 7. Git commit suggestion (if applicable)
