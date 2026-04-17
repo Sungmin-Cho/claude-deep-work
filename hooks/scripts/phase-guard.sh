@@ -33,8 +33,12 @@ block_ownership() {
   " 2>/dev/null || echo "|")"
   local owner_sid="${parsed%%|*}"
   local owner_task="${parsed#*|}"
+  local fp_esc owner_sid_esc owner_task_esc
+  fp_esc="$(json_escape "$fp")"
+  owner_sid_esc="$(json_escape "$owner_sid")"
+  owner_task_esc="$(json_escape "$owner_task")"
   cat <<JSON
-{"decision":"block","reason":"⛔ Deep Work Guard: 이 파일은 다른 세션의 작업 영역입니다.\n\n세션: ${owner_sid} (${owner_task})\n파일: ${fp}\n\n해당 세션에서 작업하거나, /deep-status --all로 세션 목록을 확인하세요."}
+{"decision":"block","reason":"⛔ Deep Work Guard: 이 파일은 다른 세션의 작업 영역입니다.\n\n세션: ${owner_sid_esc} (${owner_task_esc})\n파일: ${fp_esc}\n\n해당 세션에서 작업하거나, /deep-status --all로 세션 목록을 확인하세요."}
 JSON
   exit 2
 }
@@ -76,9 +80,8 @@ TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 # session ID 조건 밖으로 분리하고, ownership check만 session ID 안에 유지한다.
 _OWN_FILE=""
 if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "MultiEdit" ]]; then
-  if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-    _OWN_FILE="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-  fi
+  # Use JSON parser instead of regex — handles escaped quotes in file paths
+  _OWN_FILE="$(extract_file_path_from_json "$TOOL_INPUT")"
 elif [[ "$TOOL_NAME" == "Bash" ]]; then
   _BASH_CMD="$(echo "$TOOL_INPUT" | node -e "
     process.stdin.setEncoding('utf8');let d='';
@@ -136,8 +139,10 @@ if [[ "$WORKTREE_ENABLED" == "true" && -n "$WORKTREE_PATH" && -n "$_OWN_FILE_NOR
     done
 
     if [[ "$_IS_META" == "false" ]]; then
+      _OWN_FILE_ESC="$(json_escape "$_OWN_FILE")"
+      _WORKTREE_PATH_ESC="$(json_escape "$WORKTREE_PATH")"
       cat <<JSON
-{"decision":"block","reason":"⛔ Worktree Guard: worktree 외부 파일 수정 차단\n\n대상: $_OWN_FILE\n허용 경로: $WORKTREE_PATH/\n\nworktree 내에서 작업해주세요."}
+{"decision":"block","reason":"⛔ Worktree Guard: worktree 외부 파일 수정 차단\n\n대상: ${_OWN_FILE_ESC}\n허용 경로: ${_WORKTREE_PATH_ESC}/\n\nworktree 내에서 작업해주세요."}
 JSON
       exit 2
     fi
@@ -225,8 +230,11 @@ JSON
       ;;
   esac
 
+  _OWN_FILE_ESC="$(json_escape "$_OWN_FILE")"
+  _PHASE_LABEL_ESC="$(json_escape "$PHASE_LABEL")"
+  _NEXT_STEP_ESC="$(json_escape "$NEXT_STEP")"
   cat <<JSON
-{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${PHASE_LABEL} 단계입니다. 코드 파일 수정이 차단되었습니다.\n\n수정 시도된 파일: ${_OWN_FILE}\n\n${NEXT_STEP}"}
+{"decision":"block","reason":"⛔ Deep Work Guard: 현재 ${_PHASE_LABEL_ESC} 단계입니다. 코드 파일 수정이 차단되었습니다.\n\n수정 시도된 파일: ${_OWN_FILE_ESC}\n\n${_NEXT_STEP_ESC}"}
 JSON
   exit 2
 fi
@@ -264,8 +272,8 @@ if NODE_RESULT=$(echo "$NODE_INPUT" | node "$SCRIPT_DIR/phase-guard-core.js" 2>>
   DECISION=$(echo "$NODE_RESULT" | grep -o '"decision"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
 
   if [[ "$DECISION" == "block" ]]; then
-    # Extract reason and output as hook block response
-    REASON=$(echo "$NODE_RESULT" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).reason||'')}catch(e){console.log('')}})" 2>/dev/null || echo "TDD enforcement가 이 수정을 차단했습니다.")
+    # Extract reason and output as hook block response (already JSON-escaped by Node)
+    REASON=$(echo "$NODE_RESULT" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const s=JSON.stringify(JSON.parse(d).reason||'');process.stdout.write(s.slice(1,-1))}catch(e){process.stdout.write('TDD enforcement가 이 수정을 차단했습니다.')}})" 2>/dev/null || echo "TDD enforcement가 이 수정을 차단했습니다.")
     cat <<JSON
 {"decision":"block","reason":"${REASON}"}
 JSON

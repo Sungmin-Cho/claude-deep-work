@@ -53,10 +53,8 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     FILE_PATH="[bash] $COMMAND"
   fi
 else
-  # Write/Edit/MultiEdit: file_path 추출
-  if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-    FILE_PATH="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-  fi
+  # Write/Edit/MultiEdit: file_path 추출 (JSON 파서로 escape된 따옴표 처리)
+  FILE_PATH="$(extract_file_path_from_json "$TOOL_INPUT")"
 fi
 
 # file_path를 못 찾으면 종료

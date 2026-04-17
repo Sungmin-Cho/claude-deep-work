@@ -21,16 +21,17 @@ TOOL_INPUT="${CLAUDE_TOOL_USE_INPUT:-${CLAUDE_TOOL_INPUT:-}}"
 [[ -z "$TOOL_INPUT" ]] && exit 0
 
 # ─── 1. State 파일 대상인지 확인 ────────────────────────────
-FILE_PATH=""
-if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-  FILE_PATH="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-fi
+FILE_PATH="$(extract_file_path_from_json "$TOOL_INPUT")"
 
 [[ -z "$FILE_PATH" ]] && exit 0
 [[ "$FILE_PATH" != *".claude/deep-work."*".md" ]] && exit 0
 
 # ─── 2. Session ID 추출 ────────────────────────────────────
-SESSION_ID="$(echo "$FILE_PATH" | grep -o 'deep-work\.[^.]*' | sed 's/deep-work\.//')"
+# Take the LAST segment (innermost `deep-work.XXXX`) and disallow `/` in the
+# captured id, so fork worktree paths like
+# `.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md`
+# resolve to `s-child`, not a multi-line mess.
+SESSION_ID="$(echo "$FILE_PATH" | grep -o 'deep-work\.[^./]*' | sed 's/deep-work\.//' | tail -1)"
 [[ -z "$SESSION_ID" ]] && exit 0
 
 # ─── 3. 현재 phase 읽기 ────────────────────────────────────
