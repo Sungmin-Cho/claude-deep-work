@@ -124,27 +124,58 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
     " "$ACTIVE_SLICE" "$TIMESTAMP" "$RECEIPT_FILE" 2>/dev/null || true
   fi
 
-  # 파일 변경을 receipt의 changes.files_modified에 추가 (best-effort)
-  # Node.js로 정확한 JSON 조작 — process.argv로 전달하여 injection 방지
+  # 파일 변경을 receipt의 changes.files_modified에 추가 (best-effort).
+  # Serialized by _acquire_lock; on lock timeout, queue to pending file that
+  # a subsequent invocation will drain before its own update. Prevents lost
+  # entries under concurrent PostToolUse invocations (v6.2.3 race).
   if command -v node &>/dev/null; then
-    node -e "
-      const fs = require('fs');
-      const args = process.argv.filter(a => a !== '[eval]');
-      const [, receiptFile, filePath, ts] = args;
-      try {
-        const r = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
-        if (!r.changes) r.changes = { files_modified: [] };
-        if (!r.changes.files_modified) r.changes.files_modified = [];
-        if (!r.changes.files_modified.includes(filePath)) r.changes.files_modified.push(filePath);
-        r.timestamp = ts;
-        const tmp = receiptFile + '.tmp.' + process.pid;
-        fs.writeFileSync(tmp, JSON.stringify(r, null, 2));
-        fs.renameSync(tmp, receiptFile);
-      } catch(e) {
-        process.stderr.write('file-tracker receipt update error: ' + e.message + '\\n');
-        try { fs.unlinkSync(receiptFile + '.tmp.' + process.pid); } catch(_) {}
-      }
-    " "$RECEIPT_FILE" "$FILE_PATH" "$TIMESTAMP" 2>/dev/null || true
+    _RECEIPT_LOCK="${RECEIPT_FILE}.lock"
+    _RECEIPT_PENDING="${RECEIPT_FILE}.pending-changes.jsonl"
+
+    if _acquire_lock "$_RECEIPT_LOCK" 20 0.05; then
+      node -e '
+        const fs = require("fs");
+        const [, receiptFile, pendingFile, filePath, ts] = process.argv;
+        try {
+          const r = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
+          if (!r.changes) r.changes = { files_modified: [] };
+          if (!r.changes.files_modified) r.changes.files_modified = [];
+
+          // Drain any pending entries queued during prior lock contention.
+          if (fs.existsSync(pendingFile)) {
+            const lines = fs.readFileSync(pendingFile, "utf8").split("\n").filter(Boolean);
+            for (const line of lines) {
+              try {
+                const entry = JSON.parse(line);
+                if (typeof entry.file_path === "string" && !r.changes.files_modified.includes(entry.file_path)) {
+                  r.changes.files_modified.push(entry.file_path);
+                }
+              } catch(_) { /* skip malformed pending line */ }
+            }
+            fs.unlinkSync(pendingFile);
+          }
+
+          // Add current change.
+          if (!r.changes.files_modified.includes(filePath)) r.changes.files_modified.push(filePath);
+          r.timestamp = ts;
+
+          const tmp = receiptFile + ".tmp." + process.pid;
+          fs.writeFileSync(tmp, JSON.stringify(r, null, 2));
+          fs.renameSync(tmp, receiptFile);
+        } catch(e) {
+          process.stderr.write("file-tracker receipt update error: " + e.message + "\n");
+          try { fs.unlinkSync(receiptFile + ".tmp." + process.pid); } catch(_) {}
+        }
+      ' "$RECEIPT_FILE" "$_RECEIPT_PENDING" "$FILE_PATH" "$TIMESTAMP" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+      _release_lock "$_RECEIPT_LOCK"
+    else
+      # Lock timeout — queue this entry for the next invocation's drain.
+      node -e '
+        const fs = require("fs");
+        const [, pendingFile, filePath, ts] = process.argv;
+        fs.appendFileSync(pendingFile, JSON.stringify({ file_path: filePath, ts }) + "\n");
+      ' "$_RECEIPT_PENDING" "$FILE_PATH" "$TIMESTAMP" 2>/dev/null || true
+    fi
   fi
 fi
 
