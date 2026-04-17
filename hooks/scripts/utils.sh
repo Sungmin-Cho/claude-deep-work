@@ -71,6 +71,140 @@ read_frontmatter_field() {
   printf '%s' "$value"
 }
 
+# ─── YAML list field extraction ───────────────────────────────
+# Reads a YAML list under a frontmatter key; emits JSON array string.
+# Handles both inline array (key: [a, b, c]) and block list forms
+# (key:\n  - a\n  - b). Returns "[]" on missing field or parse errors.
+# Usage: read_frontmatter_list <file> <field_name>
+
+read_frontmatter_list() {
+  local file="$1" field="$2"
+  [[ -f "$file" ]] || { printf '[]'; return 0; }
+  node -e '
+    (() => {
+      const fs = require("fs"), f = process.argv[1], key = process.argv[2];
+      try {
+        const t = fs.readFileSync(f, "utf8");
+        const fm = t.match(/^---\n([\s\S]*?)\n---/);
+        if (!fm) { process.stdout.write("[]"); return; }
+        const body = fm[1];
+        // Escape regex special chars in key
+        const keyEsc = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        // inline array form: key: [a, b, "c"]
+        const inline = body.match(new RegExp("^" + keyEsc + ":\\s*\\[([^\\]]*)\\]", "m"));
+        if (inline) {
+          const items = inline[1]
+            .split(",")
+            .map(s => s.trim().replace(/^["\x27]|["\x27]$/g, ""))
+            .filter(Boolean);
+          process.stdout.write(JSON.stringify(items));
+          return;
+        }
+        // block list form: key:\n  - a\n  - b
+        const block = body.match(new RegExp("^" + keyEsc + ":\\s*\\n((?:\\s+- .*\\n?)+)", "m"));
+        if (block) {
+          const items = block[1]
+            .split("\n")
+            .map(l => l.match(/^\s+-\s+(.+)$/))
+            .filter(Boolean)
+            .map(m => m[1].replace(/^["\x27]|["\x27]$/g, ""));
+          process.stdout.write(JSON.stringify(items));
+          return;
+        }
+        process.stdout.write("[]");
+      } catch(_) { process.stdout.write("[]"); }
+    })();
+  ' "$file" "$field" 2>/dev/null || printf '[]'
+}
+
+# ─── JSON helpers ────────────────────────────────────────────
+# extract_file_path_from_json — safely extract .file_path from a JSON blob.
+# Returns empty string on parse failure or missing/non-string field.
+# Unlike regex parsing, handles escaped quotes (\"), backslashes, and Unicode
+# escapes correctly.
+# Usage: path=$(extract_file_path_from_json "$TOOL_INPUT")
+
+extract_file_path_from_json() {
+  local input="$1"
+  printf '%s' "$input" | node -e '
+    let d = ""; process.stdin.setEncoding("utf8");
+    process.stdin.on("data", c => d += c);
+    process.stdin.on("end", () => {
+      try {
+        const o = JSON.parse(d);
+        if (typeof o.file_path === "string") process.stdout.write(o.file_path);
+      } catch(_) { /* malformed — emit empty */ }
+    });
+  ' 2>/dev/null || printf ''
+}
+
+# json_escape — escape a string for safe inclusion in a JSON string literal.
+# Arg is REQUIRED. No stdin fallback (prevents hook hangs when arg happens
+# to be empty). Empty arg returns empty string.
+# Usage: reason_esc=$(json_escape "$reason")
+
+json_escape() {
+  local input="${1-}"
+  [[ -z "$input" ]] && return 0
+  printf '%s' "$input" | node -e '
+    let d = ""; process.stdin.setEncoding("utf8");
+    process.stdin.on("data", c => d += c);
+    process.stdin.on("end", () => {
+      const s = JSON.stringify(d);
+      // strip surrounding quotes for inline interpolation
+      process.stdout.write(s.slice(1, -1));
+    });
+  ' 2>/dev/null
+}
+
+# ─── Lock primitives ─────────────────────────────────────────
+# mkdir-based advisory spinlock. Fail-closed on timeout (no force-removal —
+# that was the v6.2.3 bug that corrupted the registry under contention).
+# _acquire_lock <lock_path> [retries=20] [sleep_s=0.05]
+# Returns 0 on acquire, 1 on timeout. On timeout, appends to the guard error log.
+
+_acquire_lock() {
+  local lock="$1" retries="${2:-20}" sleep_s="${3:-0.05}"
+  local i
+  for ((i = 0; i < retries; i++)); do
+    if mkdir "$lock" 2>/dev/null; then
+      return 0
+    fi
+    sleep "$sleep_s" 2>/dev/null || true
+  done
+  local err_log="${PROJECT_ROOT:-$PWD}/.claude/deep-work-guard-errors.log"
+  mkdir -p "$(dirname "$err_log")" 2>/dev/null
+  printf '%s lock timeout: %s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)" \
+    "$lock" >> "$err_log" 2>/dev/null || true
+  return 1
+}
+
+_release_lock() {
+  rmdir "$1" 2>/dev/null || true
+}
+
+# _try_write_registry — call write_registry and log failure with context.
+# v6.2.4 post-review: previously, all callers wrapped the call with
+# `|| true`, so lock-contention failures silently skipped registry
+# mutations (session registration, ownership updates, phase transitions
+# could all vanish without trace). Now we log to the guard error log so
+# at least the operator can investigate.
+# Non-fatal: returns 1 on failure, but the caller is expected to keep
+# going — PostToolUse hooks must never block.
+_try_write_registry() {
+  local json="$1" context="${2:-unknown}"
+  if ! write_registry "$json"; then
+    local err_log="${PROJECT_ROOT:-$PWD}/.claude/deep-work-guard-errors.log"
+    mkdir -p "$(dirname "$err_log")" 2>/dev/null
+    printf '%s write_registry failed (context: %s)\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)" \
+      "$context" >> "$err_log" 2>/dev/null || true
+    return 1
+  fi
+  return 0
+}
+
 # ─── Session ID generation ──────────────────────────────────
 # Generates a unique session identifier: s-{8 hex digits}
 
@@ -161,22 +295,20 @@ write_registry() {
       flock -w 2 9 || exit 1
       printf '%s' "$json" > "$tmp_file" && mv "$tmp_file" "$registry_file"
     ) 9>"$lock_path"
-  else
-    # mkdir-based spinlock fallback (NFS, macOS without flock)
-    local i=0
-    while ! mkdir "$lock_path" 2>/dev/null; do
-      i=$((i + 1))
-      if [[ $i -ge 3 ]]; then
-        # Force-remove stale lock and proceed
-        rmdir "$lock_path" 2>/dev/null || rm -rf "$lock_path" 2>/dev/null
-        mkdir "$lock_path" 2>/dev/null || true
-        break
-      fi
-      sleep 0.1
-    done
-    printf '%s' "$json" > "$tmp_file" && mv "$tmp_file" "$registry_file"
-    rmdir "$lock_path" 2>/dev/null
+    return $?
   fi
+
+  # mkdir-based spinlock fallback (NFS, macOS without flock). Fail-closed:
+  # do NOT force-remove the lock directory on timeout — that corrupted the
+  # registry under contention in v6.2.3.
+  if ! _acquire_lock "$lock_path" 20 0.05; then
+    rm -f "$tmp_file" 2>/dev/null
+    return 1
+  fi
+  printf '%s' "$json" > "$tmp_file" && mv "$tmp_file" "$registry_file"
+  local rc=$?
+  _release_lock "$lock_path"
+  return $rc
 }
 
 # ─── Session registration ──────────────────────────────────
@@ -209,7 +341,7 @@ register_session() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$pid" "$task_desc" "$work_dir")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "register_session(${session_id})"
 }
 
 unregister_session() {
@@ -225,7 +357,7 @@ unregister_session() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "unregister_session(${session_id})"
 }
 
 # ─── File ownership ────────────────────────────────────────
@@ -333,7 +465,7 @@ register_file_ownership() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$file_path")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "register_file_ownership(${session_id})"
 }
 
 # ─── Activity & phase sync ─────────────────────────────────
@@ -354,7 +486,7 @@ update_last_activity() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "update_last_activity(${session_id})"
 }
 
 update_registry_phase() {
@@ -376,7 +508,7 @@ update_registry_phase() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$phase")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "update_registry_phase(${session_id})"
 }
 
 # ─── Stale session detection ───────────────────────────────
@@ -579,7 +711,7 @@ register_fork_session() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$parent_id" "$fork_generation" "$task_desc" "$work_dir" "$restart_phase")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "register_fork_session(${session_id})"
 
   # 부모 상태 파일 업데이트도 같은 호출 내에서 수행
   local parent_state="$PROJECT_ROOT/.claude/deep-work.${parent_id}.md"

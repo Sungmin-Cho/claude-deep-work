@@ -3,7 +3,7 @@ allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestio
 description: "Resume an active deep work session — restores context and continues from where you left off"
 ---
 
-> **Utility (v6.2.1)** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
+> **Utility (v6.2.4)** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
 > 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
 
 # Deep Work Session Resume

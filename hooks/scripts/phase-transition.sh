@@ -14,23 +14,32 @@ source "$SCRIPT_DIR/utils.sh"
 
 init_deep_work_state
 
-# ─── Read tool input from environment variable (F-04) ───────
-# PostToolUse hooks 배열에서 앞선 hook(file-tracker.sh)이 stdin을 소비할 수 있으므로,
-# stdin 대신 환경변수 $CLAUDE_TOOL_INPUT을 통해 tool input을 받는다.
+# ─── Read tool input ─────────────────────────────────────
+# PostToolUse hooks 배열에서 앞선 hook(file-tracker.sh)이 stdin을 소비하므로
+# 여기서는 stdin을 읽을 수 없다. v6.2.4 이전: CLAUDE_TOOL_INPUT 환경변수를
+# 시도했지만 이는 Claude Code hook 프로토콜에 정의되어 있지 않아 프로덕션
+# 에서는 사실상 빈 문자열이었다. 이제는 file-tracker.sh가 stdin을 읽으며
+# $PPID 키로 캐시해 두고, 우리가 그 캐시 파일을 읽는다. 환경변수도
+# 혹시 미래 버전에서 설정될 가능성을 고려해 우선 확인한다.
 TOOL_INPUT="${CLAUDE_TOOL_USE_INPUT:-${CLAUDE_TOOL_INPUT:-}}"
+if [[ -z "$TOOL_INPUT" ]]; then
+  _HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
+  [[ -f "$_HOOK_INPUT_CACHE" ]] && TOOL_INPUT="$(cat "$_HOOK_INPUT_CACHE" 2>/dev/null || printf '')"
+fi
 [[ -z "$TOOL_INPUT" ]] && exit 0
 
 # ─── 1. State 파일 대상인지 확인 ────────────────────────────
-FILE_PATH=""
-if echo "$TOOL_INPUT" | grep -q '"file_path"'; then
-  FILE_PATH="$(echo "$TOOL_INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-fi
+FILE_PATH="$(extract_file_path_from_json "$TOOL_INPUT")"
 
 [[ -z "$FILE_PATH" ]] && exit 0
 [[ "$FILE_PATH" != *".claude/deep-work."*".md" ]] && exit 0
 
 # ─── 2. Session ID 추출 ────────────────────────────────────
-SESSION_ID="$(echo "$FILE_PATH" | grep -o 'deep-work\.[^.]*' | sed 's/deep-work\.//')"
+# Take the LAST segment (innermost `deep-work.XXXX`) and disallow `/` in the
+# captured id, so fork worktree paths like
+# `.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md`
+# resolve to `s-child`, not a multi-line mess.
+SESSION_ID="$(echo "$FILE_PATH" | grep -o 'deep-work\.[^./]*' | sed 's/deep-work\.//' | tail -1)"
 [[ -z "$SESSION_ID" ]] && exit 0
 
 # ─── 3. 현재 phase 읽기 ────────────────────────────────────

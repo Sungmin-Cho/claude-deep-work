@@ -4,7 +4,7 @@ description: "Manually trigger structural review and/or cross-model adversarial 
 argument-hint: "[--structural] [--adversarial] [--phase=brainstorm|research|plan]"
 ---
 
-> **Special Utility (v6.2.1)** — 특정 Phase 문서(brainstorm/research/plan)의 구조적 리뷰와 adversarial 크로스 모델 리뷰를 수동으로 트리거합니다. 코드 리뷰는 deep-review 플러그인(deep-suite) 사용.
+> **Special Utility (v6.2.4)** — 특정 Phase 문서(brainstorm/research/plan)의 구조적 리뷰와 adversarial 크로스 모델 리뷰를 수동으로 트리거합니다. 코드 리뷰는 deep-review 플러그인(deep-suite) 사용.
 
 # Deep Phase Review — Manual Review Gate Trigger (v4.2)
 

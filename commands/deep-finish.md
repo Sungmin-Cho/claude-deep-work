@@ -3,7 +3,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
 description: "Finish a deep work session — merge, PR, keep, or discard the branch"
 ---
 
-> **Internal (v6.2.1)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
+> **Internal (v6.2.4)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
 > 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read "/deep-finish"`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
 
 # Deep Work Session Completion (v4.1)
@@ -86,7 +86,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "total_contracts": 0,
     "contracts_met": 0
   },
-  "deep_work_version": "5.3.0"
+  "deep_work_version": "6.2.4"
 }
 ```
 

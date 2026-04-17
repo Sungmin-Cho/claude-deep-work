@@ -1,5 +1,5 @@
 {
-  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v5.6.0 Session Fork)",
+  "description": "Phase enforcement, file tracking, update check, and session lifecycle hooks (v6.2.4)",
   "hooks": {
     "SessionStart": [
       {

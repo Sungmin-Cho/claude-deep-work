@@ -233,20 +233,46 @@ append_session_history() {
   local entry
   entry="{\"session_id\":\"${session_id}\",\"status\":\"provisional\",\"quality_score\":null,\"model_primary\":\"${model_primary}\",\"slices\":${slices_json},\"phases_used\":${phases_json},\"slices_total\":${slices_total},\"slices_passed_first_try\":${slices_passed_first_try},\"tdd_mode\":\"${tdd_mode}\",\"tdd_overrides\":${tdd_overrides},\"bugs_caught_in_red_phase\":${bugs_caught_in_red_phase},\"research_references_used\":${research_references_used},\"test_retry_count\":${test_retry_count},\"review_scores\":${review_scores},\"cross_model_unique_findings\":${cross_model_unique_findings},\"total_duration_minutes\":${duration_minutes},\"final_outcome\":\"${final_outcome}\"}"
 
-  # ── Write to JSONL file with lock
+  # ── Write to JSONL file with lock.
+  # On lock timeout, queue the entry to a sibling pending-append.jsonl file
+  # that a subsequent session-end will drain. Previously, the fallback wrote
+  # unlocked, which could interleave bytes from concurrent session closes
+  # (v6.2.3 bug M-1).
   _append_with_lock() {
     local target="$1" data="$2"
     local lockdir="${target}.lock.d"
-    local retries=3
+    local pending="${target}.pending-append.jsonl"
+    local retries=20
     while [ "$retries" -gt 0 ]; do
       if mkdir "$lockdir" 2>/dev/null; then
+        # Crash-safe drain (v6.2.4 post-review W-1): rename pending to
+        # .draining.<pid> BEFORE appending to target. If we crash between
+        # cat and truncate, the renamed file survives and a future run
+        # (including a second _append_with_lock call) can recover.
+        if [ -s "$pending" ]; then
+          local draining="${pending}.draining.$$"
+          mv "$pending" "$draining" 2>/dev/null || true
+          if [ -s "$draining" ]; then
+            cat "$draining" >> "$target" 2>/dev/null
+          fi
+          rm -f "$draining" 2>/dev/null
+        fi
+        # Also recover any .draining.<pid> left by crashed prior runs.
+        for orphan in "${pending}.draining."*; do
+          [ -s "$orphan" ] || continue
+          cat "$orphan" >> "$target" 2>/dev/null
+          rm -f "$orphan" 2>/dev/null
+        done
         echo "$data" >> "$target" 2>/dev/null
         rmdir "$lockdir" 2>/dev/null
         return 0
       fi
       retries=$((retries - 1)); sleep 0.1
     done
-    echo "$data" >> "$target" 2>/dev/null
+    # Lock timeout — queue instead of appending without a lock.
+    echo "$data" >> "$pending" 2>/dev/null
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) session-end JSONL lock timeout, queued to $pending" \
+      >> "$PROJECT_ROOT/.claude/deep-work-guard-errors.log" 2>/dev/null || true
   }
 
   mkdir -p "$history_dir" 2>/dev/null || return 0
@@ -263,6 +289,12 @@ append_session_history() {
 
 # Run in subshell — errors must never block session close
 (append_session_history) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+
+# v6.2.4 post-review: cleanup stale PostToolUse stdin-cache files.
+# Remove our own PPID cache (no longer needed after session close) and any
+# orphaned .hook-tool-input.* files older than 60 minutes. Best-effort.
+rm -f "$PROJECT_ROOT/.claude/.hook-tool-input.$PPID" 2>/dev/null
+find "$PROJECT_ROOT/.claude" -maxdepth 1 -name '.hook-tool-input.*' -type f -mmin +60 -delete 2>/dev/null || true
 
 # v5.4: Update last_activity on CLI stop (do NOT unregister)
 if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then

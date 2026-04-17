@@ -66,7 +66,7 @@ State에서 `model_routing.implement` 확인 (기본: "sonnet").
 - **"auto"**: slice size에 따라 모델 자동 선택 (S→haiku, M→sonnet, L→sonnet, XL→opus)
 
 Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙을 프롬프트에 포함 (hook이 delegated agent에 미적용), slice당 10분 timeout.
-상세: Read("skills/shared/references/model-routing-guide.md")
+상세: Read("../shared/references/model-routing-guide.md")
 
 ## Solo Slice Loop
 
@@ -163,12 +163,12 @@ GREEN 단계에서 예기치 않은 테스트 실패 시:
 ## Phase Review Gate
 
 모든 slice 완료 후, Test 전환 전:
-Read("skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: implement
 - Document: 구현된 코드 전체 (git diff)
 - Self-review: 계획 충실도, 크로스 슬라이스 일관성, 미구현 항목
 
-상세: Read("skills/shared/references/implementation-guide.md")
+상세: Read("../shared/references/implementation-guide.md")
 
 # Section 3: 완료
 

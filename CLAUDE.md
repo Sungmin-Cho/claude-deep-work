@@ -1,4 +1,4 @@
-# deep-work v6.2.3
+# deep-work v6.2.4
 
 Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인.
 
@@ -6,6 +6,7 @@ Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstor
 
 ```
 .claude-plugin/plugin.json          # 플러그인 매니페스트
+package.json                         # npm 매니페스트 (files 필드에 배포 대상 명시)
 commands/                            # 슬래시 커맨드 (thin wrappers + utilities)
 hooks/hooks.json                     # 훅 설정 (P0 worktree guard + P1 phase transition)
 hooks/scripts/                       # 훅 스크립트 및 테스트
@@ -15,7 +16,10 @@ skills/deep-research/                # Phase 1 Skill
 skills/deep-plan/                    # Phase 2 Skill
 skills/deep-implement/               # Phase 3 Skill
 skills/deep-test/                    # Phase 4 Skill
-skills/shared/references/            # 공통 레퍼런스 가이드 (14개)
+skills/shared/references/            # 공통 레퍼런스 가이드
 skills/deep-work-workflow/           # 워크플로우 개요 Skill
-templates/                           # CI 템플릿
+sensors/                             # 센서 시스템 (linter/type/coverage detection + run)
+health/                              # Health Engine (드리프트 탐지 + fitness functions)
+templates/                           # CI 템플릿 + topology 엔진 (topologies/, topology-detector.js)
+assumptions.json                     # assumption 기준선 (hook enforcement justification)
 ```

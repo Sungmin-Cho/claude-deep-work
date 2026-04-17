@@ -3,7 +3,7 @@ allowed-tools: Read, Write, Glob, Bash
 description: "Generate or view the deep work session report"
 ---
 
-> **Internal (v6.2.1)** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal (v6.2.4)** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `commands/deep-status.md` §8 (`Read the /deep-report command file and follow its logic`).
 
 # Deep Work Session Report
