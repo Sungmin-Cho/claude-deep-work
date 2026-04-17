@@ -199,15 +199,22 @@ if [[ "$TOOL_NAME" != "Bash" && -n "${FILE_PATH:-}" ]]; then
   esac
 
   if $IS_MARKER && [[ -f "$STATE_FILE" ]]; then
-    # Update sensor_cache_valid: false in frontmatter (macOS-compatible sed)
-    if grep -q '^sensor_cache_valid:' "$STATE_FILE" 2>/dev/null; then
-      sed -i '' 's/^sensor_cache_valid:.*/sensor_cache_valid: false/' "$STATE_FILE" 2>/dev/null || true
-    else
-      # Insert before closing --- of frontmatter
-      sed -i '' '/^---$/{n;/^---$/i\
-sensor_cache_valid: false
-}' "$STATE_FILE" 2>/dev/null || true
-    fi
+    # Portable frontmatter flip via Node.js (was BSD-only `sed -i ''` — failed
+    # on Linux and also mis-handled the insert case even on macOS).
+    node -e '
+      const fs = require("fs");
+      const f = process.argv[1];
+      try {
+        let t = fs.readFileSync(f, "utf8");
+        if (/^sensor_cache_valid:/m.test(t)) {
+          t = t.replace(/^sensor_cache_valid:.*$/m, "sensor_cache_valid: false");
+        } else {
+          // Insert right after the opening --- delimiter
+          t = t.replace(/^---\n/, "---\nsensor_cache_valid: false\n");
+        }
+        fs.writeFileSync(f, t);
+      } catch(_) { /* best-effort: never block PostToolUse */ }
+    ' "$STATE_FILE" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
   fi
 fi
 

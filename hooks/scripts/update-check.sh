@@ -20,7 +20,7 @@ REMOTE_URL="https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-work/main/
 # ─── Read local version from package.json ─────────────────────
 LOCAL=""
 if [ -f "$PLUGIN_DIR/package.json" ]; then
-  LOCAL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$PLUGIN_DIR/package.json','utf8')).version)" 2>/dev/null || true)
+  LOCAL=$(node -e 'const p=process.argv[1]; console.log(JSON.parse(require("fs").readFileSync(p+"/package.json","utf8")).version)' "$PLUGIN_DIR" 2>/dev/null || true)
 fi
 if [ -z "$LOCAL" ]; then
   exit 0  # can't determine version
