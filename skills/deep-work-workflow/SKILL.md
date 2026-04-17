@@ -151,7 +151,7 @@ The Deep Work workflow prevents these by **strictly separating brainstorming, an
 - **Cross-Model Review**: codex/gemini가 research.md를 독립 평가 (plan과 동일 패턴)
 - **종합 판단**: Claude가 모든 리뷰 결과를 분석, 사용자 일괄 확인 후 수정
 
-For detailed guidance, see [Research Guide](skills/shared/references/research-guide.md) or [Zero-Base Guide](skills/shared/references/zero-base-guide.md).
+For detailed guidance, see [Research Guide](../shared/references/research-guide.md) or [Zero-Base Guide](../shared/references/zero-base-guide.md).
 
 ### Phase 2: Plan (`/deep-plan`)
 
@@ -184,7 +184,7 @@ For detailed guidance, see [Research Guide](skills/shared/references/research-gu
 
 **Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
 
-For detailed guidance, see [Planning Guide](skills/shared/references/planning-guide.md).
+For detailed guidance, see [Planning Guide](../shared/references/planning-guide.md).
 
 ### Phase 3: Implement (`/deep-implement`)
 
@@ -213,7 +213,7 @@ For detailed guidance, see [Planning Guide](skills/shared/references/planning-gu
 - **TDD state 업데이트 필수화** (v5.5.1): B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
 - **Slice Review**: Per-slice 2-stage independent review (spec compliance → code quality) after sensors pass. Solo mode only; delegation mode uses self-review recorded as `slice_review.mode: "self"`
 
-For detailed guidance, see [Implementation Guide](skills/shared/references/implementation-guide.md).
+For detailed guidance, see [Implementation Guide](../shared/references/implementation-guide.md).
 
 ### Phase 4: Test (`/deep-test`)
 
@@ -238,7 +238,7 @@ For detailed guidance, see [Implementation Guide](skills/shared/references/imple
 - **Cumulative results**: All attempts recorded in `$WORK_DIR/test-results.md`
 - **Git integration**: Suggests commit after all tests pass
 
-For detailed guidance, see [Testing Guide](skills/shared/references/testing-guide.md).
+For detailed guidance, see [Testing Guide](../shared/references/testing-guide.md).
 
 ## Quality Gates & Utilities
 
@@ -250,12 +250,12 @@ Standalone mode available: `/drift-check [plan-file]`.
 ### SOLID Design Review (/solid-review) — *Quality Gate — auto-runs in /deep-test; standalone: /solid-review [target]*
 
 Evaluates code against the 5 SOLID design principles with a per-principle scorecard.
-Standalone mode available: `/solid-review [target]`. See [SOLID Guide](skills/shared/references/solid-guide.md).
+Standalone mode available: `/solid-review [target]`. See [SOLID Guide](../shared/references/solid-guide.md).
 
 ### Code Insight Analysis (/deep-insight) — *Quality Gate — auto-runs in /deep-test; standalone: /deep-insight [target]*
 
 Measures file metrics, complexity indicators, and dependency graphs. Never blocks workflow.
-Standalone mode available: `/deep-insight [target]`. See [Insight Guide](skills/shared/references/insight-guide.md).
+Standalone mode available: `/deep-insight [target]`. See [Insight Guide](../shared/references/insight-guide.md).
 
 ### Session Report (/deep-report) — *Internal — auto-generated after test pass; manual: /deep-report or /deep-status --report*
 

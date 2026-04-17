@@ -4,7 +4,7 @@ description: "SOLID design principles code review — evaluates SRP, OCP, LSP, I
 argument-hint: "target file or directory (optional)"
 ---
 
-> **Quality Gate (v6.2.1)** — `/deep-test`가 Advisory Gate로 자동 실행합니다. 특정 파일/디렉터리에 대한 독립 SOLID 검증이 필요할 때 직접 사용하세요.
+> **Quality Gate (v6.2.4)** — `/deep-test`가 Advisory Gate로 자동 실행합니다. 특정 파일/디렉터리에 대한 독립 SOLID 검증이 필요할 때 직접 사용하세요.
 > Standalone: `/solid-review [target]`
 
 # SOLID Design Review

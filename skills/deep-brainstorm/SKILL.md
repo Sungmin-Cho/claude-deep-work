@@ -87,7 +87,7 @@ Write `$WORK_DIR/brainstorm.md`:
 
 ## Step 3: Review Gate
 
-Read("skills/shared/references/review-gate.md") — Structural Review 실행:
+Read("../shared/references/review-gate.md") — Structural Review 실행:
 - Phase: brainstorm
 - Document: `$WORK_DIR/brainstorm.md`
 - Dimensions: problem_clarity, approach_differentiation, success_measurability, edge_case_coverage
@@ -98,7 +98,7 @@ Read("skills/shared/references/review-gate.md") — Structural Review 실행:
 
 ## Step 4: Phase Review Gate
 
-Read("skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: brainstorm
 - Document: `$WORK_DIR/brainstorm.md`
 - Self-review checklist: 문제 정의 명확성, 접근법 비교 충실도, 성공 기준 존재

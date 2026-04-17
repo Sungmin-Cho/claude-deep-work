@@ -83,7 +83,7 @@ backfill 대상 slice 포함. Advisory — 차단 없음.
 ### 4-4. SOLID Review (⚠️ Advisory)
 
 변경된 source 파일 대상 SOLID 원칙 평가 → `$WORK_DIR/solid-review.md`
-상세: Read("skills/shared/references/solid-guide.md")
+상세: Read("../shared/references/solid-guide.md")
 
 ### 4-5. Insight Analysis (ℹ️ Insight)
 
@@ -110,7 +110,7 @@ Phase 1의 fitness_baseline과 현재 비교. 위반 증가 시 경고.
 Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 acknowledge 요청.
 
 모든 gate 후: quality_gates_passed 업데이트 + `$WORK_DIR/quality-gates.md` 작성.
-상세: Read("skills/shared/references/testing-guide.md")
+상세: Read("../shared/references/testing-guide.md")
 
 # Section 3: 완료
 

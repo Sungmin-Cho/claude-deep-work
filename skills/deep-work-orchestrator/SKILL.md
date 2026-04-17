@@ -8,6 +8,8 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 
 사용자 입력: **$ARGUMENTS**
 
+> `--resume-from=<phase>` 가 지정된 경우: 이 Step 1 전체를 건너뛴다. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다. 바로 Step 3의 해당 `<phase>` branch로 점프한다.
+
 ## 1-1. Update Check
 
 SessionStart hook의 update-check.sh 출력 처리:
@@ -50,6 +52,7 @@ write_session_pointer "$SESSION_ID"
 | `--no-branch` | git_branch → false |
 | `--skip-to-implement` | Plan까지 전부 건너뜀, 인라인 slice |
 | `--profile=X` | 프리셋 X 직접 선택 |
+| `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `deep-resume.md`가 사용. |
 
 플래그 제거 후 나머지 = task description. 비어있으면 AskUserQuestion.
 
@@ -176,7 +179,7 @@ Phase Skill 완료 후:
 3. 1차 승인: 수정 항목을 사용자에게 제시 (AskUserQuestion)
 4. 승인된 항목 반영
 5. 2차 승인: 최종 문서 확인 + 다음 phase 진행 (AskUserQuestion)
-→ 상세: Read("skills/shared/references/review-approval-workflow.md")
+→ 상세: Read("../shared/references/review-approval-workflow.md")
 
 승인 → `current_phase: plan` 설정 → 3-3.
 
@@ -185,7 +188,7 @@ Phase Skill 완료 후:
 Skill("deep-plan", args=ARGS)
 
 완료 후: **Review + Approval Workflow 실행** (Research와 동일 패턴).
-→ 상세: Read("skills/shared/references/review-approval-workflow.md")
+→ 상세: Read("../shared/references/review-approval-workflow.md")
 
 승인 → State 업데이트:
 - `current_phase: implement`
@@ -233,4 +236,4 @@ Registry 해제: `unregister_session "$SESSION_ID"`.
 | **Research** | **필수** | **필수** | **Orchestrator** |
 | **Plan** | **필수** | **필수** | **Orchestrator** |
 | Implement | Phase Review | 불필요 | Phase Skill |
-| Test | 자동 | 불필요 | Phase Skill |
+| Test | 자동 | 불필요 | Orchestrator |

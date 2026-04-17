@@ -39,14 +39,14 @@ description: "Phase 2 — Plan: create a detailed implementation plan"
 기존 plan.md → `$WORK_DIR/plan.v{iteration_count}.md`로 복사
 
 ### Template 제안 (선택적)
-Read("skills/shared/references/plan-templates.md") → 적합 템플릿 확인 → 사용자에게 제안
+Read("../shared/references/plan-templates.md") → 적합 템플릿 확인 → 사용자에게 제안
 
 ### 사용자 피드백 확인
 기존 plan.md에 `> [!NOTE]`, `<!-- HUMAN: -->`, inline comment가 있으면 반영
 
 ## plan.md 작성
 
-상세 작성 가이드: Read("skills/shared/references/planning-guide.md")
+상세 작성 가이드: Read("../shared/references/planning-guide.md")
 
 ### 문서 구조
 
@@ -126,7 +126,7 @@ M/L/XL slice에 contract 필드 필수. Agent(contract-validator)로 검증:
 
 ## Phase Review Gate
 
-Read("skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: plan
 - Document: `$WORK_DIR/plan.md`
 - Self-review checklist: placeholder 없음, 연구-계획 추적성, 슬라이스 완성도

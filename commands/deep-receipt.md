@@ -3,7 +3,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 description: "Receipt management — view, dashboard, export receipts"
 ---
 
-> **Internal (v6.2.1)** — `/deep-status --receipts`가 이 파일의 display logic을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal (v6.2.4)** — `/deep-status --receipts`가 이 파일의 display logic을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `commands/deep-status.md` §6 (`Read the /deep-receipt command file and follow its display logic inline`).
 
 # Receipt Management (v4.0)

@@ -4,7 +4,7 @@ description: "코드 메트릭, 복잡도, 의존성 분석 기반 인사이트 
 argument-hint: "target file or directory (optional)"
 ---
 
-> **Quality Gate (v6.2.1)** — `/deep-test`가 Insight Tier로 자동 실행합니다 (차단 없음). 특정 대상의 메트릭/복잡도/의존성 분석이 필요할 때 직접 사용하세요.
+> **Quality Gate (v6.2.4)** — `/deep-test`가 Insight Tier로 자동 실행합니다 (차단 없음). 특정 대상의 메트릭/복잡도/의존성 분석이 필요할 때 직접 사용하세요.
 > Standalone: `/deep-insight [target]`
 
 # Code Insight Analysis
