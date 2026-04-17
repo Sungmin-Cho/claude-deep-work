@@ -3,7 +3,11 @@
 # 사용법: bash notify.sh <state_file> <phase> <status> <message>
 # 예시:   bash notify.sh .claude/deep-work.s-a3f7b2c1.md research completed "✅ Research 완료"
 
-set -euo pipefail
+# notify.sh is best-effort — a single missing webhook field or unmatched
+# grep in a pipeline must not abort the script. We keep -u (unset var check)
+# and drop -e/pipefail because many grep pipelines below expect no-match
+# gracefully. Each external action already has `|| true` guards.
+set -u
 
 STATE_FILE="${1:-.claude/deep-work.local.md}"  # caller passes session-specific path; legacy default kept for backward compat
 PHASE="${2:-unknown}"
@@ -14,13 +18,46 @@ MESSAGE_ESCAPED=$(node -e "console.log(JSON.stringify(process.argv[1]).slice(1,-
   || { MESSAGE_ESCAPED="${MESSAGE//\\/\\\\}"; MESSAGE_ESCAPED="${MESSAGE_ESCAPED//\"/\\\"}"; }
 TITLE="Deep Work"
 
+# ─── Platform-specific escape helpers ────────────────────
+
+# AppleScript string-literal escape: backslash + double-quote.
+# Also strip control chars (osascript rejects them).
+_osascript_escape() {
+  local s="${1:-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '%s' "$s" | tr -d '\000-\011\013\014\016-\037'
+}
+
+# XML entity escape for Windows PowerShell toast XML.
+_xml_escape() {
+  local s="${1:-}"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  s="${s//\'/&apos;}"
+  printf '%s' "$s"
+}
+
 # ─── 설정 읽기 ───────────────────────────────────────────
 
-# notifications.enabled 확인 (기본: true)
-NOTIFICATIONS_ENABLED="true"
-if grep -q "^  enabled: false" "$STATE_FILE" 2>/dev/null; then
-  NOTIFICATIONS_ENABLED="false"
-fi
+# notifications.enabled 확인 (기본: true). YAML-aware: parse the
+# `notifications:` block specifically so that unrelated `enabled: false`
+# under e.g. `team_mode:` does not suppress notifications.
+NOTIFICATIONS_ENABLED=$(node -e '
+  (() => {
+    const fs = require("fs");
+    const f = process.argv[1];
+    try {
+      const t = fs.readFileSync(f, "utf8");
+      const m = t.match(/^notifications:\s*\n((?:\s{2,}.*\n?)+)/m);
+      if (!m) { process.stdout.write("true"); return; }
+      const e = m[1].match(/^\s{2}enabled:\s*(true|false)/m);
+      process.stdout.write(e ? e[1] : "true");
+    } catch(_) { process.stdout.write("true"); }
+  })();
+' "$STATE_FILE" 2>/dev/null || printf 'true')
 
 if [[ "$NOTIFICATIONS_ENABLED" == "false" ]]; then
   exit 0
@@ -31,16 +68,23 @@ fi
 send_local() {
   case "$(uname -s)" in
     Darwin)
-      osascript -e "display notification \"${MESSAGE}\" with title \"${TITLE}\"" 2>/dev/null || true
+      local _msg _title
+      _msg="$(_osascript_escape "$MESSAGE")"
+      _title="$(_osascript_escape "$TITLE")"
+      osascript -e "display notification \"${_msg}\" with title \"${_title}\"" 2>/dev/null || true
       ;;
     Linux)
+      # notify-send takes the message as argv, so no shell escape needed.
       command -v notify-send &>/dev/null && notify-send "${TITLE}" "${MESSAGE}" 2>/dev/null || true
       ;;
     MINGW*|MSYS*|CYGWIN*)
+      local _msg_xml _title_xml
+      _msg_xml="$(_xml_escape "$MESSAGE")"
+      _title_xml="$(_xml_escape "$TITLE")"
       powershell.exe -NoProfile -Command "
         [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
         [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType=WindowsRuntime] | Out-Null
-        \$t = '<toast><visual><binding template=\"ToastGeneric\"><text>${TITLE}</text><text>${MESSAGE}</text></binding></visual></toast>'
+        \$t = '<toast><visual><binding template=\"ToastGeneric\"><text>${_title_xml}</text><text>${_msg_xml}</text></binding></visual></toast>'
         \$xml = New-Object Windows.Data.Xml.Dom.XmlDocument; \$xml.LoadXml(\$t)
         [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Deep Work').Show([Windows.UI.Notifications.ToastNotification]::new(\$xml))
       " 2>/dev/null || true
@@ -123,8 +167,9 @@ send_webhook() {
 
 # ─── 디스패치 ────────────────────────────────────────────
 
-# task_description 읽기 (커스텀 웹훅의 {{task}} 변수용)
-TASK_DESC=$(grep "^task_description:" "$STATE_FILE" 2>/dev/null | sed 's/task_description:[[:space:]]*"\(.*\)"/\1/' | head -1)
+# task_description 읽기 (커스텀 웹훅의 {{task}} 변수용).
+# grep 미매칭 시 `set -e`가 트리거되지 않도록 파이프라인 전체에 `|| true` 래핑.
+TASK_DESC=$({ grep "^task_description:" "$STATE_FILE" 2>/dev/null || true; } | sed 's/task_description:[[:space:]]*"\(.*\)"/\1/' | head -1)
 
 # 로컬은 항상 실행
 send_local
