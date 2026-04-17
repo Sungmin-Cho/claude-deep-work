@@ -668,16 +668,20 @@ if (require.main === module) {
       const parsed = JSON.parse(input);
       const result = processHook(parsed);
       process.stdout.write(JSON.stringify(result));
+      // Exit 0 for all intentional decisions (allow/block/warn). The shell
+      // wrapper inspects the `decision` field on stdout to decide hook action.
       process.exit(0);
     } catch (err) {
-      // On any error, block (fail-closed for security)
-      // Log to stderr for debugging
-      process.stderr.write(`phase-guard-core error: ${err.message}\n`);
+      // Internal error (JSON.parse, runtime exception). Distinguish from
+      // intentional block so the shell can surface a debug-oriented message
+      // pointing at the guard error log. Exit 3 is an internal signal that
+      // phase-guard.sh translates to hook protocol exit 2.
+      process.stderr.write(`INTERNAL_ERROR: ${err.message}\n${err.stack || ''}\n`);
       process.stdout.write(JSON.stringify({
         decision: 'block',
-        reason: '⛔ Deep Work Guard: hook 검증 중 내부 오류가 발생했습니다. 다시 시도해주세요.'
+        reason: '⛔ Deep Work Guard: 내부 검증 오류가 발생했습니다. .claude/deep-work-guard-errors.log 를 확인하세요.'
       }));
-      process.exit(2);
+      process.exit(3);
     }
   });
 }

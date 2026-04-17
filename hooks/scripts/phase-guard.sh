@@ -60,6 +60,10 @@ TDD_OVERRIDE="$(read_frontmatter_field "$STATE_FILE" "tdd_override")"
 SKIPPED_PHASES="$(read_frontmatter_field "$STATE_FILE" "skipped_phases")"
 WORKTREE_ENABLED="$(read_frontmatter_field "$STATE_FILE" "worktree_enabled")"
 WORKTREE_PATH="$(read_frontmatter_field "$STATE_FILE" "worktree_path")"
+# Slice scope enforcement inputs (v6.2.4 — previously missing; scope check was no-op).
+SLICE_FILES_JSON="$(read_frontmatter_list "$STATE_FILE" "slice_files")"
+STRICT_SCOPE="$(read_frontmatter_field "$STATE_FILE" "strict_scope")"
+EXEMPT_PATTERNS_JSON="$(read_frontmatter_list "$STATE_FILE" "exempt_patterns")"
 
 # ─── FAST PATH: idle or empty phase → allow ──────────────────
 
@@ -244,48 +248,82 @@ fi
 # - Bash tool in any non-idle phase (file write detection)
 # - implement phase with strict/coaching TDD mode (TDD state machine)
 
-# Build JSON input for Node.js using stdin pipe (safe: avoids set -e failure on argv approach)
+# Build JSON input for Node.js using stdin pipe (safe: avoids set -e failure on argv approach).
+# Pass slice_files/strict_scope/exempt_patterns too — previously omitted, leaving
+# checkSliceScope a no-op (slice scope contract was silently unenforced).
 NODE_INPUT=$(printf '%s' "$TOOL_INPUT" | node -e "
   process.stdin.setEncoding('utf8');
   let d = '';
   process.stdin.on('data', c => d += c);
   process.stdin.on('end', () => {
+    const a = process.argv;
+    const buildState = () => {
+      const tdd_override = a[6] === a[3] && a[6] !== '';
+      let slice_files = []; try { slice_files = JSON.parse(a[7] || '[]'); } catch(_) {}
+      let exempt_patterns = []; try { exempt_patterns = JSON.parse(a[9] || '[]'); } catch(_) {}
+      return {
+        current_phase: a[1],
+        tdd_mode: a[2] || 'strict',
+        active_slice: a[3] || '',
+        tdd_state: a[4] || 'PENDING',
+        tdd_override,
+        slice_files,
+        strict_scope: a[8] === 'true',
+        exempt_patterns,
+      };
+    };
     try {
       const input = JSON.parse(d);
-      const a = process.argv;
-      const tdd_override = a[6] === a[3] && a[6] !== '';
-      const state = { current_phase: a[1], tdd_mode: a[2], active_slice: a[3], tdd_state: a[4], tdd_override: tdd_override };
-      console.log(JSON.stringify({ action: 'pre', toolName: a[5], toolInput: input, state: state }));
+      console.log(JSON.stringify({ action: 'pre', toolName: a[5], toolInput: input, state: buildState() }));
     } catch(e) {
-      const a = process.argv;
-      console.log(JSON.stringify({ action: 'pre', toolName: a[5] || 'unknown', toolInput: {}, state: { current_phase: a[1], tdd_mode: a[2] || 'strict', active_slice: a[3] || '', tdd_state: a[4] || 'PENDING', tdd_override: false } }));
+      console.log(JSON.stringify({ action: 'pre', toolName: a[5] || 'unknown', toolInput: {}, state: buildState() }));
     }
   });
-" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" "${TDD_OVERRIDE:-}" 2>/dev/null || true)
+" "$CURRENT_PHASE" "${TDD_MODE:-strict}" "$ACTIVE_SLICE" "${TDD_STATE:-PENDING}" "$TOOL_NAME" "${TDD_OVERRIDE:-}" "${SLICE_FILES_JSON:-[]}" "${STRICT_SCOPE:-false}" "${EXEMPT_PATTERNS_JSON:-[]}" 2>/dev/null || true)
 
-# Call Node.js with timeout protection
-NODE_RESULT=""
-# Note: macOS has no `timeout` command. Use node's own setTimeout or rely on hook timeout (5s).
+# Call Node.js with error-code discipline (v6.2.4):
+#   exit 0   → success; inspect decision on stdout (allow / warn / block)
+#   exit 3   → internal Node error; stdout has a 내부 검증 오류 block message
+#   other    → subprocess crash / OOM / timeout; emit generic block
 NODE_ERR_LOG="$PROJECT_ROOT/.claude/deep-work-guard-errors.log"
-if NODE_RESULT=$(echo "$NODE_INPUT" | node "$SCRIPT_DIR/phase-guard-core.js" 2>>"$NODE_ERR_LOG"); then
-  # Parse decision from Node.js output
-  DECISION=$(echo "$NODE_RESULT" | grep -o '"decision"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+set +e
+NODE_RESULT=$(echo "$NODE_INPUT" | node "$SCRIPT_DIR/phase-guard-core.js" 2>>"$NODE_ERR_LOG")
+NODE_RC=$?
+set -e
 
-  if [[ "$DECISION" == "block" ]]; then
-    # Extract reason and output as hook block response (already JSON-escaped by Node)
-    REASON=$(echo "$NODE_RESULT" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const s=JSON.stringify(JSON.parse(d).reason||'');process.stdout.write(s.slice(1,-1))}catch(e){process.stdout.write('TDD enforcement가 이 수정을 차단했습니다.')}})" 2>/dev/null || echo "TDD enforcement가 이 수정을 차단했습니다.")
-    cat <<JSON
-{"decision":"block","reason":"${REASON}"}
-JSON
-    exit 2
-  fi
+if [[ $NODE_RC -eq 3 ]]; then
+  # Internal error — Node already emitted the block JSON with the debug hint.
+  printf '%s' "$NODE_RESULT"
+  exit 2
+fi
 
-  # allow or warn → exit 0
-  exit 0
-else
-  # Node.js failed or timed out → block + retry guidance (per eng review decision)
+if [[ $NODE_RC -ne 0 ]]; then
+  # Subprocess crash / unexpected exit — generic block.
   cat <<JSON
 {"decision":"block","reason":"⛔ Deep Work Guard: hook 검증 중 오류가 발생했습니다.\n\n다시 시도해주세요. 문제가 지속되면 /deep-status로 상태를 확인하세요."}
 JSON
   exit 2
 fi
+
+# Parse decision from Node.js output.
+DECISION=$(echo "$NODE_RESULT" | grep -o '"decision"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"decision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+if [[ -z "$DECISION" ]]; then
+  # Fail-closed: malformed stdout or missing decision field.
+  cat <<JSON
+{"decision":"block","reason":"⛔ Deep Work Guard: 가드가 결정을 생성하지 못했습니다. 다시 시도해주세요."}
+JSON
+  exit 2
+fi
+
+if [[ "$DECISION" == "block" ]]; then
+  # Extract reason (already JSON-escaped by Node).
+  REASON=$(echo "$NODE_RESULT" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const s=JSON.stringify(JSON.parse(d).reason||'');process.stdout.write(s.slice(1,-1))}catch(e){process.stdout.write('TDD enforcement가 이 수정을 차단했습니다.')}})" 2>/dev/null || echo "TDD enforcement가 이 수정을 차단했습니다.")
+  cat <<JSON
+{"decision":"block","reason":"${REASON}"}
+JSON
+  exit 2
+fi
+
+# allow or warn → exit 0
+exit 0
