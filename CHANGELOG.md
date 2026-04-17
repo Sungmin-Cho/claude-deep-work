@@ -20,10 +20,10 @@ Bug fix release addressing 15 hook-layer bugs + 7 documentation drift items iden
 - `phase-transition.sh`: Extract the innermost `deep-work.XXXX` segment for `SESSION_ID`. Fork worktree paths like `.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md` now resolve to `s-child` instead of a multi-line mess that broke the cache file path.
 
 **Hooks — race conditions**
-- `file-tracker.sh` receipt updates: Wrap read-modify-write with a mkdir-based spinlock. On timeout, queue the pending entry to `<receipt>.pending-changes.jsonl`; the next lock holder drains it before writing. Previously, 5+ concurrent PostToolUse invocations could drop `files_modified` entries.
-- `sensor-trigger.js` + `file-tracker.sh` state YAML updates: Both now acquire the same `<state>.lock` before read-modify-write. Previously, `current_phase`/`active_slice`/`sensor_pending` could race and lose one of the writes.
-- `utils.sh` `write_registry`: Fail-closed on lock timeout (no force-remove of another process's lock directory). The old force-remove behaviour silently corrupted the session registry under contention.
-- `session-end.sh` JSONL append: Lock timeout now queues to `<jsonl>.pending-append.jsonl` instead of writing without a lock. Next session-end drains the queue atomically.
+- `file-tracker.sh` receipt updates: Wrap read-modify-write with a mkdir-based spinlock (40 retries × 50ms). On timeout, queue the pending entry to `<receipt>.pending-changes.jsonl`; the next lock holder drains it crash-safely (rename-to-`.draining.<pid>` → merge → canonical rename → unlink `.draining`). A crash anywhere mid-drain leaves recoverable state; the next invocation sweeps stray `.draining.*` files. Previously, 5+ concurrent PostToolUse invocations could drop `files_modified` entries, and the first-pass lock-timeout path could silently orphan queued entries if no later write drained them.
+- `sensor-trigger.js` + `file-tracker.sh` state YAML updates: Both now acquire the same `<state>.lock` before read-modify-write — including the marker-file `sensor_cache_valid` flip in `file-tracker.sh` (which initially missed the lock in v6.2.4 and was flagged by post-review). Previously, `current_phase` / `active_slice` / `sensor_pending` / `sensor_cache_valid` could race and lose one of the writes.
+- `utils.sh` `write_registry`: Fail-closed on lock timeout (no force-remove of another process's lock directory). The old force-remove behaviour silently corrupted the session registry under contention. Callers (`register_session`, `update_last_activity`, `register_file_ownership`, `update_registry_phase`, `unregister_session`, `register_fork_session`) now use `_try_write_registry` which logs failures to `.claude/deep-work-guard-errors.log` instead of silently swallowing them.
+- `session-end.sh` JSONL append: Lock timeout queues to `<jsonl>.pending-append.jsonl`. Drain on the next append uses the same rename-first crash-safe pattern as the receipt path. Retries bumped 10 → 20.
 
 **Hooks — validation hardening**
 - `phase-guard-core.js`: Internal errors (malformed input, runtime exceptions) now `process.exit(3)` with a JSON block message pointing at the guard error log. Intentional blocks continue to exit 0 with `decision=block`. Previously, both paths exited 2 — indistinguishable in user-facing output.
@@ -32,7 +32,8 @@ Bug fix release addressing 15 hook-layer bugs + 7 documentation drift items iden
 - `phase-guard.sh` block messages: All 4 heredocs now JSON-escape interpolated fields (file path, worktree path, phase label, next-step). Messages with literal quotes or newlines previously produced invalid JSON.
 
 **Hooks — phase-transition injector (C-1)**
-- `file-tracker.sh` caches stdin to `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>`. `phase-transition.sh` falls back to this cache when `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` are unset — which is the actual Claude Code production behaviour (these env vars are not part of the hook protocol). Previously, the Phase Transition injector was effectively a no-op in production, meaning `worktree_path` / `team_mode` / `cross_model_enabled` / `tdd_mode` checklists were never emitted into the LLM context on phase change.
+- `file-tracker.sh` caches stdin to `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>` **before** any phase-based early return, and writes atomically via `.tmp.$$` + `mv`. `phase-transition.sh` falls back to this cache when `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` are unset — which is the actual Claude Code production behaviour (these env vars are not part of the hook protocol). Previously (even after the initial v6.2.4 fix), the cache was only written inside the `implement`-phase branch, so research→plan, plan→implement, and test→idle transitions never refreshed the cache; `phase-transition.sh` would fall back to a stale implement-phase payload or no-op. Post-review fix moves the cache write to the top of the hook.
+- `session-end.sh` now cleans up its own `.hook-tool-input.$PPID` and reaps `.hook-tool-input.*` files older than 60 minutes — the cache is transient per-tool-call and should not accumulate across sessions.
 
 **Notifications**
 - `notify.sh`: YAML-aware `notifications.enabled` parser. Previously, `grep -q "^  enabled: false"` false-positive-matched an unrelated `team_mode:\n  enabled: false`, silently suppressing all channels.
@@ -57,7 +58,8 @@ Bug fix release addressing 15 hook-layer bugs + 7 documentation drift items iden
   - `json_escape`: JSON-string escape for safe interpolation into block messages. Argument required — no stdin fallback (prevents hook hangs).
   - `read_frontmatter_list`: reads YAML list fields (inline `[a, b]` or block `- a`) from frontmatter; emits JSON array.
 - `hooks/scripts/utils.sh` `write_registry`: refactored to use `_acquire_lock` with fail-closed behavior.
-- Test suite: 320 tests (from 294 in 6.2.3), across 88 suites. Net +26 tests covering: portability (3), input parsing e2e (5), notify YAML/escape (4), receipt race (1, 80 parallel writes), phase-guard hardening (6), phase-transition cache (2), utils helpers (19).
+- Test suite: 329 tests (from 294 in 6.2.3), across 91 suites. Net +35 tests covering: portability (3), input parsing e2e (5), notify YAML/escape (4), receipt race (1, 80 parallel writes — now validates canonical completeness + empty pending sidecar + no leftover `.draining.*` files), phase-guard hardening (6), phase-transition cache (2), utils helpers (19), post-review robustness (7: cache-before-phase-check × 4 phases, marker-flip lock behaviour × 2, atomic cache write × 1).
+- Independent review (3-way: Opus + Codex review + Codex adversarial) identified 3 critical + 3 warning issues on the initial v6.2.4 branch; all were addressed before merge. Report: `.deep-review/reports/2026-04-17-implementation-review.md`.
 
 ### Known limitations
 

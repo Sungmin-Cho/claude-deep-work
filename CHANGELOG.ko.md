@@ -20,10 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `phase-transition.sh`: `SESSION_ID` 추출 시 가장 안쪽의 `deep-work.XXXX` 세그먼트를 취함. Fork worktree 경로(`.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md`)가 이제 `s-child`로 정확히 해결됨 (기존엔 다중 매치로 cache 파일 경로가 깨짐).
 
 **Hooks — race condition**
-- `file-tracker.sh` receipt 업데이트: read-modify-write를 mkdir 기반 spinlock으로 감쌈. 타임아웃 시 `<receipt>.pending-changes.jsonl`에 큐잉하고 다음 lock 보유자가 드레인. 5+ 동시 PostToolUse 호출에서 `files_modified` 항목이 유실되던 문제 해결.
-- `sensor-trigger.js` + `file-tracker.sh` state YAML 업데이트: 동일한 `<state>.lock`을 공유하여 순차 쓰기. 기존에는 `current_phase`/`active_slice`/`sensor_pending` 변경이 race로 하나가 씹힘.
-- `utils.sh` `write_registry`: lock 타임아웃 시 fail-closed (다른 프로세스의 lock 디렉터리 강제 제거 금지). 기존 force-remove 동작이 경쟁 상태에서 세션 registry를 무음으로 손상시켰음.
-- `session-end.sh` JSONL append: lock 타임아웃 시 `<jsonl>.pending-append.jsonl`에 큐잉 (기존엔 락 없이 쓰기). 다음 session-end가 원자적으로 드레인.
+- `file-tracker.sh` receipt 업데이트: read-modify-write를 mkdir 기반 spinlock(40회 × 50ms)으로 감쌈. 타임아웃 시 `<receipt>.pending-changes.jsonl`에 큐잉하고 다음 lock 보유자가 crash-safe 패턴(rename → `.draining.<pid>` → merge → canonical rename → `.draining` unlink)으로 드레인. 드레인 중 크래시가 나도 `.draining.*` 파일이 남아 다음 invocation에서 복구. 5+ 동시 PostToolUse 호출에서 `files_modified` 항목이 유실되거나, lock timeout 경로로 큐잉된 후 아무도 드레인하지 않아 조용히 사라지던 문제 해결.
+- `sensor-trigger.js` + `file-tracker.sh` state YAML 업데이트: 동일한 `<state>.lock`을 공유 — `file-tracker.sh`의 marker file `sensor_cache_valid` flip도 포함(초기 v6.2.4에서 누락됐다가 post-review에서 수정). 기존에는 `current_phase`/`active_slice`/`sensor_pending`/`sensor_cache_valid` 변경이 race로 하나가 씹힘.
+- `utils.sh` `write_registry`: lock 타임아웃 시 fail-closed (다른 프로세스의 lock 디렉터리 강제 제거 금지). 호출자(`register_session`, `update_last_activity`, `register_file_ownership`, `update_registry_phase`, `unregister_session`, `register_fork_session`)는 `_try_write_registry`를 통해 실패를 `.claude/deep-work-guard-errors.log`에 기록 (기존 조용히 swallow).
+- `session-end.sh` JSONL append: lock 타임아웃 시 `<jsonl>.pending-append.jsonl`에 큐잉. 다음 append는 receipt와 동일한 rename-first crash-safe 패턴 사용. 재시도 10→20회.
 
 **Hooks — 검증 강건화**
 - `phase-guard-core.js`: 내부 에러(잘못된 입력, 런타임 예외)를 `process.exit(3)`으로 구분, 가드 로그 참조 안내가 포함된 JSON block을 stdout에 출력. 의도적 block은 기존대로 exit 0 + `decision=block`. 기존에는 둘 다 exit 2여서 사용자 메시지에서 구분 불가.
@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `phase-guard.sh` block 메시지: 4개 heredoc 모두 보간 필드(파일 경로, worktree 경로, phase 라벨, 다음 단계)를 JSON-escape. 따옴표/개행 포함 메시지가 기존엔 invalid JSON을 만들었음.
 
 **Hooks — phase-transition injector (C-1)**
-- `file-tracker.sh`가 stdin을 `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>`에 캐시. `phase-transition.sh`는 `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` 환경변수가 unset일 때 (Claude Code 프로덕션의 실제 동작) 이 캐시를 fallback으로 읽음. 기존에는 프로덕션에서 Phase Transition injector가 사실상 no-op → phase 전환 시 `worktree_path` / `team_mode` / `cross_model_enabled` / `tdd_mode` 체크리스트가 LLM 컨텍스트에 한 번도 주입되지 않았음.
+- `file-tracker.sh`가 stdin을 `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>`에 **phase early-return 이전에** 캐시, `.tmp.$$` + `mv`로 원자적 쓰기. `phase-transition.sh`는 `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` 환경변수가 unset일 때 (Claude Code 프로덕션의 실제 동작) 이 캐시를 fallback으로 읽음. 초기 v6.2.4 수정 후에도 캐시가 `implement` phase 블록 내부에서만 기록되어 research→plan / plan→implement / test→idle 전환에서는 이전 implement payload가 재사용되거나 no-op. Post-review 수정으로 캐시 쓰기를 hook 최상단으로 이동.
+- `session-end.sh`가 자신의 `.hook-tool-input.$PPID` 및 60분 이상 된 `.hook-tool-input.*` 파일을 정리 — 캐시는 tool call 단위 임시 파일이며 세션 간 축적되면 안 됨.
 
 **알림**
 - `notify.sh`: YAML 인식 `notifications.enabled` 파서. 기존 `grep -q "^  enabled: false"`가 관련 없는 `team_mode:\n  enabled: false`를 false-positive로 매칭하여 전 채널 무음 차단.
@@ -57,7 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `json_escape`: block 메시지 내 안전한 보간을 위한 JSON 문자열 이스케이프. 인자 필수 — stdin fallback 없음 (훅 hang 방지).
   - `read_frontmatter_list`: frontmatter의 YAML 리스트 필드(`[a, b]` 또는 `- a` 블록)를 JSON 배열로 반환.
 - `hooks/scripts/utils.sh` `write_registry`: `_acquire_lock` 기반으로 리팩터링, fail-closed 동작으로 변경.
-- 테스트: 320개 (6.2.3의 294개에서), 88 suite. 순증 +26개 — 호환성(3), 입력 파싱 e2e(5), notify YAML/escape(4), receipt race(1, 80 병렬 쓰기), phase-guard 강건화(6), phase-transition cache(2), utils 헬퍼(19).
+- 테스트: 329개 (6.2.3의 294개에서), 91 suite. 순증 +35개 — 호환성(3), 입력 파싱 e2e(5), notify YAML/escape(4), receipt race(1, 80 병렬 쓰기 — canonical 완전성 + pending 사이드카 empty + `.draining.*` orphan 없음 검증), phase-guard 강건화(6), phase-transition cache(2), utils 헬퍼(19), post-review 강건화(7: cache-before-phase-check × 4 phase, marker-flip lock × 2, 원자적 캐시 쓰기 × 1).
+- 독립 3-way 리뷰 (Opus + Codex review + Codex adversarial)가 초기 v6.2.4 브랜치에서 critical 3건 + warning 3건을 식별; 모두 merge 전 해결. 리포트: `.deep-review/reports/2026-04-17-implementation-review.md`.
 
 ### 알려진 제약
 
