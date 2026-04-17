@@ -7,6 +7,62 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.4] — 2026-04-17
+
+내부 감사(`BUG_REVIEW_REPORT.md`)로 식별된 hook 레이어 버그 15건 + 문서 드리프트 7건을 수정하는 버그 픽스 릴리스. 실행 전 플랜 독립 리뷰에서 추가로 발견된 critical 5건도 함께 해결.
+
+### 수정됨
+
+**Hooks — 호환성 및 파싱**
+- `file-tracker.sh`: BSD 전용 `sed -i ''` 구문을 Node.js 인라인 스크립트로 교체. 기존 코드는 Linux의 GNU sed에서 무음 실패하여 marker 파일 수정 후에도 `sensor_cache_valid`가 stale로 남았음. macOS에서도 insert-when-missing 경로가 두 번째 `---` 구분자를 잘못 처리했던 문제도 함께 해결.
+- `update-check.sh`: 플러그인 경로를 `process.argv[1]`로 전달 (기존에는 셸 문자열 보간). 경로에 apostrophe(`/Users/O'Brien/...`)가 포함되면 JS 구문 오류로 업데이트 확인이 조용히 스킵되던 문제 해결.
+- `phase-guard.sh` / `file-tracker.sh` / `phase-transition.sh`: `file_path` 추출을 regex에서 `extract_file_path_from_json` (JSON 파서) 기반으로 교체. escape된 따옴표를 포함한 경로(`a \"b\" c.txt`)가 잘려서 오인 block 및 receipt 손상이 발생하던 문제 해결.
+- `phase-transition.sh`: `SESSION_ID` 추출 시 가장 안쪽의 `deep-work.XXXX` 세그먼트를 취함. Fork worktree 경로(`.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md`)가 이제 `s-child`로 정확히 해결됨 (기존엔 다중 매치로 cache 파일 경로가 깨짐).
+
+**Hooks — race condition**
+- `file-tracker.sh` receipt 업데이트: read-modify-write를 mkdir 기반 spinlock으로 감쌈. 타임아웃 시 `<receipt>.pending-changes.jsonl`에 큐잉하고 다음 lock 보유자가 드레인. 5+ 동시 PostToolUse 호출에서 `files_modified` 항목이 유실되던 문제 해결.
+- `sensor-trigger.js` + `file-tracker.sh` state YAML 업데이트: 동일한 `<state>.lock`을 공유하여 순차 쓰기. 기존에는 `current_phase`/`active_slice`/`sensor_pending` 변경이 race로 하나가 씹힘.
+- `utils.sh` `write_registry`: lock 타임아웃 시 fail-closed (다른 프로세스의 lock 디렉터리 강제 제거 금지). 기존 force-remove 동작이 경쟁 상태에서 세션 registry를 무음으로 손상시켰음.
+- `session-end.sh` JSONL append: lock 타임아웃 시 `<jsonl>.pending-append.jsonl`에 큐잉 (기존엔 락 없이 쓰기). 다음 session-end가 원자적으로 드레인.
+
+**Hooks — 검증 강건화**
+- `phase-guard-core.js`: 내부 에러(잘못된 입력, 런타임 예외)를 `process.exit(3)`으로 구분, 가드 로그 참조 안내가 포함된 JSON block을 stdout에 출력. 의도적 block은 기존대로 exit 0 + `decision=block`. 기존에는 둘 다 exit 2여서 사용자 메시지에서 구분 불가.
+- `phase-guard.sh`: Node exit 3을 hook exit 2 + 디버그 메시지로 변환. stdout의 `decision`이 비어있으면 fail-closed + 별도 메시지 (기존엔 무음 allow).
+- `phase-guard.sh`: state frontmatter에서 `slice_files` / `strict_scope` / `exempt_patterns`를 읽어 (신규 `read_frontmatter_list` 헬퍼 사용) Node 입력에 전달. 기존엔 이 필드들이 한번도 전달되지 않아 `checkSliceScope`가 `undefined`를 받고 항상 `inScope=true`를 반환 → `deep-implement/SKILL.md`의 slice 범위 계약이 무음 미강제.
+- `phase-guard.sh` block 메시지: 4개 heredoc 모두 보간 필드(파일 경로, worktree 경로, phase 라벨, 다음 단계)를 JSON-escape. 따옴표/개행 포함 메시지가 기존엔 invalid JSON을 만들었음.
+
+**Hooks — phase-transition injector (C-1)**
+- `file-tracker.sh`가 stdin을 `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>`에 캐시. `phase-transition.sh`는 `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` 환경변수가 unset일 때 (Claude Code 프로덕션의 실제 동작) 이 캐시를 fallback으로 읽음. 기존에는 프로덕션에서 Phase Transition injector가 사실상 no-op → phase 전환 시 `worktree_path` / `team_mode` / `cross_model_enabled` / `tdd_mode` 체크리스트가 LLM 컨텍스트에 한 번도 주입되지 않았음.
+
+**알림**
+- `notify.sh`: YAML 인식 `notifications.enabled` 파서. 기존 `grep -q "^  enabled: false"`가 관련 없는 `team_mode:\n  enabled: false`를 false-positive로 매칭하여 전 채널 무음 차단.
+- `notify.sh`: `_osascript_escape` 헬퍼를 macOS `osascript` 호출에 적용. 메시지에 따옴표가 포함되면 무음 구문 오류로 알림이 미전달되던 문제 해결.
+- `notify.sh`: `_xml_escape` 헬퍼를 Windows PowerShell toast XML에 적용. `<`, `&`, `"` 문자가 XML을 깨트려 알림이 나타나지 않던 문제 해결.
+- `notify.sh`: `set -euo pipefail`에서 `pipefail` 제거. best-effort 스크립트에서 채널 미설정 시 grep 파이프라인이 비매칭으로 비정상 종료하는 문제 해결.
+
+**문서**
+- 7개 SKILL.md 파일의 `skills/shared/references/` → `../shared/references/` 링크 21건 일괄 수정 (`deep-work-workflow`, `deep-test`, `deep-implement`, `deep-plan`, `deep-research`, `deep-brainstorm`, `deep-work-orchestrator`).
+- `commands/*.md`의 `(v6.2.1)` 라벨 13건을 `(v6.2.4)`로 갱신.
+- `commands/deep-finish.md` 예시: `"deep_work_version": "5.3.0"` → `"6.2.4"` (두 minor 릴리스 동안 고정되어 있었음).
+- `hooks/hooks.json` description: `(v5.6.0 Session Fork)` → `(v6.2.4)`.
+- `skills/deep-work-orchestrator/SKILL.md`: phase 소유권 표의 Test 행 수정 — `/deep-finish` 이후 Test → idle 전환은 Orchestrator가 담당 (Phase Skill 아님).
+- `skills/deep-work-orchestrator/SKILL.md`: `deep-resume.md`가 이미 사용 중이었으나 문서화되지 않았던 `--resume-from=<phase>` 플래그 공식 문서화.
+- `CLAUDE.md`: 누락되었던 디렉터리·파일을 구조에 추가 (`sensors/`, `health/`, `templates/topologies/`, `assumptions.json`, `package.json`).
+
+### 내부
+
+- `hooks/scripts/utils.sh`에 공유 헬퍼 추가, 여러 훅에서 소비:
+  - `_acquire_lock` / `_release_lock`: mkdir 기반 spinlock, 타임아웃 fail-closed (`.claude/deep-work-guard-errors.log`에 기록).
+  - `extract_file_path_from_json`: JSON 파서 기반 file_path 추출. escape된 따옴표를 정확히 처리.
+  - `json_escape`: block 메시지 내 안전한 보간을 위한 JSON 문자열 이스케이프. 인자 필수 — stdin fallback 없음 (훅 hang 방지).
+  - `read_frontmatter_list`: frontmatter의 YAML 리스트 필드(`[a, b]` 또는 `- a` 블록)를 JSON 배열로 반환.
+- `hooks/scripts/utils.sh` `write_registry`: `_acquire_lock` 기반으로 리팩터링, fail-closed 동작으로 변경.
+- 테스트: 320개 (6.2.3의 294개에서), 88 suite. 순증 +26개 — 호환성(3), 입력 파싱 e2e(5), notify YAML/escape(4), receipt race(1, 80 병렬 쓰기), phase-guard 강건화(6), phase-transition cache(2), utils 헬퍼(19).
+
+### 알려진 제약
+
+- 크로스 플랫폼 CI matrix는 아직 구성되지 않음. 모든 새 수정은 `node --test` 기반 단위 테스트로 검증되었으나, Linux/Windows 커버리지는 새 portability 로직에 의존 (CI 강제 아님). 다음 릴리스에서 추가 예정.
+
 ## [6.2.3] — 2026-04-16
 
 ### 변경됨

@@ -7,6 +7,62 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.4] — 2026-04-17
+
+Bug fix release addressing 15 hook-layer bugs + 7 documentation drift items identified by an internal audit (`BUG_REVIEW_REPORT.md`). Plan reviewed independently before execution; 5 additional critical issues found during review were also addressed.
+
+### Fixed
+
+**Hooks — portability & parsing**
+- `file-tracker.sh`: Replace BSD-only `sed -i ''` with a Node.js inline script. The previous code failed silently on Linux (`sed -i`'s GNU syntax differs), leaving `sensor_cache_valid` stale after marker-file changes. The insert-when-missing path also mis-handled the second `---` delimiter even on macOS — now fixed.
+- `update-check.sh`: Pass the plugin path via `process.argv[1]` instead of shell interpolation. An install path containing an apostrophe (e.g. `/Users/O'Brien/...`) caused a JS syntax error and silently skipped the update check.
+- `phase-guard.sh` / `file-tracker.sh` / `phase-transition.sh`: Replace regex-based `file_path` extraction with `extract_file_path_from_json` (JSON parser). Paths containing escaped quotes (`a \"b\" c.txt`) were truncated, causing spurious blocks and receipt corruption.
+- `phase-transition.sh`: Extract the innermost `deep-work.XXXX` segment for `SESSION_ID`. Fork worktree paths like `.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md` now resolve to `s-child` instead of a multi-line mess that broke the cache file path.
+
+**Hooks — race conditions**
+- `file-tracker.sh` receipt updates: Wrap read-modify-write with a mkdir-based spinlock. On timeout, queue the pending entry to `<receipt>.pending-changes.jsonl`; the next lock holder drains it before writing. Previously, 5+ concurrent PostToolUse invocations could drop `files_modified` entries.
+- `sensor-trigger.js` + `file-tracker.sh` state YAML updates: Both now acquire the same `<state>.lock` before read-modify-write. Previously, `current_phase`/`active_slice`/`sensor_pending` could race and lose one of the writes.
+- `utils.sh` `write_registry`: Fail-closed on lock timeout (no force-remove of another process's lock directory). The old force-remove behaviour silently corrupted the session registry under contention.
+- `session-end.sh` JSONL append: Lock timeout now queues to `<jsonl>.pending-append.jsonl` instead of writing without a lock. Next session-end drains the queue atomically.
+
+**Hooks — validation hardening**
+- `phase-guard-core.js`: Internal errors (malformed input, runtime exceptions) now `process.exit(3)` with a JSON block message pointing at the guard error log. Intentional blocks continue to exit 0 with `decision=block`. Previously, both paths exited 2 — indistinguishable in user-facing output.
+- `phase-guard.sh`: Translate Node exit 3 to hook exit 2 with the debug-oriented block message. Empty `decision` on stdout now fail-closes with a distinct message instead of silently allowing.
+- `phase-guard.sh`: Read `slice_files` / `strict_scope` / `exempt_patterns` from state frontmatter (via the new `read_frontmatter_list` helper) and pass them into the Node input. Previously, these fields were never populated, so `checkSliceScope` received `undefined` and returned `inScope=true` unconditionally — the slice-scope contract in `deep-implement/SKILL.md` was silently unenforced.
+- `phase-guard.sh` block messages: All 4 heredocs now JSON-escape interpolated fields (file path, worktree path, phase label, next-step). Messages with literal quotes or newlines previously produced invalid JSON.
+
+**Hooks — phase-transition injector (C-1)**
+- `file-tracker.sh` caches stdin to `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>`. `phase-transition.sh` falls back to this cache when `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` are unset — which is the actual Claude Code production behaviour (these env vars are not part of the hook protocol). Previously, the Phase Transition injector was effectively a no-op in production, meaning `worktree_path` / `team_mode` / `cross_model_enabled` / `tdd_mode` checklists were never emitted into the LLM context on phase change.
+
+**Notifications**
+- `notify.sh`: YAML-aware `notifications.enabled` parser. Previously, `grep -q "^  enabled: false"` false-positive-matched an unrelated `team_mode:\n  enabled: false`, silently suppressing all channels.
+- `notify.sh`: `_osascript_escape` helper applied to macOS `osascript` calls. A double-quote in the message (e.g. `phase "done"`) previously caused a silent syntax error.
+- `notify.sh`: `_xml_escape` helper applied to Windows PowerShell toast XML. `<`, `&`, `"` in the message would have broken the XML document and the notification would never appear.
+- `notify.sh`: Drop `pipefail` from `set -euo pipefail`. This is a best-effort script; many `grep` pipelines legitimately return non-zero when a channel isn't configured, and `pipefail` turned those no-ops into script aborts.
+
+**Documentation**
+- 21 broken `skills/shared/references/` → `../shared/references/` link fixes across 7 `SKILL.md` files (`deep-work-workflow`, `deep-test`, `deep-implement`, `deep-plan`, `deep-research`, `deep-brainstorm`, `deep-work-orchestrator`).
+- 13 `(v6.2.1)` labels in `commands/*.md` refreshed to `(v6.2.4)`.
+- `commands/deep-finish.md` example: `"deep_work_version": "5.3.0"` → `"6.2.4"` (was frozen across two minor releases).
+- `hooks/hooks.json` description: `(v5.6.0 Session Fork)` → `(v6.2.4)`.
+- `skills/deep-work-orchestrator/SKILL.md`: Corrected Test row in the phase ownership table — it is Orchestrator (not the Phase Skill) that transitions Test → idle after `/deep-finish`.
+- `skills/deep-work-orchestrator/SKILL.md`: Documented `--resume-from=<phase>` flag that `deep-resume.md` was already passing, but was undocumented in Orchestrator.
+- `CLAUDE.md`: Added previously-omitted directories and files to the structure listing (`sensors/`, `health/`, `templates/topologies/`, `assumptions.json`, `package.json`).
+
+### Internal
+
+- New `hooks/scripts/utils.sh` helpers consumed across the hook layer:
+  - `_acquire_lock` / `_release_lock`: mkdir-based advisory spinlock, fail-closed on timeout (logs to `.claude/deep-work-guard-errors.log`).
+  - `extract_file_path_from_json`: JSON-parser-based file_path extraction; handles escaped quotes correctly.
+  - `json_escape`: JSON-string escape for safe interpolation into block messages. Argument required — no stdin fallback (prevents hook hangs).
+  - `read_frontmatter_list`: reads YAML list fields (inline `[a, b]` or block `- a`) from frontmatter; emits JSON array.
+- `hooks/scripts/utils.sh` `write_registry`: refactored to use `_acquire_lock` with fail-closed behavior.
+- Test suite: 320 tests (from 294 in 6.2.3), across 88 suites. Net +26 tests covering: portability (3), input parsing e2e (5), notify YAML/escape (4), receipt race (1, 80 parallel writes), phase-guard hardening (6), phase-transition cache (2), utils helpers (19).
+
+### Known limitations
+
+- Cross-platform CI matrix is not yet in place. All new fixes are unit-tested against Node `node --test`, but Linux/Windows coverage relies on the new portability logic rather than CI enforcement. Tracked for a future release.
+
 ## [6.2.3] — 2026-04-16
 
 ### Changed
