@@ -242,14 +242,27 @@ append_session_history() {
     local target="$1" data="$2"
     local lockdir="${target}.lock.d"
     local pending="${target}.pending-append.jsonl"
-    local retries=10
-    # Drain any previously-queued entries first, if we can grab the lock.
+    local retries=20
     while [ "$retries" -gt 0 ]; do
       if mkdir "$lockdir" 2>/dev/null; then
+        # Crash-safe drain (v6.2.4 post-review W-1): rename pending to
+        # .draining.<pid> BEFORE appending to target. If we crash between
+        # cat and truncate, the renamed file survives and a future run
+        # (including a second _append_with_lock call) can recover.
         if [ -s "$pending" ]; then
-          cat "$pending" >> "$target" 2>/dev/null
-          : > "$pending" 2>/dev/null
+          local draining="${pending}.draining.$$"
+          mv "$pending" "$draining" 2>/dev/null || true
+          if [ -s "$draining" ]; then
+            cat "$draining" >> "$target" 2>/dev/null
+          fi
+          rm -f "$draining" 2>/dev/null
         fi
+        # Also recover any .draining.<pid> left by crashed prior runs.
+        for orphan in "${pending}.draining."*; do
+          [ -s "$orphan" ] || continue
+          cat "$orphan" >> "$target" 2>/dev/null
+          rm -f "$orphan" 2>/dev/null
+        done
         echo "$data" >> "$target" 2>/dev/null
         rmdir "$lockdir" 2>/dev/null
         return 0
@@ -276,6 +289,12 @@ append_session_history() {
 
 # Run in subshell — errors must never block session close
 (append_session_history) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+
+# v6.2.4 post-review: cleanup stale PostToolUse stdin-cache files.
+# Remove our own PPID cache (no longer needed after session close) and any
+# orphaned .hook-tool-input.* files older than 60 minutes. Best-effort.
+rm -f "$PROJECT_ROOT/.claude/.hook-tool-input.$PPID" 2>/dev/null
+find "$PROJECT_ROOT/.claude" -maxdepth 1 -name '.hook-tool-input.*' -type f -mmin +60 -delete 2>/dev/null || true
 
 # v5.4: Update last_activity on CLI stop (do NOT unregister)
 if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then

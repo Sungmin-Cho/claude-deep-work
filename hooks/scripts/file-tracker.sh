@@ -14,6 +14,24 @@ source "$SCRIPT_DIR/utils.sh"
 init_deep_work_state
 STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 
+# ─── Read stdin & cache FIRST (before any phase-based early exit) ──────
+# phase-transition.sh depends on this cache regardless of phase. v6.2.4's
+# initial cache placement was below the `!= implement` early-exit, so
+# non-implement transitions (research→plan, plan→implement, test→idle)
+# never got a fresh cache entry — breaking the injector on most phase
+# changes. Move stdin read to the top and cache atomically.
+TOOL_INPUT="$(cat)"
+TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
+
+_HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
+mkdir -p "$(dirname "$_HOOK_INPUT_CACHE")" 2>/dev/null
+_HOOK_INPUT_TMP="${_HOOK_INPUT_CACHE}.tmp.$$"
+# Atomic write: truncate+write is non-atomic and a concurrent reader could
+# see a partial JSON. Write to tmp and rename.
+if printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_TMP" 2>/dev/null; then
+  mv "$_HOOK_INPUT_TMP" "$_HOOK_INPUT_CACHE" 2>/dev/null || rm -f "$_HOOK_INPUT_TMP" 2>/dev/null
+fi
+
 # 상태 파일이 없으면 즉시 종료
 if [[ ! -f "$STATE_FILE" ]]; then
   exit 0
@@ -25,29 +43,22 @@ CURRENT_PHASE="$(read_frontmatter_field "$STATE_FILE" "current_phase")"
 WORK_DIR="$(read_frontmatter_field "$STATE_FILE" "work_dir")"
 ACTIVE_SLICE="$(read_frontmatter_field "$STATE_FILE" "active_slice")"
 
-# implement 단계가 아니면 즉시 종료
+# ─── Marker file cache flip runs for any non-idle phase ─────
+# We still need the sensor_cache_valid flip when a marker file (package.json,
+# tsconfig.json, etc.) is modified in ANY phase — otherwise the sensor
+# ecosystem cache goes stale across phase transitions. So defer the
+# non-implement early-exit until AFTER the marker-file check at the bottom.
+
+# implement 단계가 아닌 경우: receipt 업데이트는 skip, marker flip만 수행
+_SKIP_RECEIPT=false
 if [[ "$CURRENT_PHASE" != "implement" ]]; then
-  exit 0
+  _SKIP_RECEIPT=true
 fi
 
-# work_dir이 비어있으면 종료
+# work_dir이 비어있으면 receipt skip (marker flip은 계속)
 if [[ -z "$WORK_DIR" ]]; then
-  exit 0
+  _SKIP_RECEIPT=true
 fi
-
-# ─── 도구 입력 파싱 ──────────────────────────────────────────
-
-TOOL_INPUT="$(cat)"
-TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
-
-# Cache the tool input for sibling PostToolUse hooks that run after us
-# (notably phase-transition.sh, which can't read stdin because we already
-# consumed it). Keyed by $PPID — all hooks for a single Claude Code tool
-# call share the same parent process, and successive tool calls overwrite
-# in-place.
-_HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
-mkdir -p "$(dirname "$_HOOK_INPUT_CACHE")" 2>/dev/null
-printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_CACHE" 2>/dev/null || true
 
 FILE_PATH=""
 
@@ -94,7 +105,11 @@ if [[ "$TOOL_NAME" != "Bash" ]]; then
   fi
 fi
 
-# ─── 파일 변경 로그에 기록 ───────────────────────────────────
+# ─── 파일 변경 로그 + receipt + ownership (implement phase only) ───────
+# Marker file cache flip at the bottom still runs even for non-implement
+# phases so the sensor ecosystem cache doesn't go stale across transitions.
+
+if ! $_SKIP_RECEIPT; then
 
 LOG_DIR="$PROJECT_ROOT/$WORK_DIR"
 LOG_FILE="$LOG_DIR/file-changes.log"
@@ -141,44 +156,76 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
     _RECEIPT_LOCK="${RECEIPT_FILE}.lock"
     _RECEIPT_PENDING="${RECEIPT_FILE}.pending-changes.jsonl"
 
-    if _acquire_lock "$_RECEIPT_LOCK" 20 0.05; then
+    # Extended retries (2s total) make normal-contention timeouts rare; the
+    # pending sidecar is now truly a last-resort safety net rather than a
+    # routine path.
+    if _acquire_lock "$_RECEIPT_LOCK" 40 0.05; then
       node -e '
         const fs = require("fs");
         const [, receiptFile, pendingFile, filePath, ts] = process.argv;
+        const drainingFile = pendingFile + ".draining." + process.pid;
         try {
           const r = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
           if (!r.changes) r.changes = { files_modified: [] };
           if (!r.changes.files_modified) r.changes.files_modified = [];
 
-          // Drain any pending entries queued during prior lock contention.
+          // Crash-safe drain: rename pending to .draining.<pid> BEFORE reading.
+          // If we crash between rename and receipt write, the .draining file
+          // survives and the next invocation can recover. If we unlinked
+          // before writing (the v6.2.4 original bug), entries would be lost.
+          let drainLines = [];
           if (fs.existsSync(pendingFile)) {
-            const lines = fs.readFileSync(pendingFile, "utf8").split("\n").filter(Boolean);
-            for (const line of lines) {
-              try {
-                const entry = JSON.parse(line);
-                if (typeof entry.file_path === "string" && !r.changes.files_modified.includes(entry.file_path)) {
-                  r.changes.files_modified.push(entry.file_path);
-                }
-              } catch(_) { /* skip malformed pending line */ }
+            try {
+              fs.renameSync(pendingFile, drainingFile);
+              drainLines = fs.readFileSync(drainingFile, "utf8").split("\n").filter(Boolean);
+            } catch(_) { /* another drainer beat us — that is fine */ }
+          }
+          // Also pick up any .draining files from previous crashed drains.
+          try {
+            const dir = receiptFile.substring(0, receiptFile.lastIndexOf("/"));
+            for (const name of fs.readdirSync(dir)) {
+              if (name.startsWith(pendingFile.substring(pendingFile.lastIndexOf("/") + 1) + ".draining.") && (dir + "/" + name) !== drainingFile) {
+                try {
+                  drainLines = drainLines.concat(
+                    fs.readFileSync(dir + "/" + name, "utf8").split("\n").filter(Boolean)
+                  );
+                  fs.unlinkSync(dir + "/" + name);
+                } catch(_) {}
+              }
             }
-            fs.unlinkSync(pendingFile);
+          } catch(_) {}
+
+          for (const line of drainLines) {
+            try {
+              const entry = JSON.parse(line);
+              if (typeof entry.file_path === "string" && !r.changes.files_modified.includes(entry.file_path)) {
+                r.changes.files_modified.push(entry.file_path);
+              }
+            } catch(_) { /* skip malformed pending line */ }
           }
 
           // Add current change.
           if (!r.changes.files_modified.includes(filePath)) r.changes.files_modified.push(filePath);
           r.timestamp = ts;
 
+          // Atomic canonical write.
           const tmp = receiptFile + ".tmp." + process.pid;
           fs.writeFileSync(tmp, JSON.stringify(r, null, 2));
           fs.renameSync(tmp, receiptFile);
+
+          // Canonical committed — now safe to unlink the .draining file.
+          try { if (fs.existsSync(drainingFile)) fs.unlinkSync(drainingFile); } catch(_) {}
         } catch(e) {
           process.stderr.write("file-tracker receipt update error: " + e.message + "\n");
           try { fs.unlinkSync(receiptFile + ".tmp." + process.pid); } catch(_) {}
+          // NOTE: do not delete .draining on error — it is recoverable.
         }
       ' "$RECEIPT_FILE" "$_RECEIPT_PENDING" "$FILE_PATH" "$TIMESTAMP" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
       _release_lock "$_RECEIPT_LOCK"
     else
-      # Lock timeout — queue this entry for the next invocation's drain.
+      # Lock timeout (very rare after retry bump) — queue for the next
+      # invocation's drain. /deep-finish and session-end also sweep pending
+      # files as a safety net.
       node -e '
         const fs = require("fs");
         const [, pendingFile, filePath, ts] = process.argv;
@@ -220,6 +267,8 @@ if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
   (update_last_activity "$DEEP_WORK_SESSION_ID") 2>/dev/null || true
 fi
 
+fi  # end of: if ! $_SKIP_RECEIPT
+
 # ─── v5.7: Marker file cache invalidation ─────────────────────
 # If a marker file was created/modified, invalidate the sensor ecosystem cache.
 # Marker files: package.json, tsconfig.json, pyproject.toml, setup.py,
@@ -239,20 +288,31 @@ if [[ "$TOOL_NAME" != "Bash" && -n "${FILE_PATH:-}" ]]; then
   if $IS_MARKER && [[ -f "$STATE_FILE" ]]; then
     # Portable frontmatter flip via Node.js (was BSD-only `sed -i ''` — failed
     # on Linux and also mis-handled the insert case even on macOS).
-    node -e '
-      const fs = require("fs");
-      const f = process.argv[1];
-      try {
-        let t = fs.readFileSync(f, "utf8");
-        if (/^sensor_cache_valid:/m.test(t)) {
-          t = t.replace(/^sensor_cache_valid:.*$/m, "sensor_cache_valid: false");
-        } else {
-          // Insert right after the opening --- delimiter
-          t = t.replace(/^---\n/, "---\nsensor_cache_valid: false\n");
-        }
-        fs.writeFileSync(f, t);
-      } catch(_) { /* best-effort: never block PostToolUse */ }
-    ' "$STATE_FILE" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+    #
+    # v6.2.4 post-review: acquire ${STATE_FILE}.lock — sensor-trigger.js
+    # already takes this same lock before its state-YAML read-modify-write,
+    # so concurrent runs (marker file edited while session is in
+    # implement+GREEN) no longer lose sensor_pending or sensor_cache_valid.
+    _STATE_LOCK="${STATE_FILE}.lock"
+    if _acquire_lock "$_STATE_LOCK" 20 0.05; then
+      node -e '
+        const fs = require("fs");
+        const f = process.argv[1];
+        try {
+          let t = fs.readFileSync(f, "utf8");
+          if (/^sensor_cache_valid:/m.test(t)) {
+            t = t.replace(/^sensor_cache_valid:.*$/m, "sensor_cache_valid: false");
+          } else {
+            // Insert right after the opening --- delimiter
+            t = t.replace(/^---\n/, "---\nsensor_cache_valid: false\n");
+          }
+          fs.writeFileSync(f, t);
+        } catch(_) { /* best-effort: never block PostToolUse */ }
+      ' "$STATE_FILE" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+      _release_lock "$_STATE_LOCK"
+    fi
+    # On lock timeout, skip the flip for this invocation; the next marker
+    # write will try again. Staleness window is one tool call.
   fi
 fi
 

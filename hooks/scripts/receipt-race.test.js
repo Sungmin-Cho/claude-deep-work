@@ -67,25 +67,32 @@ describe('file-tracker.sh receipt race — no lost entries under concurrency', (
       const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
       const recorded = new Set(receipt.changes.files_modified);
 
-      // Every path must be recorded. If any were lost, they may be in the
-      // pending-append file — drain manually to verify recovery is possible.
-      const pendingPath = receiptPath + '.pending-changes.jsonl';
-      if (fs.existsSync(pendingPath)) {
-        const pending = fs.readFileSync(pendingPath, 'utf8').split('\n').filter(Boolean);
-        for (const line of pending) {
-          try {
-            const entry = JSON.parse(line);
-            if (entry.file_path) recorded.add(entry.file_path);
-          } catch(_) {}
-        }
-      }
-
+      // v6.2.4 post-review: the CANONICAL receipt must contain every
+      // entry after the race settles. The previous version unioned the
+      // pending sidecar to claim success — that only proved recovery was
+      // possible, not that downstream consumers (/deep-finish) would see
+      // a complete picture. With extended retries (2s, was 1s), all writers
+      // should succeed serially without touching the pending file.
       for (const p of paths) {
         assert.ok(
           recorded.has(p),
-          `trial ${trial}: lost entry ${p}. Recorded: ${JSON.stringify([...recorded])}`
+          `trial ${trial}: lost entry ${p} in canonical receipt. Recorded: ${JSON.stringify([...recorded])}`
         );
       }
+
+      // Pending sidecar must be empty after the race — if it is not, the
+      // canonical receipt is missing some entries that downstream readers
+      // cannot recover on their own.
+      const pendingPath = receiptPath + '.pending-changes.jsonl';
+      if (fs.existsSync(pendingPath) && fs.statSync(pendingPath).size > 0) {
+        assert.fail(`trial ${trial}: pending sidecar non-empty after race:\n${fs.readFileSync(pendingPath, 'utf8')}`);
+      }
+
+      // No leftover .draining.<pid> files either (should have been unlinked
+      // after canonical write).
+      const receiptDir = path.dirname(receiptPath);
+      const leftover = fs.readdirSync(receiptDir).filter(n => n.includes('.draining.'));
+      assert.deepEqual(leftover, [], `trial ${trial}: leftover draining files: ${leftover}`);
     }
   });
 });

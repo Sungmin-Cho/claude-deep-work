@@ -184,6 +184,27 @@ _release_lock() {
   rmdir "$1" 2>/dev/null || true
 }
 
+# _try_write_registry — call write_registry and log failure with context.
+# v6.2.4 post-review: previously, all callers wrapped the call with
+# `|| true`, so lock-contention failures silently skipped registry
+# mutations (session registration, ownership updates, phase transitions
+# could all vanish without trace). Now we log to the guard error log so
+# at least the operator can investigate.
+# Non-fatal: returns 1 on failure, but the caller is expected to keep
+# going — PostToolUse hooks must never block.
+_try_write_registry() {
+  local json="$1" context="${2:-unknown}"
+  if ! write_registry "$json"; then
+    local err_log="${PROJECT_ROOT:-$PWD}/.claude/deep-work-guard-errors.log"
+    mkdir -p "$(dirname "$err_log")" 2>/dev/null
+    printf '%s write_registry failed (context: %s)\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)" \
+      "$context" >> "$err_log" 2>/dev/null || true
+    return 1
+  fi
+  return 0
+}
+
 # ─── Session ID generation ──────────────────────────────────
 # Generates a unique session identifier: s-{8 hex digits}
 
@@ -320,7 +341,7 @@ register_session() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$pid" "$task_desc" "$work_dir")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "register_session(${session_id})"
 }
 
 unregister_session() {
@@ -336,7 +357,7 @@ unregister_session() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "unregister_session(${session_id})"
 }
 
 # ─── File ownership ────────────────────────────────────────
@@ -444,7 +465,7 @@ register_file_ownership() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$file_path")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "register_file_ownership(${session_id})"
 }
 
 # ─── Activity & phase sync ─────────────────────────────────
@@ -465,7 +486,7 @@ update_last_activity() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "update_last_activity(${session_id})"
 }
 
 update_registry_phase() {
@@ -487,7 +508,7 @@ update_registry_phase() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$phase")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "update_registry_phase(${session_id})"
 }
 
 # ─── Stale session detection ───────────────────────────────
@@ -690,7 +711,7 @@ register_fork_session() {
     console.log(JSON.stringify(data));
   ' "$current" "$session_id" "$parent_id" "$fork_generation" "$task_desc" "$work_dir" "$restart_phase")
 
-  write_registry "$updated"
+  _try_write_registry "$updated" "register_fork_session(${session_id})"
 
   # 부모 상태 파일 업데이트도 같은 호출 내에서 수행
   local parent_state="$PROJECT_ROOT/.claude/deep-work.${parent_id}.md"
