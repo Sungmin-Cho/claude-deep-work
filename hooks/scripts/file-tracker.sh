@@ -40,6 +40,15 @@ fi
 TOOL_INPUT="$(cat)"
 TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
+# Cache the tool input for sibling PostToolUse hooks that run after us
+# (notably phase-transition.sh, which can't read stdin because we already
+# consumed it). Keyed by $PPID — all hooks for a single Claude Code tool
+# call share the same parent process, and successive tool calls overwrite
+# in-place.
+_HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
+mkdir -p "$(dirname "$_HOOK_INPUT_CACHE")" 2>/dev/null
+printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_CACHE" 2>/dev/null || true
+
 FILE_PATH=""
 
 if [[ "$TOOL_NAME" == "Bash" ]]; then
