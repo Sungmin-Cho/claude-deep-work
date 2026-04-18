@@ -7,6 +7,20 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] — 2026-04-18
+
+### Added
+- **Phase 5 "Integrate"** — new skippable phase after Test that reads deep-suite plugin artifacts (`deep-review`, `deep-docs`, `deep-wiki`, `deep-dashboard`, `deep-evolve`) and lets an AI recommend top-3 next steps which the user can choose to execute. Interactive loop (max 5 rounds) with recommendation + rationale + signals. Design spec: `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md`.
+- `/deep-integrate` command for manual re-entry after skipping Phase 5.
+- `--skip-integrate` flag to skip Phase 5 and go directly to `/deep-finish`.
+- `skills/deep-integrate/` — new skill with 2 helper scripts (`detect-plugins.sh`, `gather-signals.sh`), JSON schemas, and L6 snapshot fixtures.
+- Stop-hook: record `terminated_by: "interrupted"` in `integrate-loop.json` on session interruption.
+
+### Changed
+- `deep-work-orchestrator` dispatches Phase 5 between Phase 4 (Test) and `/deep-finish`.
+- `/deep-finish` hints `/deep-integrate` when no `integrate-loop.json` exists.
+- Phase 5 sets `current_phase="idle"` in state file to reuse existing phase-guard fast-path — no `phase-guard.sh` changes required.
+
 ## [6.2.4] — 2026-04-17
 
 Bug fix release addressing 15 hook-layer bugs + 7 documentation drift items identified by an internal audit (`BUG_REVIEW_REPORT.md`). Plan reviewed independently before execution; 5 additional critical issues found during review were also addressed.

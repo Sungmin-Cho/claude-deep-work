@@ -7,6 +7,20 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] — 2026-04-18
+
+### 추가됨
+- **Phase 5 "Integrate"** — Phase 4(Test) 완료 후 호출되는 skippable 단계. `deep-review`, `deep-docs`, `deep-wiki`, `deep-dashboard`, `deep-evolve` 플러그인 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면 사용자가 선택·실행한다. 대화형 루프 (최대 5라운드). 설계 문서: `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md`.
+- `/deep-integrate` 커맨드: Phase 5 수동 재진입용.
+- `--skip-integrate` 플래그: Phase 5 건너뛰고 `/deep-finish`로 직행.
+- `skills/deep-integrate/` 신규 스킬 + 2개 헬퍼 스크립트(`detect-plugins.sh`, `gather-signals.sh`), JSON 스키마, L6 snapshot fixture.
+- Stop-hook: 세션 중단 시 `integrate-loop.json`에 `terminated_by: "interrupted"` 기록.
+
+### 변경됨
+- `deep-work-orchestrator`가 Phase 4(Test) 완료 후 Phase 5로 dispatch하고 `/deep-finish`로 이어진다.
+- `/deep-finish`: `integrate-loop.json` 부재 시 `/deep-integrate`를 먼저 실행하도록 힌트.
+- Phase 5는 state file의 `current_phase="idle"`로 전환해 기존 phase-guard fast-path를 활용. `phase-guard.sh` 수정 없음.
+
 ## [6.2.4] — 2026-04-17
 
 내부 감사(`BUG_REVIEW_REPORT.md`)로 식별된 hook 레이어 버그 15건 + 문서 드리프트 7건을 수정하는 버그 픽스 릴리스. 실행 전 플랜 독립 리뷰에서 추가로 발견된 critical 5건도 함께 해결.
