@@ -109,7 +109,7 @@ When AI coding tools work on complex tasks without structure, common failure mod
 4. **Scope Creep**: AI adds "improvements" not requested, introducing bugs
 5. **Inconsistency**: AI uses different conventions than the rest of the codebase
 
-The Deep Work workflow prevents these by **strictly separating brainstorming, analysis, planning, coding, and testing** into five distinct phases with enforced gates between them.
+The Deep Work workflow prevents these by **strictly separating brainstorming, analysis, planning, coding, testing, and integration** into six distinct phases — the first five with enforced gates, plus Phase 5 Integrate as an optional post-test recommendation loop.
 
 ## The Six Phases
 
