@@ -1,6 +1,6 @@
 ---
 name: deep-work-orchestrator
-version: "6.2.3"
+version: "6.3.0"
 description: "Evidence-Driven Development — session initialization + auto-flow orchestration"
 ---
 
@@ -51,6 +51,7 @@ write_session_pointer "$SESSION_ID"
 | `--skip-review` | review_state → "skipped" |
 | `--no-branch` | git_branch → false |
 | `--skip-to-implement` | Plan까지 전부 건너뜀, 인라인 slice |
+| `--skip-integrate` | Phase 5 Integrate 건너뜀 (v6.3.0) |
 | `--profile=X` | 프리셋 X 직접 선택 |
 | `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `deep-resume.md`가 사용. |
 
@@ -210,10 +211,22 @@ Skill("deep-test", args=ARGS)
 
 `/deep-test`가 내부적으로 implement-test retry loop 관리 (max 3회).
 
-**All pass** (`test_passed: true`, `current_phase`는 test 유지): → 3-6.
+**All pass** (`test_passed: true`, `current_phase`는 test 유지): → 3-5b.
 **Retry exhausted**: auto-flow 중단. 사용자 수동 개입.
 
-> current_phase 변경 주체: Test Phase Skill은 `current_phase`를 변경하지 않음. Orchestrator가 finish 후 idle로 전환.
+> current_phase 변경 주체: Test Phase Skill은 `current_phase`를 변경하지 않음.
+
+## 3-5b. Integrate (v6.3.0, skippable)
+
+Phase 5: 설치된 deep-suite 플러그인 아티팩트를 읽어 AI가 다음 단계를 추천하는 대화형 루프.
+
+- `$ARGUMENTS`에 `--skip-integrate` 포함 시 → 3-6로 직진 (state 변경 없음).
+- 없으면 → `Skill("deep-integrate", args=ARGS)` 호출.
+  - 스킬이 정상 종료하면 → 3-6로 진행.
+  - 스킬이 에러로 종료하면 경고 메시지 출력 후 3-6로 진행 (Phase 5는 skippable이므로 auto-flow 유지).
+  - 스킬이 `terminated_by: "interrupted"` 상태로 남기고 종료하면 auto-flow 중단 (재진입 대기).
+
+> current_phase 변경 주체: deep-integrate Skill이 Phase 5 진입 시 `idle`로 전환하고 `phase5_entered_at`/`phase5_completed_at` 필드를 기록. `current_phase` 자체는 `idle` 유지 (phase-guard fast-path 활용). finished 같은 신규 state는 도입하지 않는다.
 
 ## 3-6. Finish
 
@@ -237,3 +250,4 @@ Registry 해제: `unregister_session "$SESSION_ID"`.
 | **Plan** | **필수** | **필수** | **Orchestrator** |
 | Implement | Phase Review | 불필요 | Phase Skill |
 | Test | 자동 | 불필요 | Orchestrator |
+| **Integrate (v6.3.0)** | 선택적 | 불필요 | **Phase Skill (`idle` 유지 + phase5_*_at 필드)** |
