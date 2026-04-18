@@ -1,0 +1,30 @@
+{
+  "session": {
+    "id": "s-c1d2e3f4",
+    "work_dir": ".deep-work/20260418-160000-readme-cleanup",
+    "goal": "README 정리 및 오타 수정",
+    "phases_completed": ["research", "plan", "implement", "test"],
+    "changes": {
+      "files_changed": 3,
+      "insertions": 22,
+      "deletions": 19,
+      "categories": { "src": 0, "test": 0, "docs": 3, "config": 0 }
+    }
+  },
+  "loop": { "round": 1, "max_rounds": 5, "already_executed": [] },
+  "plugins": {
+    "installed": ["deep-review", "deep-docs", "deep-wiki", "deep-dashboard"],
+    "missing": ["deep-evolve"]
+  },
+  "artifacts": {
+    "deep-work": {
+      "session_receipt": { "summary": "README edits only", "metrics": { "tdd_compliance": null } },
+      "report_md_path": ".deep-work/20260418-160000-readme-cleanup/report.md"
+    },
+    "deep-review": { "recurring_findings": null, "latest_report_path": null, "fitness": null },
+    "deep-docs": { "issues_summary": { "README.md": 0 }, "last_scanned_at": "2026-04-15T09:00:00Z" },
+    "deep-dashboard": { "harnessability_score": 7.9, "weakest_dimension": "documentation" },
+    "deep-evolve": null,
+    "deep-wiki": { "pages_count": 12 }
+  }
+}
