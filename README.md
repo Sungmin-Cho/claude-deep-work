@@ -6,7 +6,7 @@
 <!-- ![Deep Work Quality](https://img.shields.io/badge/deep--work-quality-lightgrey) -->
 <!-- ![Sessions](https://img.shields.io/badge/sessions-0-blue) -->
 
-A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a single-command auto-flow orchestration (Brainstorm → Research → Plan → Implement → Test) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
+A Claude Code plugin that implements an **Evidence-Driven Development Protocol** — a single-command auto-flow orchestration (Brainstorm → Research → Plan → Implement → Test → Integrate) with TDD enforcement, receipt-based evidence collection, and strict separation of planning and coding.
 
 ### Role in Harness Engineering
 
@@ -32,13 +32,14 @@ Common pitfalls when AI coding tools tackle complex tasks:
 
 ## The Solution
 
-The **Brainstorm → Research → Plan → Implement → Test** workflow enforces evidence-driven development:
+The **Brainstorm → Research → Plan → Implement → Test → Integrate** workflow enforces evidence-driven development:
 
 - **Phase 0 (Brainstorm)**: Optional design exploration — "why before how" (skip with `--skip-brainstorm`)
 - **Phase 1 (Research)**: Deep analysis and documentation of the codebase
 - **Phase 2 (Plan)**: Slice-based implementation plan with per-slice TDD fields, requiring user approval
 - **Phase 3 (Implement)**: TDD-enforced slice execution — failing test → production code → receipt collection
 - **Phase 4 (Test)**: Receipt completeness, spec compliance review, code quality review, verification evidence
+- **Phase 5 (Integrate, skippable)**: Recommendation loop — reads deep-suite plugin artifacts and proposes up to 3 next steps per round (skip with `--skip-integrate`)
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
@@ -48,7 +49,7 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 # Just one command — the entire workflow runs automatically
 /deep-work "Implement JWT-based user authentication"
 
-# The auto-flow orchestrates: Brainstorm → Research → Plan → [user approves] → Implement → Test → Report
+# The auto-flow orchestrates: Brainstorm → Research → Plan → [user approves] → Implement → Test → Integrate → Report
 # Plan approval is the ONLY required interaction
 
 # Unified status — flags route to the same implementations as the standalone /deep-report, /deep-receipt, /deep-history, /deep-assumptions
@@ -69,7 +70,7 @@ Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 
 
 | Command | Description |
 |---------|-------------|
-| `/deep-work <task>` | **Auto-flow orchestration** — runs the entire Brainstorm → Research → Plan → Implement → Test pipeline automatically. Plan approval is the only required interaction. |
+| `/deep-work <task>` | **Auto-flow orchestration** — runs the entire Brainstorm → Research → Plan → Implement → Test → Integrate pipeline automatically. Plan approval is the only required interaction. |
 | `/deep-research` | Manual override for Phase 1 (Research) — deep codebase analysis |
 | `/deep-plan` | Manual override for Phase 2 (Plan) — slice-based implementation planning |
 | `/deep-implement` | Manual override for Phase 3 (Implement) — TDD-enforced slice execution |
@@ -96,13 +97,14 @@ Phase or toolchain helpers, run manually when needed.
 | `/solid-review` | Advisory Gate — SOLID principles | `/solid-review [target]` |
 | `/deep-insight` | Insight Tier — metrics/complexity | `/deep-insight [target]` |
 
-### Internal (6) — auto-runs, manual supported
+### Internal (7) — auto-runs, manual supported
 
-These commands are called by the orchestrator or `/deep-status`. Manual invocation remains a first-class path (especially `/deep-finish` after tests pass).
+These commands are called by the orchestrator or `/deep-status`. Manual invocation remains a first-class path (especially `/deep-finish` after tests pass, and `/deep-integrate` after Phase 4).
 
 | Command | Called by |
 |---------|-----------|
 | `/deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
+| `/deep-integrate` | orchestrator Phase 5 (`Skill` dispatch); manual after test pass |
 | `/deep-finish` | orchestrator Step 3-6 (`Read`); manual after test pass |
 | `/deep-report` | `/deep-status --report` (`Read`) |
 | `/deep-receipt` | `/deep-status --receipts` (`Read`) |
@@ -316,6 +318,12 @@ implement → test → (pass) → idle + report
 
 **v3.3.3 features:**
 - **Multi-Preset Profile System** — Create named presets (`dev`, `quick`, `review`) for different work styles. Interactive selection when multiple presets exist. Auto-migration from v1 single profile to v2 multi-preset format.
+
+### Phase 5: Integrate (v6.3.0, skippable)
+
+After Test passes, Deep Work can optionally run a **recommendation loop** that reads artifacts from installed deep-suite plugins (`deep-review`, `deep-docs`, `deep-wiki`, `deep-dashboard`, `deep-evolve`) and asks an AI to rank up to 3 next steps with rationale. The user picks one, runs it, returns, and the loop continues (max 5 rounds) until they choose `finish` — at which point `/deep-finish` takes over.
+
+Skip with `--skip-integrate`, or invoke manually with `/deep-integrate` at any time after Phase 4.
 
 ### Session Report
 
