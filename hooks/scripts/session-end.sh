@@ -36,6 +36,21 @@ if [[ -n "$SESSION_ID" ]]; then
 fi
 
 # idle이거나 비어있으면 활성 세션 없음 → 종료
+# v6.3.0 — Phase 5 interrupted marker
+# Phase 5는 current_phase="idle" 유지 상태로 실행되므로, idle fast-path 이전에
+# integrate-loop.json의 terminated_by를 interrupted로 전환해야 한다.
+_P5_WD_REL="$(read_frontmatter_field "$STATE_FILE" "work_dir")"
+if [[ -n "$_P5_WD_REL" ]]; then
+  _P5_LOOP="$PROJECT_ROOT/$_P5_WD_REL/integrate-loop.json"
+  if [[ -f "$_P5_LOOP" ]]; then
+    _P5_ACTIVE=$(jq -r '(.loop_round // 0) as $r | (.terminated_by // "null") as $t | if $r > 0 and $t == "null" then "yes" else "no" end' "$_P5_LOOP" 2>/dev/null || echo "no")
+    if [[ "$_P5_ACTIVE" == "yes" ]]; then
+      _P5_TMP=$(mktemp)
+      jq '.terminated_by = "interrupted"' "$_P5_LOOP" > "$_P5_TMP" && mv "$_P5_TMP" "$_P5_LOOP"
+    fi
+  fi
+fi
+
 if [[ -z "$CURRENT_PHASE" || "$CURRENT_PHASE" == "idle" ]]; then
   exit 0
 fi
