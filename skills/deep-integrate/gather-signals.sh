@@ -88,7 +88,12 @@ else
           esac
         done < <(git diff --name-only "$base"..HEAD 2>/dev/null)
       fi
-      CHANGES_JSON=$(printf '{"files_changed":%d,"insertions":%d,"deletions":%d,"categories":{"src":%d,"test":%d,"docs":%d,"config":%d}}' "$files_changed" "$ins" "$dels" "$cat_src" "$cat_test" "$cat_docs" "$cat_config")
+      CHANGES_JSON=$(jq -n \
+        --argjson fc "$files_changed" --argjson ins "$ins" --argjson dels "$dels" \
+        --argjson src "$cat_src" --argjson t "$cat_test" \
+        --argjson d "$cat_docs" --argjson c "$cat_config" \
+        '{files_changed:$fc, insertions:$ins, deletions:$dels,
+          categories:{src:$src, test:$t, docs:$d, config:$c}}')
     else
       warn "not a git repository — changes=null"
       CHANGES_JSON='null'
@@ -115,8 +120,8 @@ fi
 # ─── Artifacts collection (defensive) ───────────────────────
 read_json_safe() {
   local path="$1"
-  if [[ ! -f "$path" ]]; then echo "null"; return; fi
-  if jq empty "$path" 2>/dev/null; then
+  if [[ ! -s "$path" ]]; then echo "null"; return; fi
+  if jq -e 'type' "$path" >/dev/null 2>&1; then
     cat "$path"
   else
     warn "invalid JSON at $path — null fallback"
@@ -143,11 +148,21 @@ if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-review")
   rf=$(read_json_safe "$PROJECT_ROOT/.deep-review/recurring-findings.json")
   fitness=$(read_json_safe "$PROJECT_ROOT/.deep-review/fitness.json")
   latest_report="$(ls -1t "$PROJECT_ROOT"/.deep-review/reports/*-review.md 2>/dev/null | head -1 || true)"
-  [[ -n "$latest_report" ]] && latest_json="\"$latest_report\"" || latest_json='null'
+  latest_json=$(jq -n --arg p "$latest_report" 'if $p == "" then null else $p end')
   if [[ "$rf" != "null" ]]; then
-    total=$(printf '%s' "$rf" | jq '.findings | length' 2>/dev/null || echo 0)
-    top_cat=$(printf '%s' "$rf" | jq -r '.findings[0].category // empty' 2>/dev/null || echo '')
-    [[ -n "$top_cat" ]] && rf_sum="{\"total\":$total,\"top_category\":\"$top_cat\"}" || rf_sum="{\"total\":$total}"
+    # I4 fix: combine total + top_cat in one defensive jq pass (non-array .findings safe)
+    read -r total top_cat < <(
+      printf '%s' "$rf" | jq -r '
+        def a: (.findings // []);
+        "\(a | length) \(a[0].category // "")"
+      ' 2>/dev/null || echo "0 "
+    )
+    # C2 fix: build rf_sum with jq --arg to handle embedded quotes/backslashes
+    if [[ -n "$top_cat" ]]; then
+      rf_sum=$(jq -n --argjson t "$total" --arg c "$top_cat" '{total:$t, top_category:$c}')
+    else
+      rf_sum=$(jq -n --argjson t "$total" '{total:$t}')
+    fi
   else
     rf_sum='null'
   fi
@@ -164,7 +179,7 @@ if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-docs")' 
   if [[ "$ls_raw" != "null" ]]; then
     scanned_at=$(printf '%s' "$ls_raw" | jq -r '.scanned_at // empty')
     issues_summary=$(printf '%s' "$ls_raw" | jq '[.documents[]? | {(.path): (.issues | length)}] | add // {}')
-    [[ -n "$scanned_at" ]] && sa_json="\"$scanned_at\"" || sa_json='null'
+    sa_json=$(jq -n --arg v "$scanned_at" 'if $v == "" then null else $v end')
     dd_json=$(jq -n --argjson sa "$sa_json" --argjson is "$issues_summary" \
       '{last_scanned_at:$sa, issues_summary:$is}')
   else
@@ -182,7 +197,7 @@ if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-dashboar
     score=$(printf '%s' "$h_raw" | jq '.total // null')
     # C3 fix: scorer.js dimension field는 {id, label, weight, score, checks}이며 `.name`은 없음
     weakest=$(printf '%s' "$h_raw" | jq -r '[.dimensions[]?] | min_by(.score) | .id // empty' 2>/dev/null || echo '')
-    [[ -n "$weakest" ]] && weak_json="\"$weakest\"" || weak_json='null'
+    weak_json=$(jq -n --arg v "$weakest" 'if $v == "" then null else $v end')
     dh_json=$(jq -n --argjson s "$score" --argjson w "$weak_json" \
       '{harnessability_score:$s, weakest_dimension:$w}')
   else
@@ -215,7 +230,7 @@ fi
 if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-wiki")' >/dev/null 2>&1; then
   widx="$PROJECT_ROOT/.wiki-meta/index.json"
   if [[ -f "$widx" ]]; then
-    pages_count=$(jq '.pages | length // 0' "$widx" 2>/dev/null || echo 0)
+    pages_count=$(jq 'try (.pages | length) catch 0' "$widx" 2>/dev/null || echo 0)
     dwiki_json=$(jq -n --argjson pc "$pages_count" '{pages_count:$pc}')
   else
     dwiki_json='{"pages_count":null}'

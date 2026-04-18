@@ -158,4 +158,95 @@ describe('gather-signals.sh', () => {
     assert.equal(rf.total, 1000);
     assert.equal(rf.top_category, 'error-handling');
   });
+
+  it('deep-review artifact populated → summary + fitness + latest_report_path', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review', 'reports'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'recurring-findings.json'),
+      JSON.stringify({ findings: [{ category: 'test-coverage' }, { category: 'security' }] }));
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'fitness.json'),
+      JSON.stringify({ rules: [], version: '1.0' }));
+    const reportPath = path.join(projectRoot, '.deep-review', 'reports', '2026-04-18-100000-review.md');
+    fs.writeFileSync(reportPath, '# Review\n');
+
+    const env = run();
+    const dr = env.artifacts['deep-review'];
+    assert.equal(dr.recurring_findings.total, 2);
+    assert.equal(dr.recurring_findings.top_category, 'test-coverage');
+    assert.equal(dr.fitness.version, '1.0');
+    assert.equal(dr.latest_report_path, reportPath);
+  });
+
+  it('deep-dashboard artifact populated → score + weakest_dimension from .id', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-dashboard'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-dashboard', 'harnessability-report.json'),
+      JSON.stringify({
+        total: 7.4,
+        dimensions: [
+          { id: 'type-safety', label: 'Type Safety', score: 8 },
+          { id: 'documentation', label: 'Documentation', score: 3 },
+          { id: 'testing', label: 'Testing', score: 6 },
+        ],
+      }));
+
+    const env = run(['deep-dashboard'], ['deep-review','deep-evolve','deep-docs','deep-wiki']);
+    const dh = env.artifacts['deep-dashboard'];
+    assert.equal(dh.harnessability_score, 7.4);
+    assert.equal(dh.weakest_dimension, 'documentation');
+  });
+
+  it('deep-evolve current.json + insights → session_id + insights populated', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-evolve', 'evolve-sess-1'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-evolve', 'current.json'),
+      JSON.stringify({ session_id: 'evolve-sess-1' }));
+    fs.writeFileSync(path.join(projectRoot, '.deep-evolve', 'evolve-sess-1', 'evolve-insights.json'),
+      JSON.stringify({ insights: [{ pattern: 'p1' }] }));
+
+    const env = run(['deep-evolve'], ['deep-review','deep-docs','deep-wiki','deep-dashboard']);
+    const de = env.artifacts['deep-evolve'];
+    assert.equal(de.session_id, 'evolve-sess-1');
+    assert.equal(de.insights.insights[0].pattern, 'p1');
+  });
+
+  it('deep-wiki index.json → pages_count populated', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.wiki-meta'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.wiki-meta', 'index.json'),
+      JSON.stringify({ pages: [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }] }));
+
+    const env = run(['deep-wiki'], ['deep-review','deep-evolve','deep-docs','deep-dashboard']);
+    assert.equal(env.artifacts['deep-wiki'].pages_count, 3);
+  });
+
+  it('C1 fix: empty artifact file → placeholder with nulls, no envelope crash', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review'), { recursive: true });
+    // 빈 파일 (0 bytes) — C1 bug: 이전에는 jq empty 통과 → downstream --argjson 크래시
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'fitness.json'), '');
+
+    const env = run();
+    // 크래시 없이 정상 envelope
+    assert.equal(env.artifacts['deep-review'].fitness, null);
+  });
+
+  it('C2 fix: artifact field with embedded quote → envelope still well-formed', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review'), { recursive: true });
+    // top_category에 " 포함 — hand-rolled JSON이면 깨짐
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'recurring-findings.json'),
+      JSON.stringify({ findings: [{ category: 'has"quote' }] }));
+
+    const env = run();
+    // 크래시 없이 올바른 top_category
+    assert.equal(env.artifacts['deep-review'].recurring_findings.total, 1);
+    assert.equal(env.artifacts['deep-review'].recurring_findings.top_category, 'has"quote');
+  });
 });
