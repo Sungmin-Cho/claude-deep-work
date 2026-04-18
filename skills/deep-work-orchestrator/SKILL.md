@@ -141,6 +141,7 @@ TDD 모드: strict / relaxed / coaching / spike
   Phase 2: deep-plan
   Phase 3: deep-implement
   Phase 4: deep-test
+  Phase 5: deep-integrate  [skippable]
 
 자동 흐름을 시작합니다...
 ```
