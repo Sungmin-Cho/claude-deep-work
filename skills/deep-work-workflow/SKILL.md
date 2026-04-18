@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-version: "6.2.3"
+version: "6.3.0"
 description: |
   Evidence-driven development protocol with auto-flow orchestration.
   Use when: "deep work", "plan before code", "TDD", "evidence-driven",
@@ -8,7 +8,7 @@ description: |
   that benefit from structured planning before implementation.
 ---
 
-# Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test
+# Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test → Integrate
 
 ## v5.6.0 Session Fork
 
@@ -111,7 +111,7 @@ When AI coding tools work on complex tasks without structure, common failure mod
 
 The Deep Work workflow prevents these by **strictly separating brainstorming, analysis, planning, coding, and testing** into five distinct phases with enforced gates between them.
 
-## The Five Phases
+## The Six Phases
 
 ### Phase 0: Brainstorm (`/deep-brainstorm`) — Optional
 
@@ -239,6 +239,10 @@ For detailed guidance, see [Implementation Guide](../shared/references/implement
 - **Git integration**: Suggests commit after all tests pass
 
 For detailed guidance, see [Testing Guide](../shared/references/testing-guide.md).
+
+### Phase 5: Integrate (v6.3.0, skippable)
+
+Phase 4 Test 완료 후 옵션으로 호출되는 "다음 단계 추천 루프". 설치된 `deep-review`/`deep-docs`/`deep-wiki`/`deep-dashboard`/`deep-evolve` 플러그인의 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면, 사용자가 선택·실행하거나 skip·finish한다. `--skip-integrate`로 건너뛸 수 있고, `/deep-integrate`로 명시적 재진입도 가능하다. 자세한 UX/데이터 계약은 `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md` 참조.
 
 ## Quality Gates & Utilities
 
