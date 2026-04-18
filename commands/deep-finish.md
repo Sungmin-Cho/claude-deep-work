@@ -35,15 +35,33 @@ Read `$STATE_FILE`. If the file doesn't exist:
 `current_phase` 분기 (v6.3.0):
 - `current_phase`가 empty → 위와 동일 "세션 없음" 메시지.
 - `current_phase == "idle"` + `phase5_completed_at` 필드 **존재** → Phase 5 완료 상태로 간주하고 **정상 진행** (Section 1a, 2, 3... 계속).
-- `current_phase == "idle"` + `phase5_completed_at` **부재** → 기존 "세션 없음" 메시지 (Phase 5 진입 중 interrupted 상태는 deep-integrate로 재진입 유도).
+- `current_phase == "idle"` + `phase5_completed_at` **부재**:
+  - `phase5_entered_at` 존재 → **Phase 5가 중단된 상태**. 메시지: "Phase 5 Integrate 루프가 중단되었습니다. `/deep-integrate`로 재진입하거나 `--skip-integrate`와 함께 `/deep-finish`를 다시 실행하세요." → exit 0.
+  - `phase5_entered_at` 부재 → 기존 "세션 없음" 메시지.
 - 그 외 (`brainstorm`/`research`/`plan`/`implement`/`test`) → 정상 진행.
 
 Extract: `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `worktree_branch`, `worktree_base_commit`.
+
+Resolve `$WORK_DIR` (used by Section 1a below):
+
+```bash
+WORK_DIR="${PROJECT_ROOT}/$(read_frontmatter_field "$STATE_FILE" work_dir)"
+```
 
 ### 1a. Phase 5 Integrate 힌트 (v6.3.0, 선택적)
 
 `$WORK_DIR/integrate-loop.json` 존재 여부 확인:
 - 존재 & `terminated_by != null` → 정상 진행 (Section 2로).
+- 존재 & `terminated_by == null` → **Phase 5 루프가 중단된 상태** (Ctrl-C 또는 재진입 대기). AskUserQuestion:
+
+  ```
+  ⚠️ Phase 5 Integrate 루프가 중단된 상태입니다.
+     (1) /deep-integrate로 재진입 (권장)
+     (2) 강제로 건너뛰고 finish 진행 (--skip-integrate 없이도)
+  ```
+  - (1) 선택 → "exit 후 /deep-integrate 실행하세요" + exit 0.
+  - (2) 선택 → 기존 절차 계속.
+
 - 부재 & `$ARGUMENTS`에 `--skip-integrate` 없음 → AskUserQuestion:
 
   ```
