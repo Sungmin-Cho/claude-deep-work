@@ -25,14 +25,38 @@ Resolve the current session's state file:
 
 Set `$STATE_FILE` to the resolved path.
 
-Read `$STATE_FILE`. If the file doesn't exist or `current_phase` is `idle` or empty:
+Read `$STATE_FILE`. If the file doesn't exist:
 
 ```
 ℹ️ 활성화된 Deep Work 세션이 없습니다.
    새 세션을 시작하려면: /deep-work <작업 설명>
 ```
 
+`current_phase` 분기 (v6.3.0):
+- `current_phase`가 empty → 위와 동일 "세션 없음" 메시지.
+- `current_phase == "idle"` + `phase5_completed_at` 필드 **존재** → Phase 5 완료 상태로 간주하고 **정상 진행** (Section 1a, 2, 3... 계속).
+- `current_phase == "idle"` + `phase5_completed_at` **부재** → 기존 "세션 없음" 메시지 (Phase 5 진입 중 interrupted 상태는 deep-integrate로 재진입 유도).
+- 그 외 (`brainstorm`/`research`/`plan`/`implement`/`test`) → 정상 진행.
+
 Extract: `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `worktree_branch`, `worktree_base_commit`.
+
+### 1a. Phase 5 Integrate 힌트 (v6.3.0, 선택적)
+
+`$WORK_DIR/integrate-loop.json` 존재 여부 확인:
+- 존재 & `terminated_by != null` → 정상 진행 (Section 2로).
+- 부재 & `$ARGUMENTS`에 `--skip-integrate` 없음 → AskUserQuestion:
+
+  ```
+  ℹ️ Phase 5 Integrate를 아직 실행하지 않았습니다.
+     `/deep-integrate`로 AI의 다음 단계 추천을 받을 수 있습니다.
+
+     (1) /deep-integrate 먼저 실행 (권장)
+     (2) Phase 5 건너뛰고 바로 finish 진행
+  ```
+
+- (1) 선택 → "exit 후 /deep-integrate 실행하세요" 안내 + exit 0.
+- (2) 선택 → 기존 절차 계속.
+- `$ARGUMENTS`에 `--skip-integrate` 있음 → 힌트 스킵하고 바로 Section 2.
 
 ### 2. Read all receipts and generate session receipt
 
