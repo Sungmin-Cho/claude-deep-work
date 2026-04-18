@@ -45,8 +45,13 @@ if [[ -n "$_P5_WD_REL" ]]; then
   if [[ -f "$_P5_LOOP" ]]; then
     _P5_ACTIVE=$(jq -r '(.loop_round // 0) as $r | (.terminated_by // "null") as $t | if $r > 0 and $t == "null" then "yes" else "no" end' "$_P5_LOOP" 2>/dev/null || echo "no")
     if [[ "$_P5_ACTIVE" == "yes" ]]; then
-      _P5_TMP=$(mktemp)
-      jq '.terminated_by = "interrupted"' "$_P5_LOOP" > "$_P5_TMP" && mv "$_P5_TMP" "$_P5_LOOP"
+      # Stop hook은 "exit 0 = always" 계약 — mktemp/jq 실패해도 중단 금지.
+      (
+        _P5_TMP=$(mktemp) || exit 0
+        jq '.terminated_by = "interrupted"' "$_P5_LOOP" > "$_P5_TMP" 2>/dev/null \
+          && mv "$_P5_TMP" "$_P5_LOOP" \
+          || rm -f "$_P5_TMP"
+      ) || true
     fi
   fi
 fi
