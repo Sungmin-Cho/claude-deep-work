@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.resolve(__dirname, 'detect-plugins.sh');
 const TARGETS = ['deep-review', 'deep-evolve', 'deep-docs', 'deep-wiki', 'deep-dashboard'];
@@ -59,9 +59,24 @@ describe('detect-plugins.sh', () => {
   });
 
   it('non-existent root → optimistic fallback (all installed) + stderr warn', () => {
-    // Pass a path that definitely does not exist
-    const result = JSON.parse(execFileSync('bash', [SCRIPT, '--plugins-root', '/nonexistent/path/xyz'], { encoding: 'utf8' }));
-    assert.deepEqual(new Set(result.installed), new Set(TARGETS));
-    assert.deepEqual(result.missing, []);
+    // Pass a path that definitely does not exist — assert both stdout JSON and stderr warning
+    const result = spawnSync('bash', [SCRIPT, '--plugins-root', '/nonexistent/path/xyz'], { encoding: 'utf8' });
+    assert.equal(result.status, 0);
+    const stdout = JSON.parse(result.stdout);
+    assert.deepEqual(new Set(stdout.installed), new Set(TARGETS));
+    assert.deepEqual(stdout.missing, []);
+    assert.match(result.stderr, /plugins root not found/);
+  });
+
+  it('--plugins-root with missing/empty value → exit 0, uses default, warns', () => {
+    // Missing value
+    const r1 = spawnSync('bash', [SCRIPT, '--plugins-root'], { encoding: 'utf8' });
+    assert.equal(r1.status, 0, 'missing value should still exit 0');
+    assert.match(r1.stderr, /requires (a )?(non-empty )?value/);
+
+    // Empty value
+    const r2 = spawnSync('bash', [SCRIPT, '--plugins-root', ''], { encoding: 'utf8' });
+    assert.equal(r2.status, 0, 'empty value should still exit 0');
+    assert.match(r2.stderr, /requires (a )?(non-empty )?value/);
   });
 });

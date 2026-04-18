@@ -5,19 +5,26 @@
 # 실패 시: 낙관적 fallback (모두 installed로 가정) + stderr 경고
 set -u
 
+warn() {
+  printf '[deep-integrate/warn] %s\n' "$*" >&2
+}
+
 PLUGINS_ROOT="${HOME}/.claude/plugins/cache"
 TARGETS=(deep-review deep-evolve deep-docs deep-wiki deep-dashboard)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --plugins-root) PLUGINS_ROOT="$2"; shift 2 ;;
+    --plugins-root)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        warn "--plugins-root requires a non-empty value — ignoring, using default"
+        shift $(( $# >= 2 ? 2 : 1 ))
+      else
+        PLUGINS_ROOT="$2"; shift 2
+      fi
+      ;;
     *) shift ;;
   esac
 done
-
-warn() {
-  printf '[deep-integrate/warn] %s\n' "$*" >&2
-}
 
 # 낙관적 fallback: plugins root 접근 불가 시 모든 플러그인을 installed로 간주
 if [[ ! -d "$PLUGINS_ROOT" ]]; then
