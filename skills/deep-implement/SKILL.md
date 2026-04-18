@@ -1,6 +1,6 @@
 ---
 name: deep-implement
-version: "6.2.3"
+version: "6.3.0"
 description: "Phase 3 — Implement: slice-based TDD execution of approved plan"
 ---
 
