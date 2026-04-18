@@ -133,7 +133,7 @@ Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_ty
 `AskUserQuestion`로 선택 수집. 각 분기:
 - 1/2/3 → 해당 recommendation을 실행 (Section 3-5)
 - 기타 → AskUserQuestion 자유 입력, `plugin/command/args` 직접 수집 후 실행
-- skip → 이 라운드는 건너뛰고 다음 라운드 (loop_round 증가 안 함) ... but `max_rounds`에는 1 카운트
+- skip → 이 라운드는 건너뜀. `loop_round`는 증가(예산 소비)하고 `executed[]`에 `{plugin:"(skip)", command:"(skip)", args:"", at:"<ISO>", outcome:"skipped", notes:null}` 항목 추가. 다음 라운드로 진행.
 - finish → `terminated_by: "user-finish"` 기록 후 Section 4
 
 ### 3-4. B-fallback (LLM 실패 시)
