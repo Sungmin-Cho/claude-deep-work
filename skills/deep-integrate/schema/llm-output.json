@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Phase 5 LLM Output",
+  "type": "object",
+  "required": ["session_summary", "recommendations", "finish_recommended"],
+  "properties": {
+    "session_summary": { "type": "string", "minLength": 10 },
+    "recommendations": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["rank", "plugin", "command", "rationale", "requires_rerun"],
+        "properties": {
+          "rank": { "type": "integer", "minimum": 1, "maximum": 3 },
+          "plugin": { "type": "string" },
+          "command": { "type": "string", "pattern": "^/" },
+          "args": { "type": "string" },
+          "rationale": { "type": "string", "minLength": 10 },
+          "signals_used": { "type": "array", "items": { "type": "string" } },
+          "requires_rerun": { "type": "boolean" }
+        }
+      }
+    },
+    "installation_suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["plugin", "rationale"],
+        "properties": {
+          "plugin": { "type": "string" },
+          "rationale": { "type": "string" },
+          "trigger_signal_hint": { "type": "string" }
+        }
+      }
+    },
+    "finish_recommended": { "type": "boolean" },
+    "finish_rationale": { "type": ["string", "null"] }
+  }
+}
