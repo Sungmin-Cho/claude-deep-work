@@ -28,7 +28,7 @@
     },
     "deep-docs": { "issues_summary": {}, "last_scanned_at": "2026-04-18T14:00:00Z" },
     "deep-dashboard": { "harnessability_score": 8.1, "weakest_dimension": "test-infrastructure" },
-    "deep-evolve": null,
+    "deep-evolve": { "session_id": null, "insights": null },
     "deep-wiki": { "pages_count": 45 }
   }
 }
