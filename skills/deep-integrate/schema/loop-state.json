@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "integrate-loop.json",
+  "type": "object",
+  "required": ["session_id", "work_dir", "entered_at", "loop_round", "max_rounds", "executed", "terminated_by"],
+  "properties": {
+    "session_id": { "type": "string" },
+    "work_dir": { "type": "string" },
+    "entered_at": { "type": "string", "format": "date-time" },
+    "loop_round": { "type": "integer", "minimum": 0 },
+    "max_rounds": { "type": "integer", "minimum": 1 },
+    "executed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["round", "plugin", "command", "at", "outcome"],
+        "properties": {
+          "round": { "type": "integer", "minimum": 1 },
+          "plugin": { "type": "string" },
+          "command": { "type": "string" },
+          "args": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "outcome": { "type": "string", "enum": ["completed", "failed", "skipped"] },
+          "notes": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "last_recommendations": {
+      "type": ["array", "null"]
+    },
+    "terminated_by": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "enum": ["user-finish", "max-rounds", "no-more-recommendations", "interrupted", "error"] }
+      ]
+    }
+  }
+}

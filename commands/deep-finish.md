@@ -3,7 +3,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
 description: "Finish a deep work session — merge, PR, keep, or discard the branch"
 ---
 
-> **Internal (v6.2.4)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
+> **Internal (v6.3.0)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
 > 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read "/deep-finish"`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
 
 # Deep Work Session Completion (v4.1)
@@ -25,14 +25,80 @@ Resolve the current session's state file:
 
 Set `$STATE_FILE` to the resolved path.
 
-Read `$STATE_FILE`. If the file doesn't exist or `current_phase` is `idle` or empty:
+Read `$STATE_FILE`. If the file doesn't exist:
 
 ```
 ℹ️ 활성화된 Deep Work 세션이 없습니다.
    새 세션을 시작하려면: /deep-work <작업 설명>
 ```
 
+`current_phase` 분기 (v6.3.0):
+- `current_phase`가 empty → 위와 동일 "세션 없음" 메시지.
+- `finished_at` 필드 **존재** → 이미 종료된 세션. "ℹ️ 이 세션은 이미 종료되었습니다 (finished_at: <값>). 새 세션을 시작하려면 `/deep-work <작업>`을 실행하세요." → exit 0. (v6.3.0 review W-R2 — `--skip-integrate` 분기가 finalized 세션을 재실행하지 않도록 최상위 가드)
+- `current_phase == "idle"` + `phase5_completed_at` 필드 **존재** → Phase 5 완료 상태로 간주하고 **정상 진행** (Section 1a, 2, 3... 계속).
+- `current_phase == "idle"` + `phase5_completed_at` **부재**:
+  - `phase5_entered_at` 존재:
+    - `$ARGUMENTS`에 `--skip-integrate` 있음 → **정상 진행**. Phase 5가 에러/사용자 요청으로 중단되어 orchestrator가 강제 finish를 호출한 경로.
+      **v6.3.0 review RC-2 defensive guard**: 아래 `WORK_DIR` resolve(Section 1 말미) 이후 Section 2로 진입하기 전에 Section 1c를 실행하여 `integrate-loop.json`의 `terminated_by`를 `"error"`로 defensively 기록한다. 이 로직은 Section 1a(Phase 5 힌트) **다음**, Section 2 **이전**에 배치한다.
+    - `--skip-integrate` 없음 → **Phase 5가 중단된 상태**. 메시지: "Phase 5 Integrate 루프가 중단되었습니다. `/deep-integrate`로 재진입하거나 `--skip-integrate`와 함께 `/deep-finish`를 다시 실행하세요." → exit 0.
+  - `phase5_entered_at` 부재 → 기존 "세션 없음" 메시지.
+- 그 외 (`brainstorm`/`research`/`plan`/`implement`/`test`) → 정상 진행.
+
 Extract: `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `worktree_branch`, `worktree_base_commit`.
+
+Resolve `$WORK_DIR` (used by Section 1a below):
+
+```bash
+WORK_DIR="${PROJECT_ROOT}/$(read_frontmatter_field "$STATE_FILE" work_dir)"
+```
+
+### 1a. Phase 5 Integrate 힌트 (v6.3.0, 선택적)
+
+`$WORK_DIR/integrate-loop.json` 존재 여부 확인:
+- 존재 & `terminated_by != null` → 정상 진행 (Section 2로).
+- 존재 & `terminated_by == null`:
+  - **v6.3.0 review Codex P2**: `$ARGUMENTS`에 `--skip-integrate` 있음 → prompt 없이 Section 1c로 진행 (orchestrator auto-flow가 질문에 막히지 않도록).
+  - `--skip-integrate` 없음 → **Phase 5 루프가 중단된 상태** (Ctrl-C 또는 재진입 대기). AskUserQuestion:
+
+    ```
+    ⚠️ Phase 5 Integrate 루프가 중단된 상태입니다.
+       (1) /deep-integrate로 재진입 (권장)
+       (2) 강제로 건너뛰고 finish 진행 (--skip-integrate 없이도)
+    ```
+    - (1) 선택 → "exit 후 /deep-integrate 실행하세요" + exit 0.
+    - (2) 선택 → 기존 절차 계속.
+
+- 부재 & `$ARGUMENTS`에 `--skip-integrate` 없음 → AskUserQuestion:
+
+  ```
+  ℹ️ Phase 5 Integrate를 아직 실행하지 않았습니다.
+     `/deep-integrate`로 AI의 다음 단계 추천을 받을 수 있습니다.
+
+     (1) /deep-integrate 먼저 실행 (권장)
+     (2) Phase 5 건너뛰고 바로 finish 진행
+  ```
+
+- (1) 선택 → "exit 후 /deep-integrate 실행하세요" 안내 + exit 0.
+- (2) 선택 → 기존 절차 계속.
+- `$ARGUMENTS`에 `--skip-integrate` 있음 → 힌트 스킵하고 바로 Section 2.
+
+### 1c. Phase 5 defensive error marker (v6.3.0 review RC-2 + W3-1 + RC4-2)
+
+`$ARGUMENTS`에 `--skip-integrate`가 있고 Section 1의 분기에서 `phase5_entered_at`이 있으나 `phase5_completed_at`이 없어 이 Section에 도달한 경우에만 실행한다. 이 시점에는 Section 1 말미에서 `$WORK_DIR`가 이미 resolve되었으므로 아래 helper 호출이 유효하다.
+
+**LLM은 아래 명령을 그대로 Bash tool로 단일 호출한다** (compound 연산자·shell metacharacter 없이 단일 명령이어야 Phase 5 guard helper exception 적용, RC4-1/RC5-1):
+
+```bash
+bash skills/deep-integrate/phase5-record-error.sh <ABSOLUTE_WORK_DIR>
+```
+
+**중요 (v6.3.0 review W5-1)**: Claude Code의 Bash tool은 매 호출마다 새 shell을 spawn하므로 이전 단계에서 export한 `$WORK_DIR` 같은 변수가 persist하지 않는다. LLM은 state file에서 `work_dir`을 먼저 읽어 `<ABSOLUTE_WORK_DIR>` 자리에 실제 절대경로를 치환 후 호출한다. literal `"$WORK_DIR"`를 그대로 전달하면 empty string으로 확장되어 helper가 usage 에러로 fail한다.
+
+또한 helper는 state file의 `phase5_work_dir_snapshot`을 읽어 인자와 일치하는지 검증하므로(RC5-3), 올바른 세션 work_dir이어야 실행된다.
+
+이 helper가 `integrate-loop.json`의 `terminated_by`를 atomically `"error"`로 교체하거나, 파일 부재 시 최소 구조로 생성한다.
+
+`session-end.sh` Stop hook의 `terminated_by=interrupted` 마킹은 여전히 belt-and-suspenders로 남아있어, finish가 실행되지 않고 세션이 Ctrl-C로 종료된 경우에도 evidence가 남는다.
 
 ### 2. Read all receipts and generate session receipt
 
@@ -86,7 +152,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "total_contracts": 0,
     "contracts_met": 0
   },
-  "deep_work_version": "6.2.4"
+  "deep_work_version": "6.3.0"
 }
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: deep-brainstorm
-version: "6.2.3"
+version: "6.3.0"
 description: "Phase 0 — Brainstorm: explore why before how (skip-able)"
 ---
 

@@ -1,0 +1,336 @@
+const { describe, it, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execFileSync } = require('child_process');
+
+const SCRIPT = path.resolve(__dirname, 'gather-signals.sh');
+
+let projectRoot;
+
+function setup() {
+  // /tmp 아래 mkdtemp (/tmp 는 git repo 아님) → changes==null 결정론 확보
+  projectRoot = fs.mkdtempSync(path.join('/tmp', 'gs-test-'));
+  fs.mkdirSync(path.join(projectRoot, '.claude'), { recursive: true });
+}
+
+function cleanup() {
+  if (projectRoot) {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+    projectRoot = null;
+  }
+}
+
+function writeStateFile(sessionId, workDirSlug, goal, phaseTimestamps = {}) {
+  const frontmatter = [
+    `session_id: ${sessionId}`,
+    `work_dir: ${workDirSlug}`,
+    `task_description: "${goal}"`,
+    `current_phase: test`,
+    ...Object.entries(phaseTimestamps).map(([k, v]) => `${k}: "${v}"`),
+  ].join('\n');
+  fs.writeFileSync(
+    path.join(projectRoot, '.claude', `deep-work.${sessionId}.md`),
+    `---\n${frontmatter}\n---\n`
+  );
+  fs.mkdirSync(path.join(projectRoot, workDirSlug), { recursive: true });
+}
+
+function writeSessionPointer(sessionId) {
+  fs.writeFileSync(path.join(projectRoot, '.claude', 'deep-work-current-session'), sessionId);
+}
+
+function run(installed = ['deep-review', 'deep-docs'], missing = ['deep-evolve', 'deep-wiki', 'deep-dashboard'], envOverride = {}, loopStatePath = '') {
+  const args = [SCRIPT, projectRoot, JSON.stringify({ installed, missing })];
+  if (loopStatePath) args.push(loopStatePath);
+  const stdout = execFileSync('bash', args, { encoding: 'utf8', cwd: projectRoot, env: { ...process.env, ...envOverride } });
+  return JSON.parse(stdout);
+}
+
+describe('gather-signals.sh', () => {
+  beforeEach(setup);
+  afterEach(cleanup);
+
+  it('all artifacts missing → placeholder objects with null fields (not whole null), session populated', () => {
+    writeStateFile('s-abc123', '.deep-work/20260418-142300-test', 'JWT 인증', {
+      brainstorm_completed_at: '2026-04-18T13:55:00Z',
+      research_completed_at: '2026-04-18T14:00:00Z',
+      plan_completed_at: '2026-04-18T14:10:00Z',
+      implement_completed_at: '2026-04-18T14:20:00Z',
+      test_completed_at: '2026-04-18T14:30:00Z',
+    });
+    writeSessionPointer('s-abc123');
+
+    const env = run();
+    assert.equal(env.session.id, 's-abc123');
+    assert.equal(env.session.work_dir, '.deep-work/20260418-142300-test');
+    assert.equal(env.session.goal, 'JWT 인증');
+    // C7 fix: brainstorm 포함, 5 phases 전부
+    assert.deepEqual(env.session.phases_completed, ['brainstorm', 'research', 'plan', 'implement', 'test']);
+    // C2 fix: 미존재 아티팩트도 placeholder object로 반환 (whole-null 금지)
+    assert.equal(env.artifacts['deep-review'].recurring_findings, null);
+    assert.equal(env.artifacts['deep-docs'].last_scanned_at, null);
+    assert.equal(env.artifacts['deep-docs'].issues_summary, null);
+    assert.equal(env.artifacts['deep-evolve'], null);  // 미설치 플러그인만 whole-null
+  });
+
+  it('last-scan.json present → deep-docs.issues_summary populated', () => {
+    writeStateFile('s-abc123', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc123');
+    fs.mkdirSync(path.join(projectRoot, '.deep-docs'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-docs', 'last-scan.json'), JSON.stringify({
+      scanned_at: '2026-04-16T04:49:52Z',
+      documents: [
+        { path: 'CLAUDE.md', issues: [{ severity: 'low' }] },
+        { path: 'README.md', issues: [] },
+      ],
+    }));
+
+    const env = run();
+    assert.equal(env.artifacts['deep-docs'].last_scanned_at, '2026-04-16T04:49:52Z');
+    assert.equal(env.artifacts['deep-docs'].issues_summary['CLAUDE.md'], 1);
+    assert.equal(env.artifacts['deep-docs'].issues_summary['README.md'], 0);
+  });
+
+  it('corrupted JSON → placeholder with null fields, other artifacts preserved', () => {
+    writeStateFile('s-abc123', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc123');
+    fs.mkdirSync(path.join(projectRoot, '.deep-docs'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-docs', 'last-scan.json'), 'this is { not valid json');
+
+    const env = run();
+    // C2 fix: corrupted JSON도 placeholder object로 (whole-null 아님)
+    assert.equal(env.artifacts['deep-docs'].last_scanned_at, null);
+    assert.equal(env.artifacts['deep-docs'].issues_summary, null);
+    assert.equal(env.session.id, 's-abc123');
+  });
+
+  it('non-git directory → session.changes === null (deterministic)', () => {
+    writeStateFile('s-abc123', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc123');
+    // /tmp 아래 mkdtemp → git rev-parse 실패 보장
+    const env = run();
+    // W9 fix: 결정론적 assertion — null만 허용
+    assert.equal(env.session.changes, null);
+  });
+
+  it('DEEP_WORK_SESSION_ID env var overrides pointer (W2 session resolution)', () => {
+    writeStateFile('s-one', '.deep-work/w-one', 'goal one');
+    writeStateFile('s-two', '.deep-work/w-two', 'goal two');
+    writeSessionPointer('s-one');
+
+    const env = run(
+      [], ['deep-review','deep-evolve','deep-docs','deep-wiki','deep-dashboard'],
+      { DEEP_WORK_SESSION_ID: 's-two' }
+    );
+    assert.equal(env.session.id, 's-two');
+    assert.equal(env.session.work_dir, '.deep-work/w-two');
+  });
+
+  it('no active session (no pointer, no env) → session=null, no crash (C6 fix)', () => {
+    // state file 없음, pointer 없음, env 없음 → unbound 크래시 없이 정상 종료
+    const env = run();
+    assert.equal(env.session, null);
+    // artifacts.deep-work는 null (SESSION_ID 없으므로 path 조립 불가)
+    assert.equal(env.artifacts['deep-work'], null);
+  });
+
+  it('W1: envelope size budget — large recurring-findings is summarized not dropped', () => {
+    writeStateFile('s-big', '.deep-work/w1', 'big', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-big');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review'), { recursive: true });
+    // 1000개 synthetic findings
+    const findings = Array.from({ length: 1000 }, (_, i) => ({
+      category: 'error-handling',
+      severity: 'warning',
+      description: `issue ${i}`,
+    }));
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'recurring-findings.json'),
+      JSON.stringify({ findings }));
+
+    const env = run();
+    // 축약되어 {total, top_category}만 남음 (전체 findings 배열 아님)
+    const rf = env.artifacts['deep-review'].recurring_findings;
+    assert.ok(rf, 'recurring_findings should not be null');
+    assert.equal(rf.total, 1000);
+    assert.equal(rf.top_category, 'error-handling');
+  });
+
+  it('deep-review artifact populated → summary + fitness + latest_report_path', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review', 'reports'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'recurring-findings.json'),
+      JSON.stringify({ findings: [{ category: 'test-coverage' }, { category: 'security' }] }));
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'fitness.json'),
+      JSON.stringify({ rules: [], version: '1.0' }));
+    const reportPath = path.join(projectRoot, '.deep-review', 'reports', '2026-04-18-100000-review.md');
+    fs.writeFileSync(reportPath, '# Review\n');
+
+    const env = run();
+    const dr = env.artifacts['deep-review'];
+    assert.equal(dr.recurring_findings.total, 2);
+    assert.equal(dr.recurring_findings.top_category, 'test-coverage');
+    assert.equal(dr.fitness.version, '1.0');
+    assert.equal(dr.latest_report_path, reportPath);
+  });
+
+  it('deep-dashboard artifact populated → score + weakest_dimension from .id', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-dashboard'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-dashboard', 'harnessability-report.json'),
+      JSON.stringify({
+        total: 7.4,
+        dimensions: [
+          { id: 'type-safety', label: 'Type Safety', score: 8 },
+          { id: 'documentation', label: 'Documentation', score: 3 },
+          { id: 'testing', label: 'Testing', score: 6 },
+        ],
+      }));
+
+    const env = run(['deep-dashboard'], ['deep-review','deep-evolve','deep-docs','deep-wiki']);
+    const dh = env.artifacts['deep-dashboard'];
+    assert.equal(dh.harnessability_score, 7.4);
+    assert.equal(dh.weakest_dimension, 'documentation');
+  });
+
+  it('deep-evolve current.json + insights → session_id + insights populated', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-evolve', 'evolve-sess-1'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.deep-evolve', 'current.json'),
+      JSON.stringify({ session_id: 'evolve-sess-1' }));
+    fs.writeFileSync(path.join(projectRoot, '.deep-evolve', 'evolve-sess-1', 'evolve-insights.json'),
+      JSON.stringify({ insights: [{ pattern: 'p1' }] }));
+
+    const env = run(['deep-evolve'], ['deep-review','deep-docs','deep-wiki','deep-dashboard']);
+    const de = env.artifacts['deep-evolve'];
+    assert.equal(de.session_id, 'evolve-sess-1');
+    assert.equal(de.insights.insights[0].pattern, 'p1');
+  });
+
+  it('deep-wiki index.json → pages_count populated', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.wiki-meta'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, '.wiki-meta', 'index.json'),
+      JSON.stringify({ pages: [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }] }));
+
+    const env = run(['deep-wiki'], ['deep-review','deep-evolve','deep-docs','deep-dashboard']);
+    assert.equal(env.artifacts['deep-wiki'].pages_count, 3);
+  });
+
+  it('C1 fix: empty artifact file → placeholder with nulls, no envelope crash', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review'), { recursive: true });
+    // 빈 파일 (0 bytes) — C1 bug: 이전에는 jq empty 통과 → downstream --argjson 크래시
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'fitness.json'), '');
+
+    const env = run();
+    // 크래시 없이 정상 envelope
+    assert.equal(env.artifacts['deep-review'].fitness, null);
+  });
+
+  it('v6.3.0 C1: no loop-state path → envelope.loop is default {round:0, max_rounds:5, already_executed:[]}', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const env = run();
+    assert.ok(env.loop, 'loop field must exist at envelope top-level');
+    assert.equal(env.loop.round, 0);
+    assert.equal(env.loop.max_rounds, 5);
+    assert.deepEqual(env.loop.already_executed, []);
+  });
+
+  it('v6.3.0 C1: integrate-loop.json provided → loop.round/max_rounds/already_executed projected', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const loopPath = path.join(projectRoot, '.deep-work', 'w1', 'integrate-loop.json');
+    fs.writeFileSync(loopPath, JSON.stringify({
+      session_id: 's-abc',
+      loop_round: 2,
+      max_rounds: 5,
+      executed: [
+        { round: 1, plugin: 'deep-review', command: '/deep-review', at: '2026-04-18T15:00:00Z', outcome: 'completed' },
+        { round: 2, plugin: '(skip)', command: '(skip)', at: '2026-04-18T15:05:00Z', outcome: 'skipped' },
+      ],
+      terminated_by: null,
+    }));
+
+    const env = run(['deep-review', 'deep-docs'], ['deep-evolve', 'deep-wiki', 'deep-dashboard'], {}, loopPath);
+    assert.equal(env.loop.round, 2);
+    assert.equal(env.loop.max_rounds, 5);
+    // "(skip)" 가상 항목은 제외되어야 함
+    assert.deepEqual(env.loop.already_executed, ['deep-review']);
+  });
+
+  it('v6.3.0 C1: loop-state path given but file missing → default loop (no crash)', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const env = run(['deep-review'], ['deep-evolve','deep-docs','deep-wiki','deep-dashboard'], {},
+      path.join(projectRoot, '.deep-work', 'w1', 'nonexistent-loop.json'));
+    assert.equal(env.loop.round, 0);
+    assert.deepEqual(env.loop.already_executed, []);
+  });
+
+  it('v6.3.0 C1: corrupted integrate-loop.json → default loop (fail-safe)', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const loopPath = path.join(projectRoot, '.deep-work', 'w1', 'integrate-loop.json');
+    fs.writeFileSync(loopPath, 'this is { not valid json');
+    const env = run(['deep-review'], ['deep-evolve','deep-docs','deep-wiki','deep-dashboard'], {}, loopPath);
+    assert.equal(env.loop.round, 0);
+    assert.deepEqual(env.loop.already_executed, []);
+  });
+
+  // v6.3.0 review RC5-1 — option-based invocation (--plugins-file / --loop-file)
+  it('v6.3.0 RC5-1: --plugins-file option reads plugins JSON from file (no $(cat ...) needed)', () => {
+    writeStateFile('s-opt', '.deep-work/w-opt', 'opt', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-opt');
+    const pluginsPath = path.join(projectRoot, '.deep-work', 'w-opt', 'tmp-plugins.json');
+    fs.writeFileSync(pluginsPath, JSON.stringify({
+      installed: ['deep-review', 'deep-docs'],
+      missing: ['deep-evolve', 'deep-wiki', 'deep-dashboard'],
+    }));
+    const stdout = execFileSync('bash', [SCRIPT, projectRoot, '--plugins-file', pluginsPath], {
+      encoding: 'utf8', cwd: projectRoot, env: { ...process.env },
+    });
+    const env = JSON.parse(stdout);
+    assert.equal(env.session.id, 's-opt');
+    assert.deepEqual(new Set(env.plugins.installed), new Set(['deep-review', 'deep-docs']));
+  });
+
+  it('v6.3.0 RC5-1: --loop-file option reads loop state + emits loop field', () => {
+    writeStateFile('s-opt2', '.deep-work/w-opt2', 'opt', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-opt2');
+    const pluginsPath = path.join(projectRoot, '.deep-work', 'w-opt2', 'tmp-plugins.json');
+    fs.writeFileSync(pluginsPath, JSON.stringify({ installed: ['deep-review'], missing: [] }));
+    const loopPath = path.join(projectRoot, '.deep-work', 'w-opt2', 'integrate-loop.json');
+    fs.writeFileSync(loopPath, JSON.stringify({
+      loop_round: 3, max_rounds: 5,
+      executed: [{ plugin: 'deep-review' }, { plugin: '(skip)' }],
+    }));
+    const stdout = execFileSync('bash', [SCRIPT, projectRoot, '--plugins-file', pluginsPath, '--loop-file', loopPath], {
+      encoding: 'utf8', cwd: projectRoot,
+    });
+    const env = JSON.parse(stdout);
+    assert.equal(env.loop.round, 3);
+    assert.deepEqual(env.loop.already_executed, ['deep-review']);
+  });
+
+  it('C2 fix: artifact field with embedded quote → envelope still well-formed', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    fs.mkdirSync(path.join(projectRoot, '.deep-review'), { recursive: true });
+    // top_category에 " 포함 — hand-rolled JSON이면 깨짐
+    fs.writeFileSync(path.join(projectRoot, '.deep-review', 'recurring-findings.json'),
+      JSON.stringify({ findings: [{ category: 'has"quote' }] }));
+
+    const env = run();
+    // 크래시 없이 올바른 top_category
+    assert.equal(env.artifacts['deep-review'].recurring_findings.total, 1);
+    assert.equal(env.artifacts['deep-review'].recurring_findings.top_category, 'has"quote');
+  });
+});
