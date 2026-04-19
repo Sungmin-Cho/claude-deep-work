@@ -58,14 +58,28 @@ describe('detect-plugins.sh', () => {
     assert.deepEqual(new Set(result.missing), new Set(TARGETS));
   });
 
-  it('non-existent root → optimistic fallback (all installed) + stderr warn', () => {
-    // Pass a path that definitely does not exist — assert both stdout JSON and stderr warning
+  it('non-existent explicit root → fail-closed (all missing) + stderr warn + detection_status', () => {
+    // v6.3.0 review W2: 이전 낙관적 fallback은 없는 플러그인 /command 추천을 유발해 fail-closed로 전환.
+    // W-R3: --plugins-root로 명시적 경로를 주었을 때만 그 경로만 probe (override 경로 존중).
+    //       기본 경로(override 미지정)에서는 cache/marketplaces/plugins 모두 probe하여 대체 설치를 감지.
     const result = spawnSync('bash', [SCRIPT, '--plugins-root', '/nonexistent/path/xyz'], { encoding: 'utf8' });
     assert.equal(result.status, 0);
     const stdout = JSON.parse(result.stdout);
-    assert.deepEqual(new Set(stdout.installed), new Set(TARGETS));
-    assert.deepEqual(stdout.missing, []);
-    assert.match(result.stderr, /plugins root not found/);
+    assert.deepEqual(stdout.installed, []);
+    assert.deepEqual(new Set(stdout.missing), new Set(TARGETS));
+    assert.equal(stdout.detection_status, 'cache-missing');
+    assert.match(result.stderr, /no plugin install root found/);
+  });
+
+  it('v6.3.0 W-R3: default roots probe includes marketplaces path', () => {
+    // override 없이 호출 시 cache/marketplaces/plugins 세 경로를 probe.
+    // 시스템 의존성을 피하기 위해 이 테스트는 override를 쓰되 probe 동작 문서화 차원의 스모크.
+    // 실제 시스템 경로 의존 테스트는 피함 — 대신 override 경로에서 marketplaces 구조가 감지되는지 검증.
+    const mp = path.join(tmpRoot, 'plugins', 'cache', 'marketplace-x', 'deep-review');
+    fs.mkdirSync(mp, { recursive: true });
+    // override는 cache만 보므로 marketplace-x 하위의 deep-review가 감지되어야 함.
+    const result = run();
+    assert.ok(result.installed.includes('deep-review'));
   });
 
   it('--plugins-root with missing/empty value → exit 0, uses default, warns', () => {

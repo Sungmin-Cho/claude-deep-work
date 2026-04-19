@@ -1,5 +1,5 @@
 ---
-allowed-tools: Skill, Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
+allowed-tools: Skill, Read, Bash, Glob, Grep, Agent, AskUserQuestion
 description: "Phase 5 Integrate — AI 추천 루프 명시적 호출 (Phase 4 Test 완료 후)"
 argument-hint: "[--session=<id>] [--skip-integrate]"
 ---

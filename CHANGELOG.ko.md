@@ -13,13 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase 5 "Integrate"** — Phase 4(Test) 완료 후 호출되는 skippable 단계. `deep-review`, `deep-docs`, `deep-wiki`, `deep-dashboard`, `deep-evolve` 플러그인 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면 사용자가 선택·실행한다. 대화형 루프 (최대 5라운드). 설계 문서: `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md`.
 - `/deep-integrate` 커맨드: Phase 5 수동 재진입용.
 - `--skip-integrate` 플래그: Phase 5 건너뛰고 `/deep-finish`로 직행.
-- `skills/deep-integrate/` 신규 스킬 + 2개 헬퍼 스크립트(`detect-plugins.sh`, `gather-signals.sh`), JSON 스키마, L6 snapshot fixture.
+- `skills/deep-integrate/` 신규 스킬 + 헬퍼 스크립트(`detect-plugins.sh`, `gather-signals.sh`, `phase5-finalize.sh`, `phase5-record-error.sh`), JSON 스키마, L6 snapshot fixture.
+- `phase5_work_dir_snapshot` state 필드 — Phase 5 진입 시점의 work_dir을 불변 snapshot으로 기록. phase-guard가 이 값을 enforcement 기준으로 사용하므로 런타임에 state file의 `work_dir`이 변조돼도 boundary가 유지된다.
+- `phase5-finalize.sh` helper — state file의 `phase5_completed_at`만 atomically 기록. state file 경로가 현재 세션과 일치하는지 검증하며, Phase 5 중 state 수정은 이 helper 경유만 허용된다.
+- `phase5-record-error.sh` helper — `/deep-finish --skip-integrate` 경로에서 `integrate-loop.json`의 `terminated_by`를 `"error"`로 기록. Stop-hook의 `interrupted` 마킹과 함께 belt-and-suspenders.
 - Stop-hook: 세션 중단 시 `integrate-loop.json`에 `terminated_by: "interrupted"` 기록.
 
 ### 변경됨
-- `deep-work-orchestrator`가 Phase 4(Test) 완료 후 Phase 5로 dispatch하고 `/deep-finish`로 이어진다.
-- `/deep-finish`: `integrate-loop.json` 부재 시 `/deep-integrate`를 먼저 실행하도록 힌트.
-- Phase 5는 state file의 `current_phase="idle"`로 전환해 기존 phase-guard fast-path를 활용. `phase-guard.sh` 수정 없음.
+- `deep-work-orchestrator`가 Phase 4(Test) 완료 후 Phase 5로 dispatch한다. Phase 5 에러 시 `/deep-finish`에 `--skip-integrate`를 전달하여 state machine이 정상 종료되도록 한다.
+- `/deep-finish`: `integrate-loop.json` 부재 시 `/deep-integrate` 힌트. `--skip-integrate`는 Phase 5 중단 prompt를 우회하고 `phase5-record-error.sh`를 defensively 호출한다.
+- **`phase-guard.sh` Phase 5 mode 도입** (초기 계획 "phase-guard 변경 없음"은 보안 검토 결과 뒤집혔음). `current_phase=idle + phase5_entered_at + !phase5_completed_at` 상태에서 다음을 강제:
+  - `Write/Edit/MultiEdit/NotebookEdit`: 대상 경로가 snapshot `$WORK_DIR` 하위여야 함. state file 직접 수정은 차단 — `phase5-finalize.sh`만 허용.
+  - `Bash`: **allowlist-only (default-deny)**. 첫 command token(env 변수 prefix 이후)이 Phase 5 read-mostly allowlist에 있어야 통과: 파일시스템 read(`cat`/`head`/`tail`/`wc`/`ls`/`pwd`/`file`/`stat`/`realpath`/`readlink`/`dirname`/`basename`), 검색/필터(`grep`/`sort`/`uniq`/`diff`/`cut`/`paste`/`column`/`tr`/`find`), JSON/YAML read(`jq`/`yq` `-i` 제외), shell builtins(`echo`/`printf`/`date`/`env`/`true`/`false`/`test`/`which`/`type`/`command`/`xxd`/checksums), `git` read-only subcommand(`status`/`diff`/`log`/`show`/`blame`/`grep`/`rev-parse`/`rev-list`/`merge-base`/`symbolic-ref`/`ls-files`/`ls-tree`/`branch`/`tag`/`config`/`describe`/`cat-file`/`fsck`/`shortlog`/`reflog`/`name-rev`/`for-each-ref`/`count-objects`/`verify-pack`/`check-ignore`/`check-attr`/`var`/`help`/`version`), 인터프리터(`bash`/`sh`/`python`/`perl`/`ruby`/`node`/`awk`/`sed`/`php`/`osascript`/`tsx`/`deno`/`bun`) + script canonical check, 파일시스템 ops(`mv`/`cp`/`mkdir`/`rm`/`rmdir`/`chmod`/`chown`/`truncate`/`touch`/`ln`/`install`) + target-in-`$WORK_DIR` 검증. 알 수 없는 command는 즉시 block. 추가 제약: 파괴적 변형(`/bin/rm`, `\rm`, `command/exec/builtin rm`) 정규화; `git` global flags(`-C <path>`, `--git-dir [=]<path>`, `--work-tree [=]<path>`, `-c <k=v>`, `-p`/`--no-pager`/`--bare`/...) fixed-point iteration으로 제거; `git` mutating 서브커맨드(위 목록) 정규화 후 block; `find -delete/-exec/-ok/...` block; `jq/sed/perl/ruby -i` in-place flag block; 인터프리터 `-c/-e` flag block; compound 연산자(`;`, `&&`, `||`, `|`, `&`) reject; helper 경로 shell metacharacter(`$`, `` ` ``, `(`, `)`, `<`, `>`, newline, CR) reject. `mv`/`cp`는 SRC와 DEST 양쪽 검증. **인터프리터 + script 호출**은 script canonical `realpath`가 `${PROJECT_ROOT}/skills/deep-integrate/<helper>.sh` 또는 `${HOME}/.claude/plugins/cache/claude-deep-suite/deep-work/*/skills/deep-integrate/<helper>.sh`와 정확히 일치할 때만 허용. 읽기 도구(`Read`, `Glob`, `Grep`, `Agent`, `AskUserQuestion`, `Skill`)는 통과.
+- `/deep-integrate` tool allowlist 축소: `Skill, Read, Bash, Glob, Grep, Agent, AskUserQuestion` (`Write, Edit` 제거).
+
+### 업그레이드 안내
+- v6.2.x에서 Phase 5 진입한 세션은 `phase5_work_dir_snapshot`이 없을 수 있다. phase-guard는 backward-compat으로 `work_dir` fallback을 사용하지만, 이 경로는 state-tampering 공격에 더 노출된다. v6.3.0 신규 Phase 5 진입은 snapshot을 자동 기록한다.
+- `phase5-finalize.sh`는 state file basename이 `deep-work.<sid>.md` 패턴이고 `.claude/` 디렉토리에 있는지 검증한다. 기존에 redirect로 state를 수정하던 로직은 이 helper 호출로 전환해야 한다.
+- **의존성**: `phase5-record-error.sh`, `gather-signals.sh`, Stop-hook `terminated_by` marker는 `jq`가 `PATH`에 있어야 한다 (없으면 helper가 명시적 에러로 종료). `phase5-finalize.sh`는 `awk`만 사용하여 `jq` 의존성 없음.
+
+### 알려진 제약
+- **인터프리터 커버리지**: `Rscript`/`julia`/`lua`/`groovy`/`tclsh`는 allowlist 미포함. 실제 Phase 5 workflow에 이들이 필요하면 명시적으로 추가해야 한다. v6.3.1에서 검토.
+- **`awk -f script.awk`**: `-f` 플래그 형태는 interpreter-with-script canonical check에서 커버되지 않는다(`-e/-c`는 `-c/-e` 규칙으로 차단). Phase 5 Bash allowlist가 알 수 없는 형태를 거부하고 legitimate workflow에서 `awk -f`를 쓰지 않아 실무 위험은 낮음.
+- **레거시 세션 업그레이드**: v6.2.x에서 `phase5_work_dir_snapshot` 없이 Phase 5 진입한 세션은 mutable `work_dir` fallback. v6.3.0에서 재진입 시 snapshot이 자동 기록됨.
+- **`phase5-record-error.sh` / `phase5-finalize.sh` 단위 테스트**: 현재 `phase5-guard.test.js`에서 간접 커버. 전용 단위 테스트 파일은 v6.3.1 예정.
+- **Allowlist 명령 악용**: read-mostly allowlist의 명령은 표준 read-only form에서 허용되며 niche invocation은 이론적으로 악용 가능(예: `find`의 mutating flag 차단됨; `jq -i` 차단; `mv`/`cp`/`mkdir`은 target 검증; 나머지는 safe 가정). `curl`은 allowlist 미포함; 네트워크 접근 helper의 data-exfil 방어 같은 per-command invocation audit은 v6.4.0에서 검토.
+- **Non-Bash 도구(`Agent`/`Skill`)**: Phase 5 guard를 통과. `Agent`로 dispatch된 subagent는 자체 tool set을 가지며 Phase 5 enforcement는 호출 세션의 Bash/Write/Edit에만 적용. v6.3.0에서는 out-of-scope trust boundary로 취급.
 
 ## [6.2.4] — 2026-04-17
 

@@ -41,12 +41,10 @@ function writeSessionPointer(sessionId) {
   fs.writeFileSync(path.join(projectRoot, '.claude', 'deep-work-current-session'), sessionId);
 }
 
-function run(installed = ['deep-review', 'deep-docs'], missing = ['deep-evolve', 'deep-wiki', 'deep-dashboard'], envOverride = {}) {
-  const stdout = execFileSync('bash', [
-    SCRIPT,
-    projectRoot,
-    JSON.stringify({ installed, missing }),
-  ], { encoding: 'utf8', cwd: projectRoot, env: { ...process.env, ...envOverride } });
+function run(installed = ['deep-review', 'deep-docs'], missing = ['deep-evolve', 'deep-wiki', 'deep-dashboard'], envOverride = {}, loopStatePath = '') {
+  const args = [SCRIPT, projectRoot, JSON.stringify({ installed, missing })];
+  if (loopStatePath) args.push(loopStatePath);
+  const stdout = execFileSync('bash', args, { encoding: 'utf8', cwd: projectRoot, env: { ...process.env, ...envOverride } });
   return JSON.parse(stdout);
 }
 
@@ -234,6 +232,92 @@ describe('gather-signals.sh', () => {
     const env = run();
     // 크래시 없이 정상 envelope
     assert.equal(env.artifacts['deep-review'].fitness, null);
+  });
+
+  it('v6.3.0 C1: no loop-state path → envelope.loop is default {round:0, max_rounds:5, already_executed:[]}', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const env = run();
+    assert.ok(env.loop, 'loop field must exist at envelope top-level');
+    assert.equal(env.loop.round, 0);
+    assert.equal(env.loop.max_rounds, 5);
+    assert.deepEqual(env.loop.already_executed, []);
+  });
+
+  it('v6.3.0 C1: integrate-loop.json provided → loop.round/max_rounds/already_executed projected', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const loopPath = path.join(projectRoot, '.deep-work', 'w1', 'integrate-loop.json');
+    fs.writeFileSync(loopPath, JSON.stringify({
+      session_id: 's-abc',
+      loop_round: 2,
+      max_rounds: 5,
+      executed: [
+        { round: 1, plugin: 'deep-review', command: '/deep-review', at: '2026-04-18T15:00:00Z', outcome: 'completed' },
+        { round: 2, plugin: '(skip)', command: '(skip)', at: '2026-04-18T15:05:00Z', outcome: 'skipped' },
+      ],
+      terminated_by: null,
+    }));
+
+    const env = run(['deep-review', 'deep-docs'], ['deep-evolve', 'deep-wiki', 'deep-dashboard'], {}, loopPath);
+    assert.equal(env.loop.round, 2);
+    assert.equal(env.loop.max_rounds, 5);
+    // "(skip)" 가상 항목은 제외되어야 함
+    assert.deepEqual(env.loop.already_executed, ['deep-review']);
+  });
+
+  it('v6.3.0 C1: loop-state path given but file missing → default loop (no crash)', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const env = run(['deep-review'], ['deep-evolve','deep-docs','deep-wiki','deep-dashboard'], {},
+      path.join(projectRoot, '.deep-work', 'w1', 'nonexistent-loop.json'));
+    assert.equal(env.loop.round, 0);
+    assert.deepEqual(env.loop.already_executed, []);
+  });
+
+  it('v6.3.0 C1: corrupted integrate-loop.json → default loop (fail-safe)', () => {
+    writeStateFile('s-abc', '.deep-work/w1', 'fix', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-abc');
+    const loopPath = path.join(projectRoot, '.deep-work', 'w1', 'integrate-loop.json');
+    fs.writeFileSync(loopPath, 'this is { not valid json');
+    const env = run(['deep-review'], ['deep-evolve','deep-docs','deep-wiki','deep-dashboard'], {}, loopPath);
+    assert.equal(env.loop.round, 0);
+    assert.deepEqual(env.loop.already_executed, []);
+  });
+
+  // v6.3.0 review RC5-1 — option-based invocation (--plugins-file / --loop-file)
+  it('v6.3.0 RC5-1: --plugins-file option reads plugins JSON from file (no $(cat ...) needed)', () => {
+    writeStateFile('s-opt', '.deep-work/w-opt', 'opt', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-opt');
+    const pluginsPath = path.join(projectRoot, '.deep-work', 'w-opt', 'tmp-plugins.json');
+    fs.writeFileSync(pluginsPath, JSON.stringify({
+      installed: ['deep-review', 'deep-docs'],
+      missing: ['deep-evolve', 'deep-wiki', 'deep-dashboard'],
+    }));
+    const stdout = execFileSync('bash', [SCRIPT, projectRoot, '--plugins-file', pluginsPath], {
+      encoding: 'utf8', cwd: projectRoot, env: { ...process.env },
+    });
+    const env = JSON.parse(stdout);
+    assert.equal(env.session.id, 's-opt');
+    assert.deepEqual(new Set(env.plugins.installed), new Set(['deep-review', 'deep-docs']));
+  });
+
+  it('v6.3.0 RC5-1: --loop-file option reads loop state + emits loop field', () => {
+    writeStateFile('s-opt2', '.deep-work/w-opt2', 'opt', { test_completed_at: '2026-04-18T14:30:00Z' });
+    writeSessionPointer('s-opt2');
+    const pluginsPath = path.join(projectRoot, '.deep-work', 'w-opt2', 'tmp-plugins.json');
+    fs.writeFileSync(pluginsPath, JSON.stringify({ installed: ['deep-review'], missing: [] }));
+    const loopPath = path.join(projectRoot, '.deep-work', 'w-opt2', 'integrate-loop.json');
+    fs.writeFileSync(loopPath, JSON.stringify({
+      loop_round: 3, max_rounds: 5,
+      executed: [{ plugin: 'deep-review' }, { plugin: '(skip)' }],
+    }));
+    const stdout = execFileSync('bash', [SCRIPT, projectRoot, '--plugins-file', pluginsPath, '--loop-file', loopPath], {
+      encoding: 'utf8', cwd: projectRoot,
+    });
+    const env = JSON.parse(stdout);
+    assert.equal(env.loop.round, 3);
+    assert.deepEqual(env.loop.already_executed, ['deep-review']);
   });
 
   it('C2 fix: artifact field with embedded quote → envelope still well-formed', () => {

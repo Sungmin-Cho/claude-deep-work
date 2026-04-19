@@ -1,16 +1,58 @@
 #!/usr/bin/env bash
 # gather-signals.sh — Phase 5 signal envelope 생성
-# Usage: gather-signals.sh <project-root> <installed-missing-json>
+# Usage:
+#   gather-signals.sh <project-root> <installed-missing-json> [<integrate-loop.json-path>]
+#   gather-signals.sh <project-root> --plugins-file <plugins-json-path> [--loop-file <loop-json-path>]
 # 출력(stdout): signal envelope JSON (spec 섹션 3.2 참조)
+# v6.3.0 review C1: 3번째 positional 인자로 integrate-loop.json 경로를 받아 envelope에 `loop` 필드 병합.
+#                   미지정/미존재 시 기본값 {round:0, max_rounds:5, already_executed:[]}를 emit.
+# v6.3.0 review RC5-1 (SKILL 호환): `--plugins-file` / `--loop-file` 옵션으로 경로를 받도록 확장.
+#                    SKILL이 `$(cat <file>)` 같은 command substitution 없이 gather-signals 호출 가능 →
+#                    phase-guard의 shell-metacharacter 엄격화와 호환.
 set -u
 
 if [[ $# -lt 2 ]]; then
-  echo '{"error":"missing arguments: project-root, installed-missing-json"}'
+  echo '{"error":"missing arguments: project-root, plugins-json"}'
   exit 1
 fi
 
-PROJECT_ROOT="$1"
-PLUGINS_JSON="$2"
+PROJECT_ROOT="$1"; shift
+PLUGINS_JSON=""
+LOOP_STATE_PATH=""
+
+# 옵션 기반 vs positional: 첫 인자가 `--plugins-file`이면 옵션 파싱, 아니면 legacy positional.
+if [[ "${1:-}" == --plugins-file ]]; then
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --plugins-file)
+        if [[ $# -lt 2 || -z "${2:-}" ]]; then
+          echo '{"error":"--plugins-file requires non-empty value"}'; exit 1
+        fi
+        if [[ ! -f "$2" ]]; then
+          echo '{"error":"--plugins-file path not found: '"$2"'"}'; exit 1
+        fi
+        PLUGINS_JSON="$(cat "$2")"
+        shift 2
+        ;;
+      --loop-file)
+        if [[ $# -lt 2 ]]; then
+          echo '{"error":"--loop-file requires value"}'; exit 1
+        fi
+        LOOP_STATE_PATH="$2"
+        shift 2
+        ;;
+      *) shift ;;
+    esac
+  done
+else
+  # legacy positional: plugins-json-string [loop-path]
+  PLUGINS_JSON="$1"
+  LOOP_STATE_PATH="${2:-}"
+fi
+
+if [[ -z "$PLUGINS_JSON" ]]; then
+  echo '{"error":"plugins-json not provided"}'; exit 1
+fi
 
 # C6 fix: 나중에 deep-work artifacts 섹션에서 참조될 수 있으므로 빈 문자열로 초기화
 WORK_DIR_SLUG=""
@@ -71,11 +113,26 @@ else
     # git changes (cwd가 project-root, non-git이면 null)
     pushd "$PROJECT_ROOT" >/dev/null || true
     if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      base="$(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)" 2>/dev/null || echo HEAD)"
-      if [[ "$base" == "HEAD" ]]; then
-        files_changed=0; ins=0; dels=0
-        cat_src=0; cat_test=0; cat_docs=0; cat_config=0
+      # v6.3.0 review RC3-4: 파이프라인은 마지막 명령 exit code만 반환하므로 `|| echo main`이
+      # symbolic-ref 실패 시에도 발동하지 않는다. symbolic-ref 결과를 먼저 받고 빈 값이면 "main"으로 fallback.
+      _orig_head="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+      if [[ -n "$_orig_head" ]]; then
+        base_ref="${_orig_head#origin/}"
       else
+        base_ref="main"
+      fi
+      # v6.3.0 review W-R1: "base ref 부재(unknown)"와 "on-base zero-diff"를 구분.
+      # base_ref가 resolve되면 merge-base가 HEAD여도 legitimate zero-diff (0 값 emit),
+      # resolve 실패면 비교 대상 부재 (null emit). 이전 수정은 두 경우를 null로 통합하여
+      # LLM 프롬프트의 `files_changed == 0` 분기를 억제하는 회귀를 유발.
+      if ! git rev-parse --verify "$base_ref" >/dev/null 2>&1; then
+        warn "base ref '$base_ref' not resolvable — changes=null"
+        CHANGES_JSON='null'
+      elif [[ "$(git merge-base HEAD "$base_ref" 2>/dev/null || echo HEAD)" == "$(git rev-parse HEAD)" ]]; then
+        # HEAD가 base_ref의 조상이거나 동일 → 실제로 0 변경 (on-base session)
+        CHANGES_JSON=$(jq -n '{files_changed:0, insertions:0, deletions:0, categories:{src:0, test:0, docs:0, config:0}}')
+      else
+        base="$(git merge-base HEAD "$base_ref")"
         files_changed="$(git diff --name-only "$base"..HEAD 2>/dev/null | wc -l | tr -d ' ')"
         read -r ins dels <<<"$(git diff --numstat "$base"..HEAD 2>/dev/null | awk '{i+=$1; d+=$2} END {printf "%d %d", i+0, d+0}')"
         cat_src=0; cat_test=0; cat_docs=0; cat_config=0
@@ -87,13 +144,13 @@ else
             *) ((cat_src++)) ;;
           esac
         done < <(git diff --name-only "$base"..HEAD 2>/dev/null)
+        CHANGES_JSON=$(jq -n \
+          --argjson fc "$files_changed" --argjson ins "$ins" --argjson dels "$dels" \
+          --argjson src "$cat_src" --argjson t "$cat_test" \
+          --argjson d "$cat_docs" --argjson c "$cat_config" \
+          '{files_changed:$fc, insertions:$ins, deletions:$dels,
+            categories:{src:$src, test:$t, docs:$d, config:$c}}')
       fi
-      CHANGES_JSON=$(jq -n \
-        --argjson fc "$files_changed" --argjson ins "$ins" --argjson dels "$dels" \
-        --argjson src "$cat_src" --argjson t "$cat_test" \
-        --argjson d "$cat_docs" --argjson c "$cat_config" \
-        '{files_changed:$fc, insertions:$ins, deletions:$dels,
-          categories:{src:$src, test:$t, docs:$d, config:$c}}')
     else
       warn "not a git repository — changes=null"
       CHANGES_JSON='null'
@@ -133,8 +190,9 @@ read_json_safe() {
 # 미설치 플러그인만 whole-null. test가 nested field 접근해도 TypeError 없도록.
 
 # deep-work (C6 fix: SESSION_ID/WORK_DIR_SLUG 미해석 시 whole-null)
-if [[ -n "$SESSION_ID" && -n "$WORK_DIR_SLUG" ]] && \
-   printf '%s' "$PLUGINS_JSON" | jq -e '(.installed // []) + ["deep-work"] | unique | index("deep-work")' >/dev/null 2>&1; then
+# deep-work 자체는 항상 active하므로 plugins.installed 체크는 불필요 (이전 jq 표현식은
+# 항상 true였고 의도 전달만 방해했음 — v6.3.0 review W3)
+if [[ -n "$SESSION_ID" && -n "$WORK_DIR_SLUG" ]]; then
   sr="$PROJECT_ROOT/$WORK_DIR_SLUG/session-receipt.json"
   dw_artifact=$(read_json_safe "$sr")
   dw_json=$(jq -n --argjson sr "$dw_artifact" --arg p "$PROJECT_ROOT/$WORK_DIR_SLUG/report.md" \
@@ -150,11 +208,14 @@ if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-review")
   latest_report="$(ls -1t "$PROJECT_ROOT"/.deep-review/reports/*-review.md 2>/dev/null | head -1 || true)"
   latest_json=$(jq -n --arg p "$latest_report" 'if $p == "" then null else $p end')
   if [[ "$rf" != "null" ]]; then
-    # I4 fix: combine total + top_cat in one defensive jq pass (non-array .findings safe)
+    # I4 fix: total + top_cat in one defensive jq pass (non-array .findings safe)
+    # v6.3.0 review W5: top_category는 최빈 category여야 함 (a[0]는 sorted 가정에 의존)
     read -r total top_cat < <(
       printf '%s' "$rf" | jq -r '
         def a: (.findings // []);
-        "\(a | length) \(a[0].category // "")"
+        (a | length) as $n |
+        (a | map(.category // empty) | group_by(.) | max_by(length) | .[0] // "") as $c |
+        "\($n) \($c)"
       ' 2>/dev/null || echo "0 "
     )
     # C2 fix: build rf_sum with jq --arg to handle embedded quotes/backslashes
@@ -253,8 +314,24 @@ ARTIFACTS=$(jq -n \
   --argjson dwiki "$dwiki_json" \
   '{"deep-work":$dw, "deep-review":$dr, "deep-docs":$dd, "deep-dashboard":$dh, "deep-evolve":$de, "deep-wiki":$dwiki}')
 
+# v6.3.0 review C1: loop 필드 — integrate-loop.json에서 투영하거나 기본값.
+# "(skip)" 가상 항목은 플러그인이 아니므로 already_executed에서 제외.
+LOOP_JSON='{"round":0,"max_rounds":5,"already_executed":[]}'
+if [[ -n "$LOOP_STATE_PATH" && -f "$LOOP_STATE_PATH" ]]; then
+  loop_raw=$(read_json_safe "$LOOP_STATE_PATH")
+  if [[ "$loop_raw" != "null" ]]; then
+    parsed=$(printf '%s' "$loop_raw" | jq '{
+      round: (.loop_round // 0),
+      max_rounds: (.max_rounds // 5),
+      already_executed: ([(.executed // [])[] | .plugin // empty] | unique | map(select(. != "(skip)")))
+    }' 2>/dev/null || echo '')
+    [[ -n "$parsed" ]] && LOOP_JSON="$parsed"
+  fi
+fi
+
 jq -n \
   --argjson session "$SESSION_JSON" \
+  --argjson loop "$LOOP_JSON" \
   --argjson plugins "$PLUGINS_JSON" \
   --argjson artifacts "$ARTIFACTS" \
-  '{session:$session, plugins:$plugins, artifacts:$artifacts}'
+  '{session:$session, loop:$loop, plugins:$plugins, artifacts:$artifacts}'

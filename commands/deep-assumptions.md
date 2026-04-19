@@ -3,7 +3,7 @@ allowed-tools: Read, Bash
 description: "Assumption health report — validate whether deep-work's enforcement rules are still justified by session evidence"
 ---
 
-> **Internal (v6.2.4)** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal (v6.3.0)** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `commands/deep-status.md` §9 (`Read the /deep-assumptions command file and follow its logic`).
 
 # Assumption Health Report (v5.0)
