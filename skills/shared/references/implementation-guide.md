@@ -99,17 +99,21 @@ git stash  # or git reset to the commit before implementation started
 
 Always prefer `git stash` over destructive operations to preserve work.
 
-## Completion Protocol
+## Completion Protocol (v6.3.1 F1 Option A)
 
 When all tasks are done:
 
-1. Update the session state file (`$STATE_FILE`) to `current_phase: test`
+1. Update the session state file (`$STATE_FILE`):
+   - `implement_completed_at`: current ISO timestamp
+   - `phase_review.implement`: `{reviewed, reviewers, self_issues, external_issues, resolved}`
+   - `review_state: completed`
+   - **DO NOT set `current_phase: test`.** v6.3.1 F1: Orchestrator가 Exit Gate "진행" 선택 시에만 `current_phase`를 전환한다. Phase skill은 완료-marker만 기록하고 제어를 반환한다.
 2. Present a summary showing:
    - Tasks completed vs total
    - Files modified/created
    - Any issues encountered
-3. **Automatically transition to Test phase** — the Test phase runs comprehensive verification (type check, lint, test) and handles the implement-test retry loop
-4. Session report is generated after all tests pass
+3. **Return control to Orchestrator Exit Gate (§3-4)** — Orchestrator가 AskUserQuestion으로 "다음 phase로 진행 / 재실행 / 일시정지"를 사용자에게 묻는다. "진행" 선택 시 Orchestrator가 `current_phase: test`로 전환하고 Test phase를 호출한다.
+4. Test phase가 자동 verification (type check, lint, test) 및 implement-test retry loop을 처리한다. Session report는 All Pass 이후 생성된다.
 
 For testing phase details, see [Testing Guide](testing-guide.md).
 

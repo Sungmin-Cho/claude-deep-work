@@ -62,14 +62,14 @@ AskUserQuestion으로 사용자에게 제시:
 
 ```
 수정 완료. 최종 문서를 확인해주세요.
-1) 승인 — 다음 phase로 진행
+1) 문서 최종 승인
 2) 추가 수정 요청
 3) 이 phase 재실행
 ```
 
-- **승인** → Orchestrator가 `current_phase` 업데이트 → 다음 Skill 호출
+- **승인** → 문서 저장 + `*_approved: true` / `*_completed_at` 기록 → Orchestrator §3-N Exit Gate로 제어 반환 (v6.3.1 F1: current_phase는 Exit Gate "진행" 선택 시에만 전환)
 - **추가 수정** → Step 5로 복귀
-- **재실행** → Phase Skill을 다시 호출 (Step 1로 복귀)
+- **재실행** → Phase Skill을 `--force-rerun`과 함께 다시 호출 (Step 1로 복귀)
 
 ---
 

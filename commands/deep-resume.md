@@ -241,16 +241,15 @@ Orchestrator가 research skill 호출 → review → approval → plan 진전까
 
 #### `plan`
 
-Plan phase도 Research와 동일하게 Orchestrator의 Review + Approval Workflow가 필요합니다.
+Plan phase도 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
 **Orchestrator를 경유하여 resume합니다:**
 
-- If `plan_approved` is `true`:
-  The session is in an inconsistent state (plan approved but phase is still `plan`). Update `current_phase: implement` in the state file and proceed to implement logic below.
+```
+Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=plan")
+```
 
-- Otherwise:
-  ```
-  Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=plan")
-  ```
+- `plan_completed_at` + `plan_approved: true`이면 Orchestrator §3-3 Exit Gate 재표시 (paused-after-approval 복귀 경로). current_phase를 implement로 강제 전환하지 않음 — Option A F1에서 이 상태는 정당한 일시정지 상태임.
+- `plan_approved: false`이면 Orchestrator §3-3이 review+approval 단계 재개.
 
 #### `implement`
 
