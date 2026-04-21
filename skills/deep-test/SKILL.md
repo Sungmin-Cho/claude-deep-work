@@ -4,6 +4,15 @@ version: "6.3.0"
 description: "Phase 4 — Test: comprehensive verification + implement-test retry loop"
 ---
 
+> [!IMPORTANT]
+> **Skill body echo 금지**
+>
+> 이 SKILL.md 본문을 사용자에게 echo하거나 요약하여 출력하지 마라.
+>
+> - Section 1 (state 로드, verification 명령 감지, 완료-marker 감지)는 silent 내부 처리.
+> - 첫 사용자-가시 주 동작은 Section 2의 **First Action: 첫 verification 실행 선언 + 즉시 Bash 호출**.
+> - Section 3 완료 메시지는 quality gate를 **실제로 수행**한 뒤에만 출력.
+
 # Section 1: State 로드 (필수 — 건너뛰기 금지)
 
 1. Session ID 결정
@@ -23,6 +32,13 @@ description: "Phase 4 — Test: comprehensive verification + implement-test retr
 - ONLY: 테스트 실행, 결과 분석, 문서 업데이트
 - 테스트 실패 시 implement phase로 복귀하여 수정
 
+## 완료-Marker 감지 (Phase-level resume — F1)
+
+`test_completed_at` + `test_passed: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면:
+- "Phase 4 (Test)는 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
+- Orchestrator §3-5로 제어 반환 (Exit Gate 재실행)
+- Section 2/3 진입 금지
+
 ## Red Flags — 이 생각이 들면 멈추세요
 
 | 합리화 시도 | 현실 |
@@ -38,6 +54,16 @@ description: "Phase 4 — Test: comprehensive verification + implement-test retr
 "main" → 아래 inline 실행.
 
 # Section 2: Phase 실행
+
+## First Action (즉시 실행 — 건너뛰기 금지)
+
+Section 1의 verification 명령 감지와 완료-marker 감지가 silent하게 끝난 뒤 **즉시** 다음 메시지를 출력한다:
+
+> "Test 단계를 시작합니다. Required Gate부터 순차 실행합니다."
+
+이어서 Step 1 (Receipt Completeness) → Step 2 (Plan Alignment / drift) → 이후 quality gate들을 순차 실행. "실행할까요?" 같은 추가 확인 금지.
+
+**금지**: 이 선언과 첫 gate 실행 전에 quality gate 설명, 완료 템플릿, retry 정책을 출력하지 마라.
 
 ## Step 1: Required Gate — Receipt Completeness
 
@@ -113,6 +139,8 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 상세: Read("../shared/references/testing-guide.md")
 
 # Section 3: 완료
+
+> **실행 순서 안전장치**: 이 섹션은 모든 quality gate (test, lint, typecheck, sensor, mutation, drift, solid, insight, fitness, health)를 **실제로 수행**한 뒤에만 실행한다. All Pass 메시지만 출력하는 것은 실패 모드이다.
 
 ## All Pass
 
