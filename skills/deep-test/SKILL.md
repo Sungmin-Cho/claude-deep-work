@@ -174,9 +174,11 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 
 1. 누적 실패 이력 표시
 2. `current_phase: implement` 유지 (사용자 수동 수정 경로)
-3. **Implement state cleanup (NW1 fix — v6.3.1)**: 수동 수정 경로가 제대로 동작하려면 stale completion markers를 invalidate해야 함:
-   - `implement_completed_at`: null (Implement skill 완료-Marker branch가 발동하지 않도록)
-   - 실패한 slice의 receipt에 `status: "invalidated"` 기록 (또는 해당 slice의 `[x]` 체크마크 해제) — 재구현 시 sensor/verification이 새 evidence를 생성하도록 보장
+3. **Implement state cleanup (NW1 fix — v6.3.1, NW6 refined)**: 수동 수정 경로가 제대로 동작하려면 stale completion markers를 invalidate해야 함. 두 action 모두 수행:
+   - `implement_completed_at: null` 설정 (Implement skill 완료-Marker branch가 발동하지 않도록)
+   - 실패한 slice의 `[x]` 체크마크를 `[ ]`로 해제 (Implement skill Section 1 Resume Detection이 미완료 slice로 인식하도록)
+   - **동시에** 해당 slice의 receipt에 `status: "invalidated"` 기록 — sensor/verification이 stale evidence를 재사용하지 않고 재구현 시 새 evidence를 생성하도록 보장
+   - **주의 (NW6)**: Receipt invalidate만 하고 `[x]`를 그대로 두면 Resume Detection이 미완료 slice를 찾지 못해 재구현이 skip됨. 반드시 둘 다 수행.
 4. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
 5. 안내:
    - `/deep-test --force-rerun`로 Test phase 직접 재실행 (retry count 초기화)

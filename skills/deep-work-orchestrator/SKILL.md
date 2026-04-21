@@ -182,7 +182,7 @@ AskUserQuestion:
 
 분기:
 - option 1 → **즉시 `current_phase: research` 설정** (F1 Option A) → `Skill("deep-research", args=ARGS)` 호출. 추가 확인 금지.
-- option 2 → 사용자 상세 지시 청취. brainstorm.md 직접 편집(phase-guard 허용) 또는 `Skill("deep-brainstorm", args=ARGS + " --force-rerun")` 재호출.
+- option 2 → **재실행 전 completion marker clear (v6.3.1 NC2 symmetric)**: `brainstorm_completed_at: null` 설정 → 이후 사용자 상세 지시 청취. brainstorm.md 직접 편집(phase-guard 허용) 또는 `Skill("deep-brainstorm", args=ARGS + " --force-rerun")` 재호출. 재실행이 완료된 뒤에만 `brainstorm_completed_at`이 다시 기록되어 Resume fast-path가 정상 동작.
 - option 3 → current_phase는 `brainstorm` 유지. "세션 유지됨. `/deep-resume {SESSION_ID}`로 복귀 시 Exit Gate가 재표시됩니다." 출력 후 턴 종료.
 
 ## 3-2. Research
@@ -281,7 +281,11 @@ AskUserQuestion:
 
 분기:
 - option 1 → **즉시 `current_phase: test` 설정** (F1 Option A) → `Skill("deep-test", args=ARGS)` 호출.
-- option 2 → 상세 지시 청취.
+- option 2 → **재실행/수정 전 completion state clear (v6.3.1 NC3 fix)**: completion marker + receipts + slice checklist 모두 invalidate해야 resume 시 stale evidence를 재사용하지 않는다.
+   - `implement_completed_at: null` 설정
+   - 영향 받는 slice의 receipt (`$WORK_DIR/receipts/SLICE-NNN.json`) status를 `"invalidated"`로 기록
+   - plan.md의 해당 slice `[x]` → `[ ]`로 해제 (Implement skill Resume Detection이 미완료로 인식하도록)
+   - 그 후 사용자 상세 지시 청취 또는 `Skill("deep-implement", args=ARGS + " --tdd={tdd_mode} --force-rerun")` 재호출. 재구현 완료 시 새 receipt + `implement_completed_at` 기록.
 - option 3 → current_phase는 `implement` 유지. 재개 안내 후 턴 종료.
 
 ## 3-5. Test
@@ -310,7 +314,7 @@ AskUserQuestion:
 분기:
 - option 1 → current_phase는 `test` 유지 (Integrate는 idle로 전환함) → `Skill("deep-integrate", args=ARGS)` 호출.
 - option 2 → `$ARGUMENTS`에 `--skip-integrate` 삽입 효과 → §3-6 Finish 진입.
-- option 3 → `Skill("deep-test", args=ARGS + " --force-rerun")` 재호출.
+- option 3 → **재실행 전 Test state clear (v6.3.1 NW4 fix)**: `test_passed: false`, `test_completed_at: null`, `test_retry_count: 0` 설정 → 그 후 `Skill("deep-test", args=ARGS + " --force-rerun")` 재호출. 이렇게 해야 재실행 도중 세션 중단 시 `/deep-resume`이 stale `test_passed: true` marker를 재사용해 quality gate를 건너뛰는 것을 방지한다 (failing rerun을 "passed"로 기만하는 경로 차단).
 - option 4 → current_phase는 `test` 유지. 재개 안내 후 턴 종료.
 
 ## 3-5b. Integrate (v6.3.0, skippable)
