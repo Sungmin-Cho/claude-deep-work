@@ -41,6 +41,8 @@ The **Brainstorm → Research → Plan → Implement → Test → Integrate** wo
 - **Phase 4 (Test)**: Receipt completeness, spec compliance review, code quality review, verification evidence
 - **Phase 5 (Integrate, skippable)**: Recommendation loop — reads deep-suite plugin artifacts and proposes up to 3 next steps per round (skip with `--skip-integrate`)
 
+**v6.3.1: Phase Exit Gates** — Each of the 5 main phases (Brainstorm, Research, Plan, Implement, Test) now ends with an explicit user decision: proceed to next phase, revise current phase, or pause. Selecting "pause" keeps `current_phase` unchanged so `/deep-resume` re-presents the Exit Gate instead of auto-entering the next phase. Phase 5 Integrate remains interactive as before.
+
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
 ## Usage (Auto-Flow)

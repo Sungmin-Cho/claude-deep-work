@@ -41,6 +41,8 @@ AI 코딩 도구가 복잡한 작업을 수행할 때 흔히 발생하는 문제
 - **Phase 4 (Test)**: Receipt 완전성, spec compliance 리뷰, code quality 리뷰, 검증 증거 확인
 - **Phase 5 (Integrate, skippable)**: 추천 루프 — deep-suite 플러그인 아티팩트 기반 최대 3개 다음 단계 제안 (`--skip-integrate`로 생략 가능)
 
+**v6.3.1: Phase Exit Gate** — 5개 주요 phase(Brainstorm, Research, Plan, Implement, Test) 완료 시마다 명시적 사용자 결정을 요구합니다: 다음 phase 진행 / 현재 phase 수정 / 일시정지. "일시정지" 선택 시 `current_phase`가 유지되어 `/deep-resume` 재개 시 Exit Gate가 다시 표시됩니다. Phase 5 Integrate는 기존대로 interactive loop으로 유지됩니다.
+
 Phase 0, 1, 2, 4에서는 **코드 파일 수정이 물리적으로 차단**됩니다 (PreToolUse 훅). **Bash 파일 쓰기 명령**(`echo >`, `sed -i`, `cp`)도 차단됩니다. Phase 3에서는 **파일 변경과 receipt 데이터가 자동 수집**됩니다 (PostToolUse 훅).
 
 ## 사용법 (Auto-Flow)
