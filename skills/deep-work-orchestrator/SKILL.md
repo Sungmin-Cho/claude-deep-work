@@ -8,7 +8,7 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 
 사용자 입력: **$ARGUMENTS**
 
-> `--resume-from=<phase>` 가 지정된 경우: 이 Step 1 전체를 건너뛴다. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다. 바로 Step 3의 해당 `<phase>` branch로 점프한다.
+> `--resume-from=<phase>` 가 지정된 경우: 이 Step 1 전체를 건너뛴다. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다. **Step 2 (조건 변수 조립 — `ARGS`, `tdd_mode` 등)은 반드시 수행**하여 resume 이후 Skill 호출에 session/worktree/tdd context가 누락되지 않도록 한다 (v6.3.1 NO2 fix). 그 후 Step 3의 해당 `<phase>` branch로 점프한다.
 
 ## 1-1. Update Check
 
@@ -181,7 +181,7 @@ AskUserQuestion:
   3. label: "일시정지", description: "세션 유지. /deep-resume으로 복귀 시 이 Exit Gate로 돌아옵니다"
 
 분기:
-- option 1 → **즉시 `current_phase: research` 설정** (F1 Option A) → `Skill("deep-research", args=ARGS)` 호출. 추가 확인 금지.
+- option 1 → **즉시 `current_phase: research` 설정** (F1 Option A) → **§3-2 Research로 dispatch** (§3-2 body가 Resume check + Skill 호출 담당). 본 branch에서 Skill을 직접 호출하지 않는다 — §3-2 본문과 중복 실행 방지 (v6.3.1 NO1 fix).
 - option 2 → **재실행 전 completion marker clear (v6.3.1 NC2 symmetric)**: `brainstorm_completed_at: null` 설정 → 이후 사용자 상세 지시 청취. brainstorm.md 직접 편집(phase-guard 허용) 또는 `Skill("deep-brainstorm", args=ARGS + " --force-rerun")` 재호출. 재실행이 완료된 뒤에만 `brainstorm_completed_at`이 다시 기록되어 Resume fast-path가 정상 동작.
 - option 3 → current_phase는 `brainstorm` 유지. "세션 유지됨. `/deep-resume {SESSION_ID}`로 복귀 시 Exit Gate가 재표시됩니다." 출력 후 턴 종료.
 
@@ -194,12 +194,16 @@ AskUserQuestion:
 1. `research_approved_hash` (state) 와 현재 `$WORK_DIR/research.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` (or `sha256sum` on Linux)
    - 해시 일치 → approval은 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지**. Approval invalidate:
-     - `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null` 설정
-     - "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. Review+Approval을 다시 실행합니다." 안내
-     - fall-through하여 아래 `Skill("deep-research", ...)` + review+approval workflow 재실행
-   - `research_approved_hash` 필드 부재 (pre-v6.3.1 세션) → 동일하게 invalidate + 재실행 (safer default)
-   - 파일 missing → invalidate + 재실행
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix):
+     1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}.md`로 복사 (편집 내용 백업).
+     2. `iteration_count`을 1 증가.
+     3. Approval state invalidate: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`.
+     4. 경고: "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 research.v{N}.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
+     5. **Skill 재호출 없이** 아래 Review+Approval workflow (Step 1-6)로 직접 진입 — 현재 수정된 문서를 in-place review. template 기반 재생성 path는 스킵하여 사용자 편집 보존.
+     6. 최종 승인 시 새 `research_approved_hash` 기록 (현재 편집된 파일의 sha256).
+     7. 사용자가 거부 시 옵션 제공: 직접 수정 / `Skill("deep-research", args + " --force-rerun")`로 완전 재생성 (이 경우 backup은 남아있음).
+   - `research_approved_hash` 필드 부재 (pre-v6.3.1 세션 또는 재실행 후 미승인) → Skill 재실행 + review+approval. pre-v6.3.1 세션은 fresh approval flow로 가는 것이 safer default.
+   - 파일 missing → 복구 불가능. Skill 재실행 + review+approval (edited doc 소실 시점을 감출 수 없음).
 
 2. `research.md`가 아닌 state만 가진 drift 상태 또한 invalidate (복구 불가능 상태를 감춘 채 진행하지 않음).
 
@@ -237,7 +241,7 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → **즉시 `current_phase: plan` 설정** → `Skill("deep-plan", args=ARGS)` 호출.
+- option 1 → **즉시 `current_phase: plan` 설정** → **§3-3 Plan으로 dispatch** (§3-3 body가 Resume check + Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
 - option 2 → **재실행 전 approval state clear (NC2 규칙 + NW5)**: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.
 - option 3 → current_phase는 `research` 유지. 재개 안내 후 턴 종료.
 
@@ -250,8 +254,16 @@ AskUserQuestion:
 1. `plan_approved_hash` (state) 와 현재 `$WORK_DIR/plan.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` (or `sha256sum`)
    - 해시 일치 → approval 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → out-of-band 편집 감지. Approval invalidate (`plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`) + "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. Review+Approval을 다시 실행합니다." 안내 + fall-through.
-   - `plan_approved_hash` 필드 부재 또는 파일 missing → invalidate + 재실행 (safer default).
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix):
+     1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}.md`로 복사.
+     2. `iteration_count`을 1 증가.
+     3. Approval state invalidate: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`.
+     4. 경고: "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 plan.v{N}.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
+     5. **Skill 재호출 없이** 아래 Review+Approval workflow로 직접 진입 — 편집된 문서 in-place review.
+     6. 최종 승인 시 새 `plan_approved_hash` + `plan_approved_at` 기록 (drift baseline 정정).
+     7. 거부 시 사용자 선택: 직접 수정 / `Skill("deep-plan", args + " --force-rerun")`로 완전 재생성.
+   - `plan_approved_hash` 필드 부재 (pre-v6.3.1 세션 또는 재실행 후 미승인) → Skill 재실행 + review+approval.
+   - 파일 missing → 복구 불가능. Skill 재실행.
 
 2. drift gate의 `plan_approved_at`이 실제 최종 plan과 일치하도록 hash check가 추가 가드 역할.
 
@@ -279,7 +291,7 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → **즉시 `current_phase: implement` 설정** → `Skill("deep-implement", args=ARGS + " --tdd={tdd_mode}")` 호출.
+- option 1 → **즉시 `current_phase: implement` 설정** → **§3-4 Implement로 dispatch** (§3-4 body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
 - option 2 → **재실행 전 approval state clear (NC2 fix + NW5)**: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 모든 편집은 Step 6 re-approval을 거치며, approval clear가 없으면 Resume fast-path가 stale approval을 재사용함. 크기에 관계없이 post-approval 편집이면 approval clear 필수 — drift gate baseline의 `plan_approved_at` + `plan_approved_hash`가 실제 최종 plan과 일치하도록.
 - option 3 → current_phase는 `plan` 유지. 재개 안내 후 턴 종료.
 
@@ -302,7 +314,7 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → **즉시 `current_phase: test` 설정** (F1 Option A) → `Skill("deep-test", args=ARGS)` 호출.
+- option 1 → **즉시 `current_phase: test` 설정** (F1 Option A) → **§3-5 Test로 dispatch** (§3-5 body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
 - option 2 → **재실행/수정 전 completion state clear (v6.3.1 NC3 fix)**: completion marker + receipts + slice checklist 모두 invalidate해야 resume 시 stale evidence를 재사용하지 않는다.
    - `implement_completed_at: null` 설정
    - 영향 받는 slice의 receipt (`$WORK_DIR/receipts/SLICE-NNN.json`) status를 `"invalidated"`로 기록
@@ -334,8 +346,8 @@ AskUserQuestion:
   4. "일시정지"
 
 분기:
-- option 1 → current_phase는 `test` 유지 (Integrate는 idle로 전환함) → `Skill("deep-integrate", args=ARGS)` 호출.
-- option 2 → `$ARGUMENTS`에 `--skip-integrate` 삽입 효과 → §3-6 Finish 진입.
+- option 1 → current_phase는 `test` 유지 (Integrate는 idle로 전환함) → **§3-5b Integrate로 dispatch** (§3-5b body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
+- option 2 → `$ARGUMENTS`에 **실제로 `--skip-integrate` 플래그 추가** (ARGS mutation) → §3-5b를 건너뛰고 **§3-6 Finish로 직접 분기**. `--skip-integrate` 미설정된 채 §3-5b 진입하면 skip이 반영되지 않으므로 반드시 실제 ARGS 변경 필요 (NO1 fix).
 - option 3 → **재실행 전 Test state clear (v6.3.1 NW4 fix)**: `test_passed: false`, `test_completed_at: null`, `test_retry_count: 0` 설정 → 그 후 `Skill("deep-test", args=ARGS + " --force-rerun")` 재호출. 이렇게 해야 재실행 도중 세션 중단 시 `/deep-resume`이 stale `test_passed: true` marker를 재사용해 quality gate를 건너뛰는 것을 방지한다 (failing rerun을 "passed"로 기만하는 경로 차단).
 - option 4 → current_phase는 `test` 유지. 재개 안내 후 턴 종료.
 
