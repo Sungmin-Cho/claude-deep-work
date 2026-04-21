@@ -7,6 +7,34 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v6.3.1 — 2026-04-21
+
+### Fixed
+
+- **Phase skill body echo 버그** — `Skill("deep-*")` 호출 시 SKILL.md 본문의 markdown 템플릿이 사용자에게 노출된 뒤 phase 작업(예: brainstorm의 명확화 질문)이 수행되지 않고 대화가 종료되는 현상. 브레인스톰의 명확화 질문 누락 및 리서치/플랜의 분석 단계 누락을 모두 해결.
+- **Exit Gate pause/resume 회귀** (F1) — phase skill이 완료 시 current_phase를 다음 phase로 미리 전환하던 기존 동작이 Exit Gate "일시정지" 선택 시 `/deep-resume` 재개 경로에서 Exit Gate를 건너뛰고 다음 phase로 자동 진입하는 문제를 야기. current_phase 변경 주체를 Orchestrator로 일원화하여 해결.
+
+### Added
+
+- **4계층 echo 방어** (5개 phase skill 공통):
+  1. `> [!IMPORTANT]` admonition 블록 — skill body echo 금지 + Pre-checks 예외 허용
+  2. 템플릿 외부 분리 — `skills/shared/templates/{brainstorm,research}-template.md` + `plan-template-{existing,zerobase}.md` (2-mode 분기)
+  3. First Action 서브섹션 — phase 진입 시 즉시 수행할 가시 첫 동작 명시
+  4. Section 3 실행 순서 안전장치
+- **Phase Exit Gate × 5** — 각 phase 완료 시 AskUserQuestion으로 "진행 / 재실행 / 일시정지" 선택. "진행" 선택 시 즉시 다음 skill 호출.
+- **완료-Marker 감지 분기** — 모든 5개 phase skill Section 1에서 `*_completed_at` 필드 감지 시 Orchestrator로 제어 반환 (Exit Gate 재표시).
+
+### Changed
+
+- **current_phase 변경 주체 일원화**: Brainstorm/Implement phase skill이 Section 3에서 직접 변경하던 동작 제거. 모든 phase의 current_phase 변경을 Orchestrator Exit Gate "진행" 분기로 이관.
+- Orchestrator §1-11 문구: "자동 흐름을 시작합니다..." → "각 phase 완료 시 진행 확인을 받으며 순차 실행합니다..."
+- `review-approval-workflow.md`: Exit Gate와의 관계 명시.
+
+### Excluded
+
+- Phase 5 Integrate는 이미 interactive loop이므로 Exit Gate 적용 대상에서 제외.
+- Hook 스크립트 로직 변경 없음. `node --test hooks/scripts/*.test.js` 결과: 397/398 pass. 1 pre-existing failure (`multi-session.test.js:507` - phase5-guard.test.js fixture와의 lint 충돌)는 main 브랜치에도 존재하며 v6.3.1과 무관.
+
 ## [6.3.0] — 2026-04-18
 
 ### 추가됨
