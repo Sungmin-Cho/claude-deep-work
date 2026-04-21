@@ -217,9 +217,15 @@ Execute the appropriate phase skill based on the current phase. Each skill handl
 
 #### `brainstorm`
 
+Brainstorm phase는 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+**Orchestrator를 경유하여 resume합니다:**
+
 ```
-Skill("deep-brainstorm", args="--session={SESSION_ID} --resume")
+Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=brainstorm")
 ```
+
+- `brainstorm_completed_at`이 있으면 Orchestrator §3-1 Exit Gate 재표시.
+- 미완료면 brainstorm skill을 처음부터 재실행.
 
 #### `research`
 
@@ -248,19 +254,28 @@ Plan phase도 Research와 동일하게 Orchestrator의 Review + Approval Workflo
 
 #### `implement`
 
+Implement phase도 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+**Orchestrator를 경유하여 resume합니다:**
+
 ```
-Skill("deep-implement", args="--session={SESSION_ID} --resume")
+Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=implement")
 ```
+
+- `implement_completed_at` + 모든 slice receipt complete이면 Orchestrator §3-4 Exit Gate 재표시.
+- 미완료 slice가 있으면 implement skill이 slice-level resume 수행 (기존 Resume Detection 로직).
 
 #### `test`
 
-- If `test_passed` is `true`:
-  Test가 이미 통과된 세션. `/deep-finish`로 세션을 완료합니다.
+Test phase도 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+
+- If `test_passed: true`:
+  All Pass된 세션. Orchestrator §3-5 Exit Gate 재표시:
   ```
-  Read `/deep-finish` and follow its instructions.
+  Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=test")
   ```
 
-- Otherwise:
+- Otherwise (retry 진행 중 또는 exhausted):
   ```
-  Skill("deep-test", args="--session={SESSION_ID}")
+  Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=test")
   ```
+  Orchestrator §3-5가 test skill을 호출하고 retry loop을 이어서 관리합니다.
