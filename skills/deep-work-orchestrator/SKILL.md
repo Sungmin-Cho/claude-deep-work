@@ -143,7 +143,7 @@ TDD 모드: strict / relaxed / coaching / spike
   Phase 4: deep-test
   Phase 5: deep-integrate  [skippable]
 
-자동 흐름을 시작합니다...
+각 phase 완료 시 진행 확인을 받으며 순차 실행합니다. "다음 phase로 진행" 선택 시 추가 확인 없이 즉시 다음 단계를 시작합니다.
 ```
 
 # Step 2: 조건 변수 조립
@@ -163,48 +163,112 @@ State의 `current_phase`에서 시작점 결정:
 
 ## 3-1. Brainstorm (skip 가능)
 
-`skipped_phases` / `start_phase` 확인. 건너뛰면 → 3-2.
+`skipped_phases` / `start_phase` 확인. 건너뛰면 Exit Gate 생략하고 `current_phase: research`로 직접 전환 → 3-2.
 
 Skill("deep-brainstorm", args=ARGS)
 
-완료 후 (`current_phase` → research): → 3-2.
+Brainstorm skill의 Section 3 완료 메시지 출력 후:
+
+### Exit Gate (Phase 0 → Phase 1)
+
+AskUserQuestion:
+
+- header: "Phase 0 (Brainstorm) 완료. 어떻게 진행할까요?"
+- multiSelect: false
+- options:
+  1. label: "다음 phase로 진행", description: "즉시 Phase 1 Research를 시작합니다"
+  2. label: "이 phase 재실행/수정", description: "Brainstorm을 재실행하거나 brainstorm.md를 편집합니다"
+  3. label: "일시정지", description: "세션 유지. /deep-resume으로 복귀 시 이 Exit Gate로 돌아옵니다"
+
+분기:
+- option 1 → **즉시 `current_phase: research` 설정** (F1 Option A) → `Skill("deep-research", args=ARGS)` 호출. 추가 확인 금지.
+- option 2 → 사용자 상세 지시 청취. brainstorm.md 직접 편집(phase-guard 허용) 또는 `Skill("deep-brainstorm", args=ARGS + " --force-rerun")` 재호출.
+- option 3 → current_phase는 `brainstorm` 유지. "세션 유지됨. `/deep-resume {SESSION_ID}`로 복귀 시 Exit Gate가 재표시됩니다." 출력 후 턴 종료.
 
 ## 3-2. Research
 
+`skipped_phases`에 "research" 포함 시 Exit Gate 생략하고 `current_phase: plan`으로 직접 전환 → 3-3.
+
 Skill("deep-research", args=ARGS)
 
-완료 후: **Review + Approval Workflow 실행.**
+완료 후: **Review + Approval Workflow 실행** (문서 수정 승인 단계).
 
 Phase Skill 완료 후:
 1. 산출물 Read → Auto Review (subagent + codex)
 2. Main 에이전트가 findings 판단 → 동의/비동의 분류
-3. 1차 승인: 수정 항목을 사용자에게 제시 (AskUserQuestion)
+3. 1차 승인: 수정 항목을 사용자에게 제시 (AskUserQuestion — 문서 수정 대상)
 4. 승인된 항목 반영
-5. 2차 승인: 최종 문서 확인 + 다음 phase 진행 (AskUserQuestion)
+5. 2차 승인: 최종 문서 확인 (AskUserQuestion — 문서 최종 승인)
 → 상세: Read("../shared/references/review-approval-workflow.md")
 
-승인 → `current_phase: plan` 설정 → 3-3.
+문서 최종 승인 후 → 아래 Exit Gate 실행.
+
+### Exit Gate (Phase 1 → Phase 2)
+
+AskUserQuestion:
+
+- header: "Phase 1 (Research) 완료. 어떻게 진행할까요?"
+- options:
+  1. "다음 phase로 진행" — 즉시 Phase 2 Plan 시작
+  2. "이 phase 재실행/수정"
+  3. "일시정지"
+
+분기:
+- option 1 → **즉시 `current_phase: plan` 설정** → `Skill("deep-plan", args=ARGS)` 호출.
+- option 2 → 편집 또는 재호출.
+- option 3 → current_phase는 `research` 유지. 재개 안내 후 턴 종료.
 
 ## 3-3. Plan
 
+`skipped_phases` / `--skip-to-implement` 포함 시 Exit Gate 생략하고 `current_phase: implement` + `plan_approved: true` + `plan_approved_at` 설정으로 직접 전환 → 3-4.
+
 Skill("deep-plan", args=ARGS)
 
-완료 후: **Review + Approval Workflow 실행** (Research와 동일 패턴).
+완료 후: **Review + Approval Workflow 실행** (Research와 동일 패턴 — 문서 수정 승인).
 → 상세: Read("../shared/references/review-approval-workflow.md")
 
-승인 → State 업데이트:
-- `current_phase: implement`
+문서 최종 승인 후 → State 부분 업데이트:
 - `plan_approved: true`
-- `plan_approved_at`: current ISO timestamp (drift baseline으로 사용)
-→ 3-4.
+- `plan_approved_at`: current ISO timestamp (drift baseline)
+- **`current_phase`는 이 시점에서는 변경하지 않는다.** Exit Gate "진행" 시에 `implement`로 전환.
+
+### Exit Gate (Phase 2 → Phase 3)
+
+AskUserQuestion:
+
+- header: "Phase 2 (Plan) 완료. 어떻게 진행할까요?"
+- options:
+  1. "다음 phase로 진행"
+  2. "이 phase 재실행/수정"
+  3. "일시정지"
+
+분기:
+- option 1 → **즉시 `current_phase: implement` 설정** → `Skill("deep-implement", args=ARGS + " --tdd={tdd_mode}")` 호출.
+- option 2 → 편집 또는 재호출. 3+ 섹션 재편집이면 `plan_approved` 재확인 필요.
+- option 3 → current_phase는 `plan` 유지. 재개 안내 후 턴 종료.
 
 ## 3-4. Implement
 
+`skipped_phases`에 "implement" 포함 시 Exit Gate 생략하고 `current_phase: test`로 직접 전환 → 3-5. (드문 경로이지만 spike 세션 등에서 활용)
+
 Skill("deep-implement", args=ARGS + " --tdd={tdd_mode}")
 
-완료 후 (`current_phase` → test): → 3-5.
+Implement skill의 Section 3 완료 후:
 
-> current_phase 변경 주체: Implement Phase Skill이 직접 `test`로 전환.
+### Exit Gate (Phase 3 → Phase 4)
+
+AskUserQuestion:
+
+- header: "Phase 3 (Implement) 완료. 어떻게 진행할까요?"
+- options:
+  1. "다음 phase로 진행"
+  2. "이 phase 재실행/수정"
+  3. "일시정지"
+
+분기:
+- option 1 → **즉시 `current_phase: test` 설정** (F1 Option A) → `Skill("deep-test", args=ARGS)` 호출.
+- option 2 → 상세 지시 청취.
+- option 3 → current_phase는 `implement` 유지. 재개 안내 후 턴 종료.
 
 ## 3-5. Test
 
@@ -212,10 +276,28 @@ Skill("deep-test", args=ARGS)
 
 `/deep-test`가 내부적으로 implement-test retry loop 관리 (max 3회).
 
-**All pass** (`test_passed: true`, `current_phase`는 test 유지): → 3-5b.
-**Retry exhausted**: auto-flow 중단. 사용자 수동 개입.
+**Retry exhausted**: auto-flow 중단. 사용자 수동 개입. Exit Gate 실행하지 않음. current_phase는 `implement` 유지 (수동 수정 경로).
 
-> current_phase 변경 주체: Test Phase Skill은 `current_phase`를 변경하지 않음.
+**All pass** (`test_passed: true`): 아래 Exit Gate 실행.
+
+### Exit Gate (Phase 4 → Phase 5 / Finish)
+
+`$ARGUMENTS`에 `--skip-integrate` 포함 시 Exit Gate 생략하고 바로 §3-6 Finish 진입.
+
+AskUserQuestion:
+
+- header: "Phase 4 (Test) 완료. 어떻게 진행할까요?"
+- options:
+  1. "다음 phase로 진행" — Phase 5 Integrate
+  2. "Integrate 건너뛰고 Finish"
+  3. "Test 재실행"
+  4. "일시정지"
+
+분기:
+- option 1 → current_phase는 `test` 유지 (Integrate는 idle로 전환함) → `Skill("deep-integrate", args=ARGS)` 호출.
+- option 2 → `$ARGUMENTS`에 `--skip-integrate` 삽입 효과 → §3-6 Finish 진입.
+- option 3 → `Skill("deep-test", args=ARGS + " --force-rerun")` 재호출.
+- option 4 → current_phase는 `test` 유지. 재개 안내 후 턴 종료.
 
 ## 3-5b. Integrate (v6.3.0, skippable)
 
@@ -242,13 +324,18 @@ Read `/deep-finish` → 완료 옵션 제시:
 Finish 완료 후: `current_phase: idle` 설정.
 Registry 해제: `unregister_session "$SESSION_ID"`.
 
-# current_phase 변경 주체 정리
+# current_phase 변경 주체 정리 (v6.3.1 Option A — 일원화)
 
-| Phase | Review | 사용자 승인 | current_phase 변경 주체 |
-|-------|--------|------------|----------------------|
-| Brainstorm | 선택적 | 불필요 | Phase Skill |
-| **Research** | **필수** | **필수** | **Orchestrator** |
-| **Plan** | **필수** | **필수** | **Orchestrator** |
-| Implement | Phase Review | 불필요 | Phase Skill |
-| Test | 자동 | 불필요 | Orchestrator |
-| **Integrate (v6.3.0)** | 선택적 | 불필요 | **Phase Skill (`idle` 유지 + phase5_*_at 필드)** |
+| Phase | Review | 사용자 승인 | current_phase 변경 주체 | 변경 시점 |
+|-------|--------|------------|----------------------|----------|
+| Brainstorm | 선택적 | Exit Gate 필수 | **Orchestrator** | Exit Gate "진행" 선택 시 |
+| Research | 필수 | review+approval + Exit Gate 필수 | **Orchestrator** | Exit Gate "진행" 선택 시 |
+| Plan | 필수 | review+approval + Exit Gate 필수 | **Orchestrator** | Exit Gate "진행" 선택 시 |
+| Implement | Phase Review | Exit Gate 필수 | **Orchestrator** | Exit Gate "진행" 선택 시 |
+| Test | 자동 | Exit Gate 필수 | **Orchestrator** (유지: `test` → `test`; Integrate 진입 시에도 test 유지, Integrate skill이 idle로 전환) | Exit Gate "진행" 선택 시 |
+| Integrate (v6.3.0) | 선택적 | 불필요 | **Integrate Phase Skill (`idle` + phase5_*_at 필드)** | 기존 동작 유지 |
+
+**핵심 변화** (v6.3.0 → v6.3.1):
+- 기존에는 Brainstorm/Implement phase skill이 Section 3에서 직접 current_phase를 다음 값으로 전환 → Exit Gate 이전에 state가 이동되어 pause/resume 시 Exit Gate 재표시 불가
+- v6.3.1: 모든 phase skill은 `*_completed_at` marker만 기록하고 current_phase 변경을 Orchestrator에 위임
+- pause 선택 시 current_phase는 현재 값 유지 → resume 시 Orchestrator가 해당 phase를 재호출 → skill의 Section 1 완료-marker 감지 분기가 Orchestrator로 제어 반환 → Exit Gate 재표시
