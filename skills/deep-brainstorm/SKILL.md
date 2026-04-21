@@ -4,6 +4,16 @@ version: "6.3.0"
 description: "Phase 0 — Brainstorm: explore why before how (skip-able)"
 ---
 
+> [!IMPORTANT]
+> **Skill body echo 금지**
+>
+> 이 SKILL.md 본문을 사용자에게 echo하거나 요약하여 출력하지 마라.
+>
+> - Section 1 (state 로드, 완료-marker 감지)의 **조용한 내부 처리**는 silent 실행한다. Pre-checks/상태 분기의 명시적 AskUserQuestion은 허용된 예외.
+> - 첫 사용자-가시 주 동작은 Section 2의 **First Action: Core 질문 #1**이다.
+> - Section 3 완료 메시지는 Section 2의 주 단계(질문, 접근법 비교, brainstorm.md 작성, Review Gate)를 **실제로 수행**한 뒤에만 출력한다.
+> - 본 문서의 code block / 안내 템플릿은 Write tool 자료 또는 작동 지침이지 사용자 화면 출력용이 아니다.
+
 # Section 1: State 로드 (필수 — 건너뛰기 금지)
 
 1. Session ID 결정
@@ -20,9 +30,27 @@ description: "Phase 0 — Brainstorm: explore why before how (skip-able)"
 ## Skip 조건
 
 $ARGUMENTS에 `--skip-brainstorm` 또는 `--start-phase=research` 포함 시:
-- `current_phase: research` 설정 → 즉시 종료 (Orchestrator가 다음 Skill 호출)
+- 완료-marker(`brainstorm_completed_at`)만 기록 → 즉시 종료 (Orchestrator가 Exit Gate 판단 없이 Research 단계로 dispatch).
+
+## 완료-Marker 감지 (resume 경로 — F1 pause/resume 지원)
+
+`brainstorm_completed_at` 필드가 state에 이미 있고, `$ARGUMENTS`에 `--force-rerun`이 없으면:
+- "Phase 0 (Brainstorm)는 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
+- Orchestrator §3-1로 제어 반환 (Exit Gate 재실행)
+- Section 2/3 진입 금지
 
 # Section 2: Phase 실행
+
+## First Action (즉시 실행 — 건너뛰기 금지)
+
+Section 1 state 로드가 완료되면 **즉시** 다음 메시지를 사용자에게 출력하고 응답을 기다린다 (AskUserQuestion이 아닌 conversational 메시지):
+
+> "Brainstorm 단계를 시작합니다. 이 기능/변경의 핵심 목표는 무엇인가요? (한 문장으로)"
+
+- superpowers `brainstorming` skill의 "one question at a time" 원칙.
+- 응답을 받은 뒤 Step 1a 나머지 질문들을 순차 진행한다.
+
+**금지**: 이 첫 질문 전에 템플릿, 완료 메시지, Section 2 구조 설명을 출력하지 마라.
 
 ## Critical Constraints
 
@@ -70,20 +98,11 @@ APPROACH A: [Name]
 
 ## Step 2: brainstorm.md 작성
 
-Write `$WORK_DIR/brainstorm.md`:
+1. Read `../shared/templates/brainstorm-template.md` — 구조 템플릿 로드.
+2. Step 1에서 사용자와의 대화로 수집한 실제 내용으로 placeholder (`[Task Title]`, `[한 단락 — ...]`, `[Approach N: Name]` 등)를 **전부** 치환.
+3. Write `$WORK_DIR/brainstorm.md`에 치환 완료된 내용 저장.
 
-```markdown
-# Brainstorm: [Task Title]
-
-## 문제 정의
-## 성공 기준
-## 접근 방식 비교
-### Approach A / B: [Name] — 요약, 장점, 단점, 복잡도
-## 선택된 접근 방식 — [Name] + 이유
-## 엣지 케이스 & 리스크
-## 변경하지 않는 부분 (Boundaries)
-## 다음 단계
-```
+**Placeholder policy**: 미치환 placeholder (대괄호 텍스트, "TBD", "TODO")가 남으면 Phase Review Gate가 차단한다.
 
 ## Step 3: Review Gate
 
@@ -105,12 +124,14 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 
 # Section 3: 완료
 
+> **실행 순서 안전장치**: 이 섹션은 Section 2의 Step 1 (사용자 질문), Step 2 (brainstorm.md 작성), Step 3 (Review Gate), Step 4 (Phase Review Gate)를 **모두 실제로 수행**한 뒤에만 실행한다. 주 단계를 건너뛰고 여기로 점프하여 완료 메시지만 출력하는 것은 실패 모드이다.
+
 1. State 업데이트:
    - `review_state: completed`
    - `review_results.brainstorm`: `{score, iterations, timestamp}`
    - `phase_review.brainstorm`: `{reviewed, reviewers, self_issues, external_issues, resolved}`
    - `brainstorm_completed_at`: current ISO timestamp
-   - **`current_phase: research`**
+   - **`current_phase`는 변경하지 않는다.** Orchestrator가 Exit Gate "진행" 분기에서 `research`로 전환.
 2. 완료 메시지:
    ```
    브레인스톰 완료!
