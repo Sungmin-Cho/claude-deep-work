@@ -67,10 +67,11 @@ AskUserQuestion으로 사용자에게 제시:
 3) 이 phase 재실행
 ```
 
-- **승인** → 문서 저장 + `*_approved: true` + `*_approved_at` 기록 (Research: `research_approved` / Plan: `plan_approved`) → Orchestrator §3-N Exit Gate로 제어 반환 (v6.3.1 F1: current_phase는 Exit Gate "진행" 선택 시에만 전환)
+- **승인** → 문서 저장 + `*_approved: true` + `*_approved_at` + **`*_approved_hash`** 기록 (Research: `research_approved` / Plan: `plan_approved`) → Orchestrator §3-N Exit Gate로 제어 반환 (v6.3.1 F1: current_phase는 Exit Gate "진행" 선택 시에만 전환)
   - **NC1 규칙**: `*_completed_at` / `*_complete`은 skill Section 3에서 기록하는 marker로 review+approval 이전에 set된다. Resume fast-path의 approval-state 판별 marker로는 `*_approved: true` 만 사용할 것.
+  - **NW5 규칙 (integrity hash)**: 승인 시점의 `sha256(${WORK_DIR}/{research,plan}.md)`을 `*_approved_hash`에 기록한다. Resume fast-path는 현재 파일 hash와 비교하여 out-of-band 편집을 감지 — 불일치 시 approval 자동 invalidate + review+approval 재실행.
 - **추가 수정** → Step 5로 복귀
-- **재실행** → Phase Skill을 `--force-rerun`과 함께 다시 호출 (Step 1로 복귀). **재실행 시 기존 `*_approved`와 `*_approved_at`을 반드시 clear** — 재승인이 완료될 때까지 Resume fast-path가 stale approval을 재사용하지 않도록 보장 (NC2 규칙).
+- **재실행** → Phase Skill을 `--force-rerun`과 함께 다시 호출 (Step 1로 복귀). **재실행 시 기존 `*_approved`와 `*_approved_at`, `*_approved_hash`를 반드시 clear** — 재승인이 완료될 때까지 Resume fast-path가 stale approval을 재사용하지 않도록 보장 (NC2 + NW5 규칙).
 
 ---
 

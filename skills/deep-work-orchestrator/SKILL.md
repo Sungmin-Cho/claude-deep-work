@@ -189,9 +189,21 @@ AskUserQuestion:
 
 `skipped_phases`에 "research" 포함 시 Exit Gate 생략하고 `current_phase: plan`으로 직접 전환 → 3-3.
 
-**Resume 분기 (v6.3.1 F1)**: state의 `research_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면, paused-after-approval 복귀 경로이다. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
+**Resume 분기 (v6.3.1 F1 + NW5 integrity check)**: state의 `research_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, **approval integrity check**가 추가로 필요:
 
-주의: `research_completed_at` / `research_complete`는 skill Section 3에서 기록하는 marker이며 review+approval **이전**에 set된다. Resume fast-path의 조건으로 사용 금지 — Orchestrator review+approval Step 6가 성공한 뒤에만 set되는 `research_approved: true`가 정확한 approval-state 증거이다.
+1. `research_approved_hash` (state) 와 현재 `$WORK_DIR/research.md`의 sha256을 비교:
+   - `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` (or `sha256sum` on Linux)
+   - 해시 일치 → approval은 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
+   - 해시 불일치 → **out-of-band 편집 감지**. Approval invalidate:
+     - `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null` 설정
+     - "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. Review+Approval을 다시 실행합니다." 안내
+     - fall-through하여 아래 `Skill("deep-research", ...)` + review+approval workflow 재실행
+   - `research_approved_hash` 필드 부재 (pre-v6.3.1 세션) → 동일하게 invalidate + 재실행 (safer default)
+   - 파일 missing → invalidate + 재실행
+
+2. `research.md`가 아닌 state만 가진 drift 상태 또한 invalidate (복구 불가능 상태를 감춘 채 진행하지 않음).
+
+주의: `research_completed_at` / `research_complete`는 skill Section 3에서 기록하는 marker이며 review+approval **이전**에 set된다. Resume fast-path의 조건으로 사용 금지 — Orchestrator review+approval Step 6가 성공한 뒤에만 set되는 `research_approved: true` + `research_approved_hash` 한 쌍이 정확한 approval-state 증거이다.
 
 그 외 경우:
 
@@ -210,6 +222,7 @@ Phase Skill 완료 후:
 문서 최종 승인 후 → State 부분 업데이트:
 - `research_approved: true` (Resume fast-path baseline — v6.3.1 NC1 fix)
 - `research_approved_at`: current ISO timestamp
+- `research_approved_hash`: `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` 결과 (v6.3.1 NW5 integrity snapshot)
 
 → 아래 Exit Gate 실행.
 
@@ -225,14 +238,22 @@ AskUserQuestion:
 
 분기:
 - option 1 → **즉시 `current_phase: plan` 설정** → `Skill("deep-plan", args=ARGS)` 호출.
-- option 2 → **재실행 전 approval state clear (NC2 규칙)**: `research_approved: false`, `research_approved_at: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.
+- option 2 → **재실행 전 approval state clear (NC2 규칙 + NW5)**: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.
 - option 3 → current_phase는 `research` 유지. 재개 안내 후 턴 종료.
 
 ## 3-3. Plan
 
 `skipped_phases` / `--skip-to-implement` 포함 시 Exit Gate 생략하고 `current_phase: implement` + `plan_approved: true` + `plan_approved_at` 설정으로 직접 전환 → 3-4.
 
-**Resume 분기 (v6.3.1 F1)**: state의 `plan_completed_at` + `plan_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면, paused-after-approval 복귀 경로이다. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
+**Resume 분기 (v6.3.1 F1 + NW5 integrity check)**: state의 `plan_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, **approval integrity check**가 추가로 필요:
+
+1. `plan_approved_hash` (state) 와 현재 `$WORK_DIR/plan.md`의 sha256을 비교:
+   - `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` (or `sha256sum`)
+   - 해시 일치 → approval 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
+   - 해시 불일치 → out-of-band 편집 감지. Approval invalidate (`plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`) + "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. Review+Approval을 다시 실행합니다." 안내 + fall-through.
+   - `plan_approved_hash` 필드 부재 또는 파일 missing → invalidate + 재실행 (safer default).
+
+2. drift gate의 `plan_approved_at`이 실제 최종 plan과 일치하도록 hash check가 추가 가드 역할.
 
 그 외 경우:
 
@@ -244,6 +265,7 @@ Skill("deep-plan", args=ARGS)
 문서 최종 승인 후 → State 부분 업데이트:
 - `plan_approved: true`
 - `plan_approved_at`: current ISO timestamp (drift baseline)
+- `plan_approved_hash`: `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` 결과 (v6.3.1 NW5 integrity snapshot)
 - **`current_phase`는 이 시점에서는 변경하지 않는다.** Exit Gate "진행" 시에 `implement`로 전환.
 
 ### Exit Gate (Phase 2 → Phase 3)
@@ -258,7 +280,7 @@ AskUserQuestion:
 
 분기:
 - option 1 → **즉시 `current_phase: implement` 설정** → `Skill("deep-implement", args=ARGS + " --tdd={tdd_mode}")` 호출.
-- option 2 → **재실행 전 approval state clear (NC2 fix)**: `plan_approved: false`, `plan_approved_at: null`로 state 업데이트 → 이후 `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 모든 편집은 Step 6 re-approval을 거치며, approval clear가 없으면 Resume fast-path가 stale approval을 재사용함. 크기에 관계없이 post-approval 편집이면 approval clear 필수 — drift gate baseline의 `plan_approved_at`이 실제 최종 plan과 일치하도록.
+- option 2 → **재실행 전 approval state clear (NC2 fix + NW5)**: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 모든 편집은 Step 6 re-approval을 거치며, approval clear가 없으면 Resume fast-path가 stale approval을 재사용함. 크기에 관계없이 post-approval 편집이면 approval clear 필수 — drift gate baseline의 `plan_approved_at` + `plan_approved_hash`가 실제 최종 plan과 일치하도록.
 - option 3 → current_phase는 `plan` 유지. 재개 안내 후 턴 종료.
 
 ## 3-4. Implement

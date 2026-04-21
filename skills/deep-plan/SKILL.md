@@ -27,12 +27,14 @@ description: "Phase 2 — Plan: create a detailed implementation plan"
 5. `current_phase`가 "plan"이고 `research_complete`가 true인지 확인
 6. `plan_started_at` 기록 (ISO timestamp)
 
-## 완료-Marker 감지 (resume 경로 — F1)
+## 완료-Marker 감지 (resume 경로 — F1, NW5)
 
-`plan_completed_at` + `plan_approved: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면:
-- "Phase 2 (Plan)은 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
+`plan_approved: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, Orchestrator §3-3가 이미 integrity check(sha256 비교)를 수행하여 stale approval 시 skill을 직접 재호출하므로, 본 branch는 정상 dispatch 경로에서만 도달:
+- "Phase 2 (Plan)은 이미 승인·완료되었습니다. Exit Gate를 재표시합니다." 출력
 - Orchestrator §3-3으로 제어 반환 (review+approval 거치지 않고 바로 Exit Gate 재실행)
 - Section 2/3 진입 금지
+
+**중요 (NW5)**: Resume fast-path의 integrity check(`plan_approved_hash` 비교)는 Orchestrator §3-3가 우선 담당. 본 branch는 `plan_approved: true`만 감지하나, Orchestrator가 hash 불일치 감지 시 approval invalidate + skill 재호출로 우회됨.
 
 ## Prerequisites 로드
 

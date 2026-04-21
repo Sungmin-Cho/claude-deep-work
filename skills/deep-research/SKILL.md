@@ -28,14 +28,16 @@ description: "Phase 1 — Research: exhaustively analyze the codebase"
 5. `current_phase`가 "research"인지 확인 — 아니면 오류
 6. `research_started_at` 기록 (ISO timestamp)
 
-## 완료-Marker 감지 (resume 경로 — F1, NC1 fix)
+## 완료-Marker 감지 (resume 경로 — F1, NC1, NW5)
 
-`research_approved: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun` / `--scope=` / `--incremental`이 없으면 paused-after-approval 복귀 경로이다:
+`research_approved: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun` / `--scope=` / `--incremental`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, Orchestrator §3-2가 이미 integrity check(sha256 비교)를 수행하여 stale approval 시 skill을 직접 재호출하므로, 본 branch는 Orchestrator dispatch를 통한 정상 경로 이외에는 도달하지 않는다. 진입 시:
 - "Phase 1 (Research)는 이미 승인·완료되었습니다. Exit Gate를 재표시합니다." 출력
 - Orchestrator §3-2로 제어 반환 (review+approval 거치지 않고 바로 Exit Gate 재실행)
 - Section 2/3 진입 금지
 
-**중요 (NC1)**: `research_completed_at` / `research_complete: true`만 있고 `research_approved`가 없으면 이 branch를 발동시키지 말 것 — skill completion과 review+approval 사이에 세션이 중단된 상태이며, resume 시 review+approval을 다시 거쳐야 한다. Orchestrator §3-2가 skill을 다시 호출하지 않더라도, 완료-Marker branch가 발동하면 review+approval 우회가 발생함. 따라서 본 branch는 **오직 post-approval marker인 `research_approved`만 신뢰**한다.
+**중요 (NC1)**: `research_completed_at` / `research_complete: true`만 있고 `research_approved`가 없으면 이 branch를 발동시키지 말 것 — skill completion과 review+approval 사이에 세션이 중단된 상태이며, resume 시 review+approval을 다시 거쳐야 한다.
+
+**중요 (NW5)**: Resume fast-path의 integrity check는 Orchestrator §3-2가 우선 담당. 본 branch는 `research_approved: true`만 감지하나, Orchestrator가 hash 불일치 감지 시 approval을 invalidate하고 skill을 `--force-rerun`과 함께 호출하므로 이 branch는 out-of-band 편집 케이스에서 우회됨.
 
 ## Critical Constraints
 

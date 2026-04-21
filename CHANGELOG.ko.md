@@ -35,9 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 5 Integrate는 이미 interactive loop이므로 Exit Gate 적용 대상에서 제외.
 - Hook 스크립트 로직 변경 없음. `node --test hooks/scripts/*.test.js` 결과: 397/398 pass. 1 pre-existing failure (`multi-session.test.js:507` - phase5-guard.test.js fixture와의 lint 충돌)는 main 브랜치에도 존재하며 v6.3.1과 무관.
 
-### Known Limitations (v6.3.2 예정)
+### Added (v6.3.1 NW5 integrity check)
 
-- **Out-of-band 편집 후 approval 재사용 가능** — `research.md` 또는 `plan.md`를 Orchestrator option 2 경로를 거치지 않고(예: 일시정지 중 외부 편집기로) 수정하면, `research_approved` / `plan_approved` marker는 그대로 유지되어 `/deep-resume` 시 Resume fast-path가 stale approval을 재사용. Orchestrated path(Exit Gate option 2 "재실행/수정")를 사용하면 approval이 정상 clear됨. 근본 해결은 approval 시점 file hash snapshot 기반 integrity check — v6.3.2에서 설계 후 구현 예정.
+- **Approval integrity hash** — Research/Plan approval 시점의 `sha256(research.md/plan.md)`를 `research_approved_hash` / `plan_approved_hash`로 state에 기록. `/deep-resume` Resume fast-path가 현재 파일 hash와 비교하여 out-of-band 편집(일시정지 중 외부 편집기 수정 등)을 자동 감지 — 불일치 시 approval invalidate + review+approval 재실행으로 fall-through. 새로운 필드 부재 시(pre-v6.3.1 세션 또는 재실행 후 재승인 전)는 invalidate가 safer default.
 
 ## [6.3.0] — 2026-04-18
 
