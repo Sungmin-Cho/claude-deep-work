@@ -62,11 +62,28 @@ AskUserQuestion으로 사용자에게 제시:
 
 ```
 수정 완료. 최종 문서를 확인해주세요.
-1) 승인 — 다음 phase로 진행
+1) 문서 최종 승인
 2) 추가 수정 요청
 3) 이 phase 재실행
 ```
 
-- **승인** → Orchestrator가 `current_phase` 업데이트 → 다음 Skill 호출
+- **승인** → 문서 저장 + `*_approved: true` + `*_approved_at` + **`*_approved_hash`** 기록 (Research: `research_approved` / Plan: `plan_approved`) → Orchestrator §3-N Exit Gate로 제어 반환 (v6.3.1 F1: current_phase는 Exit Gate "진행" 선택 시에만 전환)
+  - **NC1 규칙**: `*_completed_at` / `*_complete`은 skill Section 3에서 기록하는 marker로 review+approval 이전에 set된다. Resume fast-path의 approval-state 판별 marker로는 `*_approved: true` 만 사용할 것.
+  - **NW5 규칙 (integrity hash)**: 승인 시점의 `sha256(${WORK_DIR}/{research,plan}.md)`을 `*_approved_hash`에 기록한다. Resume fast-path는 현재 파일 hash와 비교하여 out-of-band 편집을 감지 — 불일치 시 approval 자동 invalidate + review+approval 재실행.
 - **추가 수정** → Step 5로 복귀
-- **재실행** → Phase Skill을 다시 호출 (Step 1로 복귀)
+- **재실행** → Phase Skill을 `--force-rerun`과 함께 다시 호출 (Step 1로 복귀). **재실행 시 기존 `*_approved`와 `*_approved_at`, `*_approved_hash`를 반드시 clear** — 재승인이 완료될 때까지 Resume fast-path가 stale approval을 재사용하지 않도록 보장 (NC2 + NW5 규칙).
+
+---
+
+## v6.3.1: Exit Gate와의 관계
+
+본 workflow의 Step 6(2차 승인)은 **문서 최종 승인**이다 — "research.md / plan.md 내용이 맞는가?"를 확인한다.
+
+v6.3.1부터 Orchestrator §3는 review-approval workflow 완료 후 별도의 **Phase Exit Gate**를 실행하여 "다음 phase로 진행할지"를 묻는다. 두 질문은 목적이 다르므로 통합하지 않는다:
+
+- Review-Approval Step 6: 문서 콘텐츠 승인 ("이 내용 맞아?")
+- Exit Gate: phase 전환 결정 ("다음으로 갈까, 다른 작업을 할까?")
+
+Brainstorm / Implement / Test phase는 review-approval을 쓰지 않지만 Exit Gate는 모두 적용된다. Phase 5 Integrate는 이미 interactive loop이므로 Exit Gate 대상에서 제외.
+
+**state 관리 (F1 Option A)**: Exit Gate "진행" 선택 시에만 Orchestrator가 `current_phase`를 다음 값으로 전환한다. "일시정지" 선택 시 현재 phase 값을 유지하여, `/deep-resume` 호출 시 Exit Gate가 재표시된다.

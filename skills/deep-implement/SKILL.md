@@ -1,8 +1,18 @@
 ---
 name: deep-implement
-version: "6.3.0"
+version: "6.3.1"
 description: "Phase 3 — Implement: slice-based TDD execution of approved plan"
 ---
+
+> [!IMPORTANT]
+> **Skill body echo 금지**
+>
+> 이 SKILL.md 본문을 사용자에게 echo하거나 요약하여 출력하지 마라.
+>
+> - Section 1 (state 로드, Plan 로드+Slice 파싱, Resume Detection, 완료-marker 감지)는 silent 내부 처리.
+> - 첫 사용자-가시 주 동작은 Section 2의 **First Action: 첫 slice TDD RED 개시**.
+> - Section 3 완료 메시지는 plan.md 모든 slice의 TDD cycle, sensor 검증, Slice Review, Phase Review Gate를 **실제로 수행**한 뒤에만 출력.
+> - Implement phase 산출물은 코드 자체이다. 본 문서의 "Red Flags" 표나 TDD protocol 설명을 응답으로 출력하지 마라.
 
 # Section 1: State 로드 (필수 — 건너뛰기 금지)
 
@@ -30,7 +40,37 @@ Read `$WORK_DIR/plan.md` → **Slice Checklist** 파싱. 각 slice:
 
 완료된 slice (`- [x]`) 존재 시 → 미완료 slice부터 이어서 진행.
 
+## 완료-Marker 감지 (Phase-level resume — F1)
+
+`implement_completed_at` 필드가 state에 이미 있고 모든 slice receipt가 `status: "complete"`이며 `$ARGUMENTS`에 `--force-rerun`이 없으면:
+- "Phase 3 (Implement)은 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
+- Orchestrator §3-4로 제어 반환 (Exit Gate 재실행)
+- Section 2/3 진입 금지
+
+**주의**: Slice 단위 resume (일부 slice만 완료)은 위의 Resume Detection이 처리. 본 branch는 **Phase 전체 완료 후 Exit Gate에서 일시정지한 경우에만** 발동.
+
 # Section 2: Phase 실행
+
+## First Action (즉시 실행 — 건너뛰기 금지)
+
+Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 silent하게 끝난 뒤 **즉시** 다음 메시지를 출력한다:
+
+> "Implement 단계를 시작합니다. plan.md의 첫 미완료 slice부터 TDD 사이클(RED→GREEN→REFACTOR)을 개시합니다."
+
+이어서:
+1. 첫 미완료 slice의 test target 파일 경로 확인
+2. RED: 실패 테스트 작성 (Write)
+3. RED 검증: Bash로 테스트 실행 → FAIL 확인
+4. GREEN: 최소 구현
+5. GREEN 검증
+6. REFACTOR
+7. Sensor 검증
+8. Slice Review
+9. Receipt 생성
+
+"시작할까요?" 같은 추가 확인 금지.
+
+**금지**: 이 선언과 RED 테스트 Write 전에 plan 요약, slice 목록, 완료 메시지를 출력하지 마라.
 
 ## Critical Constraints
 
@@ -172,12 +212,14 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 
 # Section 3: 완료
 
+> **실행 순서 안전장치**: 이 섹션은 plan.md의 모든 slice(또는 spike 모드의 의도된 subset)의 TDD cycle, sensor 검증, Slice Review, Phase Review Gate를 **모두 실제로 수행**한 뒤에만 실행한다.
+
 1. 모든 receipt 검증: `$WORK_DIR/receipts/SLICE-*.json` 존재 확인
 2. State 업데이트:
    - `implement_completed_at`: current ISO timestamp
    - `phase_review.implement`: `{reviewed, reviewers, self_issues, external_issues, resolved}`
    - `review_state: completed`
-   - **`current_phase: test`**
+   - **`current_phase`는 변경하지 않는다.** Orchestrator가 Exit Gate "진행" 분기에서 `test`로 전환.
 3. 완료 메시지:
    ```
    구현 완료! 테스트 단계로 진입합니다.

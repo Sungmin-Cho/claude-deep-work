@@ -1,8 +1,17 @@
 ---
 name: deep-test
-version: "6.3.0"
+version: "6.3.1"
 description: "Phase 4 — Test: comprehensive verification + implement-test retry loop"
 ---
+
+> [!IMPORTANT]
+> **Skill body echo 금지**
+>
+> 이 SKILL.md 본문을 사용자에게 echo하거나 요약하여 출력하지 마라.
+>
+> - Section 1 (state 로드, verification 명령 감지, 완료-marker 감지)는 silent 내부 처리.
+> - 첫 사용자-가시 주 동작은 Section 2의 **First Action: 첫 verification 실행 선언 + 즉시 Bash 호출**.
+> - Section 3 완료 메시지는 quality gate를 **실제로 수행**한 뒤에만 출력.
 
 # Section 1: State 로드 (필수 — 건너뛰기 금지)
 
@@ -23,6 +32,13 @@ description: "Phase 4 — Test: comprehensive verification + implement-test retr
 - ONLY: 테스트 실행, 결과 분석, 문서 업데이트
 - 테스트 실패 시 implement phase로 복귀하여 수정
 
+## 완료-Marker 감지 (Phase-level resume — F1)
+
+`test_completed_at` + `test_passed: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면:
+- "Phase 4 (Test)는 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
+- Orchestrator §3-5로 제어 반환 (Exit Gate 재실행)
+- Section 2/3 진입 금지
+
 ## Red Flags — 이 생각이 들면 멈추세요
 
 | 합리화 시도 | 현실 |
@@ -38,6 +54,16 @@ description: "Phase 4 — Test: comprehensive verification + implement-test retr
 "main" → 아래 inline 실행.
 
 # Section 2: Phase 실행
+
+## First Action (즉시 실행 — 건너뛰기 금지)
+
+Section 1의 verification 명령 감지와 완료-marker 감지가 silent하게 끝난 뒤 **즉시** 다음 메시지를 출력한다:
+
+> "Test 단계를 시작합니다. Required Gate부터 순차 실행합니다."
+
+이어서 Step 1 (Receipt Completeness) → Step 2 (Plan Alignment / drift) → 이후 quality gate들을 순차 실행. "실행할까요?" 같은 추가 확인 금지.
+
+**금지**: 이 선언과 첫 gate 실행 전에 quality gate 설명, 완료 템플릿, retry 정책을 출력하지 마라.
 
 ## Step 1: Required Gate — Receipt Completeness
 
@@ -114,6 +140,8 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 
 # Section 3: 완료
 
+> **실행 순서 안전장치**: 이 섹션은 모든 quality gate (test, lint, typecheck, sensor, mutation, drift, solid, insight, fitness, health)를 **실제로 수행**한 뒤에만 실행한다. All Pass 메시지만 출력하는 것은 실패 모드이다.
+
 ## All Pass
 
 1. State 업데이트:
@@ -145,6 +173,16 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 `test_retry_count` >= `max_test_retries` 시:
 
 1. 누적 실패 이력 표시
-2. `current_phase: implement` 유지 (사용자 수동 수정)
-3. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
-4. 안내: `/deep-test`로 재실행 또는 `/deep-status --report`로 결과 정리
+2. `current_phase: implement` 유지 (사용자 수동 수정 경로)
+3. **Implement state cleanup (NW1 fix — v6.3.1, NW6 refined)**: 수동 수정 경로가 제대로 동작하려면 stale completion markers를 invalidate해야 함. 두 action 모두 수행:
+   - `implement_completed_at: null` 설정 (Implement skill 완료-Marker branch가 발동하지 않도록)
+   - 실패한 slice의 `[x]` 체크마크를 `[ ]`로 해제 (Implement skill Section 1 Resume Detection이 미완료 slice로 인식하도록)
+   - **동시에** 해당 slice의 receipt에 `status: "invalidated"` 기록 — sensor/verification이 stale evidence를 재사용하지 않고 재구현 시 새 evidence를 생성하도록 보장
+   - **주의 (NW6)**: Receipt invalidate만 하고 `[x]`를 그대로 두면 Resume Detection이 미완료 slice를 찾지 못해 재구현이 skip됨. 반드시 둘 다 수행.
+4. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
+5. 안내:
+   - `/deep-test --force-rerun`로 Test phase 직접 재실행 (retry count 초기화)
+   - 또는 사용자 수동 수정 후 `/deep-resume` → Orchestrator §3-4 (Implement) 경로. Step 3의 cleanup 덕분에 Implement skill이 Section 1 완료-Marker branch를 통과하고 Section 2에 진입하여 영향 slice 재구현 + 새 receipt/sensor evidence 생성. 완료 후 Exit Gate → 사용자가 "다음 phase로 진행" 선택 시 Test 재진입.
+   - 또는 `/deep-status --report`로 결과 정리
+
+**주의 (v6.3.1)**: retry exhausted 후 `/deep-resume`은 current_phase(`implement`)를 읽어 Implement로 dispatch한다. Test skill의 완료-Marker 감지 branch는 `test_passed: true`를 요구하므로 이 상태에서는 발동하지 않음 — 순환 무한 루프를 방지한다. 또한 Step 3의 Implement marker cleanup은 stale evidence 재사용을 차단하여 수정된 코드가 실제로 검증되도록 한다 (NW1).
