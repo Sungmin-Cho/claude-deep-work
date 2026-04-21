@@ -173,6 +173,11 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 `test_retry_count` >= `max_test_retries` 시:
 
 1. 누적 실패 이력 표시
-2. `current_phase: implement` 유지 (사용자 수동 수정)
+2. `current_phase: implement` 유지 (사용자 수동 수정 경로)
 3. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
-4. 안내: `/deep-test`로 재실행 또는 `/deep-status --report`로 결과 정리
+4. 안내:
+   - `/deep-test --force-rerun`로 Test phase 직접 재실행 (retry count 초기화)
+   - 또는 사용자 수동 수정 후 `/deep-resume` → Orchestrator §3-4 (Implement) 경로. Implement skill이 기존 receipt/slice를 감지하고 필요한 재구현 수행. 완료 후 Exit Gate → 사용자가 "다음 phase로 진행" 선택 시 Test 재진입.
+   - 또는 `/deep-status --report`로 결과 정리
+
+**주의 (v6.3.1)**: retry exhausted 후 `/deep-resume`은 current_phase(`implement`)를 읽어 Implement로 dispatch한다. Test skill의 완료-Marker 감지 branch는 `test_passed: true`를 요구하므로 이 상태에서는 발동하지 않음 — 순환 무한 루프를 방지한다.

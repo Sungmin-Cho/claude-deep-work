@@ -97,7 +97,7 @@ Plan 승인이 유일한 필수 인터랙션입니다.
 - TDD Enforcement (state machine: PENDING → RED → GREEN → REFACTOR)
 - Slice-based Execution with Receipt Collection
 - Profile/Preset System (zero-question restart)
-- Auto-transition between phases
+- Phase Exit Gates (v6.3.1): user-confirmed transitions between phases via AskUserQuestion — "진행 / 재실행 / 일시정지" per phase. current_phase 전환은 Orchestrator Exit Gate "진행" 선택 시에만 발생. Phase 5 Integrate는 제외 (interactive loop 자체가 게이트 역할).
 
 ## Why This Workflow Exists
 

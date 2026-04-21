@@ -27,10 +27,12 @@ description: "Phase 0 — Brainstorm: explore why before how (skip-able)"
 4. `work_dir`, `task_description` 추출 → `$WORK_DIR` 설정
 5. `brainstorm_started_at` 기록 (ISO timestamp)
 
-## Skip 조건
+## Skip 조건 (defensive fallback)
 
-$ARGUMENTS에 `--skip-brainstorm` 또는 `--start-phase=research` 포함 시:
-- 완료-marker(`brainstorm_completed_at`)만 기록 → 즉시 종료 (Orchestrator가 Exit Gate 판단 없이 Research 단계로 dispatch).
+`/deep-work` orchestrator §3-1이 skill 호출 **이전에** skip 조건(`skipped_phases` / `start_phase`)을 가로채어 `current_phase: research`로 직접 전환하므로, 일반 경로에서는 이 branch에 도달하지 않는다. `/deep-brainstorm` 직접 호출로 `--skip-brainstorm` 또는 `--start-phase=research`가 전달된 경우의 defensive fallback이다.
+
+$ARGUMENTS에 위 플래그 포함 시:
+- 완료-marker(`brainstorm_completed_at`)만 기록 → 즉시 종료 (current_phase 변경은 Orchestrator 책임, 이 branch는 건드리지 않음).
 
 ## 완료-Marker 감지 (resume 경로 — F1 pause/resume 지원)
 
