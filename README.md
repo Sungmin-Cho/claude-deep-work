@@ -388,8 +388,8 @@ Complete session lifecycle management:
 ### Receipt Validation
 
 - Receipt schema v1.0 with `schema_version`, `model_used`, `git_before`/`git_after`, `estimated_cost`
-- `receipt-migration.js` auto-converts pre-v4.1 receipts
-- `validate-receipt.sh` validates receipt chain integrity
+- `hooks/scripts/receipt-migration.js` auto-converts pre-v4.1 receipts
+- `hooks/scripts/validate-receipt.sh` validates receipt chain integrity
 - `templates/deep-work-ci.yml` — GitHub Actions workflow for CI/CD receipt validation
 - `/deep-receipt export --format=ci` for CI-friendly bundle export
 
