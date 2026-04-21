@@ -35,9 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 5 Integrate는 이미 interactive loop이므로 Exit Gate 적용 대상에서 제외.
 - Hook 스크립트 로직 변경 없음. `node --test hooks/scripts/*.test.js` 결과: 397/398 pass. 1 pre-existing failure (`multi-session.test.js:507` - phase5-guard.test.js fixture와의 lint 충돌)는 main 브랜치에도 존재하며 v6.3.1과 무관.
 
-### Added (v6.3.1 NW5 integrity check)
+### Added (v6.3.1 NW5 integrity check + NO3 data preservation)
 
-- **Approval integrity hash** — Research/Plan approval 시점의 `sha256(research.md/plan.md)`를 `research_approved_hash` / `plan_approved_hash`로 state에 기록. `/deep-resume` Resume fast-path가 현재 파일 hash와 비교하여 out-of-band 편집(일시정지 중 외부 편집기 수정 등)을 자동 감지 — 불일치 시 approval invalidate + review+approval 재실행으로 fall-through. 새로운 필드 부재 시(pre-v6.3.1 세션 또는 재실행 후 재승인 전)는 invalidate가 safer default.
+- **Approval integrity hash** — Research/Plan approval 시점의 `sha256(research.md/plan.md)`를 `research_approved_hash` / `plan_approved_hash`로 state에 기록. `/deep-resume` Resume fast-path가 현재 파일 hash와 비교하여 out-of-band 편집(일시정지 중 외부 편집기 수정 등)을 자동 감지 — 불일치 시 **data preservation + in-place review** 경로 발동 (NO3): 편집된 문서를 `$WORK_DIR/{research,plan}.v{N}-edit.md`로 백업 + approval state invalidate + Skill 재호출 스킵하고 Review+Approval workflow 직접 진입. 편집 내용이 보존된 채 재검토되어 사용자 편집이 유실되지 않음. 필드 부재 시(pre-v6.3.1 세션 또는 재실행 후 재승인 전)는 Skill 재실행이 safer default.
+- **Backup filename collision 방지 (NP3)**: orchestrator가 생성하는 hash mismatch backup은 `-edit` 접미사를 사용하여 deep-plan/deep-research skill의 자체 backup(`v{N}.md`)과 파일명 충돌 방지.
+
+### Known Limitations (v6.3.2 예정)
+
+- **Hash mismatch recovery의 plan-specific validation 부재**: NO3 data preservation 경로는 generic Review+Approval workflow를 실행하나, `deep-plan` 고유 validation(Completeness Policy, Contract Negotiation, Phase Review Gate)는 스킵됨. Out-of-band 편집이 `TBD` 같은 placeholder를 추가한 뒤 승인되는 경로는 현재 가드 불충분. Workaround: Exit Gate option 2 "재실행/수정"을 사용하면 skill 재실행으로 모든 validation 적용됨. v6.3.2에서 in-place review에도 phase-specific validation hook 추가 예정.
+- **Backup write-failure fail-safe 부재**: NO3 backup 복사 실패 시(권한/디스크 full 등) state 변경을 중단하는 가드 없음. 희귀 edge case이며 data는 여전히 원본 research.md/plan.md에 남아있음. v6.3.2에서 backup 실패 시 state 변경 중단 + 사용자 알림 가드 추가 예정.
 
 ## [6.3.0] — 2026-04-18
 

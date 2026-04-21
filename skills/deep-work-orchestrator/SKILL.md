@@ -8,7 +8,14 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 
 사용자 입력: **$ARGUMENTS**
 
-> `--resume-from=<phase>` 가 지정된 경우: 이 Step 1 전체를 건너뛴다. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다. **Step 2 (조건 변수 조립 — `ARGS`, `tdd_mode` 등)은 반드시 수행**하여 resume 이후 Skill 호출에 session/worktree/tdd context가 누락되지 않도록 한다 (v6.3.1 NO2 fix). 그 후 Step 3의 해당 `<phase>` branch로 점프한다.
+> `--resume-from=<phase>` 가 지정된 경우: Step 1의 **interactive/setup 대화(프로필 질문, 작업 모드 선택, 알림 설정 등)만 건너뛴다**. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다.
+>
+> **반드시 수행 (NO2 + NP1 fix)**:
+> 1. Step 1-2 state file 로드: `.claude/deep-work.{SESSION_ID}.md`에서 `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `team_mode`, `cross_model_enabled`, `tdd_mode`, `iteration_count`, `skipped_phases`, `research_approved`, `research_approved_hash`, `plan_approved`, `plan_approved_hash`, `current_phase` 등 모든 상태 변수 로드.
+> 2. `$WORK_DIR` 변수 초기화 (state의 `work_dir`에서). §3-2/§3-3 hash check 등 파일 경로 참조 시 필수.
+> 3. Step 2 (조건 변수 조립 — `ARGS`, `tdd_mode` 등) 수행하여 Skill 호출에 session/worktree/tdd context 보존.
+>
+> 그 후 Step 3의 해당 `<phase>` branch로 점프한다.
 
 ## 1-1. Update Check
 
@@ -194,14 +201,14 @@ AskUserQuestion:
 1. `research_approved_hash` (state) 와 현재 `$WORK_DIR/research.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` (or `sha256sum` on Linux)
    - 해시 일치 → approval은 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix):
-     1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}.md`로 복사 (편집 내용 백업).
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix + NP3 collision fix):
+     1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}-edit.md`로 복사 (편집 내용 백업). **`-edit` 접미사** 사용 — deep-research skill의 기존 `research.v{iteration_count}.md` backup과 파일명 충돌 방지 (NP3).
      2. `iteration_count`을 1 증가.
      3. Approval state invalidate: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`.
-     4. 경고: "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 research.v{N}.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
+     4. 경고: "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 research.v{N}-edit.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
      5. **Skill 재호출 없이** 아래 Review+Approval workflow (Step 1-6)로 직접 진입 — 현재 수정된 문서를 in-place review. template 기반 재생성 path는 스킵하여 사용자 편집 보존.
      6. 최종 승인 시 새 `research_approved_hash` 기록 (현재 편집된 파일의 sha256).
-     7. 사용자가 거부 시 옵션 제공: 직접 수정 / `Skill("deep-research", args + " --force-rerun")`로 완전 재생성 (이 경우 backup은 남아있음).
+     7. 사용자가 거부 시 옵션 제공: 직접 수정 / `Skill("deep-research", args + " --force-rerun")`로 완전 재생성. `-edit` 접미사 덕분에 force-rerun 경로에서 skill의 자체 backup(`v{N}.md`)과 collision 없이 원본 편집 backup 보존됨.
    - `research_approved_hash` 필드 부재 (pre-v6.3.1 세션 또는 재실행 후 미승인) → Skill 재실행 + review+approval. pre-v6.3.1 세션은 fresh approval flow로 가는 것이 safer default.
    - 파일 missing → 복구 불가능. Skill 재실행 + review+approval (edited doc 소실 시점을 감출 수 없음).
 
@@ -254,14 +261,14 @@ AskUserQuestion:
 1. `plan_approved_hash` (state) 와 현재 `$WORK_DIR/plan.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` (or `sha256sum`)
    - 해시 일치 → approval 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix):
-     1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}.md`로 복사.
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix + NP3 collision fix):
+     1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}-edit.md`로 복사. **`-edit` 접미사** 사용 — deep-plan skill의 기존 `plan.v{iteration_count}.md` backup(Pre-steps Backup 단계)과 파일명 충돌 방지 (NP3).
      2. `iteration_count`을 1 증가.
      3. Approval state invalidate: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`.
-     4. 경고: "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 plan.v{N}.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
+     4. 경고: "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 plan.v{N}-edit.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
      5. **Skill 재호출 없이** 아래 Review+Approval workflow로 직접 진입 — 편집된 문서 in-place review.
      6. 최종 승인 시 새 `plan_approved_hash` + `plan_approved_at` 기록 (drift baseline 정정).
-     7. 거부 시 사용자 선택: 직접 수정 / `Skill("deep-plan", args + " --force-rerun")`로 완전 재생성.
+     7. 거부 시 사용자 선택: 직접 수정 / `Skill("deep-plan", args + " --force-rerun")`로 완전 재생성. `-edit` 접미사 덕분에 collision 없음.
    - `plan_approved_hash` 필드 부재 (pre-v6.3.1 세션 또는 재실행 후 미승인) → Skill 재실행 + review+approval.
    - 파일 missing → 복구 불가능. Skill 재실행.
 
