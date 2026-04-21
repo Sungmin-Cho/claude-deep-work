@@ -19,12 +19,16 @@
 - 복잡도: S / M / L
 
 ### Approach B: [Name]
-- 요약:
-- 장점:
-- 단점:
-- 복잡도:
+- 요약: [2-3줄]
+- 장점: [bullet list]
+- 단점: [bullet list]
+- 복잡도: S / M / L
 
 ### (Optional) Approach C: [Name]
+- 요약: [2-3줄]
+- 장점: [bullet list]
+- 단점: [bullet list]
+- 복잡도: S / M / L
 
 ## 선택된 접근 방식
 

@@ -12,6 +12,7 @@
 ## Overview / Architecture Decision
 
 [아키텍처 개요 + 선택한 패턴 이유]
+- Research 근거: [RF-NNN 또는 "해당 없음 (zero-base)"]
 
 ## Project Structure (디렉토리 트리)
 

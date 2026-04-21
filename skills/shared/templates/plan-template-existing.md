@@ -15,7 +15,10 @@
 
 ## Architecture Decision
 
-- Research 근거: [RF-NNN], [RA-NNN] 태그 연결
+- Research 근거:
+  - [RF-001] ...
+  - [RA-001] ...
+- 선택 이유: [한 문장]
 
 ## Files to Modify
 
