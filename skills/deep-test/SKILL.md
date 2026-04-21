@@ -174,10 +174,13 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 
 1. 누적 실패 이력 표시
 2. `current_phase: implement` 유지 (사용자 수동 수정 경로)
-3. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
-4. 안내:
+3. **Implement state cleanup (NW1 fix — v6.3.1)**: 수동 수정 경로가 제대로 동작하려면 stale completion markers를 invalidate해야 함:
+   - `implement_completed_at`: null (Implement skill 완료-Marker branch가 발동하지 않도록)
+   - 실패한 slice의 receipt에 `status: "invalidated"` 기록 (또는 해당 slice의 `[x]` 체크마크 해제) — 재구현 시 sensor/verification이 새 evidence를 생성하도록 보장
+4. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
+5. 안내:
    - `/deep-test --force-rerun`로 Test phase 직접 재실행 (retry count 초기화)
-   - 또는 사용자 수동 수정 후 `/deep-resume` → Orchestrator §3-4 (Implement) 경로. Implement skill이 기존 receipt/slice를 감지하고 필요한 재구현 수행. 완료 후 Exit Gate → 사용자가 "다음 phase로 진행" 선택 시 Test 재진입.
+   - 또는 사용자 수동 수정 후 `/deep-resume` → Orchestrator §3-4 (Implement) 경로. Step 3의 cleanup 덕분에 Implement skill이 Section 1 완료-Marker branch를 통과하고 Section 2에 진입하여 영향 slice 재구현 + 새 receipt/sensor evidence 생성. 완료 후 Exit Gate → 사용자가 "다음 phase로 진행" 선택 시 Test 재진입.
    - 또는 `/deep-status --report`로 결과 정리
 
-**주의 (v6.3.1)**: retry exhausted 후 `/deep-resume`은 current_phase(`implement`)를 읽어 Implement로 dispatch한다. Test skill의 완료-Marker 감지 branch는 `test_passed: true`를 요구하므로 이 상태에서는 발동하지 않음 — 순환 무한 루프를 방지한다.
+**주의 (v6.3.1)**: retry exhausted 후 `/deep-resume`은 current_phase(`implement`)를 읽어 Implement로 dispatch한다. Test skill의 완료-Marker 감지 branch는 `test_passed: true`를 요구하므로 이 상태에서는 발동하지 않음 — 순환 무한 루프를 방지한다. 또한 Step 3의 Implement marker cleanup은 stale evidence 재사용을 차단하여 수정된 코드가 실제로 검증되도록 한다 (NW1).

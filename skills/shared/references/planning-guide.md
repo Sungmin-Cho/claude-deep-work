@@ -86,7 +86,7 @@ The plan is approved when the user says any of:
 - "좋아", "진행해", "go ahead", "looks good"
 - Any clear affirmative about the plan
 
-**After approval, implementation starts automatically** — the user does not need to run `/deep-implement` separately.
+**After approval, Orchestrator presents Phase Exit Gate (v6.3.1)** — 사용자가 "다음 phase로 진행"을 선택하면 Implement phase가 자동 호출된다 (수동 `/deep-implement` 불필요). "일시정지" 선택 시 `current_phase: plan` + `plan_approved: true`가 유지되어 `/deep-resume` 호출 시 Exit Gate가 재표시된다.
 
 ## Output Format: plan.md
 

@@ -189,7 +189,9 @@ AskUserQuestion:
 
 `skipped_phases`에 "research" 포함 시 Exit Gate 생략하고 `current_phase: plan`으로 직접 전환 → 3-3.
 
-**Resume 분기 (v6.3.1 F1)**: state의 `research_completed_at` + `research_complete: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면, paused-after-approval 복귀 경로이다. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
+**Resume 분기 (v6.3.1 F1)**: state의 `research_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면, paused-after-approval 복귀 경로이다. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
+
+주의: `research_completed_at` / `research_complete`는 skill Section 3에서 기록하는 marker이며 review+approval **이전**에 set된다. Resume fast-path의 조건으로 사용 금지 — Orchestrator review+approval Step 6가 성공한 뒤에만 set되는 `research_approved: true`가 정확한 approval-state 증거이다.
 
 그 외 경우:
 
@@ -205,7 +207,11 @@ Phase Skill 완료 후:
 5. 2차 승인: 최종 문서 확인 (AskUserQuestion — 문서 최종 승인)
 → 상세: Read("../shared/references/review-approval-workflow.md")
 
-문서 최종 승인 후 → 아래 Exit Gate 실행.
+문서 최종 승인 후 → State 부분 업데이트:
+- `research_approved: true` (Resume fast-path baseline — v6.3.1 NC1 fix)
+- `research_approved_at`: current ISO timestamp
+
+→ 아래 Exit Gate 실행.
 
 ### Exit Gate (Phase 1 → Phase 2)
 
@@ -219,7 +225,7 @@ AskUserQuestion:
 
 분기:
 - option 1 → **즉시 `current_phase: plan` 설정** → `Skill("deep-plan", args=ARGS)` 호출.
-- option 2 → `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위).
+- option 2 → **재실행 전 approval state clear (NC2 규칙)**: `research_approved: false`, `research_approved_at: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.
 - option 3 → current_phase는 `research` 유지. 재개 안내 후 턴 종료.
 
 ## 3-3. Plan
@@ -252,7 +258,7 @@ AskUserQuestion:
 
 분기:
 - option 1 → **즉시 `current_phase: implement` 설정** → `Skill("deep-implement", args=ARGS + " --tdd={tdd_mode}")` 호출.
-- option 2 → `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 3+ 섹션 재편집이면 `plan_approved` 재확인 필요.
+- option 2 → **재실행 전 approval state clear (NC2 fix)**: `plan_approved: false`, `plan_approved_at: null`로 state 업데이트 → 이후 `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 모든 편집은 Step 6 re-approval을 거치며, approval clear가 없으면 Resume fast-path가 stale approval을 재사용함. 크기에 관계없이 post-approval 편집이면 approval clear 필수 — drift gate baseline의 `plan_approved_at`이 실제 최종 plan과 일치하도록.
 - option 3 → current_phase는 `plan` 유지. 재개 안내 후 턴 종료.
 
 ## 3-4. Implement
