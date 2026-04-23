@@ -7,6 +7,11 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`multi-session.test.js:507` lint guard false-positive**. 제외 regex 가 `multi-session.test.js` 자기 자신만 면제하여 `phase5-guard.test.js` 의 정당한 테스트 픽스처 8건(legacy-path 코드 경로 검증을 위한 의도된 `deep-work.local.md` 참조)이 "active code에 하드코딩된 레거시 경로"로 오탐. Regex 를 `multi-session\.test\.js` → `\.test\.js` 로 확장하여 모든 테스트 파일을 제외 — 테스트 파일은 legacy behavior 검증을 위해 해당 경로가 정당하게 필요하므로. `node --test hooks/scripts/*.test.js` 결과 이제 428/428 pass (이전 427/428, v6.3.1 Excluded 섹션에 known failure로 기재됐던 건).
+
 ## [6.4.0] - 2026-04-23
 
 ### 변경 — Breaking
