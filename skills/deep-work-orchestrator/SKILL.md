@@ -1,6 +1,5 @@
 ---
 name: deep-work-orchestrator
-version: "6.4.0"
 description: "Evidence-Driven Development — session initialization + auto-flow orchestration"
 ---
 

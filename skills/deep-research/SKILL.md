@@ -1,6 +1,5 @@
 ---
 name: deep-research
-version: "6.4.0"
 description: "Phase 1 — Research: exhaustively analyze the codebase"
 ---
 

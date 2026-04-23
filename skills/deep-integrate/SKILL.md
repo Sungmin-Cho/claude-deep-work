@@ -1,6 +1,5 @@
 ---
 name: deep-integrate
-version: "6.3.0"
 description: |
   Phase 5 — Integrate: 설치된 deep-suite 플러그인 상태를 수집하여 AI가 다음 단계를
   추천하고 사용자가 선택·실행하는 대화형 루프. Phase 4(Test) 완료 후 호출되거나
