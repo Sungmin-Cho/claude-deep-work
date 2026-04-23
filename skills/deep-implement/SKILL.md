@@ -290,13 +290,87 @@ GREEN 단계에서 예기치 않은 테스트 실패 시:
 2. 3회 실패 시 **STOP → 사용자에게 질문**
 3. Root cause를 receipt `debug.root_cause_note`에 기록
 
-## Team Mode
+## Section 2.2: Delegate Team Path (v6.4.0)
 
-`team_mode: team`이고 Agent Teams 환경변수 활성 시:
+`execution_mode == "delegate"` AND `team_mode == "team"` 인 경우.
 
-1. **Cluster**: file 소유권 기반 slice 그룹화 (겹침 → sequential, 독립 → parallel)
-2. **Dispatch**: TeamCreate "deep-implement" → 그룹별 Agent 스폰 (TDD + Slice Review 규칙 포함)
-3. **Collect**: 완료 후 모든 receipt 수집 + 무결성 검증
+### env var check + AskUserQuestion
+
+```bash
+env_var=$(echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}")
+```
+
+- env_var 비어있음 → AskUserQuestion 생략, 안내 메시지 후 복수 Subagent 경로로 자동 진입:
+  ```
+  [info] CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS 미설정 —
+         Agent Team 대신 복수 Subagent 병렬 위임으로 진행합니다.
+  ```
+- env_var 설정됨 → **AskUserQuestion tool invocation** (W3 — concrete API format):
+
+```json
+AskUserQuestion({
+  "questions": [{
+    "question": "Implement team 위임 방식을 선택하세요.",
+    "header": "Team mode",
+    "multiSelect": false,
+    "options": [
+      {
+        "label": "Agent Team",
+        "description": "TeamCreate + TaskCreate 기반 (shared task list, SendMessage). env var 활성 시에만 선택 가능."
+      },
+      {
+        "label": "복수 Subagent",
+        "description": "Agent tool N번 parallel 호출. 각 subagent는 독립 컨텍스트. 권장."
+      }
+    ]
+  }]
+})
+```
+
+(N-R3 fix: header "Team mode" = 9 chars, 12자 제약 충족. 기존 "Team exec mode"는 14자로 위반했음. label 길이 1-5 단어 준수.)
+
+### Branch A: Agent Team (env var 활성 + 사용자 선택)
+
+기존 v6.3.x의 TeamCreate 분기를 그대로 유지 (C8 — concrete inline). 현재
+`skills/deep-implement/SKILL.md:195-201`의 로직:
+
+```
+1. Cluster: file 소유권 기반 slice 그룹화 (겹침 → sequential, 독립 → parallel)
+   — 이 logic은 Task 9 Section 2.1의 cluster 추출과 동일한 code path 재사용.
+2. Dispatch: TeamCreate "deep-implement"
+   - team_name: "deep-implement-v640"
+   - 각 cluster마다 TaskCreate 생성 (subject: "Implement cluster C{n}",
+     description: cluster의 slice_ids + files + TDD 규칙 + Slice Review 규칙)
+   - 그룹별 Agent 스폰:
+       Agent(subagent_type="deep-work:implement-slice-worker",
+             model=state.model_routing.implement,
+             mode="bypassPermissions",  // hook이 team agent에 미적용 → Receipt 중심 검증
+             prompt="cluster_ids=[Ci]; delegation_snapshot=<hash>; tdd_mode=...")
+3. Collect: 모든 Task 완료 알림 수신 → 모든 receipt 수집
+   - Section 2.3 verify-delegated-receipt.sh가 precondition으로 실행.
+4. Shutdown: SendMessage shutdown_request → TeamDelete.
+```
+
+중요: Agent Team의 agent에도 hook 미적용이므로, verify-delegated-receipt는 Branch B와 동일하게 Section 2.3 precondition으로 실행됨. regression 없음.
+
+### Branch B: 복수 Subagent (기본 경로)
+
+1. Cluster 독립성 map 계산:
+   - 독립 cluster 쌍 → parallel Agent 호출
+   - 의존 cluster 쌍 → sequential (같은 agent에 묶거나 순차)
+2. 각 independent cluster에 대해 Agent 호출을 단일 메시지에 parallel 실행:
+   ```
+   Agent(subagent_type="deep-work:implement-slice-worker",
+         model=state.model_routing.implement,
+         prompt="cluster_ids=[Ci]; delegation_snapshot=<hash>; tdd_mode=...")
+   Agent(subagent_type="deep-work:implement-slice-worker", ...)
+   ```
+3. 모든 Agent 완료 후 Section 2.3 로 이동.
+
+### Partial failure (W4)
+
+일부 agent timeout/fail 시 §7.1 "Parallel subagent의 partial timeout" 규칙:
+- AskUserQuestion: 실패한 cluster만 / 전체 / 수동 / abort.
 
 ## Phase Review Gate
 
