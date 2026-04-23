@@ -37,6 +37,18 @@ function migrateReceipt(receipt) {
   }
 
   const migrated = { ...V1_DEFAULTS, ...receipt, schema_version: CURRENT_SCHEMA };
+
+  // v6.4.0 W-5.1: map legacy git_before/git_after to the _slice-suffixed
+  // field names introduced in F1. verify-receipt-core reads *_slice fields;
+  // without this rename, legacy receipts passing through V1 migration would
+  // leave *_slice undefined and silently skip items 5/6.
+  if (migrated.git_before && !migrated.git_before_slice) {
+    migrated.git_before_slice = migrated.git_before;
+  }
+  if (migrated.git_after && !migrated.git_after_slice) {
+    migrated.git_after_slice = migrated.git_after;
+  }
+
   return { migrated: true, receipt: migrated };
 }
 

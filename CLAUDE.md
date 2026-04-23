@@ -1,4 +1,4 @@
-# deep-work v6.3.1
+# deep-work v6.4.0
 
 Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인.
 
@@ -22,4 +22,8 @@ sensors/                             # 센서 시스템 (linter/type/coverage de
 health/                              # Health Engine (드리프트 탐지 + fitness functions)
 templates/                           # CI 템플릿 + topology 엔진 (topologies/, topology-detector.js)
 assumptions.json                     # assumption 기준선 (hook enforcement justification)
+agents/                              # Claude Code subagents (research/implement delegation)
+hooks/scripts/verify-delegated-receipt.sh      # Post-hoc receipt validation (delegate precondition)
+hooks/scripts/verify-receipt-core.js # 8-item validation module
+scripts/validate-agents.sh           # Static agent frontmatter check
 ```

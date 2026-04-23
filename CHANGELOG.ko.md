@@ -7,6 +7,31 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-04-23
+
+### 변경 — Breaking
+- **`model_routing.{research, implement, test}="main"` 제거**. 기존 state 파일은 load 시 `"sonnet"`으로 자동 마이그레이션. `model_routing.plan="main"`은 유지 (Plan phase는 대화형 메인 세션 실행 유지).
+- **`team_mode` 의미론 단일화** — 병렬도만 의미 (solo=1, team=N). 메인 세션 inline 실행은 숨겨진 default가 아닌 명시적 escape hatch.
+
+### 추가
+- `agents/` 아래 3개 Claude Code subagent:
+  - `research-codebase-worker` — 기존 코드베이스 리서치 (read-only tool allowlist)
+  - `research-zerobase-worker` — 신규 프로젝트 리서치, web 접근 (WebSearch/WebFetch/Context7 MCP)
+  - `implement-slice-worker` — TDD 강제 slice cluster 구현
+- `hooks/scripts/verify-delegated-receipt.sh` + `verify-receipt-core.js` — 8개 항목 post-hoc receipt 검증 (scope, baseline chain, TDD hard-fail, verification output advisory)
+- §5.6a Rollback Protocol — verify-receipt 실패 시 `git reset --hard <delegation_snapshot>`
+- §5.5a inline escape hatches — 자동 라우팅 (spike, trivial inline plan) + `--exec=<inline|delegate>` CLI override + `active_cluster_takeover` state 필드 기반 debug takeover
+- `scripts/validate-agents.sh` — agents/*.md 정적 검증
+
+### 수정
+- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` 미설정 시 `team_mode=team` → solo 로의 silent fallback (원 버그)
+- 단일 `git_before` baseline을 multi-slice receipt에서 재사용하던 문제 → per-slice `git_before_slice`/`git_after_slice` (F1)
+- Path-filtered diff가 out-of-scope 편집을 가리던 문제 → unfiltered union-scope 검사 (F2)
+- Zero-base subagent가 Write/Edit/Bash + web 접근을 상속하던 security 문제 → 명시적 read-only tool allowlist (F3 security)
+
+### 마이그레이션
+`docs/migrations/v6.4.0.md` 참조.
+
 ## v6.3.1 — 2026-04-21
 
 ### Fixed

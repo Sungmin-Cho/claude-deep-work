@@ -1,0 +1,15 @@
+{
+  "slice_id": "SLICE-002",
+  "status": "complete",
+  "tdd": {
+    "state_transitions": ["PENDING", "RED_VERIFIED", "GREEN", "SENSOR_CLEAN"],
+    "red_verification_output": "TypeError: foo is not a function\n  at src/b.js:10"
+  },
+  "git_before_slice": "aaa2222",
+  "git_after_slice": "aaa3333",
+  "changes": { "git_diff": "" },
+  "sensor_results": { "lint": "pass" },
+  "spec_compliance": {},
+  "slice_review": {},
+  "harness_metadata": {}
+}

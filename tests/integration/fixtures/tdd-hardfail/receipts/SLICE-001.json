@@ -1,0 +1,15 @@
+{
+  "slice_id": "SLICE-001",
+  "status": "complete",
+  "tdd": {
+    "state_transitions": ["PENDING", "RED_VERIFIED", "GREEN", "SENSOR_CLEAN"],
+    "red_verification_output": "ok"
+  },
+  "git_before_slice": "aaa1111",
+  "git_after_slice": "aaa2222",
+  "changes": { "git_diff": "" },
+  "sensor_results": { "lint": "pass" },
+  "spec_compliance": {},
+  "slice_review": {},
+  "harness_metadata": {}
+}

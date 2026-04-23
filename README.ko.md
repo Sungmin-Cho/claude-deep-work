@@ -461,25 +461,26 @@ plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다
 | 모델 라우팅 | 기본값 / 커스텀 | Phase별 모델 배정 |
 | 알림 | 없음 / 로컬 / 외부 | Phase 완료 시 알림 |
 
-## Solo vs Team 모드
+## Team/Solo 모드 (v6.4.0)
 
-| 항목 | Solo | Team |
-|------|------|------|
-| Research | 단일 에이전트 분석 | 3명 병렬 분석 (arch/pattern/risk) |
-| Plan | 단일 에이전트 작성 | 단일 에이전트 작성 (동일) |
-| Implement | 순차 실행 | 파일 소유권 기반 병렬 실행 + 크로스 리뷰 |
-| Test | 동일 | 동일 |
-| 요구사항 | 없음 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+### 의미론
+- `--team` → 병렬도 = N (Research/Implement에 parallel subagent)
+- `--solo` (기본값) → 병렬도 = 1 (단일 subagent)
 
-Team 모드 활성화:
-```json
-// ~/.claude/settings.json
-{
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  }
-}
-```
+### 작업 실행 위치
+모든 실제 작업은 기본적으로 **Claude Code subagent**에서 실행됩니다. 메인 세션은 오케스트레이터 역할만 합니다.
+
+### Escape hatches (Implement 전용)
+| 상황 | 동작 |
+|------|------|
+| `tdd_mode=spike` | 자동 inline |
+| `--skip-plan` + trivial slice 1개 | 자동 inline |
+| `--exec=inline` | inline 강제 |
+| `--exec=delegate` | delegate 강제 |
+| verify-receipt 실패 → "수동 수정" | Inline takeover |
+
+### Agent Team (선택 사항)
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`가 설정된 경우, team Implement 실행 시 classic Agent Team과 parallel subagent dispatch 중 선택을 요청합니다.
 
 ## 복잡도별 사용 가이드
 

@@ -7,6 +7,31 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-04-23
+
+### Changed — Breaking
+- **`model_routing.{research, implement, test}="main"` removed**. Existing state files are auto-migrated to `"sonnet"` on load. `model_routing.plan="main"` is preserved (Plan phase keeps conversational main-session execution).
+- **`team_mode` semantics unified** to concurrency only (solo=1, team=N). Main-session inline execution is now an explicit escape hatch, not a hidden default.
+
+### Added
+- 3 Claude Code subagents under `agents/`:
+  - `research-codebase-worker` — existing-codebase research (read-only tool allowlist)
+  - `research-zerobase-worker` — new-project research with web access (WebSearch/WebFetch/Context7 MCP)
+  - `implement-slice-worker` — TDD-enforced slice cluster implementation
+- `hooks/scripts/verify-delegated-receipt.sh` + `verify-receipt-core.js` — 8-item post-hoc receipt validation (scope, baseline chain, TDD hard-fail, recorded verification output advisory)
+- §5.6a Rollback Protocol: `git reset --hard <delegation_snapshot>` on verify-receipt failure
+- §5.5a inline escape hatches: auto-routing (spike, trivial inline plan) + `--exec=<inline|delegate>` CLI override + debug takeover via `active_cluster_takeover` state field
+- `scripts/validate-agents.sh` — static sanity check for agents/*.md
+
+### Fixed
+- Silent fallback from `team_mode=team` to solo when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` was missing (original bug)
+- Single `git_before` baseline reused across multi-slice receipts → per-slice `git_before_slice`/`git_after_slice` (F1)
+- Path-filtered diff hiding out-of-scope edits → unfiltered union-scope check (F2)
+- Zero-base subagent inheriting Write/Edit/Bash + web access → explicit read-only tool allowlist (F3 security)
+
+### Migration
+See `docs/migrations/v6.4.0.md`.
+
 ## v6.3.1 — 2026-04-21
 
 ### Fixed

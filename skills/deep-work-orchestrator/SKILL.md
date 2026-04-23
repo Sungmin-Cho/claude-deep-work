@@ -1,6 +1,5 @@
 ---
 name: deep-work-orchestrator
-version: "6.3.1"
 description: "Evidence-Driven Development — session initialization + auto-flow orchestration"
 ---
 
@@ -16,6 +15,34 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 > 3. Step 2 (조건 변수 조립 — `ARGS`, `tdd_mode` 등) 수행하여 Skill 호출에 session/worktree/tdd context 보존.
 >
 > 그 후 Step 3의 해당 `<phase>` branch로 점프한다.
+
+### Step 1-3: Model Routing Migration (v6.4.0)
+
+State load 직후, Step 3 dispatch 전에 migration helper 를 호출하여 `model_routing.{research,implement,test} == "main"` 값을 `"sonnet"` 으로 atomic 치환한다. `model_routing.plan` 은 migration 대상에서 제외 (Plan phase는 대화형 메인 세션이 설계상 필수 — spec §3 D1 W1).
+
+**호출 조건**: `$STATE_FILE`이 이미 존재할 때만 호출 (W-1.1 fix — 새 세션은 §1-9에서 state를 생성하므로 이 시점엔 파일이 없을 수 있음).
+
+실행:
+```bash
+if [ -f "$STATE_FILE" ]; then
+  result=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js" "$STATE_FILE" 2>&1 || true)
+fi
+```
+
+또는 동등한 JS import (orchestrator가 Node 런타임 내에서 실행 가능한 경우):
+```javascript
+const { migrateStateFile } = require('./scripts/migrate-model-routing.js');
+// migrateStateFile 자체가 fs.existsSync 가드를 내부에서 처리 (W-2.2)
+const { replaced, warnings } = migrateStateFile(stateFile);
+```
+
+출력 결과:
+- `replaced`가 비어있지 않으면 각 필드별로 1회 알림:
+  `[migration v6.4.0] model_routing.research='main' deprecated → 'sonnet' 적용`
+- `warnings`가 있으면 그대로 stderr에 출력 (치환 없이 원본 유지).
+- 치환이 발생한 경우 atomic `writeFile + rename` 으로 state file에 persist됨.
+
+(spec §5.7, §6.1 참조)
 
 ## 1-1. Update Check
 

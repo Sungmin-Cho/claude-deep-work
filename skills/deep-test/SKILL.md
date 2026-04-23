@@ -1,6 +1,5 @@
 ---
 name: deep-test
-version: "6.3.1"
 description: "Phase 4 — Test: comprehensive verification + implement-test retry loop"
 ---
 
