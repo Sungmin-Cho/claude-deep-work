@@ -529,7 +529,7 @@ describe('lint guard: deep-work.local.md references', () => {
     const violations = grepOutput.split('\n').filter(line => {
       if (!line.trim()) return false;
       // Exclude: CHANGELOG, README, test files
-      if (/CHANGELOG|README|multi-session\.test\.js/.test(line)) return false;
+      if (/CHANGELOG|README|\.test\.js/.test(line)) return false;
       // Exclude: utils.sh (core fallback implementation + migration)
       if (/utils\.sh/.test(line)) return false;
       // Exclude: notify.sh (backward-compat default)
