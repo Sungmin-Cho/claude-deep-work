@@ -195,3 +195,209 @@ module.exports = {
   normalizeDiff,
   VERIFICATION_ITEMS,
 };
+
+// --- appended exports --------------------------------------
+
+/**
+ * Parse plan.md "Slice Checklist" section into { slices: [...] }.
+ *
+ * Expected slice format (per skills/shared/templates/plan-template-existing.md):
+ *
+ *   ## Slice Checklist
+ *
+ *   - [ ] SLICE-001: <goal>
+ *     - files: [src/a.js, src/b.js]
+ *     - size: S
+ *     - ...
+ *   - [ ] SLICE-002: <goal>
+ *     - files: [...]
+ *
+ * Scanning rules (N-R1 fix, 3-way reviewer convergence):
+ *  1. Only scan inside the "## Slice Checklist" section (bounded by next `^## `
+ *     heading or EOF) to avoid prose/comment mentions of SLICE-NNN being
+ *     mis-parsed as slice definitions.
+ *  2. Slice anchor: `^- \[[ x]\] SLICE-\d{3,}:` at line start (checklist item).
+ *  3. files value: supports `[a.js, b.js]` (unquoted bracket list — the plan
+ *     template's default) AND `['a.js', 'b.js']` (quoted JSON-style).
+ *
+ * Returns { slices: [{ id, files, size, goal }] }.
+ */
+function parsePlanMd(planMdPath) {
+  const fs = require('node:fs');
+  const src = fs.readFileSync(planMdPath, 'utf8');
+
+  // Extract just the Slice Checklist section.
+  // Two-step approach — avoids `\Z` (not valid in JS regex).
+  const headerRe = /^##\s+Slice\s+Checklist\s*$/m;
+  const headerMatch = src.match(headerRe);
+  if (!headerMatch) {
+    return { slices: [] };
+  }
+  const afterHeader = src.slice(headerMatch.index + headerMatch[0].length);
+  // Find the next `^## ` heading (any other H2) to bound the section.
+  const nextHeadingRe = /^##\s+/m;
+  const nextMatch = afterHeader.match(nextHeadingRe);
+  const sectionBody = nextMatch
+    ? afterHeader.slice(0, nextMatch.index)
+    : afterHeader;
+
+  const slices = [];
+  // Anchored: checklist line at line-start
+  const sliceEntryRe = /^-\s+\[[ x]\]\s+(SLICE-\d{3,}):\s*([^\n]*)$/gm;
+  const entries = [];
+  let m;
+  while ((m = sliceEntryRe.exec(sectionBody)) !== null) {
+    entries.push({ id: m[1], goal: m[2].trim(), startIdx: m.index });
+  }
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const blockStart = entry.startIdx;
+    const blockEnd = i + 1 < entries.length ? entries[i + 1].startIdx : sectionBody.length;
+    const block = sectionBody.slice(blockStart, blockEnd);
+
+    // files line: "  - files: [a.js, b.js]" OR "  - files: a.js, b.js"
+    const filesMatch = block.match(/^\s*-\s*files?:\s*(.+)$/m);
+    let files = [];
+    if (filesMatch) {
+      let raw = filesMatch[1].trim();
+      // Strip inline comments (YAML-style # ...)
+      raw = raw.replace(/\s+#.*$/, '');
+      if (raw.startsWith('[') && raw.includes(']')) {
+        const inner = raw.slice(1, raw.lastIndexOf(']'));
+        files = inner
+          .split(',')
+          .map(s => s.trim().replace(/^["'`]|["'`]$/g, ''))
+          .filter(Boolean);
+      } else {
+        // No brackets: split on comma or whitespace
+        files = raw
+          .split(/[,\s]+/)
+          .map(s => s.replace(/[`"']/g, ''))
+          .filter(Boolean);
+      }
+    }
+
+    const sizeMatch = block.match(/^\s*-\s*size:\s*([SMLX]{1,2})/m);
+    const size = sizeMatch ? sizeMatch[1] : null;
+
+    slices.push({ id: entry.id, files, size, goal: entry.goal });
+  }
+
+  return { slices };
+}
+
+/**
+ * Item 8: compare recorded verification output to expected_output.
+ * Does NOT re-execute the command (security: receipt is subagent output).
+ *
+ * N-R5 trust boundary (2-way reviewer convergence):
+ *   Both verification_output and expected_output are written by the SAME
+ *   subagent that is being audited. A dishonest or buggy agent could set
+ *   both fields to the same bogus value and trivially pass item 8. This
+ *   check is therefore ADVISORY: it signals likely failure modes (mismatch,
+ *   missing field, empty expected) but does NOT provide independent proof
+ *   that verification_cmd actually ran.
+ *
+ * Independent post-hoc signals that DO provide trust boundary:
+ *   - item 5 (out-of-scope detection via git diff — parent-owned)
+ *   - item 6 (baseline chain continuity — parent-owned)
+ *   - item 7 (red_verification_output non-trivial — structural gate)
+ *   - Slice Review stages 1/2 (separate evaluator model)
+ *
+ * Ultimate re-run verification happens in Phase 4 (deep-test), which runs
+ * in the main session under TDD hook — those results are independent.
+ *
+ * Returns { errors: [], warnings: [...] }
+ *   — errors: only structural issues (missing field, output empty)
+ *   — warnings: mismatch or trust-limited checks (ADVISORY, not fail)
+ */
+function checkItem8(receipts) {
+  const errors = [];
+  const warnings = [];
+  for (const r of receipts) {
+    const sc = r.spec_compliance || {};
+    const cmd = sc.verification_cmd;
+    if (!cmd) continue;  // item 8 skipped for this slice
+
+    const expected = sc.expected_output;
+    const actual = sc.verification_output;
+
+    if (actual === undefined || actual === null) {
+      // Structural: subagent declared verification_cmd but forgot to record output.
+      // This IS a fail (missing mandatory field), not an advisory.
+      errors.push(
+        `[item 8] ${r.slice_id}: verification_output missing — ` +
+        `subagent declared verification_cmd but did not record its output`
+      );
+      continue;
+    }
+    if (expected === undefined || expected === null || String(expected).trim() === '') {
+      // Structural: subagent provided actual but not expected → cannot compare.
+      errors.push(
+        `[item 8] ${r.slice_id}: expected_output missing — ` +
+        `cannot compare without baseline`
+      );
+      continue;
+    }
+
+    if (normalizeDiff(actual) !== normalizeDiff(expected)) {
+      // Advisory: agent reported mismatch between declared expected and
+      // declared actual. Likely a real bug signal.
+      warnings.push(
+        `[item 8 ADVISORY] ${r.slice_id}: recorded verification_output ≠ expected_output ` +
+        `(subagent self-reported — parent cannot independently verify, ` +
+        `but this mismatch is a likely bug signal)`
+      );
+    }
+    // Matching values → no signal. Trust is limited to the review gates above.
+  }
+  return { errors, warnings };
+}
+
+/**
+ * Read a deep-work state file and extract needed fields from YAML frontmatter.
+ *
+ * State file format: `.claude/deep-work.{SESSION_ID}.md`
+ *   ---
+ *   work_dir: ...
+ *   tdd_mode: "strict"
+ *   model_routing:
+ *     implement: "sonnet"
+ *   ---
+ *
+ *   # body
+ *
+ * This is NOT JSON. JSON.parse would throw. (N-R2 fix.)
+ *
+ * Minimal-field reader — extracts only what verify-delegated-receipt needs.
+ * Full YAML semantics NOT implemented; uses simple regex for top-level
+ * scalar fields.
+ */
+function parseStateFile(stateFilePath) {
+  const fs = require('node:fs');
+  const src = fs.readFileSync(stateFilePath, 'utf8');
+
+  // Extract YAML frontmatter between first two `---` delimiters
+  const fmMatch = src.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const fm = fmMatch ? fmMatch[1] : '';
+
+  if (!fm) {
+    // No frontmatter — fall back to empty state (verifyReceipts defaults apply)
+    return {};
+  }
+
+  const state = {};
+  // Top-level scalar fields we care about
+  const scalarFields = ['tdd_mode', 'team_mode', 'current_phase', 'execution_override'];
+  for (const field of scalarFields) {
+    const re = new RegExp(`^${field}:\\s*(["']?)([^"'\\s#\\n][^#\\n]*?)\\1\\s*(?:#.*)?$`, 'm');
+    const m = fm.match(re);
+    if (m) state[field] = m[2].trim();
+  }
+  return state;
+}
+
+module.exports.parsePlanMd = parsePlanMd;
+module.exports.checkItem8 = checkItem8;
+module.exports.parseStateFile = parseStateFile;
