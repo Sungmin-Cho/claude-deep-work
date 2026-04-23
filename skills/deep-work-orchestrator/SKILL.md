@@ -17,6 +17,29 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 >
 > 그 후 Step 3의 해당 `<phase>` branch로 점프한다.
 
+### Step 1-3: Model Routing Migration (v6.4.0)
+
+State load 직후, Step 3 dispatch 전에 migration helper 를 호출하여 `model_routing.{research,implement,test} == "main"` 값을 `"sonnet"` 으로 atomic 치환한다. `model_routing.plan` 은 migration 대상에서 제외 (Plan phase는 대화형 메인 세션이 설계상 필수 — spec §3 D1 W1).
+
+실행:
+```bash
+result=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js" "$STATE_FILE" 2>&1 || true)
+```
+
+또는 동등한 JS import (orchestrator가 Node 런타임 내에서 실행 가능한 경우):
+```javascript
+const { migrateStateFile } = require('./scripts/migrate-model-routing.js');
+const { replaced, warnings } = migrateStateFile(stateFile);
+```
+
+출력 결과:
+- `replaced`가 비어있지 않으면 각 필드별로 1회 알림:
+  `[migration v6.4.0] model_routing.research='main' deprecated → 'sonnet' 적용`
+- `warnings`가 있으면 그대로 stderr에 출력 (치환 없이 원본 유지).
+- 치환이 발생한 경우 atomic `writeFile + rename` 으로 state file에 persist됨.
+
+(spec §5.7, §6.1 참조)
+
 ## 1-1. Update Check
 
 SessionStart hook의 update-check.sh 출력 처리:
