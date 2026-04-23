@@ -372,7 +372,101 @@ AskUserQuestion({
 일부 agent timeout/fail 시 §7.1 "Parallel subagent의 partial timeout" 규칙:
 - AskUserQuestion: 실패한 cluster만 / 전체 / 수동 / abort.
 
+## Section 2.3: verify-receipt + Rollback Protocol (v6.4.0)
+
+### 전제
+
+Sections 2.1 (solo delegate) 또는 2.2 (team delegate) 완료 직후. Phase Review Gate 진입 **직전** precondition으로 실행.
+
+### verify-delegated-receipt.sh 실행
+
+```bash
+state_file=".claude/deep-work.${SESSION_ID}.md"
+receipts_dir="${WORK_DIR}/receipts"
+plan_path="${WORK_DIR}/plan.md"
+
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-delegated-receipt.sh" \
+     "$state_file" "$receipts_dir" "$plan_path"
+rc=$?
+```
+
+### Pass 경로
+
+`rc == 0` → Phase Review Gate 진입 → state 업데이트 → Exit Gate.
+
+### Fail 경로 (§5.6a Rollback Protocol)
+
+`rc != 0` → AskUserQuestion:
+
+```
+options = [
+  "재위임 (git reset --hard <delegation_snapshot>, receipts 제거 후 재위임)",
+  "수동 수정 (rollback 없이 main session이 해당 cluster 인계 — inline takeover)",
+  "abort (아무 정리 없이 세션 종료)"
+]
+```
+
+#### "재위임" 선택 시
+
+```bash
+git reset --hard "<delegation_snapshot>"
+rm -f "${WORK_DIR}/receipts"/SLICE-*.json
+```
+
+그 후 Section 2.1 또는 2.2 경로로 재진입.
+
+#### "수동 수정" 선택 시 (inline takeover)
+
+- `active_cluster_takeover: "<cluster_id>"` state 필드 기록 (중단 후 resume 대비)
+- main session이 Solo Slice Loop 로직으로 해당 cluster 구현 (TDD hook 정상)
+- 완료 후 `active_cluster_takeover` clear, 다음 cluster는 다시 decide_execution_mode 결과에 따름
+
+#### "abort" 선택 시
+
+세션 종료, state 변경 없음. 사용자가 수동 검토 후 `/deep-resume` 결정.
+
+### inline 경로에서의 부분 verify-receipt
+
+Section 1.5 `execution_mode == "inline"` 경로도 Phase Review Gate 직전에 verify-delegated-receipt를 실행하되, **item 5/6/7/8만 precondition**으로 평가 (item 1-4는 hook이 real-time으로 강제). 구현: Task 5의 runner JS에 `--skip-items=1,2,3,4` 플래그 추가, 그리고 inline 경로에서 해당 플래그로 스크립트 호출:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-delegated-receipt.sh" \
+  --skip-items=1,2,3,4 \
+  "$state_file" "$receipts_dir" "$plan_md_path"
+```
+
+item 별 역할:
+- item 5: out-of-scope 편집 탐지 (hook의 edit 차단 이외 이중 안전망)
+- item 6: baseline chain — inline Solo Slice Loop이 `git_before_slice`/`git_after_slice` 기록 필수 (Task 7.5)
+- item 7: red_verification_output 기록 필수
+- item 8: 기록된 verification_output vs expected_output 비교 (shell 실행 없음)
+
+### Resume with `--exec` override 또는 takeover 분기 (C4)
+
+`/deep-resume --exec=X` 또는 state의 `active_cluster_takeover` 가 set된 경우:
+
+```
+if state.active_cluster_takeover != null:
+    # 이전 세션이 debug takeover 도중 중단
+    # → 해당 cluster를 inline으로 이어 진행 (TDD hook 정상)
+    execute_cluster_inline(state.active_cluster_takeover)
+    state.active_cluster_takeover = null  # 완료 후 clear
+    # 다음 cluster는 다시 decide_execution_mode에 따름
+
+elif receipts_dir has complete receipts from prior session:
+    # 완료된 slice는 item 5/6/7/8만 부분 검증 (이미 수용된 산출물)
+    # 미완료 slice만 새 경로(현재 execution_mode)로 실행
+    verify-delegated-receipt.sh --skip-items=1,2,3,4 --only-completed
+    delegate_or_inline_remaining_slices()
+```
+
+구현 세부:
+- Task 5의 runner에 `--only-completed` 플래그 추가 — `status: "complete"` 만 골라 검증.
+- deep-implement Section 1의 Resume Detection 이 `active_cluster_takeover` 필드를 읽어 inline 분기.
+
 ## Phase Review Gate
+
+> **Precondition (v6.4.0)**: Section 2.3 verify-receipt가 pass해야 이 단계에 도달한다. Fail 시 §5.6a Rollback Protocol이 이 단계를 우회한다.
 
 모든 slice 완료 후, Test 전환 전:
 Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
