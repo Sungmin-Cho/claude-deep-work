@@ -508,25 +508,26 @@ Options selected when running `/deep-work` (or saved in a preset):
 | Model routing | Default / Custom | Per-phase model assignment |
 | Notifications | None / Local / External | Notify on phase completion |
 
-## Solo vs Team Mode
+## Team/Solo Mode (v6.4.0)
 
-| Aspect | Solo | Team |
-|--------|------|------|
-| Research | Single agent analysis | 3 parallel agents (arch/pattern/risk) |
-| Plan | Single agent | Single agent (same) |
-| Implement | Sequential execution | File-ownership-based parallel execution + cross-review |
-| Test | Same | Same |
-| Requirement | None | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` |
+### Semantics
+- `--team` → concurrency = N (parallel subagents for Research/Implement)
+- `--solo` (default) → concurrency = 1 (single subagent)
 
-Enabling Team mode:
-```json
-// ~/.claude/settings.json
-{
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  }
-}
-```
+### Where work runs
+All real work runs in **Claude Code subagents** by default. Main session is an orchestrator only.
+
+### Escape hatches (Implement only)
+| Situation | Behavior |
+|-----------|----------|
+| `tdd_mode=spike` | Auto-inline |
+| `--skip-plan` + 1 trivial slice | Auto-inline |
+| `--exec=inline` | Force inline |
+| `--exec=delegate` | Force delegate |
+| verify-receipt failure → "수동 수정" | Inline takeover |
+
+### Agent Team (optional)
+If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set, team Implement prompts you to choose between classic Agent Team and parallel subagent dispatch.
 
 ## Complexity Guide
 

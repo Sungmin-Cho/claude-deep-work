@@ -1,6 +1,6 @@
 {
   "name": "@claude-deep-work/deep-work",
-  "version": "6.3.1",
+  "version": "6.4.0",
   "description": "Deep Work plugin for Claude Code - Evidence-Driven Development Protocol with TDD enforcement, Health Engine (drift detection + fitness functions), worktree isolation, model auto-routing, receipt validation, 6-phase workflow with Phase 5 Integrate",
   "author": "sungmin",
   "license": "MIT",
@@ -22,6 +22,8 @@
     "hooks/",
     "sensors/",
     "health/",
+    "agents/",
+    "scripts/",
     "README.md",
     "assumptions.json",
     "templates/"
