@@ -27,6 +27,17 @@ description: "Phase 3 — Implement: slice-based TDD execution of approved plan"
 4. 추출: `work_dir`, `active_slice`, `tdd_state`, `model_routing.implement`, `evaluator_model`
 5. Verify: `current_phase` = "implement", `plan_approved` = true
 6. `implement_started_at` 기록 (ISO timestamp)
+7. Parse `--exec=<mode>` from `$ARGUMENTS`:
+   - If `$ARGUMENTS` contains `--exec=inline` → set local `args_exec = "inline"`
+   - If `$ARGUMENTS` contains `--exec=delegate` → set local `args_exec = "delegate"`
+   - Otherwise → `args_exec = null`
+   - After Section 1.5 pre-routing, if `args_exec != null`, persist to state:
+     `state.execution_override = args_exec` (written via Edit on the state file
+     YAML frontmatter, matching the existing pattern used for other CLI-overridable fields).
+
+This persistence ensures:
+  - Resume uses the override even without re-passing --exec.
+  - CLI args > state precedence is automatic (args parsed first, state written last).
 
 ## Plan 로드 + Slice 파싱
 
@@ -48,6 +59,54 @@ Read `$WORK_DIR/plan.md` → **Slice Checklist** 파싱. 각 slice:
 - Section 2/3 진입 금지
 
 **주의**: Slice 단위 resume (일부 slice만 완료)은 위의 Resume Detection이 처리. 본 branch는 **Phase 전체 완료 후 Exit Gate에서 일시정지한 경우에만** 발동.
+
+## Section 1.5: Pre-routing — Inline Escape Hatches (v6.4.0)
+
+Section 1 전체 완료 후 (state 로드 + Plan 파싱 + Slice 파싱 + Resume Detection + 완료-marker 감지가 모두 끝난 뒤), Section 2 First Action 진입 **전에** 실행 모드를 결정한다.
+
+### decide_execution_mode
+
+```
+def decide_execution_mode(state, args):
+    # B. 명시적 override 최우선
+    if args.exec == "inline" or state.execution_override == "inline":
+        return "inline"
+    if args.exec == "delegate" or state.execution_override == "delegate":
+        return "delegate"
+
+    # A. 자동 heuristic
+    if state.tdd_mode == "spike":
+        return "inline"
+    if ("plan" in state.skipped_phases
+        and len(plan.slices) == 1
+        and plan.slices[0].size == "S"):
+        return "inline"
+
+    # 기본
+    return "delegate"
+```
+
+### 자동 inline 알림
+
+자동 heuristic inline 결정 시 1회 메시지:
+```
+[auto-inline] tdd_mode=spike — main session에서 구현합니다.
+              (subagent 위임을 강제하려면 --exec=delegate 사용)
+```
+
+### 명시적 override
+
+- CLI `--exec=<mode>` → state의 `execution_override` 필드 (값: `inline | delegate | null`)
+- state.execution_override는 resume 시에도 유지
+- **CLI args > state**: resume 시 `/deep-resume --exec=X`가 기존 state 값을 덮어씀
+
+### Section 1.5 출력
+
+Section 2 진입 시 메모리에 보유:
+- `execution_mode`: "inline" | "delegate"
+- `delegation_snapshot`: `git rev-parse HEAD` (delegate 모드 진입 직전에 기록)
+
+상세는 spec §5.5a, §7.5 참조.
 
 # Section 2: Phase 실행
 
