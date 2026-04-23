@@ -167,6 +167,38 @@ State에서 `model_routing.implement` 확인 (기본: "sonnet").
 Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙을 프롬프트에 포함 (hook이 delegated agent에 미적용), slice당 10분 timeout.
 상세: Read("../shared/references/model-routing-guide.md")
 
+## Section 2.1: Delegate Solo Path (v6.4.0)
+
+`execution_mode == "delegate"` AND `team_mode == "solo"` 인 경우.
+
+### Slice Cluster 추출
+
+File-ownership 기반:
+- 동일 파일을 수정하는 slice는 같은 cluster
+- 파일 overlap 없는 slice는 독립 cluster
+
+Solo는 **모든 cluster를 단일 agent에 순차 위임**:
+
+```
+Agent(
+  subagent_type="deep-work:implement-slice-worker",
+  model=state.model_routing.implement,   // default "sonnet"
+  prompt="cluster_ids=[C1,C2,...,Cn]; sequential;" +
+         "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
+         "delegation_snapshot=<hash>;" +
+         "tdd_mode=<state.tdd_mode>;" +
+         "evaluator_model=<state.evaluator_model>"
+)
+```
+
+### Union scope
+
+Agent의 out-of-scope guardrail은 "union of all assigned clusters' declared scopes" (spec §5.3). Solo는 cluster_ids 의 모든 cluster.files 의 union이 허용 범위.
+
+### 반환 처리
+
+Agent 반환 후 §Section 2.3 (verify-receipt + Rollback Protocol)으로 이동.
+
 ## Solo Slice Loop
 
 각 미완료 slice (`- [ ]`)에 대해:
