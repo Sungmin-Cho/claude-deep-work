@@ -68,13 +68,16 @@ Section 1 전체 완료 후 (state 로드 + Plan 파싱 + Slice 파싱 + Resume 
 
 ```
 def decide_execution_mode(state, args):
-    # B. 명시적 override 최우선
-    if args.exec == "inline" or state.execution_override == "inline":
-        return "inline"
-    if args.exec == "delegate" or state.execution_override == "delegate":
-        return "delegate"
+    # B. 명시적 override 우선순위: CLI args > state (W-4.2 fix)
+    #    예전 버전: `args.exec == "inline" or state.execution_override == "inline"`
+    #    → state=inline + CLI=delegate 일 때 state가 이기는 버그.
+    #    수정: CLI가 지정된 경우 무조건 CLI가 이긴다.
+    if args.exec is not None:       # CLI 명시 → 무조건 우선
+        return args.exec            # "inline" or "delegate"
+    if state.execution_override is not None:  # state override 있음
+        return state.execution_override
 
-    # A. 자동 heuristic
+    # A. 자동 heuristic (CLI도 state도 없을 때만)
     if state.tdd_mode == "spike":
         return "inline"
     if ("plan" in state.skipped_phases
@@ -102,9 +105,13 @@ def decide_execution_mode(state, args):
 
 ### Section 1.5 출력
 
-Section 2 진입 시 메모리에 보유:
-- `execution_mode`: "inline" | "delegate"
+Section 2 진입 시 메모리에 보유 + state YAML에 persist:
+- `execution_mode`: "inline" | "delegate" (메모리만)
 - `delegation_snapshot`: `git rev-parse HEAD` (delegate 모드 진입 직전에 기록)
+  — **state YAML에도 `delegation_snapshot: <hash>` 로 Edit tool로 기록** (C-1.1 fix).
+  이 persist가 있어야 verify-receipt fail 후 세션이 interrupted 되어도 `/deep-resume`이
+  state에서 기준 hash를 읽어 Rollback Protocol을 재표시할 수 있다.
+  verify-receipt가 pass하면 Section 2.3 말미에서 `delegation_snapshot: null` 로 clear.
 
 상세는 spec §5.5a, §7.5 참조.
 
@@ -341,11 +348,15 @@ AskUserQuestion({
    - team_name: "deep-implement-v640"
    - 각 cluster마다 TaskCreate 생성 (subject: "Implement cluster C{n}",
      description: cluster의 slice_ids + files + TDD 규칙 + Slice Review 규칙)
-   - 그룹별 Agent 스폰:
+   - 그룹별 Agent 스폰 — **full worker contract 필수** (CA3 fix):
        Agent(subagent_type="deep-work:implement-slice-worker",
              model=state.model_routing.implement,
              mode="bypassPermissions",  // hook이 team agent에 미적용 → Receipt 중심 검증
-             prompt="cluster_ids=[Ci]; delegation_snapshot=<hash>; tdd_mode=...")
+             prompt="cluster_id=<Ci>; cluster_ids=[slice_ids of Ci];" +
+                    "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
+                    "delegation_snapshot=<hash>;" +
+                    "tdd_mode=<state.tdd_mode>;" +
+                    "evaluator_model=<state.evaluator_model>")
 3. Collect: 모든 Task 완료 알림 수신 → 모든 receipt 수집
    - Section 2.3 verify-delegated-receipt.sh가 precondition으로 실행.
 4. Shutdown: SendMessage shutdown_request → TeamDelete.
@@ -358,12 +369,17 @@ AskUserQuestion({
 1. Cluster 독립성 map 계산:
    - 독립 cluster 쌍 → parallel Agent 호출
    - 의존 cluster 쌍 → sequential (같은 agent에 묶거나 순차)
-2. 각 independent cluster에 대해 Agent 호출을 단일 메시지에 parallel 실행:
+2. 각 independent cluster에 대해 Agent 호출을 단일 메시지에 parallel 실행.
+   **full worker contract 필수** (CA3 fix — Section 2.1 Solo와 동일 구조):
    ```
    Agent(subagent_type="deep-work:implement-slice-worker",
          model=state.model_routing.implement,
-         prompt="cluster_ids=[Ci]; delegation_snapshot=<hash>; tdd_mode=...")
-   Agent(subagent_type="deep-work:implement-slice-worker", ...)
+         prompt="cluster_id=<Ci>; cluster_ids=[slice_ids of Ci];" +
+                "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
+                "delegation_snapshot=<hash>;" +
+                "tdd_mode=<state.tdd_mode>;" +
+                "evaluator_model=<state.evaluator_model>")
+   Agent(subagent_type="deep-work:implement-slice-worker", ...)  // same contract for each independent cluster
    ```
 3. 모든 Agent 완료 후 Section 2.3 로 이동.
 
@@ -392,7 +408,7 @@ rc=$?
 
 ### Pass 경로
 
-`rc == 0` → Phase Review Gate 진입 → state 업데이트 → Exit Gate.
+`rc == 0` → state의 `delegation_snapshot`을 null로 clear (Edit tool로 해당 라인만 교체; C-1.1 fix) → Phase Review Gate 진입 → state 업데이트 → Exit Gate.
 
 ### Fail 경로 (§5.6a Rollback Protocol)
 
@@ -408,12 +424,15 @@ options = [
 
 #### "재위임" 선택 시
 
+hash는 **state YAML에 기록된** `delegation_snapshot`에서 읽는다 (C-1.1 — 메모리 only가 아닌 persist 된 값이므로 resume 후에도 정확한 값 확보):
+
 ```bash
-git reset --hard "<delegation_snapshot>"
+snapshot_hash=$(awk '/^delegation_snapshot:/ {gsub(/["'\'']/, "", $2); print $2; exit}' "$state_file")
+git reset --hard "$snapshot_hash"
 rm -f "${WORK_DIR}/receipts"/SLICE-*.json
 ```
 
-그 후 Section 2.1 또는 2.2 경로로 재진입.
+그 후 Section 2.1 또는 2.2 경로로 재진입. (새 delegation은 새로 capture한 snapshot을 다시 state에 기록하므로 idempotent.)
 
 #### "수동 수정" 선택 시 (inline takeover)
 
@@ -423,7 +442,9 @@ rm -f "${WORK_DIR}/receipts"/SLICE-*.json
 
 #### "abort" 선택 시
 
-세션 종료, state 변경 없음. 사용자가 수동 검토 후 `/deep-resume` 결정.
+세션 종료. state의 `delegation_snapshot`은 **그대로 남긴다** (W-5.3 fix) — 그 값이 non-null이면 `/deep-resume` 시 Section 2.3 Resume 분기가 Rollback Protocol AskUserQuestion을 다시 표시한다. 사용자는 worktree 상태를 수동 검토 후 resume 할 수 있다.
+
+(abort가 state를 완전히 clean하게 두면 resume이 verify 결과를 잃어버려 무한 루프에 빠짐 — delegation_snapshot을 pending signal로 유지해 명시적으로 재진입 가능.)
 
 ### inline 경로에서의 부분 verify-receipt
 
@@ -441,12 +462,19 @@ item 별 역할:
 - item 7: red_verification_output 기록 필수
 - item 8: 기록된 verification_output vs expected_output 비교 (shell 실행 없음)
 
-### Resume with `--exec` override 또는 takeover 분기 (C4)
+### Resume with `--exec` override 또는 takeover 분기 (C4, C-1.1)
 
-`/deep-resume --exec=X` 또는 state의 `active_cluster_takeover` 가 set된 경우:
+`/deep-resume` 시 Section 1.5 진입 전에 다음 순서로 체크:
 
 ```
-if state.active_cluster_takeover != null:
+# 최우선: delegation_snapshot이 set되어 있고 implement가 미완료 → verify-receipt fail 후 interrupt된 케이스
+if state.delegation_snapshot is not null and state.implement_completed_at is null:
+    # C-1.1 fix — Rollback Protocol AskUserQuestion을 재표시
+    # (재위임 / 수동 수정 / abort 중 선택, §2.3 Fail 경로와 동일)
+    re_present_rollback_askuserquestion(state.delegation_snapshot)
+    # 사용자 선택에 따라 Section 2.1/2.2 재진입 or inline takeover or abort
+
+elif state.active_cluster_takeover != null:
     # 이전 세션이 debug takeover 도중 중단
     # → 해당 cluster를 inline으로 이어 진행 (TDD hook 정상)
     execute_cluster_inline(state.active_cluster_takeover)
@@ -462,7 +490,8 @@ elif receipts_dir has complete receipts from prior session:
 
 구현 세부:
 - Task 5의 runner에 `--only-completed` 플래그 추가 — `status: "complete"` 만 골라 검증.
-- deep-implement Section 1의 Resume Detection 이 `active_cluster_takeover` 필드를 읽어 inline 분기.
+- deep-implement Section 1의 Resume Detection 이 `delegation_snapshot` / `active_cluster_takeover` 필드를 읽어 분기 우선순위 결정.
+- `delegation_snapshot`은 delegate 진입 직전에 state에 persist, verify-receipt pass 시 null로 clear. 따라서 resume 시 이 필드가 non-null이면 "fail 후 interrupt" 신호.
 
 ## Phase Review Gate
 

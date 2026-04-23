@@ -240,6 +240,49 @@ describe('verify-receipt item 6: baseline chain continuity (F1)', () => {
     });
     assert.equal(result.pass, true, JSON.stringify(result.errors));
   });
+
+  it('PASS on team parallel: two clusters each with independent chain from same delegation_snapshot (CA4)', () => {
+    // Cluster C1 chain: A -> B -> C
+    // Cluster C2 chain: A -> D -> E  (started from same A = delegation_snapshot)
+    // Global sort would flag C1.SLICE-001.after=B vs C2.SLICE-002.before=A as chain break.
+    // Per-cluster chain check (CA4 fix) must treat these as independent chains.
+    const result = verifyReceipts({
+      receipts: [
+        makeReceipt({ slice_id: 'SLICE-001', cluster_id: 'C1', git_before_slice: 'A', git_after_slice: 'B' }),
+        makeReceipt({ slice_id: 'SLICE-002', cluster_id: 'C2', git_before_slice: 'A', git_after_slice: 'D' }),
+        makeReceipt({ slice_id: 'SLICE-003', cluster_id: 'C1', git_before_slice: 'B', git_after_slice: 'C' }),
+        makeReceipt({ slice_id: 'SLICE-004', cluster_id: 'C2', git_before_slice: 'D', git_after_slice: 'E' }),
+      ],
+      plan: {
+        slices: [
+          { id: 'SLICE-001', files: ['a.js'] },
+          { id: 'SLICE-002', files: ['b.js'] },
+          { id: 'SLICE-003', files: ['c.js'] },
+          { id: 'SLICE-004', files: ['d.js'] },
+        ],
+      },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, true, JSON.stringify(result.errors));
+  });
+
+  it('FAIL on broken chain within a single cluster (per-cluster check)', () => {
+    const result = verifyReceipts({
+      receipts: [
+        makeReceipt({ slice_id: 'SLICE-001', cluster_id: 'C1', git_before_slice: 'A', git_after_slice: 'B' }),
+        makeReceipt({ slice_id: 'SLICE-002', cluster_id: 'C1', git_before_slice: 'X', git_after_slice: 'Y' }),  // gap: B != X
+      ],
+      plan: {
+        slices: [
+          { id: 'SLICE-001', files: ['a.js'] },
+          { id: 'SLICE-002', files: ['b.js'] },
+        ],
+      },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, false);
+    assert.match(result.errors.join('\n'), /cluster "C1"/);
+  });
 });
 
 describe('verify-receipt item 7: TDD hard-fail (W8)', () => {

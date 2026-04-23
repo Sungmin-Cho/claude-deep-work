@@ -161,18 +161,32 @@ function verifyReceipts({
     }
   }
 
-  // Item 6: baseline chain continuity (sorted by slice_id)
+  // Item 6: baseline chain continuity — per-cluster (CA4 fix).
+  // Team parallel mode: each cluster's receipts form an independent chain
+  // starting from the shared delegation_snapshot. Verifying globally across
+  // all receipts would false-fail legitimate parallel runs. Group by
+  // receipt.cluster_id and check continuity within each group only.
+  // Solo mode: all receipts share the same cluster_id (or undefined → treated
+  // as one group) so behavior matches previous global chain check.
   if (!skip.has(6)) {
-    const sorted = [...receipts].sort((a, b) =>
-      (a.slice_id || '').localeCompare(b.slice_id || '')
-    );
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const cur = sorted[i];
-      const nxt = sorted[i + 1];
-      if (cur.git_after_slice && nxt.git_before_slice && cur.git_after_slice !== nxt.git_before_slice) {
-        errors.push(
-          `[item 6] baseline chain break: ${cur.slice_id}.git_after_slice="${cur.git_after_slice}" ≠ ${nxt.slice_id}.git_before_slice="${nxt.git_before_slice}"`
-        );
+    const byCluster = new Map();
+    for (const r of receipts) {
+      const cid = r.cluster_id || '_default';
+      if (!byCluster.has(cid)) byCluster.set(cid, []);
+      byCluster.get(cid).push(r);
+    }
+    for (const [cid, group] of byCluster) {
+      const sorted = [...group].sort((a, b) =>
+        (a.slice_id || '').localeCompare(b.slice_id || '')
+      );
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const cur = sorted[i];
+        const nxt = sorted[i + 1];
+        if (cur.git_after_slice && nxt.git_before_slice && cur.git_after_slice !== nxt.git_before_slice) {
+          errors.push(
+            `[item 6] baseline chain break in cluster "${cid}": ${cur.slice_id}.git_after_slice="${cur.git_after_slice}" ≠ ${nxt.slice_id}.git_before_slice="${nxt.git_before_slice}"`
+          );
+        }
       }
     }
   }
@@ -180,6 +194,12 @@ function verifyReceipts({
   // Item 8: recorded verification_output vs expected_output.
   //   - structural errors (missing fields) → real fail
   //   - value mismatch → ADVISORY warning (N-R5 trust boundary)
+  // Note (W-2.1): `checkItem8` is defined later in this file but is a
+  // function declaration, so it IS hoisted to module scope and accessible
+  // here at call time. The `typeof` guard exists for defensive early-load
+  // scenarios; if someone ever converts `function checkItem8` to
+  // `const checkItem8 = ...`, hoisting breaks and item 8 would silently
+  // skip — unit test `checkItem8 invoked` asserts it runs.
   const warnings = [];
   if (!skip.has(8) && typeof checkItem8 === 'function') {
     const r = checkItem8(receipts);
@@ -278,7 +298,9 @@ function parsePlanMd(planMdPath) {
       }
     }
 
-    const sizeMatch = block.match(/^\s*-\s*size:\s*([SMLX]{1,2})/m);
+    // W-2.3: tighten from [SMLX]{1,2} (which matched nonsense like XS, XM, LX)
+    // to the exact enumeration S | M | L | XL used by plan templates.
+    const sizeMatch = block.match(/^\s*-\s*size:\s*(S|M|L|XL)\b/m);
     const size = sizeMatch ? sizeMatch[1] : null;
 
     slices.push({ id: entry.id, files, size, goal: entry.goal });

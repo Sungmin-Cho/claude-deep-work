@@ -103,4 +103,12 @@ describe('migrate-model-routing', () => {
     migrateStateFile(f);
     assert.match(fs.readFileSync(f, 'utf8'), /research:\s*"sonnet"/);
   });
+
+  it('returns empty result when state file does not exist (W-2.2 guard)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-nonexistent-'));
+    const nonExistent = path.join(dir, 'never-created.md');
+    const result = migrateStateFile(nonExistent);
+    assert.deepEqual(result, { replaced: [], warnings: [] });
+    // Should not throw ENOENT
+  });
 });

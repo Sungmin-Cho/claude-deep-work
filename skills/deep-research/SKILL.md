@@ -131,12 +131,31 @@ Agent가 `$WORK_DIR/research.md`를 **직접 작성**한다. 부모는 refinemen
 - codebase: `architecture`, `patterns`, `risks`
 - zero-base: `tech-stack`, `conventions`, `data-model`
 
-단일 메시지에 3개 Agent 호출을 parallel하게 실행:
+단일 메시지에 3개 Agent 호출을 parallel하게 실행. **각 호출은 Solo path와 동일한 prompt 계약을 유지** (area만 다름). work_dir/task/re_run_area/incremental_since 모두 전달 필요 — 생략 시 worker가 output path 결정 불가 (CA2 fix):
+
 ```
-Agent(subagent_type="...", model=..., prompt="area=architecture; ...")
-Agent(subagent_type="...", model=..., prompt="area=patterns; ...")
-Agent(subagent_type="...", model=..., prompt="area=risks; ...")
+Agent(
+  subagent_type="deep-work:research-{codebase|zerobase}-worker",
+  model=state.model_routing.research,
+  prompt="area=architecture; work_dir=<$WORK_DIR>; task=<task_description>;" +
+         "re_run_area=<--scope value or null>;" +
+         "incremental_since=<--incremental value or null>"
+)
+Agent(
+  subagent_type="deep-work:research-{codebase|zerobase}-worker",
+  model=state.model_routing.research,
+  prompt="area=patterns; work_dir=<$WORK_DIR>; task=<task_description>;" +
+         "re_run_area=<--scope or null>; incremental_since=<--incremental or null>"
+)
+Agent(
+  subagent_type="deep-work:research-{codebase|zerobase}-worker",
+  model=state.model_routing.research,
+  prompt="area=risks; work_dir=<$WORK_DIR>; task=<task_description>;" +
+         "re_run_area=<--scope or null>; incremental_since=<--incremental or null>"
+)
 ```
+
+(zero-base 경우 area 값은 `tech-stack` / `conventions` / `data-model`. subagent_type은 `research-zerobase-worker`.)
 
 각 Agent가 `$WORK_DIR/research-{area}.md` 부분 파일을 작성. 완료 후 부모가 3개 파일을 Read → Document Refinement Protocol (Apply / Deduplicate / Prune) → `$WORK_DIR/research.md` 로 merge.
 
@@ -177,7 +196,9 @@ v6.3.x의 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` precheck과 TeamCreate+TaskCrea
 Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: research
 - Document: `$WORK_DIR/research.md`
-- Self-review checklist: 아키텍처 분석 완성도, 패턴 식별, 리스크 누락
+- Self-review checklist — **project_type에 따라 분기** (W-4.1 fix):
+  - 기존 codebase (`project_type != zero-base`): 아키텍처 분석 완성도, 패턴 식별, 리스크 누락
+  - 신규 프로젝트 (`project_type == zero-base`): tech-stack 선정 근거 (대안 비교 + URL 출처), conventions 완결성, data-model 적정성
 
 ## State 업데이트
 

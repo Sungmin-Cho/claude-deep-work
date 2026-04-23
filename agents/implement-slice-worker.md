@@ -31,6 +31,7 @@ produce receipts. You are operating OUTSIDE the parent's TDD hook, so the
 parent relies on your receipts for verification.
 
 # Input (prompt contract)
+- cluster_id (team parallel mode): identifier for THIS cluster (e.g. "C1"). Must be written into every receipt this worker produces. Used by parent's verify-receipt item 6 for per-cluster baseline chain validation. Solo mode may omit or use any constant string (defaults to "_default" at verify time).
 - cluster_ids: list of slice IDs to execute.
   - Solo mode: may contain slices from multiple clusters — agent runs them
     sequentially in plan order.
@@ -69,6 +70,7 @@ Required JSON structure (all fields mandatory except where noted):
 ```json
 {
   "slice_id": "SLICE-NNN",
+  "cluster_id": "<cluster id from prompt input — e.g. 'C1'. Used by parent's verify-receipt item 6 for per-cluster baseline chain validation in team parallel mode. Solo mode may omit (defaults to '_default').>",
   "status": "complete",
   "tdd": {
     "state_transitions": ["PENDING", "RED_VERIFIED", "GREEN", "SENSOR_CLEAN"],

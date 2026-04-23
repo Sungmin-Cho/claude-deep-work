@@ -17,6 +17,11 @@ const FIELDS_TO_MIGRATE = ['research', 'implement', 'test'];  // plan excluded (
  * Returns { replaced: [...field names], warnings: [...messages] }.
  */
 function migrateStateFile(filePath) {
+  // W-2.2: guard against ENOENT for new-session call paths where the state
+  // file has not been created yet.
+  if (!fs.existsSync(filePath)) {
+    return { replaced: [], warnings: [] };
+  }
   const src = fs.readFileSync(filePath, 'utf8');
   const replaced = [];
   const warnings = [];
@@ -84,6 +89,19 @@ if (require.main === module) {
   for (const w of warnings) console.error(`[migration v6.4.0] ${w}`);
   for (const field of replaced) {
     console.log(`[migration v6.4.0] model_routing.${field}='main' deprecated → 'sonnet' 적용`);
+  }
+  // CA1: behavior-change notice — in v6.3.x, model_routing.X="main" meant
+  // "current session inline execution". v6.4.0 treats "sonnet" as a delegate
+  // target (subagent dispatch). A user who had "main" for inline intent now
+  // gets delegate behavior. Surface this in the log so they can opt into
+  // --exec=inline or tdd_mode=spike if inline was desired.
+  if (replaced.length > 0) {
+    console.log('[migration v6.4.0] ⚠ Behavior change notice: "main" previously meant');
+    console.log('  "inline execution in current session" (hook-protected). It has been');
+    console.log('  migrated to "sonnet" which means "delegate to subagent" (hook not applied,');
+    console.log('  relies on Receipt + verify-receipt). If you specifically needed inline');
+    console.log('  execution, re-run with `--exec=inline` or set `tdd_mode: spike` for');
+    console.log('  spike-mode auto-inline. See spec §5.5a / migration guide docs/migrations/v6.4.0.md.');
   }
   process.exit(0);
 }

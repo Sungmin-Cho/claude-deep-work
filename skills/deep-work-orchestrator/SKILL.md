@@ -21,14 +21,19 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 
 State load 직후, Step 3 dispatch 전에 migration helper 를 호출하여 `model_routing.{research,implement,test} == "main"` 값을 `"sonnet"` 으로 atomic 치환한다. `model_routing.plan` 은 migration 대상에서 제외 (Plan phase는 대화형 메인 세션이 설계상 필수 — spec §3 D1 W1).
 
+**호출 조건**: `$STATE_FILE`이 이미 존재할 때만 호출 (W-1.1 fix — 새 세션은 §1-9에서 state를 생성하므로 이 시점엔 파일이 없을 수 있음).
+
 실행:
 ```bash
-result=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js" "$STATE_FILE" 2>&1 || true)
+if [ -f "$STATE_FILE" ]; then
+  result=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js" "$STATE_FILE" 2>&1 || true)
+fi
 ```
 
 또는 동등한 JS import (orchestrator가 Node 런타임 내에서 실행 가능한 경우):
 ```javascript
 const { migrateStateFile } = require('./scripts/migrate-model-routing.js');
+// migrateStateFile 자체가 fs.existsSync 가드를 내부에서 처리 (W-2.2)
 const { replaced, warnings } = migrateStateFile(stateFile);
 ```
 

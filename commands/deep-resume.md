@@ -74,6 +74,7 @@ From the resolved state file, extract `current_phase`, `work_dir`, `task_descrip
 
 - `execution_override: inline | delegate | null` (v6.4.0 — sets decide_execution_mode override for inline escape hatches)
 - `active_cluster_takeover: "<cluster_id>" | null` (v6.4.0 — debug takeover 중 세션 중단 시, resume 하면 해당 cluster를 inline으로 이어 실행)
+- `delegation_snapshot: "<git hash>" | null` (v6.4.0 C-1.1 — delegate 진입 직전 capture된 commit hash. verify-receipt pass 시 null로 clear. resume 시 non-null이면 "verify-receipt fail 후 interrupt" 신호로 해석되어 Rollback Protocol AskUserQuestion을 재표시한다.)
 
 Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
 

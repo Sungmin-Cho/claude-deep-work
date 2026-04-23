@@ -75,4 +75,89 @@ describe('v6.4.0 integration — verify-delegated-receipt', () => {
     assert.ok(r.warnings && r.warnings.length > 0);
     assert.match(r.warnings.join('\n'), /item 8 ADVISORY/);
   });
+
+  it('--only-completed flag filters mixed-status receipts before verification (W-3.2)', () => {
+    // W-3.2: ensure the runner's `onlyCompleted === '1'` branch filters out
+    // blocked/blocked-upstream receipts so resume paths can verify only
+    // already-accepted slices without the blocked ones forcing a fail.
+    const { execFileSync } = require('node:child_process');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+
+    // Build a temp fixture with 1 complete + 1 blocked receipt.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'only-completed-'));
+    fs.writeFileSync(path.join(tmp, 'state.md'),
+      '---\ntdd_mode: "strict"\n---\n');
+    fs.writeFileSync(path.join(tmp, 'plan.md'), [
+      '# Plan',
+      '',
+      '## Slice Checklist',
+      '',
+      '- [ ] SLICE-001: done',
+      '  - files: [a.js]',
+      '  - size: S',
+      '',
+      '- [ ] SLICE-002: blocked',
+      '  - files: [b.js]',
+      '  - size: S',
+    ].join('\n'));
+    const rdir = path.join(tmp, 'receipts');
+    fs.mkdirSync(rdir);
+    const baseReceipt = (id, status) => ({
+      slice_id: id, status,
+      tdd: {
+        state_transitions: ['PENDING', 'RED_VERIFIED', 'GREEN', 'SENSOR_CLEAN'],
+        red_verification_output: 'AssertionError: real\n  at x.js:1',
+      },
+      git_before_slice: 'A', git_after_slice: 'B',
+      changes: { git_diff: '' },
+      sensor_results: { lint: 'pass' },
+      spec_compliance: {},
+      slice_review: {}, harness_metadata: {},
+    });
+    fs.writeFileSync(path.join(rdir, 'SLICE-001.json'),
+      JSON.stringify(baseReceipt('SLICE-001', 'complete')));
+    fs.writeFileSync(path.join(rdir, 'SLICE-002.json'),
+      JSON.stringify(baseReceipt('SLICE-002', 'blocked')));
+
+    // Without --only-completed: runner should fail (item 2 rejects blocked)
+    const scriptDir = path.join(__dirname, '..', '..', 'hooks', 'scripts');
+    let failed = false;
+    try {
+      execFileSync('node',
+        [path.join(scriptDir, 'verify-delegated-receipt-runner.js'),
+         scriptDir,
+         path.join(tmp, 'state.md'),
+         rdir,
+         path.join(tmp, 'plan.md'),
+         '',    // skipItemsCsv empty
+         '0'],  // onlyCompleted=0
+        { stdio: 'pipe' });
+    } catch (e) {
+      failed = true;
+    }
+    assert.equal(failed, true, 'without --only-completed, blocked receipt should fail');
+
+    // With --only-completed: runner should pass (blocked filtered out,
+    // only SLICE-001 is verified, plan has 2 slices but skip_items needed
+    // to avoid item 1 count mismatch. Simulating resume path: complete
+    // receipts are already accepted.)
+    // Use skip_items=1 to bypass count mismatch since plan has 2 slices
+    // but we're only verifying 1 after filter.
+    const out = execFileSync('node',
+      [path.join(scriptDir, 'verify-delegated-receipt-runner.js'),
+       scriptDir,
+       path.join(tmp, 'state.md'),
+       rdir,
+       path.join(tmp, 'plan.md'),
+       '1',   // skipItemsCsv = skip item 1 (count mismatch)
+       '1'],  // onlyCompleted=1
+      { stdio: 'pipe', encoding: 'utf8' });
+    assert.match(out, /all items pass \(1 receipts\)/,
+      '--only-completed with skip_items=1 should pass, filtering blocked');
+
+    // cleanup
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
 });
