@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const { readBaseline, writeBaseline, isBaselineValid } = require('./health-baseline.js');
 
 describe('health-baseline', () => {
@@ -152,6 +153,67 @@ describe('health-check orchestrator', () => {
     assert.equal(report.fitness.total_rules, 0);
     assert.equal(report.fitness.passed, 0);
     assert.equal(report.fitness.failed, 0);
+  });
+
+  it('loads .deep-review/fitness.json when fitness option is omitted', async () => {
+    write('package.json', '{}');
+    write('src/small.js', '// just a comment\n');
+    write('.deep-review/fitness.json', JSON.stringify({
+      version: 1,
+      rules: [
+        { id: 'max-lines', type: 'file-metric', severity: 'advisory', check: 'line-count', max: 500, include: 'src/**/*.js' },
+      ],
+    }));
+
+    const report = await runHealthCheck(tmpDir, { skipAudit: true });
+
+    assert.equal(report.fitness.yaml_exists, true);
+    assert.equal(report.fitness.total_rules, 1);
+  });
+
+  it('CLI auto-loads .deep-review/fitness.json by default', () => {
+    write('package.json', '{}');
+    write('src/small.js', '// just a comment\n');
+    write('.deep-review/fitness.json', JSON.stringify({
+      version: 1,
+      rules: [
+        { id: 'max-lines', type: 'file-metric', severity: 'advisory', check: 'line-count', max: 500, include: 'src/**/*.js' },
+      ],
+    }));
+
+    const output = execFileSync('node', [
+      path.join(__dirname, 'health-check.js'),
+      tmpDir,
+      '--skip-audit',
+    ], { encoding: 'utf8' });
+    const report = JSON.parse(output);
+
+    assert.equal(report.fitness.yaml_exists, true);
+    assert.equal(report.fitness.total_rules, 1);
+  });
+
+  it('CLI treats --fitness value as an option value, not the project root', () => {
+    write('package.json', '{}');
+    write('src/small.js', '// one line\n');
+    const fitnessPath = path.join(tmpDir, 'custom-fitness.json');
+    fs.writeFileSync(fitnessPath, JSON.stringify({
+      version: 1,
+      rules: [
+        { id: 'max-zero-lines', type: 'file-metric', severity: 'required', check: 'line-count', max: 0, include: 'src/**/*.js' },
+      ],
+    }));
+
+    const output = execFileSync('node', [
+      path.join(__dirname, 'health-check.js'),
+      '--fitness',
+      fitnessPath,
+      '--skip-audit',
+    ], { cwd: tmpDir, encoding: 'utf8' });
+    const report = JSON.parse(output);
+
+    assert.equal(report.fitness.yaml_exists, true);
+    assert.equal(report.fitness.total_rules, 1);
+    assert.equal(report.fitness.failed, 1);
   });
 
   // 5. Individual sensor timeout exceeded → sensor recorded as 'timeout'

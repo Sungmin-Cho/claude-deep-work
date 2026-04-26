@@ -161,3 +161,49 @@ describe('v6.4.0 integration — verify-delegated-receipt', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 });
+
+describe('v6.4.0 integration — Health Engine command contracts', () => {
+  it('deep-research Phase 1 instructions connect topology, fitness, health_report, and baseline state', () => {
+    const skill = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'deep-research', 'SKILL.md'), 'utf8');
+
+    assert.match(skill, /Health Engine Preflight/);
+    assert.match(skill, /templates\/topology-detector\.js/);
+    assert.match(skill, /health\/fitness\/fitness-generator\.js/);
+    assert.match(skill, /health\/health-check\.js/);
+    assert.match(skill, /health_report/);
+    assert.match(skill, /fitness_baseline/);
+    assert.match(skill, /unresolved_required_issues/);
+  });
+
+  it('status and receipt commands read the actual health_report schema', () => {
+    const status = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'deep-status.md'), 'utf8');
+    const receipt = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'deep-receipt.md'), 'utf8');
+    const combined = `${status}\n${receipt}`;
+
+    assert.match(combined, /health_report\.drift\.dead_exports\.count/);
+    assert.match(combined, /health_report\.drift\.coverage_trend\.delta/);
+    assert.match(combined, /health_report\.drift\.dependency_vuln\.critical/);
+    assert.match(combined, /health_report\.drift\.stale_config\.count/);
+    assert.match(combined, /health_report\.fitness\.total_rules/);
+    assert.doesNotMatch(combined, /coverage_delta/);
+    assert.doesNotMatch(combined, /vulnerability\.critical/);
+    assert.doesNotMatch(combined, /stale_deps\.count/);
+  });
+});
+
+describe('release metadata', () => {
+  it('current release metadata and docs are bumped to 6.4.1', () => {
+    const root = path.join(__dirname, '..', '..');
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+    const claude = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
+    const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
+    const changelogKo = fs.readFileSync(path.join(root, 'CHANGELOG.ko.md'), 'utf8');
+
+    assert.equal(pkg.version, '6.4.1');
+    assert.equal(plugin.version, '6.4.1');
+    assert.match(claude, /^# deep-work v6\.4\.1/m);
+    assert.match(changelog, /^## \[6\.4\.1\] - 2026-04-26/m);
+    assert.match(changelogKo, /^## \[6\.4\.1\] - 2026-04-26/m);
+  });
+});

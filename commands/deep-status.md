@@ -140,8 +140,8 @@ If no receipt files have `sensor_results`, show "N/A ⬜" for sensor status.
 ### 2-2. Read health check data
 
 Read `health_report` from the session state file. If present, extract:
-- **Drift metrics**: `dead_exports.count`, `coverage_delta`, `vulnerability.critical`, `vulnerability.high`, `stale_deps.count`
-- **Fitness metrics**: `fitness.passed`, `fitness.total`, `fitness.violation_delta`
+- **Drift metrics**: `health_report.drift.dead_exports.count`, `health_report.drift.coverage_trend.delta`, `health_report.drift.dependency_vuln.critical`, `health_report.drift.dependency_vuln.high`, `health_report.drift.stale_config.count`
+- **Fitness metrics**: `health_report.fitness.passed`, `health_report.fitness.total_rules`, `health_report.fitness.required_missing`
 - **Required status**: `unresolved_required_issues` count, `acknowledged_required_issues` presence
 
 If `health_report` is absent from the state file, show "N/A ⬜" for Health Check status.

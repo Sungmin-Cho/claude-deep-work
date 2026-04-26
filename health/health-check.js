@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('node:fs');
 const path = require('node:path');
 const { scanDeadExports, loadHealthIgnore } = require('./drift/dead-export.js');
 const { scanStaleConfig } = require('./drift/stale-config.js');
@@ -165,6 +166,15 @@ const DEFAULT_TIMEOUTS = {
   total: 180000,
 };
 
+function loadFitnessFile(filePath) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to load fitness file ${filePath}: ${err.message}`);
+  }
+}
+
 /**
  * Run a complete health check on a project.
  *
@@ -173,10 +183,14 @@ const DEFAULT_TIMEOUTS = {
  * @returns {Promise<object>} health report
  */
 async function runHealthCheck(projectRoot, options = {}) {
+  const hasExplicitFitness = Object.prototype.hasOwnProperty.call(options, 'fitness');
+  const fitness = hasExplicitFitness
+    ? options.fitness
+    : loadFitnessFile(options.fitnessPath || path.join(projectRoot, '.deep-review', 'fitness.json'));
+
   const {
     ecosystems = {},
     baseline = null,
-    fitness = null,
     commit = null,
     branch = null,
     currentCoverage = null,
@@ -255,12 +269,46 @@ async function runHealthCheck(projectRoot, options = {}) {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
+function parseCliArgs(args, cwd = process.cwd()) {
+  const options = { skipAudit: args.includes('--skip-audit') };
+  const positionals = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--skip-audit') continue;
+    if (arg === '--no-fitness') {
+      options.fitness = null;
+      continue;
+    }
+    if (arg === '--fitness') {
+      if (args[i + 1] && !args[i + 1].startsWith('--')) {
+        options.fitnessPath = args[i + 1];
+        i++;
+      }
+      continue;
+    }
+    if (arg.startsWith('--fitness=')) {
+      options.fitnessPath = arg.slice('--fitness='.length);
+      continue;
+    }
+    if (arg.startsWith('--')) continue;
+
+    positionals.push(arg);
+  }
+
+  return {
+    projectRoot: positionals[0] || cwd,
+    options,
+  };
+}
+
 if (require.main === module) {
-  const projectRoot = process.argv[2] || process.cwd();
-  const skipAudit = process.argv.includes('--skip-audit');
-  runHealthCheck(projectRoot, { skipAudit })
+  const { projectRoot, options } = parseCliArgs(process.argv.slice(2));
+
+  runHealthCheck(projectRoot, options)
     .then(report => console.log(JSON.stringify(report, null, 2)))
     .catch(err => { console.error(err.message); process.exit(1); });
 }
 
-module.exports = { runHealthCheck };
+module.exports = { runHealthCheck, loadFitnessFile, parseCliArgs };

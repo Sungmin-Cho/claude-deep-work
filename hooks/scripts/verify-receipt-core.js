@@ -50,6 +50,8 @@ const STRICT_TRANSITIONS = new Set([
 const TERMINAL_STATES = new Set(['SENSOR_CLEAN', 'REFACTOR', 'PENDING', 'SPIKE']);
 
 const TRIVIAL_OUTPUT = /^\s*(ok|pass(ed)?)\s*$/i;
+const VALID_SENSOR_STATUSES = new Set(['pass', 'fail', 'timeout', 'not_applicable', 'skipped']);
+const SENSOR_METADATA_KEYS = new Set(['ecosystem', 'detected_at', 'summary']);
 
 function normalizeDiff(s) {
   if (!s) return '';
@@ -77,6 +79,50 @@ function filesChanged(repo_root, before, after) {
   if (!before || !after) return [];
   const out = runGit(['diff', '--name-only', `${before}..${after}`], repo_root);
   return out.split('\n').filter(Boolean);
+}
+
+function getSensorStatus(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && typeof value.status === 'string') return value.status;
+  return null;
+}
+
+function hasNotApplicableReason(value) {
+  if (!value || typeof value !== 'object') return false;
+  const reason = value.reason || value.evidence || value.message;
+  if (typeof reason !== 'string' || reason.trim() === '') return false;
+  return /not installed|not_installed|unavailable|missing|no .*tool|tool .*not/i.test(reason);
+}
+
+function validateSensorResults(sensorResults, sliceId) {
+  const errors = [];
+  if (!sensorResults || typeof sensorResults !== 'object' || Array.isArray(sensorResults)) {
+    errors.push(`[item 4] ${sliceId}: sensor_results missing`);
+    return errors;
+  }
+
+  const entries = Object.entries(sensorResults);
+  if (entries.length === 0) {
+    errors.push(`[item 4] ${sliceId}: sensor_results empty`);
+    return errors;
+  }
+
+  for (const [name, value] of entries) {
+    if (SENSOR_METADATA_KEYS.has(name)) continue;
+    const status = getSensorStatus(value);
+    if (!VALID_SENSOR_STATUSES.has(status)) {
+      errors.push(`[item 4] ${sliceId}: sensor_results.${name} has invalid status "${status ?? String(value)}"`);
+      continue;
+    }
+    if (status === 'fail' || status === 'timeout') {
+      errors.push(`[item 4] ${sliceId}: required sensor ${name} reported ${status}`);
+    }
+    if (status === 'not_applicable' && !hasNotApplicableReason(value)) {
+      errors.push(`[item 4] ${sliceId}: sensor_results.${name} not_applicable requires tool-unavailable reason`);
+    }
+  }
+
+  return errors;
 }
 
 function verifyReceipts({
@@ -125,9 +171,9 @@ function verifyReceipts({
       }
     }
 
-    // Item 4: sensor_results present
-    if (!skip.has(4) && (!r.sensor_results || typeof r.sensor_results !== 'object')) {
-      errors.push(`[item 4] ${r.slice_id}: sensor_results missing`);
+    // Item 4: sensor_results present and semantically valid
+    if (!skip.has(4)) {
+      errors.push(...validateSensorResults(r.sensor_results, r.slice_id));
     }
 
     // Item 7: TDD hard-fail
@@ -213,6 +259,7 @@ function verifyReceipts({
 module.exports = {
   verifyReceipts,
   normalizeDiff,
+  validateSensorResults,
   VERIFICATION_ITEMS,
 };
 

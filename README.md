@@ -508,7 +508,7 @@ Options selected when running `/deep-work` (or saved in a preset):
 | Model routing | Default / Custom | Per-phase model assignment |
 | Notifications | None / Local / External | Notify on phase completion |
 
-## Team/Solo Mode (v6.4.0)
+## Team/Solo Mode (v6.4.1)
 
 ### Semantics
 - `--team` → concurrency = N (parallel subagents for Research/Implement)

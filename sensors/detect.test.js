@@ -158,3 +158,38 @@ test('JS vs TS distinction: package.json only detects javascript, NOT typescript
     cleanupDir(dir);
   }
 });
+
+test('detectEcosystems avoids slow npx probes for unavailable npm tools', () => {
+  const dir = makeTempDir();
+  const binDir = makeTempDir();
+  const registryPath = path.join(dir, 'registry.json');
+  const originalPath = process.env.PATH;
+
+  try {
+    touch(dir, 'package.json');
+    fs.writeFileSync(registryPath, JSON.stringify({
+      ecosystems: {
+        javascript: {
+          detect: { any_of: ['package.json'] },
+          file_extensions: ['.js'],
+          lint: { cmd: 'npx eslint --format json .', parser: 'eslint' },
+        },
+      },
+    }));
+    const npxPath = path.join(binDir, 'npx');
+    fs.writeFileSync(npxPath, '#!/bin/sh\nsleep 1\nexit 1\n');
+    fs.chmodSync(npxPath, 0o755);
+    process.env.PATH = binDir;
+
+    const start = Date.now();
+    const result = detectEcosystems(dir, registryPath);
+    const elapsed = Date.now() - start;
+
+    assert.ok(elapsed < 500, `detection should not wait for npx, took ${elapsed}ms`);
+    assert.equal(result.ecosystems[0].sensors.lint.status, 'not_installed');
+  } finally {
+    process.env.PATH = originalPath;
+    cleanupDir(dir);
+    cleanupDir(binDir);
+  }
+});
