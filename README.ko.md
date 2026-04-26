@@ -461,7 +461,7 @@ plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다
 | 모델 라우팅 | 기본값 / 커스텀 | Phase별 모델 배정 |
 | 알림 | 없음 / 로컬 / 외부 | Phase 완료 시 알림 |
 
-## Team/Solo 모드 (v6.4.0)
+## Team/Solo 모드 (v6.4.1)
 
 ### 의미론
 - `--team` → 병렬도 = N (Research/Implement에 parallel subagent)

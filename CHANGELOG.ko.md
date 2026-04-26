@@ -9,8 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.4.1] - 2026-04-26
+
+### 변경
+- **Harness Engineering hardening**: SessionStart sensor detection이 느린 `npx --no-install` probe를 기본으로 쓰지 않고, 로컬 `node_modules/.bin` 및 빠른 PATH lookup을 사용하여 tool 미설치 환경에서도 hook timeout 안에 안정적으로 종료됩니다.
+- **Phase 1 Health Engine 연결**: `deep-research`에 부모 세션 소유 topology 감지, fitness 제안, health report, baseline, unresolved required issue 기록 흐름을 명시했습니다. `health-check` CLI는 기본적으로 `.deep-review/fitness.json`을 자동 로드하고 `--fitness` / `--no-fitness`를 지원합니다.
+- **Health report schema 정렬**: `/deep-status`와 `/deep-receipt`가 실제 producer 경로인 `health_report.drift.*`, `health_report.fitness.*`를 읽도록 정리했습니다.
+
 ### Fixed
 - **`multi-session.test.js:507` lint guard false-positive**. 제외 regex 가 `multi-session.test.js` 자기 자신만 면제하여 `phase5-guard.test.js` 의 정당한 테스트 픽스처 8건(legacy-path 코드 경로 검증을 위한 의도된 `deep-work.local.md` 참조)이 "active code에 하드코딩된 레거시 경로"로 오탐. Regex 를 `multi-session\.test\.js` → `\.test\.js` 로 확장하여 모든 테스트 파일을 제외 — 테스트 파일은 legacy behavior 검증을 위해 해당 경로가 정당하게 필요하므로. `node --test hooks/scripts/*.test.js` 결과 이제 428/428 pass (이전 427/428, v6.3.1 Excluded 섹션에 known failure로 기재됐던 건).
+- **Receipt sensor validation 호환성**: Parent receipt 검증이 빈/임의 `sensor_results`, `fail`, `timeout`, 근거 없는 `not_applicable`은 거부하면서도, 문서화된 `sensor_results.ecosystem` 메타데이터와 legacy delegated `skipped` 상태는 허용합니다.
+- **Health Check CLI root parsing**: `--fitness <file>` 및 `--fitness=<file>` 옵션 값을 positional project root로 오인하지 않도록 수정했습니다.
 
 ## [6.4.0] - 2026-04-23
 

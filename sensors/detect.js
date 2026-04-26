@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
+const TOOL_PROBE_TIMEOUT_MS = 500;
+
 function loadRegistry(registryPath) {
   const raw = fs.readFileSync(registryPath, 'utf-8');
   return JSON.parse(raw);
@@ -43,17 +45,31 @@ function matchEcosystem(projectRoot, detectConfig) {
   return true;
 }
 
-function checkToolAvailable(cmd) {
+function extractBinary(cmd) {
   if (!cmd) return false;
   const parts = cmd.trim().split(/\s+/);
-  try {
-    if (parts[0] === 'npx') {
-      const pkg = parts[1];
-      execFileSync('npx', ['--no-install', pkg, '--version'], { stdio: 'ignore', timeout: 10000 });
-    } else {
-      const binary = parts[0];
-      execFileSync('which', [binary], { stdio: 'ignore', timeout: 5000 });
+  if (parts[0] === 'npx') {
+    for (const part of parts.slice(1)) {
+      if (!part.startsWith('-')) return part;
     }
+    return null;
+  }
+  return parts[0] || null;
+}
+
+function checkToolAvailable(cmd, options = {}) {
+  const binary = extractBinary(cmd);
+  if (!binary) return false;
+  const projectRoot = options.projectRoot || process.cwd();
+  const timeout = options.timeout ?? TOOL_PROBE_TIMEOUT_MS;
+  const localBin = path.join(projectRoot, 'node_modules', '.bin', binary);
+
+  if (fs.existsSync(localBin)) {
+    return true;
+  }
+
+  try {
+    execFileSync('which', [binary], { stdio: 'ignore', timeout });
     return true;
   } catch {
     return false;
@@ -74,9 +90,9 @@ function detectEcosystems(projectRoot, registryPath) {
     for (const key of sensorKeys) {
       if (def[key]) {
         const sensorDef = def[key];
-        const available = checkToolAvailable(sensorDef.cmd);
+        const available = checkToolAvailable(sensorDef.cmd, { projectRoot });
         sensors[key] = {
-          tool: sensorDef.cmd ? sensorDef.cmd.trim().split(/\s+/)[0] : null,
+          tool: sensorDef.cmd ? extractBinary(sensorDef.cmd) : null,
           cmd: sensorDef.cmd || null,
           parser: sensorDef.parser || null,
           status: available ? 'available' : 'not_installed',

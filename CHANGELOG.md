@@ -9,8 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.4.1] - 2026-04-26
+
+### Changed
+- **Harness Engineering hardening**: SessionStart sensor detection now avoids slow `npx --no-install` probes and uses local `node_modules/.bin` plus fast PATH lookup so missing-tool environments complete well inside hook timeout.
+- **Phase 1 Health Engine wiring**: `deep-research` now documents the parent-owned topology, fitness proposal, health report, baseline, and unresolved required issue flow. `health-check` CLI auto-loads `.deep-review/fitness.json` by default and supports explicit `--fitness` / `--no-fitness`.
+- **Health report schema alignment**: `/deep-status` and `/deep-receipt` now read the actual producer paths under `health_report.drift.*` and `health_report.fitness.*`.
+
 ### Fixed
 - **`multi-session.test.js:507` lint guard false-positive**. The exclusion regex only exempted `multi-session.test.js` itself, so legitimate test fixtures in `phase5-guard.test.js` (8 intentional `deep-work.local.md` references required to exercise the legacy-path code path) were flagged as "hardcoded legacy path in active code". Regex broadened from `multi-session\.test\.js` → `\.test\.js` so all test files are exempt — test files legitimately need these paths to verify legacy behavior. `node --test hooks/scripts/*.test.js` now reports 428/428 pass (previously 427/428 with this known failure documented in v6.3.1 Excluded notes).
+- **Receipt sensor validation compatibility**: Parent receipt verification now rejects empty/arbitrary sensor results, `fail`, `timeout`, and unsupported `not_applicable`, while still accepting documented metadata such as `sensor_results.ecosystem` and legacy delegated `skipped` statuses.
+- **Health Check CLI root parsing**: `--fitness <file>` and `--fitness=<file>` option values are no longer mistaken for the positional project root.
 
 ## [6.4.0] - 2026-04-23
 

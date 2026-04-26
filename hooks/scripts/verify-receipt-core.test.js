@@ -142,6 +142,85 @@ describe('verify-receipt skip_items option (C7)', () => {
   });
 });
 
+describe('verify-receipt item 4: sensor_results schema/status', () => {
+  it('FAIL when sensor_results is empty', () => {
+    const result = verifyReceipts({
+      receipts: [makeReceipt({ sensor_results: {} })],
+      plan: { slices: [{ id: 'SLICE-001', files: ['a.js'] }] },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, false);
+    assert.match(result.errors.join('\n'), /sensor_results.*empty/i);
+  });
+
+  it('FAIL when a required sensor reports fail or timeout', () => {
+    for (const status of ['fail', 'timeout']) {
+      const result = verifyReceipts({
+        receipts: [makeReceipt({ sensor_results: { lint: status } })],
+        plan: { slices: [{ id: 'SLICE-001', files: ['a.js'] }] },
+        skip_git_checks: true,
+      });
+      assert.equal(result.pass, false, `status=${status} should fail`);
+      assert.match(result.errors.join('\n'), new RegExp(`lint.*${status}`, 'i'));
+    }
+  });
+
+  it('FAIL when not_applicable has no tool-unavailable reason', () => {
+    const result = verifyReceipts({
+      receipts: [makeReceipt({ sensor_results: { typecheck: 'not_applicable' } })],
+      plan: { slices: [{ id: 'SLICE-001', files: ['a.js'] }] },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, false);
+    assert.match(result.errors.join('\n'), /not_applicable.*reason/i);
+  });
+
+  it('PASS when not_applicable includes a tool-unavailable reason', () => {
+    const result = verifyReceipts({
+      receipts: [makeReceipt({
+        sensor_results: {
+          lint: 'pass',
+          typecheck: { status: 'not_applicable', reason: 'tool not installed: tsc' },
+        },
+      })],
+      plan: { slices: [{ id: 'SLICE-001', files: ['a.js'] }] },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, true, JSON.stringify(result.errors));
+  });
+
+  it('PASS with documented sensor metadata and object status fields', () => {
+    const result = verifyReceipts({
+      receipts: [makeReceipt({
+        sensor_results: {
+          ecosystem: 'typescript',
+          lint: { tool: 'eslint', status: 'pass', errors: 0, warnings: 0 },
+          typecheck: { tool: 'tsc', status: 'pass', errors: 0 },
+          reviewCheck: { status: 'pass' },
+        },
+      })],
+      plan: { slices: [{ id: 'SLICE-001', files: ['a.js'] }] },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, true, JSON.stringify(result.errors));
+  });
+
+  it('PASS with legacy delegated skipped sensor statuses', () => {
+    const result = verifyReceipts({
+      receipts: [makeReceipt({
+        sensor_results: {
+          lint: 'skipped',
+          typecheck: 'skipped',
+          reviewCheck: 'skipped',
+        },
+      })],
+      plan: { slices: [{ id: 'SLICE-001', files: ['a.js'] }] },
+      skip_git_checks: true,
+    });
+    assert.equal(result.pass, true, JSON.stringify(result.errors));
+  });
+});
+
 describe('verify-receipt item 5: out-of-scope detection (F2, unfiltered)', () => {
   it('FAIL when touched_files ⊄ declared_files', () => {
     const dir = makeTmpRepo();
