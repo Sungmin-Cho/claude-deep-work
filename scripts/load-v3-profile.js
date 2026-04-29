@@ -5,9 +5,25 @@ const fs = require('node:fs');
  * v3 profile에서 preset의 defaults + interactive_each_session 추출.
  * yaml 의존성 없이 line-by-line scope tracking (migrate-model-routing.js 컨벤션 일관).
  */
+
+// C1: preset name 검증 — regex injection 차단 (createV3Profile과 동일 allowlist)
+const PROFILE_NAME_ALLOWLIST = /^[a-z0-9][a-z0-9_-]{0,30}$/i;
+
+// I2: quoted scalar value unwrap
+function unquote(value) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
 function loadV3Profile(profilePath, opts = {}) {
   const text = fs.readFileSync(profilePath, 'utf8');
-  const versionMatch = text.match(/^version:\s*(\d+)\s*$/m);
+  // I1: version regex — trailing comment 허용 (migrate-profile-v2-to-v3.js 일관)
+  const versionMatch = text.match(/^version:\s*(\d+)\s*(#.*)?$/m);
   if (!versionMatch || versionMatch[1] !== '3') {
     return { error: 'not-v3' };
   }
@@ -17,13 +33,19 @@ function loadV3Profile(profilePath, opts = {}) {
   const requestedPreset = opts.initialPreset || (defaultPresetMatch ? defaultPresetMatch[1] : null);
   if (!requestedPreset) return { error: 'no-default-preset' };
 
+  // C1: preset name 검증 — regex injection 차단
+  if (!PROFILE_NAME_ALLOWLIST.test(requestedPreset)) {
+    return { error: 'invalid-preset-name', requested_preset: requestedPreset };
+  }
+
   // presets 블록 안에서 requestedPreset 찾기
   const lines = text.split('\n');
   const presetsIdx = lines.findIndex(l => /^presets:\s*$/.test(l));
   if (presetsIdx < 0) return { error: 'no-presets-block' };
 
-  // 2-space 들여쓰기로 preset 이름 매칭
-  const presetHeaderRe = new RegExp(`^( {2})${requestedPreset}:\\s*$`);
+  // 2-space 들여쓰기로 preset 이름 매칭 (requestedPreset은 allowlist 통과 후 안전)
+  const escapedPreset = requestedPreset.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const presetHeaderRe = new RegExp(`^( {2})${escapedPreset}:\\s*$`);
   let presetIdx = -1;
   for (let i = presetsIdx + 1; i < lines.length; i++) {
     if (presetHeaderRe.test(lines[i])) { presetIdx = i; break; }
@@ -49,7 +71,8 @@ function loadV3Profile(profilePath, opts = {}) {
   if (ieIdx >= 0) {
     const realIdx = presetIdx + ieIdx;
     for (let i = realIdx + 1; i < presetEnd; i++) {
-      const m = lines[i].match(/^ {6}-\s*(\S+)\s*$/);
+      // C2: interactive items — trailing comment 허용
+      const m = lines[i].match(/^ {6}-\s*(\S+)\s*(#.*)?$/);
       if (m) interactive.push(m[1]);
       else if (lines[i].trim() !== '' && !/^\s{6}/.test(lines[i])) break;
     }
@@ -64,28 +87,32 @@ function loadV3Profile(profilePath, opts = {}) {
     let i = realIdx + 1;
     while (i < presetEnd) {
       const line = lines[i];
-      // scalar fields (team_mode, start_phase, tdd_mode)
-      const scalarMatch = line.match(/^ {6}(\w+):\s*(\S+)\s*$/);
+      // C2: 주석 또는 빈 줄 skip
+      if (/^\s*#/.test(line) || line.trim() === '') {
+        i++;
+        continue;
+      }
+      // C2+I2: scalar fields — trailing comment 허용, quoted values unwrap
+      const scalarMatch = line.match(/^ {6}(\w+):\s*(\S+)\s*(#.*)?$/);
       if (scalarMatch) {
-        defaults[scalarMatch[1]] = scalarMatch[2];
+        defaults[scalarMatch[1]] = unquote(scalarMatch[2]);
         i++; continue;
       }
-      // nested: git, model_routing
-      const blockMatch = line.match(/^ {6}(\w+):\s*$/);
+      // C2: nested: git, model_routing — trailing comment 허용
+      const blockMatch = line.match(/^ {6}(\w+):\s*(#.*)?$/);
       if (blockMatch) {
         const blockKey = blockMatch[1];
         const block = {};
         i++;
         while (i < presetEnd) {
-          const childMatch = lines[i].match(/^ {8}(\w+):\s*(\S+)\s*$/);
-          if (childMatch) { block[childMatch[1]] = childMatch[2]; i++; }
+          // C2+I2: nested child — trailing comment 허용, quoted values unwrap
+          const childMatch = lines[i].match(/^ {8}(\w+):\s*(\S+)\s*(#.*)?$/);
+          if (childMatch) { block[childMatch[1]] = unquote(childMatch[2]); i++; }
           else break;
         }
         defaults[blockKey] = block;
         continue;
       }
-      // 빈 줄 또는 같은 indent의 다른 필드
-      if (line.trim() === '') { i++; continue; }
       break;
     }
   }

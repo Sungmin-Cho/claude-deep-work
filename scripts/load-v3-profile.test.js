@@ -98,3 +98,72 @@ test('v3 형식이 아닌 경우 명시적 에러', () => {
   const result = loadV3Profile(file);
   assert.strictEqual(result.error, 'not-v3');
 });
+
+// C1: regex injection 차단
+test('C1 — initialPreset에 regex 메타문자가 포함되면 invalid-preset-name 반환', () => {
+  const v3 = `version: 3
+default_preset: solo
+presets:
+  solo:
+    defaults:
+      team_mode: solo
+`;
+  const file = tmpProfile(v3);
+  const result = loadV3Profile(file, { initialPreset: '.*' });
+  assert.strictEqual(result.error, 'invalid-preset-name');
+  assert.strictEqual(result.requested_preset, '.*');
+});
+
+// C2: defaults 블록 내 주석 줄 + trailing comment 처리
+test('C2 — defaults 블록 내 주석 줄 및 trailing comment가 있어도 모든 필드 추출', () => {
+  const v3 = `version: 3
+default_preset: annotated
+presets:
+  annotated:
+    defaults:
+      # 팀 모드 설정
+      team_mode: solo # 단독 작업
+      start_phase: research # 연구부터
+      git: # git 설정
+        use_worktree: false # 기본값
+        use_branch: true
+`;
+  const file = tmpProfile(v3);
+  const result = loadV3Profile(file);
+  assert.strictEqual(result.preset_name, 'annotated');
+  assert.strictEqual(result.defaults.team_mode, 'solo');
+  assert.strictEqual(result.defaults.start_phase, 'research');
+  assert.strictEqual(result.defaults.git.use_worktree, 'false');
+  assert.strictEqual(result.defaults.git.use_branch, 'true');
+});
+
+// I1: version에 trailing comment가 있어도 v3 인식
+test('I1 — version: 3  # legacy 형식도 v3로 인식', () => {
+  const v3 = `version: 3  # legacy format
+default_preset: minimal
+presets:
+  minimal:
+    defaults:
+      team_mode: solo
+`;
+  const file = tmpProfile(v3);
+  const result = loadV3Profile(file);
+  assert.strictEqual(result.preset_name, 'minimal');
+  assert.ok(!result.error, `예상치 못한 에러: ${result.error}`);
+});
+
+// I2: 따옴표로 감싼 scalar value 언래핑
+test('I2 — team_mode: "solo" 따옴표 없이 solo로 반환', () => {
+  const v3 = `version: 3
+default_preset: quoted
+presets:
+  quoted:
+    defaults:
+      team_mode: "solo"
+      start_phase: 'research'
+`;
+  const file = tmpProfile(v3);
+  const result = loadV3Profile(file);
+  assert.strictEqual(result.defaults.team_mode, 'solo');
+  assert.strictEqual(result.defaults.start_phase, 'research');
+});
