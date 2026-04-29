@@ -1,7 +1,6 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 // NOTE: 외부 yaml 라이브러리 사용 금지 (deep-work 컨벤션, 기존 migrate-model-routing.js와 일관).
 // v2 → v3 변환은 line-by-line regex 기반(migrate-model-routing.js 패턴 참조).
 
@@ -24,8 +23,6 @@ const os = require('node:os');
 //
 // 미지원 변형 감지 시 plan은 변환 거부 — 사용자가 manual migration 가이드를 따라
 // 직접 spec §5.1 형식으로 정렬한 후 재실행하도록 안내.
-
-const PRESET_FIELD_INDENT = 4; // 프리셋 내부 필드(2-space 들여쓰기 가정 시 4 spaces)
 
 // Indent 변환 단일 매핑 (chained replace cascade 회피 — R3-A1 fix)
 const INDENT_MAP = {
@@ -50,6 +47,8 @@ function detectUnsupportedV2Schema(v2Text) {
   if (/^\s+git_branch:\s/m.test(v2Text)) issues.push("'git_branch:' 단일 라인 (spec은 'git:' 블록 + use_branch 자식을 요구)");
   if (/&[\w-]+/.test(v2Text)) issues.push("YAML anchor (&...) 사용");
   if (/\*[\w-]+/.test(v2Text)) issues.push("YAML alias (*...) 사용");
+  // C1 fix: 탭 들여쓰기 감지 — space-based regex가 매칭 실패하여 silent corruption 유발
+  if (/^\t/m.test(v2Text)) issues.push("탭 들여쓰기 사용 — spec §5.1은 space 들여쓰기만 지원");
   // R3-W8 fix: 비정규 indent (spec §5.1은 2/4/6/8-space만 사용)
   const lines = v2Text.split('\n');
   for (const line of lines) {
@@ -59,6 +58,20 @@ function detectUnsupportedV2Schema(v2Text) {
     if (indent !== 0 && indent !== 2 && indent !== 4 && indent !== 6 && indent !== 8) {
       issues.push(`비정규 indent (${indent}-space) 사용 — spec §5.1 example은 2/4/6/8-space만 지원`);
       break;
+    }
+  }
+  // C2 fix: 알 수 없는 preset 필드 감지 — closed-set spec 위반 시 변환 거부
+  const KNOWN_FIELDS = new Set([
+    'team_mode', 'start_phase', 'tdd_mode', 'git', 'model_routing',
+    'project_type', 'cross_model_preference', 'auto_update', 'label', 'description', 'notifications'
+  ]);
+  const presetFieldRe = /^( {4})([\w_]+):\s*(.*)$/gm;
+  let m;
+  while ((m = presetFieldRe.exec(v2Text)) !== null) {
+    if (!KNOWN_FIELDS.has(m[2])) {
+      const lineNum = v2Text.slice(0, m.index).split('\n').length;
+      issues.push(`알 수 없는 preset 필드 '${m[2]}' (line ~${lineNum}) — spec §5.1 closed set 위반`);
+      break; // first issue is enough
     }
   }
   return issues;
@@ -99,8 +112,8 @@ function v2TextToV3Text(v2Text) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // version handling
-    if (/^version:\s*\d+\s*$/.test(line)) {
+    // version handling (I4 fix: allow trailing comments e.g. "version: 2  # legacy")
+    if (/^version:\s*\d+\s*(#.*)?$/.test(line)) {
       preamble.push('version: 3');
       versionWritten = true;
       continue;
@@ -169,6 +182,8 @@ function v2TextToV3Text(v2Text) {
           if (nextIndent > 4) { group.push(next); j++; continue; }
           break;
         }
+        // I1 fix: strip trailing blank lines to prevent leaking into serialized output
+        while (group.length > 0 && group[group.length - 1].trim() === '') group.pop();
         presets[currentPreset].defaults[field] = group;
         i = j - 1;
         continue;
@@ -183,13 +198,15 @@ function v2TextToV3Text(v2Text) {
           if (nextIndent > 4) { group.push(next); j++; continue; }
           break;
         }
+        // I1 fix: strip trailing blank lines
+        while (group.length > 0 && group[group.length - 1].trim() === '') group.pop();
         presets[currentPreset].autoApply.push(...group);
         i = j - 1;
         continue;
       }
-      // 알 수 없는 필드 — 보존 + 경고
-      warnings.push(`알 수 없는 preset 필드: ${field} — autoApply에 보존`);
-      presets[currentPreset].autoApply.push(line);
+      // 알 수 없는 필드는 detectUnsupportedV2Schema에서 이미 감지되어 migrateProfile에서 throw됨.
+      // 이 경로는 v2TextToV3Text가 직접 호출되는 경우를 위한 안전망.
+      warnings.push(`알 수 없는 preset 필드: ${field} — 변환 건너뜀`);
     }
   }
 
@@ -232,7 +249,8 @@ function v2TextToV3Text(v2Text) {
 }
 
 function readVersion(yamlText) {
-  const m = yamlText.match(/^version:\s*(\d+)\s*$/m);
+  // I4 fix: handle trailing comments e.g. "version: 2  # legacy"
+  const m = yamlText.match(/^version:\s*(\d+)\s*(#.*)?$/m);
   return m ? Number.parseInt(m[1], 10) : null;
 }
 
@@ -347,7 +365,7 @@ function migrateProfile(profilePath, opts = {}) {
       `수동 이전 가이드:`,
       `1. ${profilePath}을 백업: cp "${profilePath}" "${profilePath}.manual-backup"`,
       `2. spec §5.1 example을 참조하여 'profiles:' → 'presets:', 'active:' → 'default_preset:'`,
-      `   'git_branch: <bool>' → 'git:\\n        use_branch: <bool>' 등으로 정렬`,
+      `   'git_branch: <bool>' → 'git:' 블록 + '  use_branch: <bool>' 자식 (들여쓰기 2-space)으로 정렬`,
       `3. /deep-work 재실행 시 자동 마이그레이션이 정상 동작합니다`,
       ``,
       `또는 새 프로필을 작성하려면: rm "${profilePath}" 후 /deep-work 재실행 (createV3Profile 호출됨)`,

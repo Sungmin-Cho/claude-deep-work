@@ -148,3 +148,57 @@ test('CLI entrypoint — not-found 시 createV3Profile 호출', () => {
   assert.strictEqual(out.reason, 'not-found-created-v3');
   assert.ok(fs.existsSync(file));
 });
+
+test('C1: 탭 들여쓰기 — 변환 거부 + 수동 이전 가이드', () => {
+  // 탭 들여쓰기 v2 파일은 silent corruption 위험 — 명시적 거부 필수
+  const v2 = 'version: 2\ndefault_preset: solo\npresets:\n\tsolo:\n\t\tteam_mode: solo\n';
+  const { file } = tmpProfile(v2);
+  assert.throws(
+    () => migrateProfile(file),
+    (err) => {
+      assert.match(err.message, /탭 들여쓰기/);
+      assert.match(err.message, /수동 이전 가이드/);
+      return true;
+    },
+    '탭 들여쓰기 v2 파일은 변환 거부되어야 함'
+  );
+  // 원본 파일 변경 없음 (변환 거부 — backup도 생성되지 않아야 함)
+  assert.strictEqual(fs.existsSync(file + '.v2-backup'), false);
+});
+
+test('C2: 알 수 없는 preset 필드(items:) — 변환 거부 + closed-set 안내', () => {
+  // spec §5.1에 없는 커스텀 필드(items:) 포함 시 silent data loss 방지를 위해 거부
+  const v2 = `version: 2
+default_preset: solo
+presets:
+  solo:
+    team_mode: solo
+    items:
+      - task1
+      - task2
+`;
+  const { file } = tmpProfile(v2);
+  assert.throws(
+    () => migrateProfile(file),
+    (err) => {
+      assert.match(err.message, /알 수 없는 preset 필드/);
+      assert.match(err.message, /items/);
+      assert.match(err.message, /수동 이전 가이드/);
+      return true;
+    },
+    '알 수 없는 preset 필드는 변환 거부되어야 함'
+  );
+  // 원본 파일 변경 없음
+  assert.strictEqual(fs.existsSync(file + '.v2-backup'), false);
+});
+
+test('I4: version: 2  # legacy comment — 정상 파싱', () => {
+  // 트레일링 주석이 붙은 version 라인도 v2로 인식하고 v3으로 변환되어야 함
+  const v2 = 'version: 2  # legacy\ndefault_preset: solo\npresets:\n  solo:\n    team_mode: solo\n';
+  const { file } = tmpProfile(v2);
+  const result = migrateProfile(file);
+  assert.strictEqual(result.migrated, true);
+  const after = fs.readFileSync(file, 'utf8');
+  assert.match(after, /^version:\s*3\s*$/m, 'version: 3으로 갱신되어야 함');
+  assert.doesNotMatch(after, /version:\s*2/, '버전 2 라인이 남아 있으면 안 됨');
+});
