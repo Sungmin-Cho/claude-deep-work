@@ -26,6 +26,9 @@ function parseRecommendation(rawText, ctx = {}) {
     if (!data[key] || typeof data[key].value !== 'string') {
       return { ok: false, fallback_reason: `missing key: ${key}` };
     }
+    if (typeof data[key].reason !== 'string' || data[key].reason.length === 0) {
+      return { ok: false, fallback_reason: `missing reason: ${key}` };
+    }
   }
 
   // enum validation
@@ -35,13 +38,13 @@ function parseRecommendation(rawText, ctx = {}) {
     }
   }
 
-  // capability check
+  // capability check (fail-closed: must be explicitly true to allow team/worktree)
   const cap = ctx.capability || {};
-  if (cap.team_mode_available === false && data.team_mode.value === 'team') {
-    return { ok: false, fallback_reason: 'capability: team_mode unavailable' };
+  if (cap.team_mode_available !== true && data.team_mode.value === 'team') {
+    return { ok: false, fallback_reason: 'capability: team_mode unavailable (or unset)' };
   }
-  if (cap.git_worktree === false && data.git.value === 'worktree') {
-    return { ok: false, fallback_reason: 'capability: worktree unavailable' };
+  if (cap.git_worktree !== true && data.git.value === 'worktree') {
+    return { ok: false, fallback_reason: 'capability: worktree unavailable (or unset)' };
   }
   return { ok: true, data };
 }

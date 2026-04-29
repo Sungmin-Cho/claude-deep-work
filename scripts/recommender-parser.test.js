@@ -68,3 +68,29 @@ test('multi-fence → fallback', () => {
   assert.strictEqual(r.ok, false);
   assert.match(r.fallback_reason, /multiple-fences/);
 });
+
+test('reason 필드 누락 → fallback (missing reason: team_mode)', () => {
+  const noReason = '```json\n' + JSON.stringify({
+    team_mode: { value: 'solo' }, // reason 누락
+    start_phase: { value: 'research', reason: 'x' },
+    tdd_mode: { value: 'strict', reason: 'x' },
+    git: { value: 'new-branch', reason: 'x' },
+    model_routing: { value: 'default', reason: 'x' }
+  }) + '\n```';
+  const r = parseRecommendation(noReason, { capability: { git_worktree: true, team_mode_available: true } });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.fallback_reason, 'missing reason: team_mode');
+});
+
+test('빈 capability {} → team 추천 → fallback (fail-closed)', () => {
+  const teamOutput = '```json\n' + JSON.stringify({
+    team_mode: { value: 'team', reason: '여러 모듈' },
+    start_phase: { value: 'research', reason: 'x' },
+    tdd_mode: { value: 'strict', reason: 'x' },
+    git: { value: 'new-branch', reason: 'x' },
+    model_routing: { value: 'default', reason: 'x' }
+  }) + '\n```';
+  const r = parseRecommendation(teamOutput, { capability: {} });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.fallback_reason, /capability.*unavailable.*or unset/);
+});

@@ -1,7 +1,25 @@
 ---
 name: session-recommender
-description: Deep-work 세션 초기화 시 task description + workspace meta + capability를 분석하여 5개 ask 항목(team_mode, start_phase, tdd_mode, git, model_routing)에 대한 추천 값을 fenced JSON으로 반환합니다.
-tools: []
+description: |
+  Deep-work 세션 초기화 시 task description + workspace meta + capability를
+  분석하여 5개 ask 항목(team_mode, start_phase, tdd_mode, git, model_routing)에
+  대한 추천 값을 fenced JSON으로 반환합니다.
+
+  <example>
+  Context: 사용자가 "Refactor authentication module" task로 deep-work 호출
+  prompt: { "task_description": "Refactor authentication module", "workspace_meta": { "git_status": "clean", "recent_commits": [], "top_level_dirs": ["src", "tests"] }, "capability": { "git_worktree": true, "team_mode_available": true } }
+  expected_output: ```json
+  {
+    "team_mode": { "value": "team", "reason": "리팩터 + 인증 = 다중 모듈 변경 예상" },
+    "start_phase": { "value": "research", "reason": "기존 코드 구조 파악 필요" },
+    "tdd_mode": { "value": "strict", "reason": "인증 모듈은 core 안정성 요구" },
+    "git": { "value": "worktree", "reason": "리팩터 범위 격리 필요" },
+    "model_routing": { "value": "default", "reason": "표준 흐름" }
+  }
+  ```
+  </example>
+tools:
+model: inherit
 ---
 
 # Session Recommender
@@ -49,10 +67,10 @@ tools: []
 
 ## 추천 휴리스틱 (참고)
 
-- **team_mode**: "리팩터", "전체", "마이그레이션", "여러 모듈" 또는 task ≥ 200자 → `team`. 그 외 → `solo`. capability.team_mode_available=false → 무조건 `solo`.
+- **team_mode**: "리팩터", "전체", "마이그레이션", "여러 모듈" 또는 task ≥ 200자 → `team`. 그 외 → `solo`. capability.team_mode_available이 명시적으로 true가 아니면 `team` 추천 불가 (fail-closed).
 - **start_phase**: "버그", "fix", "수정"이고 범위가 좁음 → `plan`. "탐색", "PoC", "검토" → `brainstorm`. 그 외 → `research`.
 - **tdd_mode**: "PoC", "프로토타입", "스파이크" → `spike`. "production", "안정성", "core" → `strict`. 그 외 → `coaching`.
-- **git**: "리팩터", "마이그레이션", "위험", "여러 파일" → `worktree`. "fix", "작은", "한 줄" → `current-branch`. 그 외 → `new-branch`. capability.git_worktree=false → `worktree` 추천 금지.
+- **git**: "리팩터", "마이그레이션", "위험", "여러 파일" → `worktree`. "fix", "작은", "한 줄" → `current-branch`. 그 외 → `new-branch`. capability.git_worktree이 명시적으로 true가 아니면 `worktree` 추천 불가 (fail-closed).
 - **model_routing**: 표준 흐름이면 `default`, task가 phase별 모델 미세조정을 명시적으로 요구하면 `custom`.
 
 각 `reason`은 한국어 한 문장 (50자 이내, 추천 근거).

@@ -20,7 +20,7 @@ function sanitizeInput({ task_description, recent_commits, top_level_dirs, curre
       git_status: git_status || 'clean', // caller가 channel; 미제공 시 'clean' fallback
       recent_commits: (recent_commits || []).slice(0, MAX_COMMITS).map(s => String(s)),
       top_level_dirs: (top_level_dirs || [])
-        .filter(d => typeof d === 'string' && !d.includes('..') && !d.startsWith('/') && !/[\\:]/.test(d))
+        .filter(d => typeof d === 'string' && d.length > 0 && !d.includes('..') && !d.startsWith('/') && !/[\\:]/.test(d))
         .slice(0, MAX_DIRS)
         .map(d => d.length > MAX_DIR_LEN ? d.slice(0, MAX_DIR_LEN) : d)
     },

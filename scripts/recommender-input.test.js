@@ -38,6 +38,11 @@ test('git_status caller-provided', () => {
   assert.strictEqual(out.workspace_meta.git_status, 'dirty');
 });
 
+test('top_level_dirs 빈 문자열 제거 — empty string filtered out', () => {
+  const out = sanitizeInput({ task_description: 'x', recent_commits: [], top_level_dirs: ['src', '', null, 'tests'] });
+  assert.deepStrictEqual(out.workspace_meta.top_level_dirs, ['src', 'tests']);
+});
+
 test('CLI entrypoint — stdin → stdout JSON', () => {
   const { spawnSync } = require('node:child_process');
   const input = JSON.stringify({ task_description: 'fix auth bug', recent_commits: ['initial commit'], top_level_dirs: ['src','tests'] });
