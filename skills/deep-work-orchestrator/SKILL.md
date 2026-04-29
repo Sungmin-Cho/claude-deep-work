@@ -98,7 +98,10 @@ write_session_pointer "$SESSION_ID"
 orchestrator 본문에서 직접 실행 (process scope 일관 — R3-B):
 
 ````bash
-PARSE_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-deep-work-flags.js" -- $ARGUMENTS 2>/tmp/dw-parse-err.txt)
+# C1 fix (R5): $ARGUMENTS를 double-quoted single arg로 전달 — shell metacharacters가
+# parser allowlist 적용 전에 shell에 의해 평가되지 않음.
+# parser CLI entrypoint는 단일 공백 포함 인자를 split-before-allowlist로 처리.
+PARSE_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-deep-work-flags.js" -- "$ARGUMENTS" 2>/tmp/dw-parse-err.txt)
 parse_rc=$?
 ````
 
@@ -141,7 +144,10 @@ migrate_rc=$?
 ### §1-3-3. v3 프로필 로더 호출
 
 ````bash
-PROFILE_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/load-v3-profile.js" "$PROFILE_FILE" 2>/tmp/dw-profile-err.txt)
+# W3 fix (R5): --profile=X가 loader에 전달되도록 DEEP_WORK_INITIAL_PRESET export
+# (§1-3-2의 migrate-profile 호출과 동일한 env 전달 패턴으로 parity 확보)
+PROFILE_OUT=$(DEEP_WORK_INITIAL_PRESET="${FLAGS.profile}" \
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/load-v3-profile.js" "$PROFILE_FILE" 2>/tmp/dw-profile-err.txt)
 profile_rc=$?
 ````
 
@@ -191,9 +197,19 @@ profile_rc=$?
 capability 감지:
 
 ````bash
+# W2 fix (R5): env-only IS_GIT 의존 제거 — 실 git 명령으로 직접 검출
+IS_GIT=$(git rev-parse --is-inside-work-tree 2>/dev/null || echo "false")
+WORKTREE_SUPPORTED=$(git worktree list >/dev/null 2>&1 && echo "true" || echo "false")
+TEAM_ENV=$([ -n "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ] && echo "true" || echo "false")
+
+export IS_GIT WORKTREE_SUPPORTED TEAM_ENV
 CAP=$(node -e '
   const { detectCapability } = require("'"${CLAUDE_PLUGIN_ROOT}"'/scripts/detect-capability.js");
-  const cap = detectCapability({ is_git: process.env.IS_GIT === "true", worktree_supported: true, team_env_set: !!process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS });
+  const cap = detectCapability({
+    is_git: process.env.IS_GIT === "true",
+    worktree_supported: process.env.WORKTREE_SUPPORTED === "true",
+    team_env_set: process.env.TEAM_ENV === "true"
+  });
   process.stdout.write(JSON.stringify(cap));
 ')
 ````

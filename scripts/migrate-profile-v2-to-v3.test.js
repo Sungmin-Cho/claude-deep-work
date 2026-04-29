@@ -192,6 +192,60 @@ presets:
   assert.strictEqual(fs.existsSync(file + '.v2-backup'), false);
 });
 
+test('W1 (R5): git_branch: false — v6.4.1 profile 자동 마이그레이션 성공', () => {
+  // v6.4.1 사용자가 git_branch: false 사용 → 이전에는 unsupported로 거부 → 이제 자동 변환
+  const v2 = `version: 2
+default_preset: legacy
+presets:
+  legacy:
+    team_mode: solo
+    git_branch: false
+`;
+  const { file } = tmpProfile(v2);
+  const result = migrateProfile(file);
+  assert.strictEqual(result.migrated, true, '마이그레이션이 성공해야 함');
+  const after = fs.readFileSync(file, 'utf8');
+  assert.match(after, /^version:\s*3\s*$/m, 'version: 3으로 갱신');
+  assert.match(after, /use_branch:\s*false/, 'git_branch: false가 use_branch: false로 변환');
+  assert.match(after, /use_worktree:\s*false/, 'use_worktree: false 자동 삽입');
+  // git_branch: 원본 라인은 남아있으면 안 됨
+  assert.doesNotMatch(after, /git_branch:/, 'git_branch: 원본 라인 제거됨');
+});
+
+test('W1 (R5): git_branch: true — true → use_branch: true로 변환', () => {
+  const v2 = `version: 2
+default_preset: legacy
+presets:
+  legacy:
+    team_mode: solo
+    git_branch: true
+`;
+  const { file } = tmpProfile(v2);
+  const result = migrateProfile(file);
+  assert.strictEqual(result.migrated, true);
+  const after = fs.readFileSync(file, 'utf8');
+  assert.match(after, /use_branch:\s*true/, 'git_branch: true가 use_branch: true로 변환');
+  assert.doesNotMatch(after, /git_branch:/, 'git_branch: 원본 라인 제거됨');
+});
+
+// Regression: defaults.git.use_branch 추출 확인 (loadV3Profile 연계)
+test('W1 (R5): git_branch 변환 후 loadV3Profile이 defaults.git.use_branch를 추출', () => {
+  const { loadV3Profile } = require('./load-v3-profile.js');
+  const v2 = `version: 2
+default_preset: legacy
+presets:
+  legacy:
+    team_mode: solo
+    git_branch: false
+`;
+  const { file } = tmpProfile(v2);
+  migrateProfile(file);
+  const profile = loadV3Profile(file);
+  assert.ok(!profile.error, `loadV3Profile error: ${profile.error}`);
+  assert.strictEqual(profile.defaults.git.use_branch, 'false', 'defaults.git.use_branch === "false"');
+  assert.strictEqual(profile.defaults.git.use_worktree, 'false', 'defaults.git.use_worktree === "false"');
+});
+
 test('I4: version: 2  # legacy comment — 정상 파싱', () => {
   // 트레일링 주석이 붙은 version 라인도 v2로 인식하고 v3으로 변환되어야 함
   const v2 = 'version: 2  # legacy\ndefault_preset: solo\npresets:\n  solo:\n    team_mode: solo\n';

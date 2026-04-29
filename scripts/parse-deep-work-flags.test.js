@@ -285,3 +285,25 @@ test('CLI entrypoint — node parse-deep-work-flags.js -- ...', () => {
   assert.strictEqual(out.profile, 'solo-strict');
   assert.strictEqual(out.task, 'fix auth');
 });
+
+// C1 (R5): shell injection via metacharacter task body — quoted $ARGUMENTS pass-through
+test('C1: metacharacter task body — 메타문자가 task 본문으로 보존, shell 평가 없음', () => {
+  // Shell에서: node parser.js -- "$ARGUMENTS" (quoted, single arg)
+  // Bash에서는 $ARGUMENTS가 하나의 quoted 인자로 전달되므로 split 후 처리
+  const r = parseFlags(['fix bug; rm -rf /']);
+  // 메타문자(;)가 task에 그대로 들어가야 함 — shell이 평가하는 게 아님
+  assert.strictEqual(r.task, 'fix bug; rm -rf /');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('C1: CLI entrypoint — quoted $ARGUMENTS 단일 문자열 split 후 플래그 파싱', () => {
+  // bash: node parser.js -- "$ARGUMENTS" 형태로 전달 — single arg with spaces
+  const { spawnSync } = require('node:child_process');
+  // Simulate: node parser.js '--no-ask fix bug; rm -rf /'  (single arg containing spaces)
+  const result = spawnSync(process.execPath, [require.resolve('./parse-deep-work-flags.js'), '--no-ask fix bug; rm -rf /'], { encoding: 'utf8' });
+  assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
+  const out = JSON.parse(result.stdout.trim());
+  assert.strictEqual(out.no_ask, true);
+  // 메타문자가 task 본문에 그대로 보존됨 (shell injection 없음)
+  assert.ok(out.task.includes('fix bug; rm -rf /'), `task should contain metacharacters, got: ${out.task}`);
+});

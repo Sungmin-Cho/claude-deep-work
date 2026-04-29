@@ -44,7 +44,8 @@ function detectUnsupportedV2Schema(v2Text) {
   if (/^profiles:\s*$/m.test(v2Text)) issues.push("'profiles:' 블록 (spec은 'presets:'을 요구)");
   if (/^active:\s/m.test(v2Text)) issues.push("'active:' 필드 (spec은 'default_preset:'을 요구)");
   if (/^active_profile:\s/m.test(v2Text)) issues.push("'active_profile:' 필드 (spec은 'default_preset:'을 요구)");
-  if (/^\s+git_branch:\s/m.test(v2Text)) issues.push("'git_branch:' 단일 라인 (spec은 'git:' 블록 + use_branch 자식을 요구)");
+  // W1 fix (R5): git_branch: <bool> 는 v6.4.1 documented opt-out — 자동 변환 지원으로 거부 제거.
+  // (이전에는 unsupported로 거부했으나 v6.4.1 사용자 업그레이드 차단 이슈)
   if (/&[\w-]+/.test(v2Text)) issues.push("YAML anchor (&...) 사용");
   if (/\*[\w-]+/.test(v2Text)) issues.push("YAML alias (*...) 사용");
   // C1 fix: 탭 들여쓰기 감지 — space-based regex가 매칭 실패하여 silent corruption 유발
@@ -61,8 +62,9 @@ function detectUnsupportedV2Schema(v2Text) {
     }
   }
   // C2 fix: 알 수 없는 preset 필드 감지 — closed-set spec 위반 시 변환 거부
+  // W1 fix (R5): git_branch는 v6.4.1 documented 필드 — KNOWN_FIELDS에 추가하여 거부 방지
   const KNOWN_FIELDS = new Set([
-    'team_mode', 'start_phase', 'tdd_mode', 'git', 'model_routing',
+    'team_mode', 'start_phase', 'tdd_mode', 'git', 'git_branch', 'model_routing',
     'project_type', 'cross_model_preference', 'auto_update', 'label', 'description', 'notifications'
   ]);
   const presetFieldRe = /^( {4})([\w_]+):\s*(.*)$/gm;
@@ -171,6 +173,25 @@ function v2TextToV3Text(v2Text) {
     const fieldMatch = line.match(/^( {4})([\w_]+):\s*(.*)$/);
     if (fieldMatch) {
       const [, , field, value] = fieldMatch;
+
+      // W1 fix (R5): git_branch: <bool> — v6.4.1 documented opt-out 필드.
+      // defaults.git: { use_worktree: false, use_branch: <bool> } 형태로 자동 변환.
+      if (field === 'git_branch') {
+        const useBranch = value.trim() === 'true' ? 'true' : 'false';
+        const synthesized = [
+          '    git:',
+          '      use_worktree: false',
+          `      use_branch: ${useBranch}`
+        ];
+        // 'git' defaults 그룹이 이미 있으면 git_branch는 무시 (git: 블록이 우선)
+        if (!presets[currentPreset].defaults['git']) {
+          presets[currentPreset].defaults['git'] = synthesized;
+        } else {
+          warnings.push('git_branch: 필드 무시 — git: 블록이 이미 존재함');
+        }
+        continue;
+      }
+
       if (MOVE_TO_DEFAULTS.has(field)) {
         // 이 필드 + 모든 자식 라인을 defaults 그룹으로 수집
         const group = [line];

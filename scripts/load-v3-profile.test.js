@@ -152,6 +152,46 @@ presets:
   assert.ok(!result.error, `예상치 못한 에러: ${result.error}`);
 });
 
+// W4 (R5): preset-level settings extraction
+test('W4 (R5): project_type/cross_model_preference/auto_update 추출', () => {
+  const v3 = `version: 3
+default_preset: advanced
+presets:
+  advanced:
+    project_type: zero-base
+    cross_model_preference:
+      use_codex: true
+      use_gemini: false
+    auto_update: prompt
+    interactive_each_session:
+      - team_mode
+    defaults:
+      team_mode: solo
+`;
+  const file = tmpProfile(v3);
+  const result = loadV3Profile(file);
+  assert.strictEqual(result.project_type, 'zero-base', 'project_type 추출');
+  assert.deepStrictEqual(result.cross_model_preference, { use_codex: 'true', use_gemini: 'false' }, 'cross_model_preference 추출');
+  assert.strictEqual(result.auto_update, 'prompt', 'auto_update 추출');
+});
+
+test('W4 (R5): preset-level settings 없을 때 null 반환', () => {
+  const v3 = `version: 3
+default_preset: minimal
+presets:
+  minimal:
+    interactive_each_session:
+      - team_mode
+    defaults:
+      team_mode: solo
+`;
+  const file = tmpProfile(v3);
+  const result = loadV3Profile(file);
+  assert.strictEqual(result.project_type, null, 'project_type 없으면 null');
+  assert.strictEqual(result.cross_model_preference, null, 'cross_model_preference 없으면 null');
+  assert.strictEqual(result.auto_update, null, 'auto_update 없으면 null');
+});
+
 // I2: 따옴표로 감싼 scalar value 언래핑
 test('I2 — team_mode: "solo" 따옴표 없이 solo로 반환', () => {
   const v3 = `version: 3

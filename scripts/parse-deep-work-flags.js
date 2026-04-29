@@ -116,6 +116,12 @@ module.exports = { parseFlags, RECOMMENDER_ALLOWLIST, EXEC_ALLOWLIST, PROFILE_NA
 
 // ── CLI entrypoint ──
 if (require.main === module) {
-  const args = process.argv.slice(2);
-  process.stdout.write(JSON.stringify(parseFlags(args)) + '\n');
+  const rawArgs = process.argv.slice(2);
+  // C1 fix (R5): If a single string arg containing spaces is passed (quoted $ARGUMENTS
+  // pass-through from bash: node parser.js -- "$ARGUMENTS"), split it by whitespace
+  // BEFORE allowlist application — shell metacharacters never reach the shell evaluator.
+  const args = rawArgs.length === 1 && /\s/.test(rawArgs[0])
+    ? rawArgs[0].split(/\s+/).filter(Boolean)
+    : rawArgs;
+  process.stdout.write(JSON.stringify(parseFlags(args.filter(a => a !== '--'))) + '\n');
 }

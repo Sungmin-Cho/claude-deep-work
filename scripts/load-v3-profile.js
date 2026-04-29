@@ -78,6 +78,35 @@ function loadV3Profile(profilePath, opts = {}) {
     }
   }
 
+  // W4 fix (R5): preset-level scalar/block 추출
+  // (project_type, cross_model_preference, auto_update)
+  const presetLevelScalars = {};
+  for (let i = presetIdx + 1; i < presetEnd; i++) {
+    const line = lines[i];
+    if (/^\s*#/.test(line) || line.trim() === '') continue;
+    // preset-level scalar (e.g. "    project_type: zero-base")
+    const scalarM = line.match(/^ {4}(project_type|auto_update):\s*(\S+)\s*(#.*)?$/);
+    if (scalarM) {
+      presetLevelScalars[scalarM[1]] = unquote(scalarM[2]);
+      continue;
+    }
+    // preset-level block (e.g. "    cross_model_preference:")
+    const blockM = line.match(/^ {4}(cross_model_preference):\s*(#.*)?$/);
+    if (blockM) {
+      const blockKey = blockM[1];
+      const block = {};
+      let j = i + 1;
+      while (j < presetEnd) {
+        const childM = lines[j].match(/^ {6}(\w+):\s*(\S+)\s*(#.*)?$/);
+        if (childM) { block[childM[1]] = unquote(childM[2]); j++; }
+        else break;
+      }
+      presetLevelScalars[blockKey] = block;
+      i = j - 1;
+      continue;
+    }
+  }
+
   // defaults 블록 추출 (단순화: 주요 5개 필드만)
   const defaults = {};
   const defaultsIdx = lines.slice(presetIdx, presetEnd)
@@ -120,7 +149,11 @@ function loadV3Profile(profilePath, opts = {}) {
   return {
     preset_name: requestedPreset,
     interactive_each_session: interactive,
-    defaults
+    defaults,
+    // W4 fix (R5): preset-level settings (spec §5.1) — 이전에는 drop됨
+    project_type: presetLevelScalars.project_type || null,
+    cross_model_preference: presetLevelScalars.cross_model_preference || null,
+    auto_update: presetLevelScalars.auto_update || null
   };
 }
 
