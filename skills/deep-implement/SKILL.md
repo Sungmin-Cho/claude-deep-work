@@ -520,4 +520,3 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
    TDD 준수율: [strict: N, relaxed: N, override: N, spike: N]
    Receipt 완성: N/N
    ```
-4. 알림: `notify.sh "$STATE_FILE" "implement" "completed"`

@@ -163,9 +163,3 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 
 계획이 준비되었습니다. 리뷰해주세요.
 ```
-
-## Notification
-
-```bash
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "plan" "completed" "Plan 작성 완료" 2>/dev/null || true
-```

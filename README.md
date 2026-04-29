@@ -167,7 +167,6 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `test_passed` | Final test pass status |
 | `*_started_at`, `*_completed_at` | Per-phase start/completion timestamps |
 | `model_routing` | Per-phase model configuration (research/plan/implement/test) |
-| `notifications` | Notification settings (channel list, enabled status) |
 | `last_research_commit` | Git commit hash at the time of last research |
 | `quality_gates_passed` | Whether all Quality Gates passed |
 | `preset` | Active preset name |
@@ -215,7 +214,7 @@ Systematically analyzes the codebase across 6 areas:
 - **Greenfield mode** — Tech stack selection, scaffolding design for new projects
 - **Partial re-run** — Re-analyze specific areas with `/deep-research --scope=api,data`
 - **Research caching** — Use previous session's research as baseline, re-analyze only changed areas
-- **Team mode progress** — Agent completion notifications: `[2/3] pattern-analyst done ✅`
+- **Team mode progress** — Agent completion status: `[2/3] pattern-analyst done ✅`
 
 **v3.1 features:**
 - **Incremental research** — Re-analyze only changed areas based on git diff with `/deep-research --incremental` (60-80% time savings)
@@ -311,7 +310,7 @@ implement → test → (pass) → idle + report
 **v3.3 features:**
 - **Insight Tier Quality Gate** — `/deep-insight` command and built-in Insight gate. Measures file metrics, complexity indicators, dependency graph, and change summary. Outputs `insight-report.md`. Never blocks workflow.
 - **PostToolUse File Tracking** — Automatically logs file modifications during Implement phase to `file-changes.log`. Feeds into `/deep-report` and `/deep-insight`.
-- **Stop Hook** — Sends reminder and notification when CLI session ends with an active deep-work session.
+- **Stop Hook** — Outputs a reminder message when CLI session ends with an active deep-work session.
 
 **v5.9 features:**
 - **Fitness Delta Gate** (Advisory) — Compares Phase 1 fitness baseline vs current violations. New violations get flagged but don't block.
@@ -399,20 +398,6 @@ Complete session lifecycle management:
 - Past session list with model usage, TDD compliance, completion rate
 - Aggregate statistics and trend indicators
 - Model cost tracking (`estimated_cost` per slice and session)
-
-### Multi-Channel Notifications
-
-Sends notifications on phase completion:
-
-| Channel | Method | Configuration |
-|---------|--------|---------------|
-| Local | OS native (macOS/Linux/Windows) | Default |
-| Slack | Incoming Webhook | URL input |
-| Discord | Webhook | URL input |
-| Telegram | Bot API | Token + Chat ID |
-| Custom Webhook | HTTP POST/GET/PUT | URL + Headers + Body Template |
-
-The custom Webhook `body_template` supports variable substitution: `{{phase}}`, `{{status}}`, `{{message}}`, `{{timestamp}}`, `{{task}}`.
 
 ### Quality Gates
 
@@ -506,7 +491,6 @@ Options selected when running `/deep-work` (or saved in a preset):
 | Starting phase | Research / Plan | Skip Research if you know the code well |
 | Git branch | Create / Skip | Auto-create a session branch |
 | Model routing | Default / Custom | Per-phase model assignment |
-| Notifications | None / Local / External | Notify on phase completion |
 
 ## Team/Solo Mode (v6.4.1)
 
