@@ -5,6 +5,8 @@ const RECOMMENDER_ALLOWLIST = /^(haiku|sonnet|opus)$/;
 const EXEC_ALLOWLIST = /^(inline|delegate)$/;
 // R3-D fix: profile name sanitization (yaml injection 차단)
 const PROFILE_NAME_ALLOWLIST = /^[a-z0-9][a-z0-9_-]{0,30}$/i;
+const TDD_ALLOWLIST = /^(strict|relaxed|coaching|spike)$/;
+const RESUME_FROM_ALLOWLIST = /^(research|plan|implement|test)$/;
 
 function parseFlags(args) {
   const flags = {
@@ -18,7 +20,7 @@ function parseFlags(args) {
   const taskParts = [];
 
   for (const arg of args) {
-    if (arg === '--') continue; // separator skip (CLI usage: -- "$@")
+    if (arg === '--') continue; // boundary marker from bash invocation 'node ... -- $ARGUMENTS' — not a POSIX argument terminator (parser continues processing flags after this token)
     if (arg === '--no-ask') flags.no_ask = true;
     else if (arg === '--no-recommender') flags.no_recommender = true;
     else if (arg === '--setup') flags.setup = true;
@@ -37,7 +39,12 @@ function parseFlags(args) {
       else if (PROFILE_NAME_ALLOWLIST.test(v)) flags.profile = v;
       else flags.warnings.push(`'${v}' 잘못된 프리셋 이름 — 영문/숫자/-/_만 허용 (≤31자), 무시`);
     }
-    else if (arg.startsWith('--tdd=')) flags.tdd_mode = arg.slice('--tdd='.length);
+    else if (arg.startsWith('--tdd=')) {
+      const v = arg.slice('--tdd='.length);
+      if (v === '') flags.warnings.push('--tdd= 빈 값 — 무시. 허용: strict|relaxed|coaching|spike');
+      else if (TDD_ALLOWLIST.test(v)) flags.tdd_mode = v;
+      else flags.warnings.push(`'${v}' 허용되지 않는 tdd 모드 — 무시. 허용: strict|relaxed|coaching|spike`);
+    }
     else if (arg.startsWith('--exec=')) {
       // C5 — v6.4.0 호환: execution_override
       const v = arg.slice('--exec='.length);
@@ -50,7 +57,12 @@ function parseFlags(args) {
       if (RECOMMENDER_ALLOWLIST.test(v)) flags.recommender = v;
       else flags.warnings.push(`'${v}'은(는) 허용되지 않는 recommender 모델 — sonnet으로 fallback. 허용: haiku|sonnet|opus`);
     }
-    else if (arg.startsWith('--resume-from=')) flags.resume_from = arg.slice('--resume-from='.length);
+    else if (arg.startsWith('--resume-from=')) {
+      const v = arg.slice('--resume-from='.length);
+      if (v === '') flags.warnings.push('--resume-from= 빈 값 — 무시. 허용: research|plan|implement|test');
+      else if (RESUME_FROM_ALLOWLIST.test(v)) flags.resume_from = v;
+      else flags.warnings.push(`'${v}' 허용되지 않는 resume phase — 무시. 허용: research|plan|implement|test`);
+    }
     else taskParts.push(arg);
   }
   flags.task = taskParts.join(' ');
@@ -75,7 +87,7 @@ function parseFlags(args) {
   return flags;
 }
 
-module.exports = { parseFlags, RECOMMENDER_ALLOWLIST, EXEC_ALLOWLIST, PROFILE_NAME_ALLOWLIST };
+module.exports = { parseFlags, RECOMMENDER_ALLOWLIST, EXEC_ALLOWLIST, PROFILE_NAME_ALLOWLIST, TDD_ALLOWLIST, RESUME_FROM_ALLOWLIST };
 
 // ── CLI entrypoint ──
 if (require.main === module) {

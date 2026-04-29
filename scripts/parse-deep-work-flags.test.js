@@ -117,6 +117,88 @@ test('--recommender=opus 통과', () => {
   assert.deepStrictEqual(r.warnings, []);
 });
 
+// ── I1: --tdd= allowlist validation ──
+test('--tdd=strict 통과', () => {
+  const r = parseFlags(['--tdd=strict', 'task']);
+  assert.strictEqual(r.tdd_mode, 'strict');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--tdd=relaxed 통과', () => {
+  const r = parseFlags(['--tdd=relaxed', 'task']);
+  assert.strictEqual(r.tdd_mode, 'relaxed');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--tdd=coaching 통과', () => {
+  const r = parseFlags(['--tdd=coaching', 'task']);
+  assert.strictEqual(r.tdd_mode, 'coaching');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--tdd=spike 통과', () => {
+  const r = parseFlags(['--tdd=spike', 'task']);
+  assert.strictEqual(r.tdd_mode, 'spike');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--tdd=garbage 거부 + 경고', () => {
+  const r = parseFlags(['--tdd=garbage', 'task']);
+  assert.strictEqual(r.tdd_mode, null);
+  assert.ok(r.warnings.some(w => w.includes('허용되지 않는 tdd 모드')));
+  assert.ok(r.warnings.some(w => w.includes('garbage')));
+});
+
+test('--tdd= 빈 값 거부 + 경고', () => {
+  const r = parseFlags(['--tdd=', 'task']);
+  assert.strictEqual(r.tdd_mode, null);
+  assert.ok(r.warnings.some(w => w.includes('--tdd=') && w.includes('빈 값')));
+});
+
+// ── I2: --resume-from= allowlist validation ──
+test('--resume-from=research 통과', () => {
+  const r = parseFlags(['--resume-from=research', 'task']);
+  assert.strictEqual(r.resume_from, 'research');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--resume-from=plan 통과', () => {
+  const r = parseFlags(['--resume-from=plan', 'task']);
+  assert.strictEqual(r.resume_from, 'plan');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--resume-from=implement 통과', () => {
+  const r = parseFlags(['--resume-from=implement', 'task']);
+  assert.strictEqual(r.resume_from, 'implement');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--resume-from=test 통과', () => {
+  const r = parseFlags(['--resume-from=test', 'task']);
+  assert.strictEqual(r.resume_from, 'test');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--resume-from=brainstorm 거부 + 경고 (brainstorm은 허용 목록 외)', () => {
+  const r = parseFlags(['--resume-from=brainstorm', 'task']);
+  assert.strictEqual(r.resume_from, null);
+  assert.ok(r.warnings.some(w => w.includes('허용되지 않는 resume phase')));
+  assert.ok(r.warnings.some(w => w.includes('brainstorm')));
+});
+
+test('--resume-from=invalid 거부 + 경고', () => {
+  const r = parseFlags(['--resume-from=invalid', 'task']);
+  assert.strictEqual(r.resume_from, null);
+  assert.ok(r.warnings.some(w => w.includes('허용되지 않는 resume phase')));
+});
+
+test('--resume-from= 빈 값 거부 + 경고', () => {
+  const r = parseFlags(['--resume-from=', 'task']);
+  assert.strictEqual(r.resume_from, null);
+  assert.ok(r.warnings.some(w => w.includes('--resume-from=') && w.includes('빈 값')));
+});
+
 test('CLI entrypoint — node parse-deep-work-flags.js -- ...', () => {
   const { spawnSync } = require('node:child_process');
   const result = spawnSync(process.execPath, [require.resolve('./parse-deep-work-flags.js'), '--', '--no-ask', '--profile=solo-strict', 'fix', 'auth'], { encoding: 'utf8' });
