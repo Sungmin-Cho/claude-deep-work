@@ -1,11 +1,11 @@
-# deep-work v6.4.2
+# deep-work v6.4.1
 
-Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인. v6.4.2에서는 세션 초기화 흐름이 LLM 추천 기반 항목별 ask로 전환되었으며, profile v2→v3 자동 마이그레이션과 알림 시스템 전면 제거가 포함됩니다.
+Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Codex 플러그인.
 
 ## Structure
 
 ```
-.claude-plugin/plugin.json          # 플러그인 매니페스트
+.Codex-plugin/plugin.json          # 플러그인 매니페스트
 package.json                         # npm 매니페스트 (files 필드에 배포 대상 명시)
 commands/                            # 슬래시 커맨드 (thin wrappers + utilities)
 hooks/hooks.json                     # 훅 설정 (P0 worktree guard + P1 phase transition)
@@ -22,16 +22,9 @@ sensors/                             # 센서 시스템 (linter/type/coverage de
 health/                              # Health Engine (드리프트 탐지 + fitness functions)
 templates/                           # CI 템플릿 + topology 엔진 (topologies/, topology-detector.js)
 assumptions.json                     # assumption 기준선 (hook enforcement justification)
-agents/                              # Claude Code subagents (research/implement delegation)
+agents/                              # Codex subagents (research/implement delegation)
 hooks/scripts/verify-delegated-receipt.sh      # Post-hoc receipt validation (delegate precondition)
 hooks/scripts/verify-receipt-core.js # 8-item validation module
 scripts/validate-agents.sh           # Static agent frontmatter check
-scripts/migrate-profile-v2-to-v3.js  # Profile v2→v3 migration helper (native YAML)
-scripts/load-v3-profile.js           # v3 schema profile reader (orchestrator §1-3-3)
-scripts/parse-deep-work-flags.js     # CLI flag parser (allowlists, priority matrix)
-scripts/recommender-input.js         # session-recommender input sanitization
-scripts/recommender-parser.js        # session-recommender output parser (5-key validation)
-scripts/detect-capability.js         # environment capability detection
-scripts/format-ask-options.js        # AskUserQuestion option formatter
-agents/session-recommender.md        # v6.4.2 session-init recommendation sub-agent
+agents/session-recommender.md        # v6.4.2 session-init recommendation sub-agent (sonnet by default)
 ```

@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.4.2] — 2026-04-29
+
+### Added
+- **Profile schema v3** — `interactive_each_session` array lets each user customize which items are asked every session. `defaults.*` separates values that are applied automatically.
+- **session-recommender sub-agent** — sonnet by default; receives task description + workspace meta + capability and returns fenced JSON recommendations. Allowlist `^(haiku|sonnet|opus)$`.
+- **`--no-ask` flag** — skips ask + recommender entirely (fastest path). `--profile=X --no-ask` is the v6.4.x "proceed as-is" equivalent.
+- **`--recommender=MODEL` / `--no-recommender` flags** — override the recommender model or skip the recommender step entirely.
+- **State file `recommendations` field** — optional; has no effect on phase-guard enforcement.
+- **State file permissions 600** — README guidance added for multi-user environments.
+- **`scripts/load-v3-profile.js`** — v3 schema profile loader (orchestrator §1-3-3).
+- **`scripts/parse-deep-work-flags.js`** — CLI flag parser with allowlists (PROFILE_NAME / RECOMMENDER / EXEC / TDD / RESUME_FROM).
+- **`scripts/detect-capability.js`** + **`scripts/format-ask-options.js`** — environment capability detection + AskUserQuestion option formatter.
+- **`scripts/migrate-profile-v2-to-v3.js`** — profile v2→v3 migration helper: atomic write + `flock` + idempotent + `.v2-backup` + rollback procedure.
+- **`scripts/recommender-input.js`** + **`scripts/recommender-parser.js`** — session-recommender input sanitization and output parser (5-key validation).
+- **`agents/session-recommender.md`** — session-init recommendation sub-agent (sonnet by default).
+
+### Changed
+- **`--profile=X` semantics preserved** — proceeds through the ask step as in v6.4.x (prevents silent regression). Users who relied on the fast path need to add `--no-ask`.
+- **Profile v2 → v3 auto-migration** — atomic write + `flock` + idempotent + `.v2-backup` backup + rollback procedure in README.
+- **Orchestrator §1-3 unified** — single confirm replaced by per-item ask N times + LLM recommendation. ask/recommender results are in-memory only; atomically serialized at §1-9 state-creation time.
+- **Assumption auto-adjust → recommender order** — auto-adjust result is reflected in recommender input `current_defaults`.
+
+### Fixed
+- **Shell injection in flag parser**: `parse-deep-work-flags` now accepts quoted single-string `$ARGUMENTS` — shell metacharacters are no longer evaluated before the allowlist check (orchestrator §1-3-1 invocation pattern).
+- **v6.4.1 `git_branch` profile compat**: `migrate-profile-v2-to-v3` translates `git_branch: <bool>` (v6.4.1 schema) to `defaults.git.use_branch` instead of rejecting it as an unsupported schema.
+- **Capability detection false negatives**: orchestrator §1-4-2 now uses `git rev-parse --is-inside-work-tree` + `git worktree list` instead of the `IS_GIT` env var — fixes false non-git detection in normal git repos.
+- **`--profile=X` not forwarded to loader**: `--profile=X` is now passed to `load-v3-profile.js` via `DEEP_WORK_INITIAL_PRESET` env (parity with migrate-profile call).
+- **Preset-level settings silently dropped**: `loadV3Profile` now returns `project_type`, `cross_model_preference`, and `auto_update` (previously these were dropped, silently losing zero-base / cross-model / auto-update settings).
+
+### Removed
+- **Notification system removed entirely** — `hooks/scripts/notify.sh` (195 lines), `hooks/scripts/notify-parse.test.js` (125 lines), `skills/shared/references/notification-guide.md` (59 lines) deleted. Notify.sh guards cleaned from 5 phase skills + `multi-session.test.js`. **Note**: the `notification` variable in `assumption-engine.{js,test.js}` is an assumption auto-adjust result message (internal vocabulary) unrelated to external notifications — preserved.
+
+### Breaking Changes (patch bump, but explicit notice required)
+
+- **Notification webhook users**: notify.sh + Slack/Discord/Telegram/webhook integrations are severed by this release. The patch bump was a user decision, but any active external webhook integration must be manually forked/backported before upgrading.
+- **Automated scripts using only `--profile=X`**: from v6.4.2, `--profile=X` proceeds through the ask step (to avoid silent regression). Add `--profile=X --no-ask` to preserve the old behavior.
+- **Profile schema v2 → v3 auto-migration**: no preserved data is lost, but `notifications.url` and similar fields are unrecoverable. `.v2-backup` is retained (rollback is possible).
+
+### Migration
+
+- v6.4.x → v6.4.2: auto-migration runs on first call + one-time notice. External webhook integrations are severed by this release.
+- Rollback: `mv .claude/deep-work-profile.yaml.v2-backup .claude/deep-work-profile.yaml` (project-local).
+
+### Spec & Plan
+
+- Design: `docs/superpowers/specs/2026-04-29-deep-work-flexible-init-design.md`
+- Plan: `docs/superpowers/plans/2026-04-29-deep-work-flexible-init.md`
+
 ## [6.4.1] - 2026-04-26
 
 ### Changed

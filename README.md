@@ -21,6 +21,30 @@ In the 2×2 matrix (Guide/Sensor × Computational/Inferential), deep-work covers
 
 deep-work also produces receipts and health reports consumed by [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard).
 
+## What's New in v6.4.2
+
+### Flexible Session Init
+
+`/deep-work` now asks per-item with LLM-suggested defaults instead of a single "use profile or change?" prompt:
+
+- **Profile schema v3** with `interactive_each_session` — per-user customization of which items to ask each session
+- **session-recommender sub-agent** (sonnet by default) infers ideal `team_mode` / `start_phase` / `tdd_mode` / `git` / `model_routing` from the task description and workspace context
+- New flags: `--no-ask` (skip ask + recommender, fastest path), `--recommender=MODEL` (override sub-agent model with allowlist `^(haiku|sonnet|opus)$`), `--no-recommender` (skip recommender only)
+
+### Profile v2 → v3 Auto-migration
+
+First call upgrades v6.4.x profiles automatically: atomic write + flock + idempotent + `.v2-backup` + rollback procedure. v6.4.1 `git_branch:` profiles are translated, not rejected.
+
+### Notification System Removed
+
+Slack/Discord/Telegram/webhook integrations removed. If you depended on `notify.sh` webhooks, you must fork v6.4.1 or migrate to a different mechanism.
+
+### Migration
+
+Existing users: no manual action — first `/deep-work` call auto-migrates the profile. Rollback (project-local): `mv .claude/deep-work-profile.yaml.v2-backup .claude/deep-work-profile.yaml`.
+
+See `CHANGELOG.md` for the full list including breaking-change notes.
+
 ## The Problem
 
 Common pitfalls when AI coding tools tackle complex tasks:
@@ -167,7 +191,6 @@ Stored as YAML frontmatter in `.claude/deep-work.local.md`:
 | `test_passed` | Final test pass status |
 | `*_started_at`, `*_completed_at` | Per-phase start/completion timestamps |
 | `model_routing` | Per-phase model configuration (research/plan/implement/test) |
-| `notifications` | Notification settings (channel list, enabled status) |
 | `last_research_commit` | Git commit hash at the time of last research |
 | `quality_gates_passed` | Whether all Quality Gates passed |
 | `preset` | Active preset name |
@@ -215,7 +238,7 @@ Systematically analyzes the codebase across 6 areas:
 - **Greenfield mode** — Tech stack selection, scaffolding design for new projects
 - **Partial re-run** — Re-analyze specific areas with `/deep-research --scope=api,data`
 - **Research caching** — Use previous session's research as baseline, re-analyze only changed areas
-- **Team mode progress** — Agent completion notifications: `[2/3] pattern-analyst done ✅`
+- **Team mode progress** — Agent completion status: `[2/3] pattern-analyst done ✅`
 
 **v3.1 features:**
 - **Incremental research** — Re-analyze only changed areas based on git diff with `/deep-research --incremental` (60-80% time savings)
@@ -311,7 +334,7 @@ implement → test → (pass) → idle + report
 **v3.3 features:**
 - **Insight Tier Quality Gate** — `/deep-insight` command and built-in Insight gate. Measures file metrics, complexity indicators, dependency graph, and change summary. Outputs `insight-report.md`. Never blocks workflow.
 - **PostToolUse File Tracking** — Automatically logs file modifications during Implement phase to `file-changes.log`. Feeds into `/deep-report` and `/deep-insight`.
-- **Stop Hook** — Sends reminder and notification when CLI session ends with an active deep-work session.
+- **Stop Hook** — Outputs a reminder message when CLI session ends with an active deep-work session.
 
 **v5.9 features:**
 - **Fitness Delta Gate** (Advisory) — Compares Phase 1 fitness baseline vs current violations. New violations get flagged but don't block.
@@ -399,20 +422,6 @@ Complete session lifecycle management:
 - Past session list with model usage, TDD compliance, completion rate
 - Aggregate statistics and trend indicators
 - Model cost tracking (`estimated_cost` per slice and session)
-
-### Multi-Channel Notifications
-
-Sends notifications on phase completion:
-
-| Channel | Method | Configuration |
-|---------|--------|---------------|
-| Local | OS native (macOS/Linux/Windows) | Default |
-| Slack | Incoming Webhook | URL input |
-| Discord | Webhook | URL input |
-| Telegram | Bot API | Token + Chat ID |
-| Custom Webhook | HTTP POST/GET/PUT | URL + Headers + Body Template |
-
-The custom Webhook `body_template` supports variable substitution: `{{phase}}`, `{{status}}`, `{{message}}`, `{{timestamp}}`, `{{task}}`.
 
 ### Quality Gates
 
@@ -506,7 +515,6 @@ Options selected when running `/deep-work` (or saved in a preset):
 | Starting phase | Research / Plan | Skip Research if you know the code well |
 | Git branch | Create / Skip | Auto-create a session branch |
 | Model routing | Default / Custom | Per-phase model assignment |
-| Notifications | None / Local / External | Notify on phase completion |
 
 ## Team/Solo Mode (v6.4.1)
 

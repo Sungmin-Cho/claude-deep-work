@@ -145,7 +145,7 @@ The Deep Work workflow prevents these by **strictly separating brainstorming, an
 - **Zero-base mode**: For new projects, researches technology stacks, architecture patterns, and scaffolding instead of existing code
 - **Partial re-run**: `/deep-research --scope=api,data` re-analyzes specific areas only
 - **Research caching**: Reuses previous session's research as baseline, updating only changed areas
-- **Team mode**: 3 specialist agents (arch-analyst, pattern-analyst, risk-analyst) analyze in parallel with progress notifications
+- **Team mode**: 3 specialist agents (arch-analyst, pattern-analyst, risk-analyst) analyze in parallel
 - **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
 - **Cross-Model Review**: codex/gemini가 research.md를 독립 평가 (plan과 동일 패턴)
 - **종합 판단**: Claude가 모든 리뷰 결과를 분석, 사용자 일괄 확인 후 수정
@@ -207,7 +207,7 @@ For detailed guidance, see [Planning Guide](../shared/references/planning-guide.
 
 **Features**:
 - **Checkpoint support**: If interrupted, resumes from the last incomplete task
-- **Team mode**: Tasks clustered by file ownership, distributed to parallel agents with cross-review and progress notifications
+- **Team mode**: Tasks clustered by file ownership, distributed to parallel agents with cross-review
 - **Exit Gate handoff to Test (v6.3.1)**: slice 완료 후 Implement는 완료-marker만 기록하고 Orchestrator Exit Gate로 제어 반환. 사용자 "진행" 선택 시 Test phase 호출 (수동 `/deep-test` 불필요).
 - **TDD state 업데이트 필수화** (v5.5.1): B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
 - **Slice Review**: Per-slice 2-stage independent review (spec compliance → code quality) after sensors pass. Solo mode only; delegation mode uses self-review recorded as `slice_review.mode: "self"`
@@ -271,7 +271,7 @@ Hooks enforce phase boundaries and track activity:
 
 - **PreToolUse** (`phase-guard.sh`): During Research, Plan, and Test phases — Write/Edit tools are blocked for all files except `$WORK_DIR/` documents and the state file. During Implement — all tools available. No session — no restrictions.
 - **PostToolUse** (`file-tracker.sh`): During Implement phase — automatically logs modified file paths to `$WORK_DIR/file-changes.log` with timestamps. Used by `/deep-report` and `/deep-insight`.
-- **Stop** (`session-end.sh`): On CLI session end — if a deep-work session is active, outputs a reminder message and sends notification via configured channels.
+- **Stop** (`session-end.sh`): On CLI session end — if a deep-work session is active, outputs a reminder message.
 
 This is not a suggestion — it's a hard gate. The AI literally cannot modify code files until the plan is approved, and cannot modify code during testing.
 

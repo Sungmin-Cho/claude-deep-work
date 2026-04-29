@@ -5,6 +5,8 @@ description: "Resume an active deep work session — restores context and contin
 
 > **Utility (v6.2.4)** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
 > 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
+>
+> **v6.4.2**: `parse-deep-work-flags` 파서가 `--session=<id>`, `--resume-from=brainstorm` (및 `research|plan|implement|test`), `--worktree=<path>` 플래그를 지원합니다.
 
 # Deep Work Session Resume
 

@@ -532,8 +532,6 @@ describe('lint guard: deep-work.local.md references', () => {
       if (/CHANGELOG|README|\.test\.js/.test(line)) return false;
       // Exclude: utils.sh (core fallback implementation + migration)
       if (/utils\.sh/.test(line)) return false;
-      // Exclude: notify.sh (backward-compat default)
-      if (/notify\.sh/.test(line)) return false;
       // Exclude: lines that mention "legacy" or "fallback" or "레거시" (intentional fallback docs)
       if (/[Ll]egacy|fallback|레거시|auto-migrat/i.test(line)) return false;
       // Exclude: lines that mention "or legacy" or "또는" (dual-path references)

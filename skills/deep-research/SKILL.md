@@ -239,9 +239,3 @@ Research 단계가 완료되었습니다!
 ```
 
 Team 모드 시 부분 결과 파일도 표시.
-
-## Notification
-
-```bash
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh "$STATE_FILE" "research" "completed" "Research 완료" 2>/dev/null || true
-```

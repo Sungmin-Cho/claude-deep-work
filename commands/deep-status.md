@@ -110,7 +110,7 @@ Read the resolved state file (from Step 1) to get session state.
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
 
-Read `model_routing` and `notifications` from the state file. If missing, show defaults (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku for model routing; "설정 없음" for notifications).
+Read `model_routing` from the state file. If missing, show defaults (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku for model routing).
 
 Read `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `plan_review_max_retries` from the state file. If missing, default to: evaluator_model="없음", assumption_adjustments=[] (empty), skipped_phases=[] (empty), plan_review_retries=0, plan_review_max_retries=3.
 
@@ -176,7 +176,6 @@ Deep Work 세션 상태
 Git 브랜치: [git_branch or "없음"]
 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 평가자 모델: [evaluator_model] (v5.1)
-알림: [설정 없음 / 로컬 / 로컬 + Slack + ...]
 
 ### Fork 관계 표시 (v5.6)
 

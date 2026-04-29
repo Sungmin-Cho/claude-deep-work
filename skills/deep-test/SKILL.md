@@ -152,9 +152,8 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
    모든 검증 통과! `/deep-finish`로 세션을 완료하세요.
    상세 결과: $WORK_DIR/test-results.md
    ```
-3. 알림: `notify.sh "$STATE_FILE" "test" "passed"`
-4. Session report 자동 생성: `$WORK_DIR/report.md`
-5. Git commit 제안 (git_branch 설정 시)
+3. Session report 자동 생성: `$WORK_DIR/report.md`
+4. Git commit 제안 (git_branch 설정 시)
 
 ## Some Fail (retry available)
 
@@ -165,7 +164,6 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 3. State: **`current_phase: implement`**
 4. 실패 slice만 TDD cycle 재실행
 5. 완료 후: `current_phase: test` → 전체 gate 재실행 (Section 1부터)
-6. 알림: `notify.sh "$STATE_FILE" "test" "auto_retry"`
 
 ## Some Fail (retry exhausted)
 
@@ -178,8 +176,7 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
    - 실패한 slice의 `[x]` 체크마크를 `[ ]`로 해제 (Implement skill Section 1 Resume Detection이 미완료 slice로 인식하도록)
    - **동시에** 해당 slice의 receipt에 `status: "invalidated"` 기록 — sensor/verification이 stale evidence를 재사용하지 않고 재구현 시 새 evidence를 생성하도록 보장
    - **주의 (NW6)**: Receipt invalidate만 하고 `[x]`를 그대로 두면 Resume Detection이 미완료 slice를 찾지 못해 재구현이 skip됨. 반드시 둘 다 수행.
-4. 알림: `notify.sh "$STATE_FILE" "test" "failed_final"`
-5. 안내:
+4. 안내:
    - `/deep-test --force-rerun`로 Test phase 직접 재실행 (retry count 초기화)
    - 또는 사용자 수동 수정 후 `/deep-resume` → Orchestrator §3-4 (Implement) 경로. Step 3의 cleanup 덕분에 Implement skill이 Section 1 완료-Marker branch를 통과하고 Section 2에 진입하여 영향 slice 재구현 + 새 receipt/sensor evidence 생성. 완료 후 Exit Gate → 사용자가 "다음 phase로 진행" 선택 시 Test 재진입.
    - 또는 `/deep-status --report`로 결과 정리
