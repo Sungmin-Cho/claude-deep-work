@@ -21,6 +21,30 @@ In the 2×2 matrix (Guide/Sensor × Computational/Inferential), deep-work covers
 
 deep-work also produces receipts and health reports consumed by [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard).
 
+## What's New in v6.4.2
+
+### Flexible Session Init
+
+`/deep-work` now asks per-item with LLM-suggested defaults instead of a single "use profile or change?" prompt:
+
+- **Profile schema v3** with `interactive_each_session` — per-user customization of which items to ask each session
+- **session-recommender sub-agent** (sonnet by default) infers ideal `team_mode` / `start_phase` / `tdd_mode` / `git` / `model_routing` from the task description and workspace context
+- New flags: `--no-ask` (skip ask + recommender, fastest path), `--recommender=MODEL` (override sub-agent model with allowlist `^(haiku|sonnet|opus)$`), `--no-recommender` (skip recommender only)
+
+### Profile v2 → v3 Auto-migration
+
+First call upgrades v6.4.x profiles automatically: atomic write + flock + idempotent + `.v2-backup` + rollback procedure. v6.4.1 `git_branch:` profiles are translated, not rejected.
+
+### Notification System Removed
+
+Slack/Discord/Telegram/webhook integrations removed. If you depended on `notify.sh` webhooks, you must fork v6.4.1 or migrate to a different mechanism.
+
+### Migration
+
+Existing users: no manual action — first `/deep-work` call auto-migrates the profile. Rollback (project-local): `mv .claude/deep-work-profile.yaml.v2-backup .claude/deep-work-profile.yaml`.
+
+See `CHANGELOG.md` for the full list including breaking-change notes.
+
 ## The Problem
 
 Common pitfalls when AI coding tools tackle complex tasks:

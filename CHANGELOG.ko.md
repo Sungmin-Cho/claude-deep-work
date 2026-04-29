@@ -21,12 +21,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`scripts/load-v3-profile.js`** — v3 schema profile loader (orchestrator §1-3-3).
 - **`scripts/parse-deep-work-flags.js`** — CLI flag parser with allowlists (PROFILE_NAME / RECOMMENDER / EXEC / TDD / RESUME_FROM).
 - **`scripts/detect-capability.js`** + **`scripts/format-ask-options.js`** — environment capability detection + AskUserQuestion option formatter.
+- **`scripts/migrate-profile-v2-to-v3.js`** — profile v2→v3 마이그레이션 헬퍼: atomic write + `flock` + idempotent + `.v2-backup` + rollback 절차.
+- **`scripts/recommender-input.js`** + **`scripts/recommender-parser.js`** — session-recommender 입력 정제 및 출력 파서 (5-key 검증).
+- **`agents/session-recommender.md`** — 세션 초기화 추천 sub-agent (기본 sonnet).
 
 ### Changed
 - **`--profile=X` 의미 유지** — v6.4.x와 동일하게 ask 단계 진행 (silent regression 방지). 기존 빠른 경로 사용자는 `--no-ask` 추가 필요.
 - **Profile v2 → v3 자동 마이그레이션** — atomic write + `flock` + idempotent + `.v2-backup` 백업 + rollback 절차 README.
 - **Orchestrator §1-3 통합** — 단일 confirm 폐기 → 항목별 ask N번 + LLM 추천. ask/추천은 in-memory only, §1-9 state 생성 시점에 atomic 직렬화.
 - **Assumption auto-adjust → recommender 순서** — auto-adjust 결과가 recommender 입력 `current_defaults`에 반영.
+
+### Fixed
+- **플래그 파서 shell injection**: `parse-deep-work-flags`가 quoted 단일 문자열 `$ARGUMENTS`를 수락 — shell 메타문자가 allowlist 검사 전에 평가되지 않음 (orchestrator §1-3-1 호출 패턴).
+- **v6.4.1 `git_branch` 프로필 호환성**: `migrate-profile-v2-to-v3`가 `git_branch: <bool>` (v6.4.1 스키마)을 unsupported schema로 거부하는 대신 `defaults.git.use_branch`로 변환.
+- **capability 감지 오탐**: orchestrator §1-4-2가 `IS_GIT` 환경 변수 대신 `git rev-parse --is-inside-work-tree` + `git worktree list`를 사용 — 일반 git 저장소에서 비-git으로 오탐되던 문제 수정.
+- **`--profile=X`가 로더에 전달되지 않던 문제**: `--profile=X`가 이제 `DEEP_WORK_INITIAL_PRESET` 환경 변수를 통해 `load-v3-profile.js`로 전달됨 (migrate-profile 호출과 동등).
+- **preset 레벨 설정이 묵시적으로 누락**: `loadV3Profile`이 이제 `project_type`, `cross_model_preference`, `auto_update`를 반환 (기존에는 누락되어 zero-base / cross-model / auto-update 설정이 조용히 손실됨).
 
 ### Removed
 - **알림 시스템 전면 제거** — `hooks/scripts/notify.sh` (195 lines), `hooks/scripts/notify-parse.test.js` (125 lines), `skills/shared/references/notification-guide.md` (59 lines) 삭제. Phase skill 5개 + `multi-session.test.js` notify.sh 가드 정리. **Note**: `assumption-engine.{js,test.js}`의 `notification` 변수는 assumption auto-adjust 결과 메시지(자체 어휘)이며 외부 알림과 무관한 동음이의어 — 보존됨.
