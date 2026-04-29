@@ -86,26 +86,37 @@ function formatOptions({ item, recommendation, default_value, enum_values, disab
  * capabilityToDisabled — I24 / W7 helper.
  * Maps capability flags → the enum values that should be disabled for a given ask item.
  *
- * W7 rule: when git_worktree=false, 'worktree' is disabled.
- *          when is_git=false (full non-git env), 'new-branch' is ALSO disabled.
+ * W7 rule: when git_worktree is not explicitly true, 'worktree' is disabled.
+ *          when is_git is not explicitly true (full non-git env), 'new-branch' is ALSO disabled.
+ *
+ * I-1 fix: fail-closed (parity with recommender-parser.js).
+ * capability flag가 명시적으로 true가 아니면 해당 옵션을 disable.
+ * 호출자는 detectCapability() 출력을 사용하거나 명시적으로 모든 flag를 true로 설정해야 함.
+ *
+ * I-2 fix: KNOWN_ITEMS allowlist — unknown item throws to surface caller typos.
  *
  * @param {{ git_worktree: boolean, team_mode_available: boolean, is_git?: boolean }} capability
  * @param {string} item  - ask item name, e.g. 'git', 'team_mode'
  * @returns {string[]}
  */
+const KNOWN_ITEMS = new Set(['team_mode', 'start_phase', 'tdd_mode', 'git', 'model_routing']);
+
 function capabilityToDisabled(capability, item) {
+  if (!KNOWN_ITEMS.has(item)) {
+    throw new Error(`capabilityToDisabled: 알 수 없는 item '${item}' — 허용: ${[...KNOWN_ITEMS].join(', ')}`);
+  }
+
+  // I-1 fix: fail-closed — flag가 명시적으로 true가 아니면 disable.
   const disabled = [];
 
-  if (item === 'team_mode' && capability.team_mode_available === false) {
+  if (item === 'team_mode' && capability.team_mode_available !== true) {
     disabled.push('team');
   }
 
-  if (item === 'git' && capability.git_worktree === false) {
-    disabled.push('worktree');
+  if (item === 'git') {
+    if (capability.git_worktree !== true) disabled.push('worktree');
     // W7: full non-git repo → new-branch is also meaningless
-    if (capability.is_git === false) {
-      disabled.push('new-branch');
-    }
+    if (capability.is_git !== true) disabled.push('new-branch');
   }
 
   return disabled;

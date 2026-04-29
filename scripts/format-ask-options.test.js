@@ -71,10 +71,12 @@ test('모든 enum이 disabled — throw (진행 불가)', () => {
 });
 
 test('capabilityToDisabled — git_worktree=false → ["worktree"]', () => {
+  // fail-closed: git_worktree=false → worktree disabled; is_git=true → new-branch enabled
   assert.deepStrictEqual(
-    capabilityToDisabled({ git_worktree: false, team_mode_available: true }, 'git'),
+    capabilityToDisabled({ git_worktree: false, team_mode_available: true, is_git: true }, 'git'),
     ['worktree']
   );
+  // fail-closed: team_mode_available=false → team disabled
   assert.deepStrictEqual(
     capabilityToDisabled({ git_worktree: false, team_mode_available: false }, 'team_mode'),
     ['team']
@@ -85,5 +87,29 @@ test('capabilityToDisabled — is_git=false → ["worktree", "new-branch"]', () 
   assert.deepStrictEqual(
     capabilityToDisabled({ git_worktree: false, team_mode_available: true, is_git: false }, 'git'),
     ['worktree', 'new-branch']
+  );
+});
+
+// I-1: fail-closed — 빈 capability {} → team disabled (undefined !== true)
+test('capabilityToDisabled — I-1: empty capability {} → team disabled (fail-closed)', () => {
+  assert.deepStrictEqual(
+    capabilityToDisabled({}, 'team_mode'),
+    ['team']
+  );
+});
+
+// I-1: fail-closed — 빈 capability {} → worktree + new-branch disabled
+test('capabilityToDisabled — I-1: empty capability {} → worktree + new-branch disabled (fail-closed)', () => {
+  assert.deepStrictEqual(
+    capabilityToDisabled({}, 'git'),
+    ['worktree', 'new-branch']
+  );
+});
+
+// I-2: unknown item throws
+test('capabilityToDisabled — I-2: unknown item throws', () => {
+  assert.throws(
+    () => capabilityToDisabled({}, 'unknown-item'),
+    /알 수 없는 item 'unknown-item'/
   );
 });
