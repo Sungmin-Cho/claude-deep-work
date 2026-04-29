@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.4.2] — 2026-04-29
+
+### Added
+- **Profile schema v3** — `interactive_each_session` 배열로 매 세션 묻는 항목을 사용자별 customize. `defaults.*`로 자동 적용 값 분리.
+- **session-recommender sub-agent** — sonnet 기본, task description + workspace meta + capability를 입력받아 fenced JSON 추천. allowlist `^(haiku|sonnet|opus)$`.
+- **`--no-ask` flag** — ask + 추천 모두 skip (가장 빠른 경로). `--profile=X --no-ask`로 v6.4.x "이대로 진행" 등가물.
+- **`--recommender=MODEL` / `--no-recommender` flags** — 추천 모델 override / skip.
+- **State file `recommendations` field** — 옵셔널, phase-guard enforcement에 영향 없음.
+- **State file 권한 600** — multi-user 환경 안내 README 추가.
+- **`scripts/load-v3-profile.js`** — v3 schema profile loader (orchestrator §1-3-3).
+- **`scripts/parse-deep-work-flags.js`** — CLI flag parser with allowlists (PROFILE_NAME / RECOMMENDER / EXEC / TDD / RESUME_FROM).
+- **`scripts/detect-capability.js`** + **`scripts/format-ask-options.js`** — environment capability detection + AskUserQuestion option formatter.
+
+### Changed
+- **`--profile=X` 의미 유지** — v6.4.x와 동일하게 ask 단계 진행 (silent regression 방지). 기존 빠른 경로 사용자는 `--no-ask` 추가 필요.
+- **Profile v2 → v3 자동 마이그레이션** — atomic write + `flock` + idempotent + `.v2-backup` 백업 + rollback 절차 README.
+- **Orchestrator §1-3 통합** — 단일 confirm 폐기 → 항목별 ask N번 + LLM 추천. ask/추천은 in-memory only, §1-9 state 생성 시점에 atomic 직렬화.
+- **Assumption auto-adjust → recommender 순서** — auto-adjust 결과가 recommender 입력 `current_defaults`에 반영.
+
+### Removed
+- **알림 시스템 전면 제거** — `hooks/scripts/notify.sh` (195 lines), `hooks/scripts/notify-parse.test.js` (125 lines), `skills/shared/references/notification-guide.md` (59 lines) 삭제. Phase skill 5개 + `multi-session.test.js` notify.sh 가드 정리. **Note**: `assumption-engine.{js,test.js}`의 `notification` 변수는 assumption auto-adjust 결과 메시지(자체 어휘)이며 외부 알림과 무관한 동음이의어 — 보존됨.
+
+### Breaking Changes (Patch bump이지만 명시 필수)
+
+- **알림 webhook 사용자**: notify.sh + slack/discord/telegram/webhook 통합이 본 릴리스로 끊김. 사용자 결정에 따라 patch bump으로 진행하지만, webhook 외부 통합이 활성인 경우는 본 릴리스 직전 manual fork/backport 필요.
+- **자동 스크립트로 `--profile=X`만 사용한 사용자**: v6.4.2부터 `--profile=X`는 ask 단계를 진행함 (silent regression 회피 목적). 기존 동작을 유지하려면 `--profile=X --no-ask` 추가.
+- **Profile schema v2 → v3 자동 마이그레이션**: 보존되는 정보 손실은 없으나 `notifications.url` 등은 회수 불가능. `.v2-backup`은 보존됨 (rollback 가능).
+
+### Migration
+
+- v6.4.x → v6.4.2 첫 호출 시 자동 마이그레이션 + 1회 안내. 알림 webhook 외부 통합이 있으면 본 릴리스로 끊김.
+- Rollback: `mv .claude/deep-work-profile.yaml.v2-backup .claude/deep-work-profile.yaml` (project-local).
+
+### Spec & Plan
+
+- Design: `docs/superpowers/specs/2026-04-29-deep-work-flexible-init-design.md`
+- Plan: `docs/superpowers/plans/2026-04-29-deep-work-flexible-init.md`
+
 ## [6.4.1] - 2026-04-26
 
 ### 변경
