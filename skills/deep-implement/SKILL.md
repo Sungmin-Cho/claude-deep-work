@@ -26,17 +26,16 @@ description: "Phase 3 — Implement: slice-based TDD execution of approved plan"
 4. 추출: `work_dir`, `active_slice`, `tdd_state`, `model_routing.implement`, `evaluator_model`
 5. Verify: `current_phase` = "implement", `plan_approved` = true
 6. `implement_started_at` 기록 (ISO timestamp)
-7. Parse `--exec=<mode>` from `$ARGUMENTS`:
-   - If `$ARGUMENTS` contains `--exec=inline` → set local `args_exec = "inline"`
-   - If `$ARGUMENTS` contains `--exec=delegate` → set local `args_exec = "delegate"`
-   - Otherwise → `args_exec = null`
-   - After Section 1.5 pre-routing, if `args_exec != null`, persist to state:
-     `state.execution_override = args_exec` (written via Edit on the state file
-     YAML frontmatter, matching the existing pattern used for other CLI-overridable fields).
+7. Read `state.execution_override` from state YAML frontmatter (R3-W4: orchestrator §1-3-1
+   already ran `scripts/parse-deep-work-flags.js` and persisted the value before this skill
+   was invoked — no separate `--exec` extraction needed here):
+   - `state.execution_override == "inline"` → Section 1.5 will select inline mode
+   - `state.execution_override == "delegate"` → Section 1.5 will select delegate mode
+   - `state.execution_override == null` → Section 1.5 auto-heuristic applies
 
-This persistence ensures:
-  - Resume uses the override even without re-passing --exec.
-  - CLI args > state precedence is automatic (args parsed first, state written last).
+   If `/deep-resume` is invoked with `--exec=<mode>` directly (not via orchestrator), the
+   resume skill is responsible for updating `state.execution_override` before entering this
+   skill. CLI args > state precedence is enforced at the orchestrator / resume layer.
 
 ## Plan 로드 + Slice 파싱
 
