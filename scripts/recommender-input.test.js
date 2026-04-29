@@ -43,6 +43,22 @@ test('top_level_dirs 빈 문자열 제거 — empty string filtered out', () => 
   assert.deepStrictEqual(out.workspace_meta.top_level_dirs, ['src', 'tests']);
 });
 
+// ── C3: capability 미제공 시 fail-closed (git_worktree=false, team_mode_available=false) ──
+test('capability 미제공 → fail-closed default (git_worktree=false, team_mode_available=false, is_git=false)', () => {
+  const out = sanitizeInput({ task_description: 'task', recent_commits: [], top_level_dirs: [] });
+  assert.strictEqual(out.capability.git_worktree, false, 'git_worktree should be false (fail-closed)');
+  assert.strictEqual(out.capability.team_mode_available, false, 'team_mode_available should be false (fail-closed)');
+  assert.strictEqual(out.capability.is_git, false, 'is_git should be false (fail-closed)');
+});
+
+test('capability 명시 제공 시 그대로 사용', () => {
+  const cap = { git_worktree: true, team_mode_available: true, is_git: true };
+  const out = sanitizeInput({ task_description: 'task', recent_commits: [], top_level_dirs: [], capability: cap });
+  assert.strictEqual(out.capability.git_worktree, true);
+  assert.strictEqual(out.capability.team_mode_available, true);
+  assert.strictEqual(out.capability.is_git, true);
+});
+
 test('CLI entrypoint — stdin → stdout JSON', () => {
   const { spawnSync } = require('node:child_process');
   const input = JSON.stringify({ task_description: 'fix auth bug', recent_commits: ['initial commit'], top_level_dirs: ['src','tests'] });

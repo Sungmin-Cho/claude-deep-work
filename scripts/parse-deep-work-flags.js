@@ -6,7 +6,11 @@ const EXEC_ALLOWLIST = /^(inline|delegate)$/;
 // R3-D fix: profile name sanitization (yaml injection 차단)
 const PROFILE_NAME_ALLOWLIST = /^[a-z0-9][a-z0-9_-]{0,30}$/i;
 const TDD_ALLOWLIST = /^(strict|relaxed|coaching|spike)$/;
-const RESUME_FROM_ALLOWLIST = /^(research|plan|implement|test)$/;
+const RESUME_FROM_ALLOWLIST = /^(brainstorm|research|plan|implement|test)$/;
+// SESSION_ID는 alphanumeric + dash + dot 조합만 허용 (shell injection 차단)
+const SESSION_ALLOWLIST = /^[\w.-]+$/;
+// WORKTREE_PATH: shell injection 차단 (세미콜론, 메타문자, 빈 값 거부)
+const WORKTREE_PATH_BLOCKLIST = /[;|&`$(){}[\]<>!#*?\\]/;
 
 function parseFlags(args) {
   const flags = {
@@ -15,12 +19,18 @@ function parseFlags(args) {
     skip_review: false, no_branch: false, skip_to_implement: false, skip_integrate: false,
     setup: false, tdd_mode: null, resume_from: null,
     exec_mode: null, // v6.4.0 --exec=<mode>
+    session: null, // v6.3.x --session=<id>
+    worktree: null, // v6.3.x --worktree=<path>
+    cross_model: false, // --cross-model
+    no_cross_model: false, // --no-cross-model
+    force_rerun: false, // --force-rerun
     task: '', warnings: []
   };
   const taskParts = [];
 
   for (const arg of args) {
-    if (arg === '--') continue; // boundary marker from bash invocation 'node ... -- $ARGUMENTS' — not a POSIX argument terminator (parser continues processing flags after this token)
+    if (arg === '--') continue; // boundary marker from bash invocation 'node ... -- $ARGUMENTS' — NOT POSIX argument terminator
+    // (parser continues processing flags after this token; -- is a no-op marker for shell wrapping only)
     if (arg === '--no-ask') flags.no_ask = true;
     else if (arg === '--no-recommender') flags.no_recommender = true;
     else if (arg === '--setup') flags.setup = true;
@@ -32,6 +42,9 @@ function parseFlags(args) {
     else if (arg === '--no-branch') flags.no_branch = true;
     else if (arg === '--skip-to-implement') flags.skip_to_implement = true;
     else if (arg === '--skip-integrate') flags.skip_integrate = true;
+    else if (arg === '--cross-model') flags.cross_model = true;
+    else if (arg === '--no-cross-model') flags.no_cross_model = true;
+    else if (arg === '--force-rerun') flags.force_rerun = true;
     else if (arg.startsWith('--profile=')) {
       // R3-D fix: profile name sanitization (yaml injection 차단)
       const v = arg.slice('--profile='.length);
@@ -59,9 +72,21 @@ function parseFlags(args) {
     }
     else if (arg.startsWith('--resume-from=')) {
       const v = arg.slice('--resume-from='.length);
-      if (v === '') flags.warnings.push('--resume-from= 빈 값 — 무시. 허용: research|plan|implement|test');
+      if (v === '') flags.warnings.push('--resume-from= 빈 값 — 무시. 허용: brainstorm|research|plan|implement|test');
       else if (RESUME_FROM_ALLOWLIST.test(v)) flags.resume_from = v;
-      else flags.warnings.push(`'${v}' 허용되지 않는 resume phase — 무시. 허용: research|plan|implement|test`);
+      else flags.warnings.push(`'${v}' 허용되지 않는 resume phase — 무시. 허용: brainstorm|research|plan|implement|test`);
+    }
+    else if (arg.startsWith('--session=')) {
+      const v = arg.slice('--session='.length);
+      if (v === '') flags.warnings.push('--session= 빈 값 — 무시');
+      else if (SESSION_ALLOWLIST.test(v)) flags.session = v;
+      else flags.warnings.push(`'${v}' 잘못된 session ID — 영문/숫자/dash/dot만 허용, 무시`);
+    }
+    else if (arg.startsWith('--worktree=')) {
+      const v = arg.slice('--worktree='.length);
+      if (v === '') flags.warnings.push('--worktree= 빈 값 — 무시');
+      else if (WORKTREE_PATH_BLOCKLIST.test(v)) flags.warnings.push(`'${v}' 잘못된 worktree 경로 — shell 메타문자 포함 불가, 무시`);
+      else flags.worktree = v;
     }
     else taskParts.push(arg);
   }
@@ -87,7 +112,7 @@ function parseFlags(args) {
   return flags;
 }
 
-module.exports = { parseFlags, RECOMMENDER_ALLOWLIST, EXEC_ALLOWLIST, PROFILE_NAME_ALLOWLIST, TDD_ALLOWLIST, RESUME_FROM_ALLOWLIST };
+module.exports = { parseFlags, RECOMMENDER_ALLOWLIST, EXEC_ALLOWLIST, PROFILE_NAME_ALLOWLIST, TDD_ALLOWLIST, RESUME_FROM_ALLOWLIST, SESSION_ALLOWLIST, WORKTREE_PATH_BLOCKLIST };
 
 // ── CLI entrypoint ──
 if (require.main === module) {

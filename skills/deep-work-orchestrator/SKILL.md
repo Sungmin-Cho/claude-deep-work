@@ -7,7 +7,7 @@ description: "Evidence-Driven Development — session initialization + auto-flow
 
 사용자 입력: **$ARGUMENTS**
 
-> `--resume-from=<phase>` 가 지정된 경우: Step 1의 **interactive/setup 대화(프로필 질문, 작업 모드 선택, 알림 설정 등)만 건너뛴다**. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다.
+> `--resume-from=<phase>` 가 지정된 경우: Step 1의 **interactive/setup 대화(프로필 질문, 작업 모드 선택 등)만 건너뛴다**. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다.
 >
 > **반드시 수행 (NO2 + NP1 fix)**:
 > 1. Step 1-2 state file 로드: `.claude/deep-work.{SESSION_ID}.md`에서 `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `team_mode`, `cross_model_enabled`, `tdd_mode`, `iteration_count`, `skipped_phases`, `research_approved`, `research_approved_hash`, `plan_approved`, `plan_approved_hash`, `current_phase` 등 모든 상태 변수 로드.
@@ -90,7 +90,7 @@ write_session_pointer "$SESSION_ID"
 | `--no-ask` | 신규 (v6.4.2): ask 단계 모두 skip + 추천 skip (가장 빠른 경로) |
 | `--recommender=MODEL` | 신규 (v6.4.2): 추천 모델 override. allowlist `^(haiku\|sonnet\|opus)$`, 그 외 거부 + sonnet fallback + 1회 경고 |
 | `--no-recommender` | 신규 (v6.4.2): 추천 sub-agent skip (defaults 값으로 ask 진입) |
-| `--exec=CMD` | 신규 (v6.4.2): 세션 완료 후 실행할 shell 명령 (hook 호환) |
+| `--exec=<inline\|delegate>` | (v6.4.0) Implement 단계 실행 방식 override. parser → state.execution_override → deep-implement §1.5에서 read |
 | `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `deep-resume.md`가 사용. |
 
 ### §1-3-1. 플래그 파서 호출
@@ -110,18 +110,30 @@ parse_rc=$?
 
 ### §1-3-2. 프로필 v2→v3 마이그레이션
 
-파서 결과로 `DEEP_WORK_INITIAL_PRESET`(= `FLAGS["--profile"]` 또는 null)이 채워진 후 migration 호출 (R3-W1):
+파서 결과로 `DEEP_WORK_INITIAL_PRESET`(= `FLAGS.profile` 또는 null)이 채워진 후 migration 호출 (R3-W1):
 
 ````bash
 PROFILE_FILE="$PROJECT_ROOT/.claude/deep-work-profile.yaml"
-MIGRATE_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-profile-v2-to-v3.js" "$PROFILE_FILE" 2>/tmp/dw-migrate-err.txt)
+migrate_stderr=$(mktemp)
+MIGRATE_OUT=$(DEEP_WORK_INITIAL_PRESET="${FLAGS.profile}" \
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-profile-v2-to-v3.js" "$PROFILE_FILE" 2>"$migrate_stderr")
 migrate_rc=$?
 ````
 
-- `migrate_rc` 비-zero → `/tmp/dw-migrate-err.txt` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지 (R3-C).
+- `migrate_rc` 비-zero → `$migrate_stderr` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지 (R3-C).
 - `MIGRATE_OUT` (JSON stdout):
   - `{ "migrated": true, "reason": "v2-to-v3" }` → 1회 안내:
     > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 5개 항목(team/start/tdd/git/model)에 대해 LLM 추천 + 확인을 거칩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
+
+    이후 migrate warnings 표시:
+    ```bash
+    if echo "$MIGRATE_OUT" | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")); process.exit(r.warnings && r.warnings.length ? 0 : 1)'; then
+      echo "$MIGRATE_OUT" | node -e '
+        const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
+        for (const w of (r.warnings || [])) console.error("[migrate] " + w);
+      '
+    fi
+    ```
   - `{ "migrated": false, "reason": "already-v3" }` → silent.
   - `{ "migrated": false, "reason": "not-found-created-v3" }` → 1회 안내:
     > "신규 프로필 (v3 형식)을 작성했습니다: `$PROFILE_FILE`. 매 세션마다 5개 항목 ask + 추천이 진행됩니다. 빠른 경로: `--profile=solo-strict --no-ask`."
@@ -151,14 +163,14 @@ profile_rc=$?
 
 ### §1-3-5. 파싱 경고 표시
 
-`FLAGS["_warnings"]` 배열 비어있지 않으면 각 경고를 1회씩 표시:
+`FLAGS.warnings` 배열 비어있지 않으면 각 경고를 1회씩 표시:
 - 알 수 없는 플래그: `"⚠ 알 수 없는 플래그 무시됨: --foo"`
 - `--recommender=` allowlist 위반: `"⚠ --recommender=gpt4 불인식 → sonnet fallback"`
 - 기타 파서 경고: 그대로 표시.
 
 ### --setup 사용 시
 
-`FLAGS["--setup"]` = true → 기존 프로필 존재하면 프리셋 관리 UI (편집 / 새로 만들기).
+`FLAGS.setup` = true → 기존 프로필 존재하면 프리셋 관리 UI (편집 / 새로 만들기).
 
 ## 1-4. 항목별 대화형 설정 (v6.4.2)
 
@@ -176,6 +188,16 @@ profile_rc=$?
 - `--no-recommender` 미지정 + sanitize 후 입력 토큰 ≤ 8k인 경우만 호출
 - 그 외: 추천 없이 ask 진입 (옵션 라벨 = "(자동 추천 실패 — 직접 선택)")
 
+capability 감지:
+
+````bash
+CAP=$(node -e '
+  const { detectCapability } = require("'"${CLAUDE_PLUGIN_ROOT}"'/scripts/detect-capability.js");
+  const cap = detectCapability({ is_git: process.env.IS_GIT === "true", worktree_supported: true, team_env_set: !!process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS });
+  process.stdout.write(JSON.stringify(cap));
+')
+````
+
 호출 (`deep-work:session-recommender` → 2단계 fallback):
 
 ````javascript
@@ -187,7 +209,8 @@ const input = sanitizeInput({
   recent_commits: RECENT_COMMITS,
   top_level_dirs: TOP_DIRS,
   current_defaults: current_defaults,
-  capability: CAPABILITY
+  capability: CAPABILITY,
+  ask_items: PROFILE_DATA.interactive_each_session
 });
 
 let result;
@@ -216,7 +239,22 @@ const parsed = parseRecommendation(result.text, { capability: input.capability }
 
 ### §1-4-3. interactive_each_session 항목별 AskUserQuestion (in-memory only)
 
-`PROFILE_DATA.interactive_each_session` 배열을 순회하며 각 항목별 AskUserQuestion. CLI 플래그로 이미 override된 항목은 건너뜀. 표시 형식은 spec §7 참조.
+`PROFILE_DATA.interactive_each_session` 배열을 순회하며 각 항목별 AskUserQuestion. CLI 플래그로 이미 override된 항목은 건너뜀.
+
+각 ask 항목별로 옵션 라벨 빌드:
+
+````javascript
+const { formatOptions, capabilityToDisabled } = require("${CLAUDE_PLUGIN_ROOT}/scripts/format-ask-options.js");
+const disabled = capabilityToDisabled(CAP, item);
+const opts = formatOptions({
+  item,
+  recommendation: REC[item] || null,
+  default_value: DEFAULTS[item],
+  enum_values: ENUMS[item],
+  disabled_values: disabled
+});
+// AskUserQuestion(opts.map(o => ({ label: o.label, value: o.value })))
+````
 
 ### §1-4-4. 결과 누적
 
@@ -261,6 +299,7 @@ Git repository인 경우:
 - team_mode, tdd_mode, model_routing, worktree_*, cross_model_*
 - 각 phase timestamp, test_retry_count, max_test_retries 등
 - **`recommendations: { ... }`** (v6.4.2 신규) — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
+- `execution_override: {FLAGS.exec_mode | null}` — v6.4.0 호환, deep-implement Section 1.5에서 read
 
 **작성 절차** (atomic + 권한 600):
 

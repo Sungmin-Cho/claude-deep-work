@@ -27,7 +27,7 @@ function sanitizeInput({ task_description, recent_commits, top_level_dirs, curre
     // R3-W2 fix: profile의 interactive_each_session을 caller가 전달 (없으면 5개 default)
     ask_items: ask_items || ['team_mode', 'start_phase', 'tdd_mode', 'git', 'model_routing'],
     current_defaults: current_defaults || {},
-    capability: capability || { git_worktree: true, team_mode_available: true }
+    capability: capability || { git_worktree: false, team_mode_available: false, is_git: false }
   };
 }
 

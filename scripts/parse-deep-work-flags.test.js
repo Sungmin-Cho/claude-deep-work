@@ -180,11 +180,10 @@ test('--resume-from=test 통과', () => {
   assert.deepStrictEqual(r.warnings, []);
 });
 
-test('--resume-from=brainstorm 거부 + 경고 (brainstorm은 허용 목록 외)', () => {
+test('--resume-from=brainstorm 통과 (v6.3.1 F1 Exit Gate 호환)', () => {
   const r = parseFlags(['--resume-from=brainstorm', 'task']);
-  assert.strictEqual(r.resume_from, null);
-  assert.ok(r.warnings.some(w => w.includes('허용되지 않는 resume phase')));
-  assert.ok(r.warnings.some(w => w.includes('brainstorm')));
+  assert.strictEqual(r.resume_from, 'brainstorm');
+  assert.deepStrictEqual(r.warnings, []);
 });
 
 test('--resume-from=invalid 거부 + 경고', () => {
@@ -197,6 +196,84 @@ test('--resume-from= 빈 값 거부 + 경고', () => {
   const r = parseFlags(['--resume-from=', 'task']);
   assert.strictEqual(r.resume_from, null);
   assert.ok(r.warnings.some(w => w.includes('--resume-from=') && w.includes('빈 값')));
+});
+
+// ── C1: 신규 플래그 --session= --worktree= --cross-model --force-rerun ──
+test('--session=abc-123 통과 (alphanumeric/dash)', () => {
+  const r = parseFlags(['--session=abc-123', 'task']);
+  assert.strictEqual(r.session, 'abc-123');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--session=my.session.1 통과 (dot 포함)', () => {
+  const r = parseFlags(['--session=my.session.1', 'task']);
+  assert.strictEqual(r.session, 'my.session.1');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--session=bad;injection 거부 + 경고', () => {
+  const r = parseFlags(['--session=bad;injection', 'task']);
+  assert.strictEqual(r.session, null);
+  assert.ok(r.warnings.some(w => w.includes('잘못된 session ID')));
+});
+
+test('--session= 빈 값 거부 + 경고', () => {
+  const r = parseFlags(['--session=', 'task']);
+  assert.strictEqual(r.session, null);
+  assert.ok(r.warnings.some(w => w.includes('--session=') && w.includes('빈 값')));
+});
+
+test('--worktree=/path/to/tree 통과', () => {
+  const r = parseFlags(['--worktree=/path/to/tree', 'task']);
+  assert.strictEqual(r.worktree, '/path/to/tree');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--worktree=../relative/path 통과 (상대 경로 허용)', () => {
+  const r = parseFlags(['--worktree=../relative/path', 'task']);
+  assert.strictEqual(r.worktree, '../relative/path');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--worktree=/path;rm -rf 거부 + 경고 (shell injection)', () => {
+  const r = parseFlags(['--worktree=/path;rm -rf', 'task']);
+  assert.strictEqual(r.worktree, null);
+  assert.ok(r.warnings.some(w => w.includes('잘못된 worktree 경로')));
+});
+
+test('--worktree= 빈 값 거부 + 경고', () => {
+  const r = parseFlags(['--worktree=', 'task']);
+  assert.strictEqual(r.worktree, null);
+  assert.ok(r.warnings.some(w => w.includes('--worktree=') && w.includes('빈 값')));
+});
+
+test('--cross-model 플래그 인식', () => {
+  const r = parseFlags(['--cross-model', 'task']);
+  assert.strictEqual(r.cross_model, true);
+  assert.strictEqual(r.no_cross_model, false);
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--no-cross-model 플래그 인식', () => {
+  const r = parseFlags(['--no-cross-model', 'task']);
+  assert.strictEqual(r.no_cross_model, true);
+  assert.strictEqual(r.cross_model, false);
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--force-rerun 플래그 인식', () => {
+  const r = parseFlags(['--force-rerun', 'task']);
+  assert.strictEqual(r.force_rerun, true);
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('--session + --worktree + --force-rerun 조합 통과', () => {
+  const r = parseFlags(['--session=sess-1', '--worktree=/tmp/wt', '--force-rerun', 'fix bug']);
+  assert.strictEqual(r.session, 'sess-1');
+  assert.strictEqual(r.worktree, '/tmp/wt');
+  assert.strictEqual(r.force_rerun, true);
+  assert.strictEqual(r.task, 'fix bug');
+  assert.deepStrictEqual(r.warnings, []);
 });
 
 test('CLI entrypoint — node parse-deep-work-flags.js -- ...', () => {
