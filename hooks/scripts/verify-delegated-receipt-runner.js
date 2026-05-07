@@ -29,13 +29,17 @@ let receipts = fs.readdirSync(receiptsDir)
     // (round-1 deep-review C3 lesson).
     const unwrapped = unwrapEnvelope(obj, 'slice-receipt');
     if (unwrapped === null) {
+      // Quote interpolated paths so the suggested recovery command remains
+      // copy-paste safe even if scriptDir/receiptsDir contain spaces
+      // (round-2 deep-review I-1).
+      const migrationCmd = `node '${path.join(scriptDir, 'receipt-migration.js')}' '${receiptsDir}'`;
       throw new Error(
         `receipt ${f}: M3 envelope identity mismatch ` +
         `(producer / artifact_kind / schema.name). If this receipt was ` +
         `emitted by a pre-6.5.0 deep-work session, run ` +
-        `"node ${path.join(scriptDir, 'receipt-migration.js')} ${receiptsDir}" ` +
+        `${migrationCmd} ` +
         `to detect format. If it was emitted by a different plugin, remove it ` +
-        `from ${receiptsDir} — only deep-work slice-receipt envelopes are valid here.`,
+        `from '${receiptsDir}' — only deep-work slice-receipt envelopes are valid here.`,
       );
     }
     return unwrapped;

@@ -446,7 +446,8 @@ quality + Section 7 outcome), wrap it in the M3 envelope and write the final
 
 > **Important — failure semantics**: the snippet uses `set -euo pipefail` so
 > that any sub-command failure aborts before `rm -f` runs. The cleanup is
-> gated with `&&` so that on helper failure the payload temp file is
+> gated with an `if/then/else` block (equivalent to `&&` for our purposes
+> under `set -e`) so that on helper failure the payload temp file is
 > **preserved** for retry. To re-attempt a failed wrap, simply re-execute
 > Section 7-Z (Section 2/2-1/7 do not re-run; the same payload is used).
 
