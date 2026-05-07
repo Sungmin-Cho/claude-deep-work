@@ -175,6 +175,35 @@ append_session_history() {
     local receipt_file
     for receipt_file in "$receipts_dir"/SLICE-*.json; do
       [[ -f "$receipt_file" ]] || continue
+
+      # v6.5.0 envelope identity guard — fast-path bash only (round-1
+      # deep-review W6 lesson — Stop hook contract is "must not block session
+      # close"; spawning `node` per receipt added 1-3 s overhead with 30+
+      # slices). The grep checks below are O(file-size) on small JSON, no
+      # process spawn. Foreign envelopes (e.g. accidentally copied from
+      # another plugin) are skipped — slices_total stays accurate. Legacy
+      # (non-envelope) receipts pass through unchanged because they never
+      # contain the substring `"envelope"`.
+      #
+      # Detection logic:
+      #   - File contains `"envelope"` AND `"schema_version": "1.0"`
+      #     → looks like envelope; check identity.
+      #   - Otherwise → legacy receipt; count.
+      #
+      # Per-field grep extraction below works on either shape because
+      # envelope keys (producer, producer_version, artifact_kind, run_id,
+      # generated_at, schema, git, provenance) do not collide with payload
+      # keys (slice_id, status, tdd_mode, model_used, etc.).
+      if grep -q '"envelope"[[:space:]]*:' "$receipt_file" 2>/dev/null \
+         && grep -q '"schema_version"[[:space:]]*:[[:space:]]*"1\.0"' "$receipt_file" 2>/dev/null; then
+        # Envelope-shaped — verify producer + artifact_kind + schema.name.
+        if ! grep -q '"producer"[[:space:]]*:[[:space:]]*"deep-work"' "$receipt_file" 2>/dev/null \
+           || ! grep -q '"artifact_kind"[[:space:]]*:[[:space:]]*"slice-receipt"' "$receipt_file" 2>/dev/null \
+           || ! grep -q '"name"[[:space:]]*:[[:space:]]*"slice-receipt"' "$receipt_file" 2>/dev/null; then
+          continue
+        fi
+      fi
+
       slices_total=$((slices_total + 1))
 
       # Extract per-slice data using lightweight parsing (no jq dependency)

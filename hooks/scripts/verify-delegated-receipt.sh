@@ -32,6 +32,19 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# v6.5.0 — Auto-migrate legacy v0 receipts to v1.0 schema before envelope
+# unwrap. Resumed sessions on a worktree pulled from pre-6.5.0 will have
+# legacy receipts that the runner's unwrapEnvelope() treats as legacy
+# (returns the input as-is); receipt-migration.js fills missing v1.0 fields
+# in place so verify-receipt-core sees a complete payload. Envelope-wrapped
+# receipts are recognised as already-current and skipped (no-op). Migration
+# failures (corrupt JSON, IO error) are logged but never block verification —
+# verify-receipt-core's own checks will surface the real issue.
+# (Round-1 deep-review C3+W7 lesson.)
+if [ -d "$RECEIPTS_DIR" ]; then
+  node "$SCRIPT_DIR/receipt-migration.js" "$RECEIPTS_DIR" >/dev/null 2>&1 || true
+fi
+
 node "$SCRIPT_DIR/verify-delegated-receipt-runner.js" \
      "$SCRIPT_DIR" "$STATE_FILE" "$RECEIPTS_DIR" "$PLAN_MD_PATH" \
      "$SKIP_ITEMS" "$ONLY_COMPLETED"

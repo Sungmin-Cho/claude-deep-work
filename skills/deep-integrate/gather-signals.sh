@@ -174,16 +174,43 @@ else
   fi
 fi
 
-# ─── Artifacts collection (defensive) ───────────────────────
+# ─── Artifacts collection (defensive, envelope-aware v6.5.0) ───────
+# read_json_safe <path> [<expected_producer> [<expected_artifact_kind>]]
+#
+# Detects M3 envelope wrapping (cf. claude-deep-suite/docs/envelope-migration.md
+# §1: schema_version === "1.0" + envelope object + payload key) and returns
+# `.payload` instead of the wrapped root. Identity guard: when expected_producer
+# / expected_artifact_kind are provided, foreign envelopes resolve to null
+# (handoff §4 round-4 lesson — defense-in-depth against another plugin's
+# artifact landing at the same cache path).
+#
+# Legacy (non-envelope) JSON passes through unchanged. Invalid JSON also
+# resolves to null with a warn message (preserved behavior).
 read_json_safe() {
   local path="$1"
+  local expected_producer="${2:-}"
+  local expected_kind="${3:-}"
   if [[ ! -s "$path" ]]; then echo "null"; return; fi
-  if jq -e 'type' "$path" >/dev/null 2>&1; then
-    cat "$path"
-  else
+  if ! jq -e 'type' "$path" >/dev/null 2>&1; then
     warn "invalid JSON at $path — null fallback"
-    echo "null"
+    echo "null"; return
   fi
+  jq --arg ep "$expected_producer" --arg ek "$expected_kind" '
+    if (.schema_version == "1.0"
+        and ((.envelope|type) == "object")
+        and has("payload")) then
+      if (($ep == "" or .envelope.producer == $ep)
+          and ($ek == "" or .envelope.artifact_kind == $ek)
+          and (.envelope.schema.name == .envelope.artifact_kind)
+          and ((.payload|type) == "object")) then
+        .payload
+      else
+        null
+      end
+    else
+      .
+    end
+  ' "$path"
 }
 
 # C2 fix 원칙: 설치된 플러그인은 **placeholder object(모든 필드 null)** 반환,
@@ -194,7 +221,9 @@ read_json_safe() {
 # 항상 true였고 의도 전달만 방해했음 — v6.3.0 review W3)
 if [[ -n "$SESSION_ID" && -n "$WORK_DIR_SLUG" ]]; then
   sr="$PROJECT_ROOT/$WORK_DIR_SLUG/session-receipt.json"
-  dw_artifact=$(read_json_safe "$sr")
+  # v6.5.0: deep-work emits its own session-receipt as an M3 envelope. Identity
+  # guard ensures we don't accept another plugin's envelope at the same path.
+  dw_artifact=$(read_json_safe "$sr" "deep-work" "session-receipt")
   dw_json=$(jq -n --argjson sr "$dw_artifact" --arg p "$PROJECT_ROOT/$WORK_DIR_SLUG/report.md" \
     '{session_receipt:$sr, report_md_path:$p}')
 else
@@ -202,8 +231,11 @@ else
 fi
 
 # deep-review (C2 fix: 설치된 경우 항상 object 반환)
+# v6.5.0 envelope-aware: recurring-findings will be wrapped in M3 envelope when
+# claude-deep-review adopts it (Phase 2 priority #5). Identity guard prevents
+# foreign envelopes at the same path from leaking into our consumption.
 if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-review")' >/dev/null 2>&1; then
-  rf=$(read_json_safe "$PROJECT_ROOT/.deep-review/recurring-findings.json")
+  rf=$(read_json_safe "$PROJECT_ROOT/.deep-review/recurring-findings.json" "deep-review" "recurring-findings")
   fitness=$(read_json_safe "$PROJECT_ROOT/.deep-review/fitness.json")
   latest_report="$(ls -1t "$PROJECT_ROOT"/.deep-review/reports/*-review.md 2>/dev/null | head -1 || true)"
   latest_json=$(jq -n --arg p "$latest_report" 'if $p == "" then null else $p end')
@@ -234,9 +266,11 @@ else
 fi
 
 # deep-docs (C2 fix)
+# v6.5.0 envelope-aware: deep-docs already adopted M3 envelope (Phase 2 #1).
+# Identity guard rejects foreign envelopes at .deep-docs/last-scan.json.
 if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-docs")' >/dev/null 2>&1; then
   ls_path="$PROJECT_ROOT/.deep-docs/last-scan.json"
-  ls_raw=$(read_json_safe "$ls_path")
+  ls_raw=$(read_json_safe "$ls_path" "deep-docs" "last-scan")
   if [[ "$ls_raw" != "null" ]]; then
     scanned_at=$(printf '%s' "$ls_raw" | jq -r '.scanned_at // empty')
     issues_summary=$(printf '%s' "$ls_raw" | jq '[.documents[]? | {(.path): (.issues | length)}] | add // {}')
@@ -252,8 +286,10 @@ else
 fi
 
 # deep-dashboard (C2, C3 fix: `.name` → `.id`)
+# v6.5.0 envelope-aware: deep-dashboard already adopted M3 envelope (Phase 2 #2).
+# Identity guard rejects foreign envelopes at .deep-dashboard/harnessability-report.json.
 if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-dashboard")' >/dev/null 2>&1; then
-  h_raw=$(read_json_safe "$PROJECT_ROOT/.deep-dashboard/harnessability-report.json")
+  h_raw=$(read_json_safe "$PROJECT_ROOT/.deep-dashboard/harnessability-report.json" "deep-dashboard" "harnessability-report")
   if [[ "$h_raw" != "null" ]]; then
     score=$(printf '%s' "$h_raw" | jq '.total // null')
     # C3 fix: scorer.js dimension field는 {id, label, weight, score, checks}이며 `.name`은 없음
@@ -270,11 +306,14 @@ fi
 
 # deep-evolve (C2 fix)
 if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-evolve")' >/dev/null 2>&1; then
+  # current.json is a small index file maintained by deep-evolve — left as legacy
+  # (no envelope expected). evolve-insights.json will move to envelope when
+  # claude-deep-evolve adopts M3 (Phase 2 priority #4).
   current_json=$(read_json_safe "$PROJECT_ROOT/.deep-evolve/current.json")
   if [[ "$current_json" != "null" ]]; then
     evolve_sid=$(printf '%s' "$current_json" | jq -r '.session_id // empty')
     if [[ -n "$evolve_sid" ]]; then
-      insights_json=$(read_json_safe "$PROJECT_ROOT/.deep-evolve/$evolve_sid/evolve-insights.json")
+      insights_json=$(read_json_safe "$PROJECT_ROOT/.deep-evolve/$evolve_sid/evolve-insights.json" "deep-evolve" "evolve-insights")
       de_json=$(jq -n --argjson i "$insights_json" --arg sid "$evolve_sid" \
         '{session_id:$sid, insights:$i}')
     else
@@ -288,10 +327,20 @@ else
 fi
 
 # deep-wiki (C2 fix)
+# v6.5.0 envelope-aware: wiki index.json will move to envelope when
+# claude-deep-wiki adopts M3 (Phase 2 priority #6). Until then, the legacy
+# pass-through branch keeps `pages` at the top level. After adoption, the
+# read_json_safe envelope unwrap returns the payload, which keeps `pages` at
+# the same top level — so the `.pages | length` jq expression remains correct.
 if printf '%s' "$PLUGINS_JSON" | jq -e '.installed[]? | select(.=="deep-wiki")' >/dev/null 2>&1; then
   widx="$PROJECT_ROOT/.wiki-meta/index.json"
   if [[ -f "$widx" ]]; then
-    pages_count=$(jq 'try (.pages | length) catch 0' "$widx" 2>/dev/null || echo 0)
+    widx_payload=$(read_json_safe "$widx" "deep-wiki" "index")
+    if [[ "$widx_payload" == "null" ]]; then
+      pages_count=0
+    else
+      pages_count=$(printf '%s' "$widx_payload" | jq 'try (.pages | length) catch 0' 2>/dev/null || echo 0)
+    fi
     dwiki_json=$(jq -n --argjson pc "$pages_count" '{pages_count:$pc}')
   else
     dwiki_json='{"pages_count":null}'

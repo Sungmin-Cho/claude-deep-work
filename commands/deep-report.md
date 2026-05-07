@@ -235,7 +235,15 @@ Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumpt
 - Research references used: [count]
 - Cross-model unique findings: [count]
 
-[Aggregate harness_metadata from $WORK_DIR/receipts/SLICE-*.json for the current session.]
+[Aggregate harness_metadata from $WORK_DIR/receipts/SLICE-*.json for the
+current session. **Envelope-aware unwrap (v6.5.0)**: receipts 는 M3 envelope
+(`{schema_version: "1.0", envelope: {...}, payload: {...}}`) 로 emit 된다.
+각 파일을 읽을 때 envelope 형태이면 identity guard
+(`envelope.producer === "deep-work"` ∧
+`envelope.artifact_kind === "slice-receipt"` ∧
+`envelope.schema.name === envelope.artifact_kind`) 검증 후 `payload` 를
+receipt body 로 사용. mismatch 는 skip + 경고. legacy 는 root 그대로 사용.
+`harness_metadata` 는 payload root 에 있다.]
 
 [If harness-sessions.jsonl does not exist: "Assumption 엔진 기록 없음 — 세션 완료 후 자동 수집됩니다."]
 

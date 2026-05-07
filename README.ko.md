@@ -21,6 +21,33 @@ deep-work는 [Deep Suite](https://github.com/Sungmin-Cho/claude-deep-suite) 생�
 
 deep-work는 [deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와 [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard)가 소비하는 receipt과 health report를 생성합니다.
 
+## v6.5.0 새 기능
+
+### M3 Cross-Plugin Envelope 채택 (claude-deep-suite Phase 2 #3)
+
+`session-receipt.json` 과 `receipts/SLICE-*.json` 이 M3 envelope-wrapped artifact 로 emit 됩니다 (cf. `claude-deep-suite/docs/envelope-migration.md` §1):
+
+```
+{
+  "schema_version": "1.0",
+  "envelope": {
+    "producer": "deep-work",
+    "producer_version": "6.5.0",
+    "artifact_kind": "session-receipt|slice-receipt",
+    "run_id": "<ULID>",
+    "session_id": "<dw-session-id>",
+    "parent_run_id": "<consumed evolve-insights run_id, optional>",
+    "generated_at": "<RFC 3339>",
+    "schema": { "name": "<same as artifact_kind>", "version": "1.0" },
+    "git": { ... },
+    "provenance": { "source_artifacts": [...], "tool_versions": {...} }
+  },
+  "payload": { /* legacy receipt body */ }
+}
+```
+
+session-receipt 의 `envelope.parent_run_id` 가 consumed `evolve-insights.json` envelope 으로 chain (handoff §3.3 cross-plugin trace), `provenance.source_artifacts[]` 가 모든 slice receipt run_id 를 aggregate (intra-plugin chain). Internal reader (`hooks/scripts/*`) 와 cross-plugin consumer (`gather-signals.sh`, `deep-research/SKILL.md`) 는 envelope 을 감지하고 identity guard 를 적용한 뒤 `.payload` 로 unwrap 후 legacy field 를 읽습니다. Legacy non-envelope receipt 는 forward-compat.
+
 ## v6.4.2 새 기능
 
 ### 유연한 세션 초기화

@@ -52,23 +52,37 @@ Before each slice: record `git_before_slice = git rev-parse HEAD`.
 After each slice (tdd cycle + sensor + review complete):
 record `git_after_slice = git rev-parse HEAD`.
 
-## Receipt file creation — EXPLICIT PROTOCOL
+## Receipt file creation — EXPLICIT PROTOCOL (v6.5.0 envelope adoption)
 
-At the end of each slice you **MUST** write the receipt file. Use your `Write` tool
-with the exact shape below. Do NOT skip this step — the parent's verify-receipt
-gate will hard-fail if the receipt is missing or incomplete.
+At the end of each slice you **MUST** write an envelope-wrapped receipt file.
+The parent's verify-receipt gate will hard-fail if the receipt is missing or
+incomplete.
+
+Starting in deep-work v6.5.0 the receipt file at
+`$WORK_DIR/receipts/SLICE-NNN.json` is wrapped in the M3 cross-plugin envelope
+(cf. `claude-deep-suite/docs/envelope-migration.md` §1). The legacy receipt
+fields move under `payload`; the producer / artifact_kind / run_id / git
+metadata are emitted by the wrap helper. Do NOT hand-author the envelope —
+use the helper script so ULID, RFC 3339 timestamp, and SemVer producer_version
+are produced consistently.
+
+### Step 1 — write the payload JSON to a temp file
+
+Use your `Write` tool to emit the payload (legacy receipt body) to a temp
+path inside the work_dir, e.g. `$WORK_DIR/receipts/.SLICE-NNN.payload.json`:
 
 ```
 Write(
-  file_path="$WORK_DIR/receipts/SLICE-NNN.json",
-  content=<JSON string shown below>
+  file_path="$WORK_DIR/receipts/.SLICE-NNN.payload.json",
+  content=<payload JSON string shown below>
 )
 ```
 
-Required JSON structure (all fields mandatory except where noted):
+Required payload JSON structure (all fields mandatory except where noted):
 
 ```json
 {
+  "schema_version": "1.0",
   "slice_id": "SLICE-NNN",
   "cluster_id": "<cluster id from prompt input — e.g. 'C1'. Used by parent's verify-receipt item 6 for per-cluster baseline chain validation in team parallel mode. Solo mode may omit (defaults to '_default').>",
   "status": "complete",
@@ -104,10 +118,37 @@ Required JSON structure (all fields mandatory except where noted):
 }
 ```
 
+`schema_version` MUST be the literal string `"1.0"` (not numeric `1.0`). The
+envelope validator rejects payload without `schema_version: "1.0"`.
+
+### Step 2 — wrap the payload via the envelope helper
+
+Run via the `Bash` tool:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" \
+  --artifact-kind slice-receipt \
+  --payload-file "$WORK_DIR/receipts/.SLICE-NNN.payload.json" \
+  --output "$WORK_DIR/receipts/SLICE-NNN.json"
+
+rm -f "$WORK_DIR/receipts/.SLICE-NNN.payload.json"
+```
+
+The helper:
+- Generates an MSB-first Crockford Base32 ULID into `envelope.run_id`.
+- Reads `producer_version` from the plugin's `.claude-plugin/plugin.json`
+  (resolved relative to the helper's module path — handoff §4
+  literal-cwd-resolve).
+- Detects `git.head` / `git.branch` / `git.dirty` from the current worktree.
+- Emits `envelope.producer = "deep-work"`, `envelope.artifact_kind =
+  "slice-receipt"`, `envelope.schema.name = "slice-receipt"` (identity
+  contract, round-4 lesson).
+
 If status="blocked" (slice failed after 3 attempts):
-- Include `"debug": {"root_cause_note": "<description>"}`.
+- Include `"debug": {"root_cause_note": "<description>"}` inside the payload.
 - Mark subsequent not-yet-started slices with `"status": "blocked-upstream"`
-  in their placeholder receipts and return immediately.
+  in their placeholder receipts (still wrapped via the same helper) and
+  return immediately.
 
 # TDD Protocol (prompt-embedded — hook not applied)
 - RED first: write failing test, verify FAIL with correct reason

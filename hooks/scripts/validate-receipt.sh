@@ -37,12 +37,34 @@ warn() {
 json_field() {
   local file="$1"
   local field="$2"
+  # v6.5.0 envelope-aware: if the file is an M3 envelope (schema_version "1.0"
+  # + envelope object + payload key), read the field from .payload; else read
+  # from the top level. Identity guard (producer + artifact_kind +
+  # schema.name) for slice/session-receipt prevents foreign artifacts from
+  # being silently mis-identified.
   node -e "
     const fs = require('fs');
     try {
       const d = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      const isEnv = d && typeof d === 'object' && !Array.isArray(d)
+        && d.schema_version === '1.0'
+        && d.envelope && typeof d.envelope === 'object' && !Array.isArray(d.envelope)
+        && Object.prototype.hasOwnProperty.call(d, 'payload');
+      let root = d;
+      if (isEnv) {
+        const env = d.envelope;
+        const kind = env.artifact_kind;
+        const okIdentity = env.producer === 'deep-work'
+          && (kind === 'slice-receipt' || kind === 'session-receipt')
+          && env.schema && env.schema.name === kind;
+        if (!okIdentity) { console.log(''); process.exit(0); }
+        if (d.payload === null || typeof d.payload !== 'object' || Array.isArray(d.payload)) {
+          console.log(''); process.exit(0);
+        }
+        root = d.payload;
+      }
       const keys = process.argv[2].split('.');
-      let v = d;
+      let v = root;
       for (const k of keys) { v = v?.[k]; }
       console.log(v ?? '');
     } catch(e) { console.log(''); }

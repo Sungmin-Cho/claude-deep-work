@@ -35,6 +35,25 @@ Set `$STATE_FILE` to the resolved path.
 Read `$STATE_FILE` and extract `work_dir`.
 Receipts are stored in `$WORK_DIR/receipts/SLICE-NNN.json`.
 
+**Envelope-aware reads (v6.5.0)**: deep-work 6.5.0 부터 SLICE-*.json 과
+`session-receipt.json` 는 M3 cross-plugin envelope (`{schema_version: "1.0",
+envelope: {...}, payload: {...}}`) 로 emit 된다 (cf.
+`claude-deep-suite/docs/envelope-migration.md` §1). 본 명령의 모든 receipt
+read 단계에서 다음 unwrap 규칙을 적용한다:
+
+1. JSON 파싱 후 root 가 envelope 형태이면 (`schema_version === "1.0"`,
+   `envelope` 객체, `payload` 키 모두 존재) identity guard 검증:
+   `envelope.producer === "deep-work"` ∧
+   `envelope.artifact_kind ∈ {slice-receipt, session-receipt}` ∧
+   `envelope.schema.name === envelope.artifact_kind`. 위 조건을 모두 통과하면
+   `payload` 객체를 사용 (legacy receipt body). 한 항목이라도 어긋나면
+   "foreign envelope at <path>" 경고 후 receipt 무시 (handoff §4 round-4
+   identity guard).
+2. Legacy(non-envelope) JSON 이면 그대로 사용 (forward-compat).
+3. `/deep-receipt export --format=ci` 같은 bundle export 는 envelope wrapping
+   을 그대로 유지한 채 묶어 외부 CI 에 전달한다 (envelope 의 run_id chain 이
+   audit 용).
+
 ## Dashboard
 
 Scan `$WORK_DIR/receipts/` directory for all receipt JSON files. For each receipt, display:

@@ -130,7 +130,14 @@ Read the following files if they exist:
 
 If receipts directory exists (`$WORK_DIR/receipts/`):
 - Read all `SLICE-NNN.json` receipt files
-- For each receipt, extract `sensor_results` if present
+- **Envelope-aware unwrap (v6.5.0)**: 각 receipt 의 root 가 M3 envelope
+  형태(`schema_version === "1.0"` + `envelope` 객체 + `payload` 키)이면
+  identity guard 검증 (`envelope.producer === "deep-work"` ∧
+  `envelope.artifact_kind === "slice-receipt"` ∧
+  `envelope.schema.name === "slice-receipt"`) 후 `payload` 를 receipt body
+  로 사용. mismatch / corrupt payload 는 "foreign envelope" 경고 후 무시.
+  Legacy(non-envelope) receipt 는 root 객체를 그대로 사용 (forward-compat).
+- For each receipt body, extract `sensor_results` if present
 - Count slices where all sensor statuses are `pass` or `not_applicable` → Sensor Clean Rate numerator
 - Count total slices with sensor data → Sensor Clean Rate denominator
 - Read `mutation_testing` from the state file for mutation score

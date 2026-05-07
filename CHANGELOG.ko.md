@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-05-07
+
+### Added
+- **M3 cross-plugin envelope 채택** — `session-receipt.json` 와 `receipts/SLICE-*.json` 양쪽 (claude-deep-suite Phase 2 priority #3; cf. `claude-deep-suite/docs/envelope-migration.md` §1). 두 artifact 모두 `{ schema_version: "1.0", envelope: { producer, producer_version, artifact_kind, run_id, generated_at, schema, git, provenance, [parent_run_id], [session_id] }, payload: { ... legacy receipt body ... } }` 형식으로 emit.
+- **`hooks/scripts/envelope.js`** — 공유 zero-dep envelope 라이브러리: MSB-first ULID 생성기 (Crockford Base32, 26-char), `detectGit()` head/branch/dirty 감지 + safe `0000000` fallback, `loadProducerVersion()` 모듈 path 기준 resolve (handoff §4 literal-cwd-resolve), `wrapEnvelope()` builder, `unwrapEnvelope()` reader 와 full identity guard (producer / artifact_kind / schema.name) + corrupt-payload defense.
+- **`hooks/scripts/wrap-receipt-envelope.js`** — markdown agent prompt (`agents/implement-slice-worker.md`, `commands/deep-finish.md`) 에서 호출하는 CLI 헬퍼. `--source-evolve-insights`, `--source-harnessability`, `--source-artifacts-glob` 으로 cross-plugin / intra-plugin chain 추출 (envelope 인 evolve-insights 의 `run_id` 를 `parent_run_id` 로 자동 채우고, slice receipt 와 harnessability `run_id` 를 `provenance.source_artifacts[]` 에 누적).
+- **`scripts/validate-envelope-emit.js`** — suite envelope schema 를 미러링한 zero-dep self-test validator. root / envelope / git / schema / provenance / source_artifacts 모든 nested object 에 `additionalProperties: false`, ULID Crockford alphabet 강제 (I/L/O/U 거부), SemVer 2.0.0 strict, RFC 3339, kebab-case, `schema.name === artifact_kind` identity, payload non-null/non-array object 에 `schema_version: "1.0"` 보존.
+- **`tests/envelope-emit.test.js`** + **`tests/envelope-chain.test.js`** + **fixtures (`sample-session-receipt.json`, `sample-slice-receipt.json`)** — ULID/SemVer/RFC3339 패턴, identity guard, corrupt-payload defense, `parent_run_id` cross-plugin chain (session-receipt.envelope.parent_run_id === consumed evolve-insights.envelope.run_id), intra-plugin chain (session-receipt 의 `provenance.source_artifacts[]` 가 모든 SLICE-*.json `run_id` 를 aggregate) 50+ assertion.
+
+### Changed
+- **`agents/implement-slice-worker.md`** — slice receipt 생성 프로토콜이 legacy body 를 `$WORK_DIR/receipts/.SLICE-NNN.payload.json` 에 먼저 쓰고, `node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js --artifact-kind slice-receipt ...` 로 final envelope-wrapped `SLICE-NNN.json` 을 emit. Payload 의 `schema_version` 은 literal string `"1.0"` 이어야 한다.
+- **`commands/deep-finish.md`** — Section 2 가 session-receipt body 를 `$WORK_DIR/.session-receipt.payload.json` 에 쓴다. Section 2-1 (quality fields) 과 Section 7 (outcome/outcome_ref) 가 같은 temp file 을 갱신. 새 Section 7-Z 가 outcome 결정 후 정확히 한 번 envelope wrap 을 수행하므로 `envelope.run_id` 가 세션당 한 번만 생성된다. Cross-plugin chain 은 `.deep-evolve/<session>/evolve-insights.json` 과 `.deep-dashboard/harnessability-report.json` 에서 auto-detect.
+- **`hooks/scripts/verify-delegated-receipt-runner.js`** — slice receipt loader 가 `unwrapEnvelope()` 를 호출하므로 verify-receipt-core 는 envelope 여부와 관계없이 legacy body 를 본다. Identity mismatch 는 descriptive error 로 throw.
+- **`hooks/scripts/validate-receipt.sh`** — `json_field` 헬퍼가 M3 envelope 감지 후 `.payload` 에서 읽고, full identity guard 를 unwrap 전에 적용. Legacy receipt 는 top-level pass-through.
+- **`hooks/scripts/session-end.sh`** — slice receipt aggregation loop 가 foreign envelope (producer/artifact_kind/schema.name mismatch) 를 `slices_total` 카운트 전에 skip.
+- **`hooks/scripts/receipt-migration.js`** — envelope-wrapped receipt 를 already-migrated 로 인식 (no-op). Legacy v0 → v1.0 lift 는 top-level legacy receipt 에만 적용.
+- **`skills/deep-integrate/gather-signals.sh`** — `read_json_safe` 가 optional `expected_producer` / `expected_artifact_kind` 를 받아 matching envelope 는 `.payload` 를 반환, foreign envelope 는 `null` (handoff §4 round-4 defense-in-depth). deep-work session-receipt, deep-docs last-scan, deep-dashboard harnessability-report, deep-evolve evolve-insights, deep-wiki index 모두 적용. deep-review/deep-evolve/deep-wiki Phase 2 priority #4–#6 forward-compat.
+- **`skills/deep-research/SKILL.md`** — Cross-Plugin Context (Harnessability + Evolve Insights) 가 envelope 감지 + identity guard 절차를 명시. legacy fallback 으로 forward-compat 유지.
+- **`commands/deep-receipt.md`** / **`commands/deep-status.md`** / **`commands/deep-report.md`** — receipt read 지침에 envelope-aware unwrap 규칙 (identity guard + payload extraction; legacy pass-through 유지) 명시.
+
+### Notes
+- Suite-side 갱신 (claude-deep-suite `marketplace.json` SHA bump, `payload-registry/deep-work/{session,slice}-receipt/v1.0.schema.json` placeholder → authoritative shape, adoption ledger 갱신) 은 본 PR 범위 밖. claude-deep-suite handoff §1 에 따라 Phase 2 plugin PR 은 plugin repo 만 수정하고, suite-side 작업은 Phase 3 에서 일괄 처리.
+
 ## [6.4.2] — 2026-04-29
 
 ### Added
