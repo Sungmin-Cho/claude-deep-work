@@ -192,7 +192,7 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('current release metadata and docs are bumped to 6.4.1', () => {
+  it('current release metadata and docs are bumped to 6.5.0', () => {
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -200,10 +200,10 @@ describe('release metadata', () => {
     const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
     const changelogKo = fs.readFileSync(path.join(root, 'CHANGELOG.ko.md'), 'utf8');
 
-    assert.equal(pkg.version, '6.4.1');
-    assert.equal(plugin.version, '6.4.1');
-    assert.match(claude, /^# deep-work v6\.4\.1/m);
-    assert.match(changelog, /^## \[6\.4\.1\] - 2026-04-26/m);
-    assert.match(changelogKo, /^## \[6\.4\.1\] - 2026-04-26/m);
+    assert.equal(pkg.version, '6.5.0');
+    assert.equal(plugin.version, '6.5.0');
+    assert.match(claude, /^# deep-work v6\.5\.0/m);
+    assert.match(changelog, /^## \[6\.5\.0\] - 2026-05-07/m);
+    assert.match(changelogKo, /^## \[6\.5\.0\] - 2026-05-07/m);
   });
 });

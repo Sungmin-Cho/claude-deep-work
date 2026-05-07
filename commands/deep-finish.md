@@ -108,7 +108,21 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
 - Aggregate model usage (haiku/sonnet/opus counts)
 - Sum estimated_cost across slices
 
-**Generate `$WORK_DIR/session-receipt.json`** (derived cache — canonical source is slice receipts):
+**Generate `$WORK_DIR/session-receipt.json`** (derived cache — canonical source
+is slice receipts) **wrapped in the M3 cross-plugin envelope** (deep-work
+v6.5.0; cf. `claude-deep-suite/docs/envelope-migration.md` §1).
+
+> **Two-step protocol (v6.5.0)**: the legacy session-receipt body ("payload")
+> is built first into a temp file; quality fields (Section 2-1) and
+> outcome/outcome_ref (Section 7) are appended to that **same payload temp
+> file**; only at the end of Section 7 does the wrap helper produce the final
+> envelope-wrapped `session-receipt.json` with a single `run_id`. This avoids
+> re-generating ULIDs as outcome data lands.
+
+#### Step 2.1 — write the session-receipt payload to a temp file
+
+Use the `Write` tool to emit the **payload** (legacy session-receipt body) to a
+temp path, e.g. `$WORK_DIR/.session-receipt.payload.json`:
 
 ```json
 {
@@ -152,9 +166,15 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
     "total_contracts": 0,
     "contracts_met": 0
   },
-  "deep_work_version": "6.4.1"
+  "deep_work_version": "6.5.0"
 }
 ```
+
+`schema_version` MUST be the literal string `"1.0"`. Section 2-1 will add
+`quality_score`, `quality_breakdown`, and `quality_diagnostics` to this same
+payload temp file. Section 7's option-specific blocks update
+`outcome`/`outcome_ref` on the same temp file. The final envelope wrap is
+performed by Section 7-Z below — exactly once per session.
 
 ### 2-1. Calculate Session Quality Score (v5.8 — 5-component system)
 
@@ -199,7 +219,12 @@ Examples:
      Phase Balance:   [N]/100 ([detail])
 ```
 
-**Persist to session receipt**: Add `quality_score`, `quality_breakdown` (object with all 5 component scores + not_applicable flags), and `quality_diagnostics` (the 2 diagnostic metrics) to the `session-receipt.json` generated in Section 2.
+**Persist to session receipt**: Add `quality_score`, `quality_breakdown`
+(object with all 5 component scores + not_applicable flags), and
+`quality_diagnostics` (the 2 diagnostic metrics) to the
+**`$WORK_DIR/.session-receipt.payload.json` temp file** generated in Step 2.1.
+The final envelope wrap (Section 7-Z) consumes this payload as-is, so any
+field placed here ends up under `envelope.payload` in the wrapped receipt.
 
 **Authoritative JSONL write**: After calculating the quality score, write the finalized session record to `harness-sessions.jsonl`. This is the authoritative write — it includes the `quality_score` field and `status: "finalized"`.
 
@@ -338,7 +363,9 @@ Use AskUserQuestion:
    ```
    Abort: `git merge --abort`. Stop here.
 5. On success: `git worktree remove [worktree_path]` + `git branch -d [worktree_branch]`
-6. Update session receipt: `outcome: "merge"`
+6. Update session-receipt **payload**: set `outcome: "merge"` in
+   `$WORK_DIR/.session-receipt.payload.json` (Edit tool — preserve existing
+   fields). The envelope wrap happens in Section 7-Z.
 
 #### Option: PR
 
@@ -374,11 +401,15 @@ Use AskUserQuestion:
    )"
    ```
 5. Worktree is **NOT** removed (PR review 중 추가 작업 가능)
-6. Update session receipt: `outcome: "pr"`, `outcome_ref: [PR URL]`
+6. Update session-receipt **payload**: set `outcome: "pr"`,
+   `outcome_ref: [PR URL]` in `$WORK_DIR/.session-receipt.payload.json` (Edit
+   tool — preserve existing fields). The envelope wrap happens in Section 7-Z.
 
 #### Option: Keep
 
-1. Update session receipt: `outcome: "keep"`
+1. Update session-receipt **payload**: set `outcome: "keep"` in
+   `$WORK_DIR/.session-receipt.payload.json`. The envelope wrap happens in
+   Section 7-Z.
 2. Display:
    ```
    브랜치가 유지됩니다: [worktree_branch]
@@ -403,7 +434,56 @@ Use AskUserQuestion:
    2. 취소
    ```
 3. On confirm: `git worktree remove --force [worktree_path]` + `git branch -D [worktree_branch]`
-4. Update session receipt: `outcome: "discard"`
+4. Update session-receipt **payload**: set `outcome: "discard"` in
+   `$WORK_DIR/.session-receipt.payload.json`. The envelope wrap happens in
+   Section 7-Z.
+
+### 7-Z. Envelope wrap (v6.5.0 — runs once, after outcome is decided)
+
+Now that the payload temp file has all fields (Section 2 base + Section 2-1
+quality + Section 7 outcome), wrap it in the M3 envelope and write the final
+`session-receipt.json`. Use the `Bash` tool with the helper script:
+
+```bash
+EVOLVE_PATH=""
+if [ -f "$PROJECT_ROOT/.deep-evolve/current.json" ]; then
+  EVOLVE_SID=$(node -e "
+    try { console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).session_id||''); }
+    catch (_) { console.log(''); }
+  " "$PROJECT_ROOT/.deep-evolve/current.json")
+  if [ -n "$EVOLVE_SID" ] && [ -f "$PROJECT_ROOT/.deep-evolve/$EVOLVE_SID/evolve-insights.json" ]; then
+    EVOLVE_PATH="$PROJECT_ROOT/.deep-evolve/$EVOLVE_SID/evolve-insights.json"
+  fi
+fi
+
+HARN_PATH=""
+if [ -f "$PROJECT_ROOT/.deep-dashboard/harnessability-report.json" ]; then
+  HARN_PATH="$PROJECT_ROOT/.deep-dashboard/harnessability-report.json"
+fi
+
+WRAP_ARGS=(
+  --artifact-kind session-receipt
+  --payload-file "$WORK_DIR/.session-receipt.payload.json"
+  --output "$WORK_DIR/session-receipt.json"
+  --session-id "$DEEP_WORK_SESSION_ID"
+  --source-artifacts-glob "$WORK_DIR/receipts/SLICE-*.json"
+)
+[ -n "$EVOLVE_PATH" ] && WRAP_ARGS+=(--source-evolve-insights "$EVOLVE_PATH")
+[ -n "$HARN_PATH" ] && WRAP_ARGS+=(--source-harnessability "$HARN_PATH")
+
+node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" "${WRAP_ARGS[@]}"
+rm -f "$WORK_DIR/.session-receipt.payload.json"
+```
+
+The helper:
+- Generates `envelope.run_id` (ULID), sets `producer = "deep-work"`,
+  `artifact_kind = "session-receipt"`, `schema.name = "session-receipt"`.
+- Sets `envelope.parent_run_id` from the consumed evolve-insights envelope's
+  `run_id` (handoff §3.3 cross-plugin chain) when `--source-evolve-insights`
+  is passed and the file is itself an envelope.
+- Adds slice receipts' `run_id` (when envelope-wrapped) plus
+  `harnessability-report.json`'s `run_id` to `provenance.source_artifacts[]`
+  (intra-plugin chain + multi-source aggregation).
 
 ### 8. Finalize state
 

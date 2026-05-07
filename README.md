@@ -21,6 +21,33 @@ In the 2×2 matrix (Guide/Sensor × Computational/Inferential), deep-work covers
 
 deep-work also produces receipts and health reports consumed by [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard).
 
+## What's New in v6.5.0
+
+### M3 Cross-Plugin Envelope Adoption (claude-deep-suite Phase 2 #3)
+
+`session-receipt.json` and `receipts/SLICE-*.json` are now emitted as M3 envelope-wrapped artifacts (cf. `claude-deep-suite/docs/envelope-migration.md` §1):
+
+```
+{
+  "schema_version": "1.0",
+  "envelope": {
+    "producer": "deep-work",
+    "producer_version": "6.5.0",
+    "artifact_kind": "session-receipt|slice-receipt",
+    "run_id": "<ULID>",
+    "session_id": "<dw-session-id>",
+    "parent_run_id": "<consumed evolve-insights run_id, optional>",
+    "generated_at": "<RFC 3339>",
+    "schema": { "name": "<same as artifact_kind>", "version": "1.0" },
+    "git": { ... },
+    "provenance": { "source_artifacts": [...], "tool_versions": {...} }
+  },
+  "payload": { /* legacy receipt body */ }
+}
+```
+
+The session-receipt's `envelope.parent_run_id` chains to the consumed `evolve-insights.json` envelope (handoff §3.3 cross-plugin trace), and `provenance.source_artifacts[]` aggregates all slice receipt run_ids (intra-plugin chain). Internal readers (`hooks/scripts/*`) and cross-plugin consumers (`gather-signals.sh`, `deep-research/SKILL.md`) detect the envelope, enforce identity guard, and unwrap to `.payload` before reading legacy fields. Legacy non-envelope receipts are forward-compatible.
+
 ## What's New in v6.4.2
 
 ### Flexible Session Init

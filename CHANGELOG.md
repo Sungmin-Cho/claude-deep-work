@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-05-07
+
+### Added
+- **M3 cross-plugin envelope adoption** for `session-receipt.json` and `receipts/SLICE-*.json` (claude-deep-suite Phase 2 priority #3; cf. `claude-deep-suite/docs/envelope-migration.md` §1). Both artifacts now ship as `{ schema_version: "1.0", envelope: { producer, producer_version, artifact_kind, run_id, generated_at, schema, git, provenance, [parent_run_id], [session_id] }, payload: { ... legacy receipt body ... } }`.
+- **`hooks/scripts/envelope.js`** — shared zero-dep envelope library: MSB-first ULID generator (Crockford Base32, 26-char), `detectGit()` head/branch/dirty trio with safe `0000000` fallback, `loadProducerVersion()` resolved relative to module path (handoff §4 literal-cwd-resolve), `wrapEnvelope()` builder, `unwrapEnvelope()` reader with full identity guards (producer / artifact_kind / schema.name) and corrupt-payload defense.
+- **`hooks/scripts/wrap-receipt-envelope.js`** — CLI helper invoked by markdown agent prompts (`agents/implement-slice-worker.md`, `commands/deep-finish.md`) to wrap a payload temp file. Supports `--source-evolve-insights`, `--source-harnessability`, `--source-artifacts-glob` for cross-plugin / intra-plugin chain extraction (writes `parent_run_id` from evolve-insights envelope and aggregates slice receipt + harnessability `run_id` into `provenance.source_artifacts[]`).
+- **`scripts/validate-envelope-emit.js`** — zero-dep self-test validator mirroring suite envelope schema. Enforces `additionalProperties: false` on root / envelope / git / schema / provenance / source_artifacts items, ULID Crockford alphabet (rejects I/L/O/U), SemVer 2.0.0 strict, RFC 3339, kebab-case, `schema.name === artifact_kind` identity, payload non-null/non-array object with `schema_version: "1.0"` preserved.
+- **`tests/envelope-emit.test.js`** + **`tests/envelope-chain.test.js`** + **fixtures (`sample-session-receipt.json`, `sample-slice-receipt.json`)** — 50+ assertions covering ULID/SemVer/RFC3339 patterns, identity guards, corrupt-payload defense, `parent_run_id` cross-plugin chain (session-receipt.envelope.parent_run_id === consumed evolve-insights.envelope.run_id), and intra-plugin chain (session-receipt's `provenance.source_artifacts[]` aggregates all SLICE-*.json `run_id`s).
+
+### Changed
+- **`agents/implement-slice-worker.md`** — slice receipt emission protocol now writes the legacy body to `$WORK_DIR/receipts/.SLICE-NNN.payload.json` first, then invokes `node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js --artifact-kind slice-receipt ...` to produce the final envelope-wrapped `SLICE-NNN.json`. Payload `schema_version` must be the literal string `"1.0"`.
+- **`commands/deep-finish.md`** — Section 2 now writes the session-receipt body to `$WORK_DIR/.session-receipt.payload.json`. Sections 2-1 (quality fields) and 7 (outcome/outcome_ref) update the same temp file. New Section 7-Z performs the envelope wrap exactly once, after the outcome is decided, so `envelope.run_id` is generated only once per session. Cross-plugin chain is auto-detected from `.deep-evolve/<session>/evolve-insights.json` and `.deep-dashboard/harnessability-report.json`.
+- **`hooks/scripts/verify-delegated-receipt-runner.js`** — slice receipt loader invokes `unwrapEnvelope()` so verify-receipt-core sees the legacy body whether the file is envelope-wrapped or legacy. Identity-mismatched envelopes throw with a descriptive error.
+- **`hooks/scripts/validate-receipt.sh`** — `json_field` helper detects M3 envelope and reads from `.payload`, with full identity guard before unwrap. Falls through to top-level read for legacy receipts.
+- **`hooks/scripts/session-end.sh`** — slice receipt aggregation loop skips foreign envelopes (producer/artifact_kind/schema.name mismatch) before counting toward `slices_total`.
+- **`hooks/scripts/receipt-migration.js`** — envelope-wrapped receipts are recognized as already-migrated (no-op); the legacy v0 → v1.0 lift only applies to top-level legacy receipts.
+- **`skills/deep-integrate/gather-signals.sh`** — `read_json_safe` accepts optional `expected_producer` / `expected_artifact_kind` arguments and returns `.payload` for matching envelopes, `null` for foreign envelopes (defense-in-depth, handoff §4 round-4 lesson). Applied to deep-work session-receipt, deep-docs last-scan, deep-dashboard harnessability-report, deep-evolve evolve-insights, deep-wiki index. Forward-compat for deep-review/deep-evolve/deep-wiki Phase 2 priority #4–#6.
+- **`skills/deep-research/SKILL.md`** — Cross-Plugin Context section (Harnessability + Evolve Insights) documents envelope detection + identity guard procedure, with legacy fallback for forward-compat.
+- **`commands/deep-receipt.md`** / **`commands/deep-status.md`** / **`commands/deep-report.md`** — receipt read instructions document the envelope-aware unwrap rule (identity guard + payload extraction; legacy pass-through preserved).
+
+### Notes
+- Suite-side updates (claude-deep-suite `marketplace.json` SHA bump, `payload-registry/deep-work/{session,slice}-receipt/v1.0.schema.json` placeholder → authoritative shape, adoption ledger update) are out of scope for this PR per claude-deep-suite handoff §1: M3 Phase 2 plugin PRs touch the plugin repo only; suite-side updates are batched in Phase 3.
+
 ## [6.4.2] — 2026-04-29
 
 ### Added

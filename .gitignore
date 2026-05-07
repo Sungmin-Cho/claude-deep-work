@@ -3,3 +3,10 @@ TODOS.md
 docs/
 specs/
 plans/
+
+# Dev tooling caches and local-only artifacts (never committed)
+.claude/
+.deep-review/
+.deep-docs/
+.serena/
+--help

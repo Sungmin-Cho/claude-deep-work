@@ -1,6 +1,6 @@
 {
   "name": "deep-work",
-  "version": "6.4.2",
+  "version": "6.5.0",
   "description": "Evidence-Driven Development Protocol — 3-layer architecture with Skill-based phase dispatch, computational enforcement (worktree guard + phase transition injection), TDD enforcement, and receipt validation",
   "author": {
     "name": "sungmin"

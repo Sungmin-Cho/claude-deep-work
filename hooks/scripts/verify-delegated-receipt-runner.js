@@ -7,6 +7,7 @@ const [scriptDir, stateFile, receiptsDir, planMdPath, skipItemsCsv, onlyComplete
 
 const { verifyReceipts, parsePlanMd, parseStateFile } =
   require(path.join(scriptDir, 'verify-receipt-core.js'));
+const { unwrapEnvelope } = require(path.join(scriptDir, 'envelope.js'));
 
 // N-R2: state file is YAML frontmatter in a Markdown file
 // (.claude/deep-work.{SESSION_ID}.md), NOT JSON. parseStateFile extracts
@@ -17,7 +18,17 @@ const plan = parsePlanMd(planMdPath);
 let receipts = fs.readdirSync(receiptsDir)
   .filter((f) => /^SLICE-\d+\.json$/.test(f))
   .sort()
-  .map((f) => JSON.parse(fs.readFileSync(path.join(receiptsDir, f), 'utf8')));
+  .map((f) => {
+    const obj = JSON.parse(fs.readFileSync(path.join(receiptsDir, f), 'utf8'));
+    // v6.5.0 envelope-aware: unwrapEnvelope returns the original object for
+    // legacy receipts and the payload for envelope-wrapped receipts. Identity
+    // mismatch returns null — treat as missing receipt.
+    const unwrapped = unwrapEnvelope(obj, 'slice-receipt');
+    if (unwrapped === null) {
+      throw new Error(`receipt ${f}: M3 envelope identity mismatch (producer / artifact_kind / schema.name)`);
+    }
+    return unwrapped;
+  });
 
 if (onlyCompleted === '1') {
   receipts = receipts.filter((r) => r.status === 'complete');

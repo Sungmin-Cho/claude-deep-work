@@ -31,7 +31,29 @@ const V1_DEFAULTS = {
   git_after: '',
 };
 
+// v6.5.0 envelope detection: M3 envelope-wrapped receipts have
+//   { schema_version: "1.0", envelope: { ... }, payload: { ... } }.
+// receipt-migration.js targets the legacy v0 → v1.0 lift only — envelope
+// receipts have already passed through the producer-side wrap helper, which
+// guarantees the payload schema_version is "1.0" and all required fields
+// exist. We treat them as "current" (no-op).
+function isM3Envelope(obj) {
+  return (
+    obj &&
+    typeof obj === 'object' &&
+    !Array.isArray(obj) &&
+    obj.schema_version === '1.0' &&
+    obj.envelope &&
+    typeof obj.envelope === 'object' &&
+    !Array.isArray(obj.envelope) &&
+    obj.payload !== undefined
+  );
+}
+
 function migrateReceipt(receipt) {
+  if (isM3Envelope(receipt)) {
+    return { migrated: false, receipt };
+  }
   if (receipt.schema_version === CURRENT_SCHEMA) {
     return { migrated: false, receipt };
   }
@@ -118,7 +140,7 @@ function main() {
 
 // Export for testing
 if (typeof module !== 'undefined') {
-  module.exports = { migrateReceipt, processFile, CURRENT_SCHEMA, V1_DEFAULTS };
+  module.exports = { migrateReceipt, processFile, CURRENT_SCHEMA, V1_DEFAULTS, isM3Envelope };
 }
 
 // Run if called directly

@@ -60,31 +60,37 @@ $ARGUMENTS에 `--incremental` 포함 시: `last_research_commit` 기준 git diff
 
 Phase 1 Research 시작 시 외부 플러그인 데이터를 참조한다. 이 데이터는 "참고" 수준이며, 현재 작업과 관련 없으면 무시한다.
 
-### Harnessability Context
+### Harnessability Context (envelope-aware v6.5.0)
 
 `.deep-dashboard/harnessability-report.json`이 존재하면:
-1. 파일 읽기 및 freshness 확인:
-   - `generated_at` 필드가 있으면 현재 시점과 비교
+1. 파일 읽기 및 envelope 감지:
+   - 파일이 M3 envelope 형태(`{schema_version: "1.0", envelope: {...}, payload: {...}}`)이면 identity guard를 적용:
+     `envelope.producer === "deep-dashboard"` ∧ `envelope.artifact_kind === "harnessability-report"` ∧ `envelope.schema.name === envelope.artifact_kind` 가 모두 참인 경우에만 `payload`를 사용. 하나라도 어긋나면 "foreign envelope at harnessability-report path — skip" 경고 후 건너뜀.
+   - Legacy(non-envelope) 파일이면 root 객체를 그대로 사용 (forward-compat).
+2. Freshness 확인 (envelope이면 `envelope.generated_at`을 우선, 없으면 payload root의 `generated_at`):
    - 7일 이상 경과한 리포트는 "stale harnessability report — skip" 경고 후 건너뜀
    - `generated_at` 필드가 없으면 그대로 사용 (하위 호환)
-2. 점수가 낮은 차원(< 5.0)을 research context에 포함:
+3. 점수가 낮은 차원(< 5.0)을 research context에 포함 — `dimensions[]` / `total` 등의 필드는 envelope 모드/legacy 모드 모두에서 동일하게 payload root 또는 객체 root에서 읽는다:
    ```
    이 프로젝트의 harnessability 진단 결과:
    - <dimension>: <score>/10 → <suggestion>
    이 작업에서 관련 영역을 개선할 수 있으면 함께 고려.
    ```
-3. 이 정보는 이후 Section 2의 Topology Detection에서 참조 가능. 여기서는 research context에 텍스트로만 포함.
+4. 이 정보는 이후 Section 2의 Topology Detection에서 참조 가능. 여기서는 research context에 텍스트로만 포함.
 
-### Evolve Insights Context
+### Evolve Insights Context (envelope-aware v6.5.0)
 
-`.deep-evolve/evolve-insights.json`이 존재하면:
-1. 파일 읽기
-2. `insights_for_deep_work` 항목을 research context에 포함:
+`.deep-evolve/evolve-insights.json`(또는 `.deep-evolve/<session>/evolve-insights.json`)이 존재하면:
+1. 파일 읽기 및 envelope 감지:
+   - M3 envelope 이면 `envelope.producer === "deep-evolve"` ∧ `envelope.artifact_kind === "evolve-insights"` ∧ `envelope.schema.name === envelope.artifact_kind` 검증 후 `payload`를 사용. mismatch는 skip.
+   - Legacy 파일이면 root 객체 그대로 사용.
+2. `insights_for_deep_work` 항목을 research context에 포함 (envelope 모드/legacy 모드 모두 payload/root 에서 직접 접근):
    ```
    deep-evolve 메타 아카이브 기반 인사이트:
    - <pattern>: <evidence> → <suggestion>
    ```
 3. 이 인사이트는 "참고" 수준 — 현재 작업과 관련 없으면 무시
+4. 향후 (Phase 5 deep-integrate) 에서 session-receipt 의 `envelope.parent_run_id` 가 이 evolve-insights 의 `envelope.run_id` 로 채워진다 (cross-plugin chain).
 
 # Section 2: Phase 실행
 

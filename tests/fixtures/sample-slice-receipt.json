@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-suite/main/schemas/artifact-envelope.schema.json",
+  "schema_version": "1.0",
+  "envelope": {
+    "producer": "deep-work",
+    "producer_version": "6.5.0",
+    "artifact_kind": "slice-receipt",
+    "run_id": "01JTKGZQ7NABCDEFGHJKMNPQRS",
+    "session_id": "dw-2026-05-07T10-00-00-000Z",
+    "generated_at": "2026-05-07T10:15:42.123Z",
+    "schema": { "name": "slice-receipt", "version": "1.0" },
+    "git": {
+      "head": "abc1234",
+      "branch": "feat/m3-envelope-adoption",
+      "dirty": false
+    },
+    "provenance": {
+      "source_artifacts": [],
+      "tool_versions": { "node": "v20.11.0" }
+    }
+  },
+  "payload": {
+    "schema_version": "1.0",
+    "slice_id": "SLICE-001",
+    "cluster_id": "_default",
+    "status": "complete",
+    "tdd": {
+      "state_transitions": ["PENDING", "RED_VERIFIED", "GREEN", "SENSOR_CLEAN"],
+      "red_verification_output": "AssertionError: expected undefined to be 1"
+    },
+    "git_before_slice": "abc1234",
+    "git_after_slice": "def5678",
+    "changes": {
+      "git_diff": "diff --git a/src/a.js b/src/a.js\n+function add(a,b){return a+b}\n"
+    },
+    "sensor_results": {
+      "lint": "pass",
+      "typecheck": "pass",
+      "reviewCheck": "pass"
+    },
+    "spec_compliance": {
+      "passed": true
+    },
+    "slice_review": {
+      "stage1": "pass",
+      "stage2": "pass"
+    },
+    "harness_metadata": {
+      "model_id": "claude-sonnet-4-5",
+      "rework_count": 0,
+      "tests_passed_first_try": true
+    }
+  }
+}
