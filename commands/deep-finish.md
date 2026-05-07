@@ -444,13 +444,34 @@ Now that the payload temp file has all fields (Section 2 base + Section 2-1
 quality + Section 7 outcome), wrap it in the M3 envelope and write the final
 `session-receipt.json`. Use the `Bash` tool with the helper script:
 
+> **Important — failure semantics**: the snippet uses `set -euo pipefail` so
+> that any sub-command failure aborts before `rm -f` runs. The cleanup is
+> gated with `&&` so that on helper failure the payload temp file is
+> **preserved** for retry. To re-attempt a failed wrap, simply re-execute
+> Section 7-Z (Section 2/2-1/7 do not re-run; the same payload is used).
+
 ```bash
+set -euo pipefail
+
+# Resolve session_id with the same fallback chain as Section 1: env var →
+# .claude/deep-work-current-session pointer file (omit flag if neither
+# resolves rather than passing the empty string — handoff §4 W2).
+SESSION_ID="${DEEP_WORK_SESSION_ID:-}"
+if [ -z "$SESSION_ID" ] && [ -f "$PROJECT_ROOT/.claude/deep-work-current-session" ]; then
+  SESSION_ID="$(tr -d '\n\r' < "$PROJECT_ROOT/.claude/deep-work-current-session" || true)"
+fi
+
 EVOLVE_PATH=""
 if [ -f "$PROJECT_ROOT/.deep-evolve/current.json" ]; then
-  EVOLVE_SID=$(node -e "
-    try { console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).session_id||''); }
-    catch (_) { console.log(''); }
-  " "$PROJECT_ROOT/.deep-evolve/current.json")
+  EVOLVE_SID=$(node -e '
+    try {
+      const raw = require("fs").readFileSync(process.argv[1], "utf8");
+      const obj = JSON.parse(raw);
+      const v = (obj && typeof obj === "object" && typeof obj.session_id === "string")
+        ? obj.session_id : "";
+      console.log(v);
+    } catch (_) { console.log(""); }
+  ' "$PROJECT_ROOT/.deep-evolve/current.json" || true)
   if [ -n "$EVOLVE_SID" ] && [ -f "$PROJECT_ROOT/.deep-evolve/$EVOLVE_SID/evolve-insights.json" ]; then
     EVOLVE_PATH="$PROJECT_ROOT/.deep-evolve/$EVOLVE_SID/evolve-insights.json"
   fi
@@ -465,14 +486,21 @@ WRAP_ARGS=(
   --artifact-kind session-receipt
   --payload-file "$WORK_DIR/.session-receipt.payload.json"
   --output "$WORK_DIR/session-receipt.json"
-  --session-id "$DEEP_WORK_SESSION_ID"
   --source-artifacts-glob "$WORK_DIR/receipts/SLICE-*.json"
 )
+[ -n "$SESSION_ID" ] && WRAP_ARGS+=(--session-id "$SESSION_ID")
 [ -n "$EVOLVE_PATH" ] && WRAP_ARGS+=(--source-evolve-insights "$EVOLVE_PATH")
 [ -n "$HARN_PATH" ] && WRAP_ARGS+=(--source-harnessability "$HARN_PATH")
 
-node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" "${WRAP_ARGS[@]}"
-rm -f "$WORK_DIR/.session-receipt.payload.json"
+# Cleanup payload temp file ONLY on helper success — preserve on failure for
+# retry (round-1 deep-review C2 lesson). The `set -e` guarantees abort if the
+# helper exits non-zero before this line runs.
+if node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" "${WRAP_ARGS[@]}"; then
+  rm -f "$WORK_DIR/.session-receipt.payload.json"
+else
+  echo "wrap helper failed — preserving $WORK_DIR/.session-receipt.payload.json for retry; re-run Section 7-Z to retry." >&2
+  exit 1
+fi
 ```
 
 The helper:

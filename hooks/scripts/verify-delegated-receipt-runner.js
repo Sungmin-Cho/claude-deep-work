@@ -22,10 +22,21 @@ let receipts = fs.readdirSync(receiptsDir)
     const obj = JSON.parse(fs.readFileSync(path.join(receiptsDir, f), 'utf8'));
     // v6.5.0 envelope-aware: unwrapEnvelope returns the original object for
     // legacy receipts and the payload for envelope-wrapped receipts. Identity
-    // mismatch returns null — treat as missing receipt.
+    // mismatch returns null — for true cross-plugin envelope drift this is
+    // a real error; for legacy v0/v1.0 receipts pulled from a pre-6.5
+    // worktree this is *not* a drift but a missing migration. Make the
+    // error actionable so the user knows the recovery path
+    // (round-1 deep-review C3 lesson).
     const unwrapped = unwrapEnvelope(obj, 'slice-receipt');
     if (unwrapped === null) {
-      throw new Error(`receipt ${f}: M3 envelope identity mismatch (producer / artifact_kind / schema.name)`);
+      throw new Error(
+        `receipt ${f}: M3 envelope identity mismatch ` +
+        `(producer / artifact_kind / schema.name). If this receipt was ` +
+        `emitted by a pre-6.5.0 deep-work session, run ` +
+        `"node ${path.join(scriptDir, 'receipt-migration.js')} ${receiptsDir}" ` +
+        `to detect format. If it was emitted by a different plugin, remove it ` +
+        `from ${receiptsDir} — only deep-work slice-receipt envelopes are valid here.`,
+      );
     }
     return unwrapped;
   });

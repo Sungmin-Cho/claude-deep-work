@@ -189,14 +189,20 @@ function wrapEnvelope(opts) {
 }
 
 /**
- * Strict M3 envelope shape detector.
+ * M3 envelope shape detector (loose).
  *
- * Returns true ONLY for {schema_version: "1.0", envelope: {...}, payload: {...}}.
- * Does not validate envelope contents — use unwrapEnvelope() for identity check.
+ * Returns true for {schema_version: "1.0", envelope: {...}, payload: <any>} —
+ * structural detection only. Does NOT validate envelope contents OR payload
+ * shape. Use `unwrapEnvelope()` for full identity + corrupt-payload checks,
+ * or use the stricter `isValidEnvelope()` when consumers also need payload
+ * to be a non-null/non-array object.
  *
  * Defends against legacy v1.0 receipts whose top-level `schema_version: "1.0"`
  * collides with envelope's `schema_version: "1.0"`: the legacy form lacks
- * `envelope` + `payload` keys, so this returns false.
+ * `envelope` + `payload` keys, so this returns false. unwrapEnvelope()
+ * preserves this same loose-detection contract — an envelope-shaped object
+ * with corrupt payload is detected here, then rejected (null) by the
+ * unwrapper rather than mis-classified as legacy.
  */
 function isEnvelope(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
@@ -204,6 +210,18 @@ function isEnvelope(obj) {
   if (!obj.envelope || typeof obj.envelope !== 'object' || Array.isArray(obj.envelope)) return false;
   if (obj.payload === undefined) return false;
   return true;
+}
+
+/**
+ * Strict M3 envelope detector — adds the payload-shape gate on top of
+ * `isEnvelope`. Returns true only when payload is itself a non-null,
+ * non-array object (round-1 deep-review W4 lesson). Use this when extracting
+ * sub-fields like `envelope.run_id` from a chain-source artifact, where a
+ * corrupt envelope must not contribute trace data downstream.
+ */
+function isValidEnvelope(obj) {
+  if (!isEnvelope(obj)) return false;
+  return obj.payload !== null && typeof obj.payload === 'object' && !Array.isArray(obj.payload);
 }
 
 /**
@@ -263,5 +281,6 @@ module.exports = {
   loadProducerVersion,
   wrapEnvelope,
   isEnvelope,
+  isValidEnvelope,
   unwrapEnvelope,
 };

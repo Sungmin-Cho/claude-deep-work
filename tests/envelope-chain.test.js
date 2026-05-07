@@ -192,6 +192,65 @@ describe('envelope-chain — expandSourceArtifactsGlob', () => {
   });
 });
 
+describe('envelope-chain — tryReadEnvelopeRunId rejects corrupt envelope (W4)', () => {
+  it('returns null for envelope with payload: null', () => {
+    const dir = tmpDir();
+    const corrupt = path.join(dir, 'corrupt.json');
+    writeJson(corrupt, {
+      schema_version: '1.0',
+      envelope: {
+        producer: 'deep-evolve',
+        artifact_kind: 'evolve-insights',
+        run_id: '01JTKEV0NHABCDEFGHJKMNPQRS',
+        schema: { name: 'evolve-insights', version: '1.0' },
+        git: { head: 'abc1234', branch: 'main', dirty: false },
+        provenance: { source_artifacts: [], tool_versions: {} },
+      },
+      payload: null,
+    });
+    assert.strictEqual(tryReadEnvelopeRunId(corrupt), null);
+  });
+
+  it('returns null for envelope with payload: array', () => {
+    const dir = tmpDir();
+    const corrupt = path.join(dir, 'corrupt.json');
+    writeJson(corrupt, {
+      schema_version: '1.0',
+      envelope: { run_id: '01JTKEV0NHABCDEFGHJKMNPQRS' },
+      payload: [1, 2, 3],
+    });
+    assert.strictEqual(tryReadEnvelopeRunId(corrupt), null);
+  });
+
+  it('returns the run_id for valid envelope', () => {
+    const dir = tmpDir();
+    const valid = path.join(dir, 'valid.json');
+    writeJson(valid, {
+      schema_version: '1.0',
+      envelope: { run_id: '01JTKEV0NHABCDEFGHJKMNPQRS' },
+      payload: { x: 1 },
+    });
+    assert.strictEqual(tryReadEnvelopeRunId(valid), '01JTKEV0NHABCDEFGHJKMNPQRS');
+  });
+});
+
+describe('envelope-chain — atomic write (C1)', () => {
+  it('does not leave a .tmp file after successful write', () => {
+    const dir = tmpDir();
+    const payload = path.join(dir, 'payload.json');
+    const out = path.join(dir, 'SLICE-001.json');
+    writeJson(payload, { schema_version: '1.0', slice_id: 'SLICE-001', status: 'complete' });
+    runWrap([
+      '--artifact-kind', 'slice-receipt',
+      '--payload-file', payload,
+      '--output', out,
+    ]);
+    assert.ok(fs.existsSync(out), 'final output must exist');
+    const tmpResidue = fs.readdirSync(dir).filter((f) => f.includes('.tmp.'));
+    assert.deepEqual(tmpResidue, [], `tmp residue left behind: ${JSON.stringify(tmpResidue)}`);
+  });
+});
+
 describe('envelope-chain — wrapEnvelope intra-plugin chain via lib', () => {
   it('builds session-receipt envelope with slice run_ids in source_artifacts', () => {
     const sliceA = generateUlid();

@@ -110,7 +110,12 @@ function tryReadEnvelopeRunId(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null;
   try {
     const obj = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (env.isEnvelope(obj) && obj.envelope && typeof obj.envelope.run_id === 'string') {
+    // Round-1 deep-review W4: require strict envelope (payload non-null/
+    // non-array object), not just structural shape. A corrupt envelope's
+    // run_id must not contribute to provenance.source_artifacts[] —
+    // downstream readers would have a chain pointing at a payload that
+    // unwrapEnvelope rejects.
+    if (env.isValidEnvelope(obj) && typeof obj.envelope.run_id === 'string') {
       return obj.envelope.run_id;
     }
     return null;
@@ -229,10 +234,25 @@ function main() {
     }
   }
 
+  // C1 (round 1) — Atomic write: write to a unique temp path then rename.
+  // Mid-write interruption (Ctrl-C, OOM, hook timeout) or two concurrent
+  // finishers must not leave a truncated session-receipt.json that downstream
+  // readers (verify-delegated-receipt-runner.js, validate-receipt.sh,
+  // gather-signals.sh) parse-fail on. Mirrors the temp+rename pattern used by
+  // receipt-migration.js:103-106 and session-end.sh's _append_with_lock.
+  const tmpPath = `${outputPath}.tmp.${process.pid}.${Date.now()}`;
   try {
-    fs.writeFileSync(outputPath, JSON.stringify(wrapped, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(tmpPath, JSON.stringify(wrapped, null, 2) + '\n', 'utf8');
   } catch (err) {
-    process.stderr.write(`error: cannot write ${outputPath}: ${err.message}\n`);
+    try { fs.unlinkSync(tmpPath); } catch (_) { /* ignore */ }
+    process.stderr.write(`error: cannot write ${tmpPath}: ${err.message}\n`);
+    process.exit(2);
+  }
+  try {
+    fs.renameSync(tmpPath, outputPath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch (_) { /* ignore */ }
+    process.stderr.write(`error: cannot rename ${tmpPath} → ${outputPath}: ${err.message}\n`);
     process.exit(2);
   }
 

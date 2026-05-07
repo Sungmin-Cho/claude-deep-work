@@ -176,34 +176,30 @@ append_session_history() {
     for receipt_file in "$receipts_dir"/SLICE-*.json; do
       [[ -f "$receipt_file" ]] || continue
 
-      # v6.5.0 envelope identity guard. If the file is an M3 envelope, verify
-      # producer=deep-work + artifact_kind=slice-receipt + schema.name matches
-      # before counting it. Foreign envelopes (e.g. accidentally copied from
-      # another plugin) are skipped silently — slices_total stays accurate.
-      # Legacy (non-envelope) receipts pass through unchanged. Per-field grep
-      # extraction below works on either shape because envelope keys
-      # (producer, producer_version, artifact_kind, run_id, generated_at,
-      # schema, git, provenance) do not collide with payload keys
-      # (slice_id, status, tdd_mode, model_used, tests_passed_first_try, etc.).
-      if command -v node &>/dev/null; then
-        local envelope_ok
-        envelope_ok=$(node -e "
-          try {
-            const fs = require('fs');
-            const d = JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
-            const isEnv = d && typeof d === 'object' && !Array.isArray(d)
-              && d.schema_version === '1.0'
-              && d.envelope && typeof d.envelope === 'object' && !Array.isArray(d.envelope)
-              && Object.prototype.hasOwnProperty.call(d, 'payload');
-            if (!isEnv) { console.log('legacy'); process.exit(0); }
-            const env = d.envelope;
-            const ok = env.producer === 'deep-work'
-              && env.artifact_kind === 'slice-receipt'
-              && env.schema && env.schema.name === 'slice-receipt';
-            console.log(ok ? 'ok' : 'mismatch');
-          } catch (_) { console.log('legacy'); }
-        " "$receipt_file" 2>/dev/null)
-        if [[ "$envelope_ok" == "mismatch" ]]; then
+      # v6.5.0 envelope identity guard — fast-path bash only (round-1
+      # deep-review W6 lesson — Stop hook contract is "must not block session
+      # close"; spawning `node` per receipt added 1-3 s overhead with 30+
+      # slices). The grep checks below are O(file-size) on small JSON, no
+      # process spawn. Foreign envelopes (e.g. accidentally copied from
+      # another plugin) are skipped — slices_total stays accurate. Legacy
+      # (non-envelope) receipts pass through unchanged because they never
+      # contain the substring `"envelope"`.
+      #
+      # Detection logic:
+      #   - File contains `"envelope"` AND `"schema_version": "1.0"`
+      #     → looks like envelope; check identity.
+      #   - Otherwise → legacy receipt; count.
+      #
+      # Per-field grep extraction below works on either shape because
+      # envelope keys (producer, producer_version, artifact_kind, run_id,
+      # generated_at, schema, git, provenance) do not collide with payload
+      # keys (slice_id, status, tdd_mode, model_used, etc.).
+      if grep -q '"envelope"[[:space:]]*:' "$receipt_file" 2>/dev/null \
+         && grep -q '"schema_version"[[:space:]]*:[[:space:]]*"1\.0"' "$receipt_file" 2>/dev/null; then
+        # Envelope-shaped — verify producer + artifact_kind + schema.name.
+        if ! grep -q '"producer"[[:space:]]*:[[:space:]]*"deep-work"' "$receipt_file" 2>/dev/null \
+           || ! grep -q '"artifact_kind"[[:space:]]*:[[:space:]]*"slice-receipt"' "$receipt_file" 2>/dev/null \
+           || ! grep -q '"name"[[:space:]]*:[[:space:]]*"slice-receipt"' "$receipt_file" 2>/dev/null; then
           continue
         fi
       fi

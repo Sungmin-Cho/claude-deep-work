@@ -16,6 +16,7 @@ const {
   generateUlid,
   wrapEnvelope,
   isEnvelope,
+  isValidEnvelope,
   unwrapEnvelope,
   loadProducerVersion,
 } = require('../hooks/scripts/envelope.js');
@@ -162,11 +163,44 @@ describe('envelope.js — isEnvelope detection', () => {
     assert.equal(isEnvelope({ schema_version: '1.0', slice_id: 'SLICE-001' }), false);
   });
 
-  it('returns true only when schema_version === "1.0" + envelope + payload all present', () => {
+  it('returns true (loose detection) when schema_version === "1.0" + envelope + payload all present', () => {
     assert.equal(
       isEnvelope({ schema_version: '1.0', envelope: {}, payload: {} }),
       true,
     );
+  });
+
+  it('returns true even when payload is null/falsy/array (loose detection only — unwrapEnvelope rejects)', () => {
+    assert.equal(isEnvelope({ schema_version: '1.0', envelope: {}, payload: null }), true);
+    assert.equal(isEnvelope({ schema_version: '1.0', envelope: {}, payload: false }), true);
+    assert.equal(isEnvelope({ schema_version: '1.0', envelope: {}, payload: [] }), true);
+  });
+});
+
+describe('envelope.js — isValidEnvelope (strict W4 gate)', () => {
+  it('returns true only when payload is a non-null/non-array plain object', () => {
+    assert.equal(
+      isValidEnvelope({ schema_version: '1.0', envelope: {}, payload: { a: 1 } }),
+      true,
+    );
+  });
+
+  it('rejects payload null', () => {
+    assert.equal(
+      isValidEnvelope({ schema_version: '1.0', envelope: {}, payload: null }),
+      false,
+    );
+  });
+
+  it('rejects payload false / array / primitive (corrupt-payload defense)', () => {
+    assert.equal(isValidEnvelope({ schema_version: '1.0', envelope: {}, payload: false }), false);
+    assert.equal(isValidEnvelope({ schema_version: '1.0', envelope: {}, payload: 0 }), false);
+    assert.equal(isValidEnvelope({ schema_version: '1.0', envelope: {}, payload: 'x' }), false);
+    assert.equal(isValidEnvelope({ schema_version: '1.0', envelope: {}, payload: [1] }), false);
+  });
+
+  it('rejects non-envelope (legacy receipts)', () => {
+    assert.equal(isValidEnvelope({ schema_version: '1.0', slice_id: 'SLICE-001' }), false);
   });
 });
 
