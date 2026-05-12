@@ -236,18 +236,26 @@ const DANGEROUS_NON_IMPLEMENT_PATTERNS = [
     // kubectl delete with --all OR kubectl drain (cluster-level blast radius).
     // Single-resource delete (e.g., `kubectl delete pod foo`) is allowed —
     // user can scope by enabling the example pack for full strict mode.
-    pattern: /\bkubectl\s+(?:delete\s+[^|;&]*\B--all\b|drain\b)/,
+    // (?!-) negative lookahead prevents matching --all-namespaces / --all-containers /
+    // etc., which are legitimate scoping flags not standalone destructive intents
+    // (R3 review W-R3.2 fix — \b alone fires at the `-` in `--all-namespaces`).
+    pattern: /\bkubectl\s+(?:delete\s+[^|;&]*\B--all(?!-)\b|drain\b)/,
     family: 'kubectl-destructive',
     override: 'CLAUDE_ALLOW_KUBECTL_DESTRUCTIVE',
     why: 'kubectl delete --all / drain affects shared infrastructure',
     safer: 'kubectl get to inspect first; coordinate with on-call before destructive ops',
   },
   {
-    // SQL DROP TABLE / TRUNCATE. Case-insensitive because SQL is, but most
-    // real foot-guns use the canonical uppercase keywords; `i` flag covers
-    // both. Anchored to keyword boundaries to avoid matching e.g.
-    // `mention DROP TABLE in docstring`.
-    pattern: /\b(?:DROP\s+TABLE|TRUNCATE\s+TABLE|TRUNCATE\s+\w)\b/i,
+    // SQL DROP TABLE / TRUNCATE (both PostgreSQL "TRUNCATE <table>" and the
+    // ANSI "TRUNCATE TABLE <table>" forms). Case-insensitive because SQL is,
+    // but most real foot-guns use canonical uppercase. Anchored to keyword
+    // boundaries to avoid matching `-- DROP TABLE` in a docstring/comment.
+    // R3 W-R3.1 fix: collapsed two TRUNCATE alternatives into one optional
+    // TABLE group + `\w+` quantifier so realistic table names match
+    // (previous `TRUNCATE\s+\w\b` required exactly one word char before
+    // the boundary — `TRUNCATE users` was missed because `s` after `u` is
+    // also word-class so no boundary fired).
+    pattern: /\b(?:DROP\s+TABLE|TRUNCATE(?:\s+TABLE)?\s+\w+)\b/i,
     family: 'sql-destructive',
     override: 'CLAUDE_ALLOW_SQL_DESTRUCTIVE',
     why: 'DROP TABLE / TRUNCATE on production data is unrecoverable',
