@@ -3,17 +3,30 @@
 // tests/phase-guard-denylist.test.js — M5.5 #7 acceptance
 //
 // Asserts that hooks/scripts/phase-guard.sh blocks the documented
-// dangerous-Bash-command families at PreToolUse, in both:
+// dangerous-Bash-command families at PreToolUse, in two modes:
 //   (A) Phase 5 (idle + phase5_entered_at, no phase5_completed_at) — strict
-//       read-mostly allowlist + destructive-target check.
+//       read-mostly allowlist + destructive-target check. Catches all 7
+//       M5.5 #7 documented families.
 //   (B) Non-implement phases (research, plan, test, brainstorm) — bash
-//       file-write pattern match in phase-guard-core.preToolUseEnforcement
+//       FILE-WRITE pattern match in phase-guard-core.preToolUseEnforcement
 //       (BASH_FILE_WRITE_PATTERNS includes destructive git ops + tar -x +
-//       in-place edits).
+//       in-place edits + rsync).
 //
-// The two modes catch destructive commands via different mechanisms; this
-// test pins down both contracts so a future refactor can't quietly weaken
-// one mode and rely on the other.
+// **Known scope limitation** (M5.5 #7 partial closure — documented in
+// commit msg; see review report 2026-05-12-152207-review.md §C1):
+// Non-implement phases ONLY block commands that match the file-write
+// pattern list. The following destructive families pass through in
+// research/plan/test/brainstorm because they are not file-writes per se:
+//   - `rm -rf /` (no file-write detection in non-implement; Phase 5 catches)
+//   - `npm publish`           (Phase 5 catches via allowlist-miss)
+//   - `kubectl delete --all`  (Phase 5 catches via allowlist-miss)
+//   - `psql ... DROP TABLE`   (Phase 5 catches via allowlist-miss)
+//   - `curl ... | sh`         (Phase 5 catches via compound-operator)
+// This is the CURRENT phase-guard contract. A follow-up (M5.5.X — to be
+// filed) is required to add a non-implement dangerous-command denylist
+// in phase-guard-core.js to close the production gap. Until then, only
+// Phase 5 mode provides full destructive-command coverage; non-implement
+// relies on the narrower file-write gate.
 //
 // Spec: docs/superpowers/plans/2026-05-12-m5.5-remaining-tests-handoff.md §2 #7
 //       suite docs/deep-suite-harness-roadmap.md §M5.5 #7
@@ -56,37 +69,42 @@ function writeState(tmpRoot, frontmatter) {
 }
 
 function runGuard(tmpRoot, toolName, toolInput) {
+  // Scrub host env vars that would redirect phase-guard.sh away from
+  // tmpRoot. DEEP_WORK_SESSION_ID is the dangerous one — if it is set on
+  // the host (active dev session, CI with leaked env), phase-guard.sh
+  // routes to .claude/deep-work.<id>.md which writeState() does not
+  // create, hitting the no-state fast-path (exit 0) and silently passing
+  // every BLOCK assertion. CLAUDE_PROJECT_DIR similarly redirects.
+  // DEEP_WORK_ROOT is currently not consumed by utils.sh, but we
+  // pre-emptively scrub it to keep the contract host-independent.
+  const scrubbed = { ...process.env };
+  delete scrubbed.DEEP_WORK_SESSION_ID;
+  delete scrubbed.DEEP_WORK_ROOT;
+  delete scrubbed.CLAUDE_PROJECT_DIR;
   return spawnSync('bash', [PHASE_GUARD], {
     input: JSON.stringify(toolInput),
     encoding: 'utf8',
     cwd: tmpRoot,
     env: {
-      ...process.env,
+      ...scrubbed,
       CLAUDE_TOOL_USE_TOOL_NAME: toolName,
-      DEEP_WORK_ROOT: tmpRoot,
     },
     timeout: 8000,
   });
 }
 
 function parseBlockReason(stdout) {
-  // phase-guard.sh emits a JSON `{"decision":"block","reason":"..."}` on
-  // stdout when it blocks. Some paths may emit additional trailing newlines;
-  // grab the first '{' onward, find the matching '}' loosely.
+  // phase-guard.sh emits a single JSON object on stdout when it blocks —
+  // either as a one-line `printf '{"decision":...}'` (Phase 5 _p5_block)
+  // or a HEREDOC `cat <<JSON\n{...}\nJSON` (other block paths). In both
+  // cases the slice from the first `{` to the trimmed end is a complete
+  // JSON document (JSON.parse is whitespace-tolerant).
   const start = stdout.indexOf('{');
   if (start === -1) return null;
-  const slice = stdout.slice(start).trim();
   try {
-    return JSON.parse(slice);
+    return JSON.parse(stdout.slice(start).trim());
   } catch (_) {
-    // Multiple JSON objects? Take the first line.
-    const firstLine = slice.split('\n').find((l) => l.trim().startsWith('{'));
-    if (!firstLine) return null;
-    try {
-      return JSON.parse(firstLine);
-    } catch (_2) {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -95,11 +113,13 @@ function parseBlockReason(stdout) {
 // =============================================================================
 //
 // Each row is a destructive Bash command from the M5.5 #7 spec list. Phase 5
-// rejects them via one of three mechanisms (matched_via column):
-//   - destructive-target: rm/chmod/chown/truncate with target outside work_dir
-//   - allowlist-miss:     first command token not in read-mostly allowlist
-//   - compound-operator:  ; && || | & — Phase 5 forbids compound commands
-//   - git-mutating:       git subcommand not in read-only allowlist
+// rejects them via one of FOUR mechanisms (matched_via column):
+//   - destructive-target:       rm/chmod/chown/truncate with target outside work_dir
+//   - allowlist-miss:           first command token not in read-mostly allowlist
+//   - compound-operator:        ; && || | & — Phase 5 forbids compound commands
+//   - git-subcommand-allowlist: git subcommand not in the read-only allowlist
+//                               (phase-guard.sh:362-388 — load-bearing gate;
+//                                line 475 mutating-blocklist is redundant + unreachable)
 //
 // The reason-substring column is a fragment from phase-guard.sh that uniquely
 // identifies the rejection mechanism — if the mechanism changes, the test
@@ -129,24 +149,29 @@ const PHASE5_DENYLIST = [
   {
     label: 'git push --force (force-push)',
     command: 'git push --force origin main',
-    matchedVia: 'git-allowlist',
-    // Phase 5 git allowlist (line ~362-388 of phase-guard.sh) fires before
-    // the explicit git-mutating regex because both block destructive subs,
-    // but the allowlist check is earlier in the pipeline. We pin the
-    // actually-observed message so this test doesn't drift if the
-    // mutating-regex block is removed as redundant.
+    matchedVia: 'git-subcommand-allowlist',
+    // Phase 5 has TWO git gates: (1) the first-token allowlist at
+    // phase-guard.sh:333 lets `git` pass-through (no-op case), then
+    // (2) the GIT SUBCOMMAND allowlist at lines 362-388 emits
+    // `git 서브커맨드 '...' Phase 5 read-only allowlist 밖` and blocks.
+    // A third gate exists — the explicit git-mutating blocklist at
+    // line ~475 — but it is unreachable because the subcommand
+    // allowlist fires first. We pin the actually-observed message so
+    // a refactor that drops the redundant line-475 gate doesn't break
+    // the test, but a refactor that drops line 362-388 (the load-bearing
+    // one) does.
     reasonSubstr: "read-only allowlist 밖",
   },
   {
     label: 'git push -f (short flag)',
     command: 'git push -f origin main',
-    matchedVia: 'git-allowlist',
+    matchedVia: 'git-subcommand-allowlist',
     reasonSubstr: "read-only allowlist 밖",
   },
   {
     label: 'git reset --hard origin (hard-reset-remote)',
     command: 'git reset --hard origin/main',
-    matchedVia: 'git-allowlist',
+    matchedVia: 'git-subcommand-allowlist',
     reasonSubstr: "read-only allowlist 밖",
   },
   {
@@ -279,7 +304,10 @@ describe('phase-guard.sh — research/plan/test phase denylist (M5.5 #7)', () =>
   beforeEach(() => { tmpRoot = makeTmpRoot(); });
   afterEach(() => { fs.rmSync(tmpRoot, { recursive: true, force: true }); });
 
-  for (const phase of ['research', 'plan', 'test']) {
+  // brainstorm is in phase-guard-core.js:568 non-implement list alongside
+  // research/plan/test (all four route through detectBashFileWrite). Cover
+  // all four so dropping brainstorm from the guard contract fails this test.
+  for (const phase of ['research', 'plan', 'test', 'brainstorm']) {
     for (const row of NON_IMPLEMENT_DENYLIST) {
       it(`${phase}: BLOCKS ${row.label} (pattern hint: ${row.patternHint})`, () => {
         writeState(tmpRoot, {
@@ -297,35 +325,42 @@ describe('phase-guard.sh — research/plan/test phase denylist (M5.5 #7)', () =>
         const parsed = parseBlockReason(r.stdout);
         assert.ok(parsed, `block JSON missing for "${row.command}" in ${phase}: ${r.stdout}`);
         assert.equal(parsed.decision, 'block');
-        // The exact message format is "감지된 패턴: <desc>\n명령: <cmd>" — assert the
-        // command echo so a future refactor swapping pattern wording still
-        // documents *which* command was rejected.
+        // Block format from phase-guard-core.js:574-575:
+        //   감지된 패턴: <desc>\n명령: <toolInput.command>
+        // Both fragments must be present — the command echo proves the gate
+        // executed against the right input, and the patternHint proves the
+        // matched mechanism is the one we expect. (Pre-fix this was `||`,
+        // which collapsed to "command echo always present" because the
+        // command is unconditionally rendered — making patternHint a
+        // dead check. Split for real coverage.)
         assert.ok(
-          parsed.reason.includes(row.command) ||
-            parsed.reason.includes(row.patternHint),
-          `block reason for "${row.command}" in ${phase} missing command or pattern hint.\n` +
+          parsed.reason.includes(row.command),
+          `block reason for "${row.command}" in ${phase} missing the command echo.\n` +
             `Actual reason: ${parsed.reason}`,
+        );
+        assert.ok(
+          parsed.reason.includes(row.patternHint),
+          `block reason for "${row.command}" in ${phase} missing pattern hint "${row.patternHint}" — ` +
+            `gate may have matched via a different (wrong) pattern.\nActual reason: ${parsed.reason}`,
         );
       });
     }
   }
 
-  // Negative control: same dangerous-looking command in implement phase with
-  // GREEN TDD state is NOT blocked by this gate (it's the implementation
-  // phase's job to allow refactors). This pins down the contract that the
-  // research/plan/test gate is the right place for the denylist, not a global
-  // catch-all.
-  it('implement phase: dangerous git is NOT auto-blocked by file-write gate (TDD owns this)', () => {
+  // Sanity control (downgraded from "phase-scoped contract" claim): a
+  // read-only `git status` in implement+relaxed must not be false-positive
+  // blocked by the file-write gate. NOTE: this does NOT prove the denylist
+  // is phase-scoped — `git status` is in phase-guard-core.SAFE_COMMAND_PATTERNS
+  // and would pass in any phase. The destructive-vs-phase contract is
+  // covered by the BLOCK assertions above; this row is just a regression
+  // guard against an over-eager file-write classifier flagging `git status`.
+  it('implement+relaxed: read-only `git status` is not false-positive blocked', () => {
     writeState(tmpRoot, {
       current_phase: 'implement',
-      tdd_mode: 'relaxed',  // relaxed mode bypasses TDD gate for Bash
+      tdd_mode: 'relaxed',
       tdd_state: 'GREEN',
       active_slice: 'SLICE-001',
     });
-    // In implement+relaxed, Bash is allowed through the fast-path or with
-    // file-write detection only against TDD rules. `git status` is read-only
-    // and must pass — establishes that the denylist behavior we tested above
-    // is phase-scoped, not unconditional.
     const r = runGuard(tmpRoot, 'Bash', { command: 'git status' });
     assert.equal(r.status, 0, `read-only git in implement+relaxed must pass, got ${r.status}`);
   });
