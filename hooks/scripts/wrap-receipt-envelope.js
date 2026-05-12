@@ -153,9 +153,19 @@ function main() {
   }
 
   const artifactKind = args['artifact-kind'];
-  if (!env.ALLOWED_ARTIFACT_KINDS.has(artifactKind)) {
+  // R2 review fix (Codex adversarial HIGH): restrict this legacy wrapper to its
+  // original 2 artifact kinds. envelope.js#ALLOWED_ARTIFACT_KINDS was extended
+  // in v6.6.0 to also include 'handoff' and 'compaction-state', which would
+  // (without this guard) let wrap-receipt-envelope.js mint envelope-valid but
+  // domain-invalid handoff/compaction-state artifacts (it lacks payload-
+  // required-field validation for those kinds). Force callers to use the
+  // dedicated emit-handoff.js / emit-compaction-state.js helpers, which
+  // enforce payload validation per dashboard contract.
+  const LEGACY_RECEIPT_KINDS = new Set(['session-receipt', 'slice-receipt']);
+  if (!LEGACY_RECEIPT_KINDS.has(artifactKind)) {
     usage(
-      `--artifact-kind must be one of ${[...env.ALLOWED_ARTIFACT_KINDS].join(', ')}, got "${artifactKind}"`,
+      `--artifact-kind must be one of ${[...LEGACY_RECEIPT_KINDS].join(', ')}, got "${artifactKind}" ` +
+        '(use emit-handoff.js / emit-compaction-state.js for handoff/compaction-state)',
     );
   }
 

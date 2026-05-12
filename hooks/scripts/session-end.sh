@@ -77,7 +77,12 @@ fi
   [ -f "$EMIT_SCRIPT" ] || exit 0  # plugin version without emit helper — skip silently
   command -v node >/dev/null 2>&1 || exit 0
 
-  _CS_WD_REL="$(read_frontmatter_field "$STATE_FILE" "work_dir" 2>/dev/null || echo "")"
+  # R2 review fix (Codex adversarial MEDIUM): use phase5_work_dir_snapshot
+  # first (immutable boundary recorded by Phase 5 entry) before falling back
+  # to mutable work_dir. Mirrors the existing pattern at lines 44-45 of this
+  # same file (Phase 5 interrupted marker logic uses snapshot-first too).
+  _CS_WD_REL="$(read_frontmatter_field "$STATE_FILE" "phase5_work_dir_snapshot" 2>/dev/null || echo "")"
+  [ -z "$_CS_WD_REL" ] && _CS_WD_REL="$(read_frontmatter_field "$STATE_FILE" "work_dir" 2>/dev/null || echo "")"
   [ -z "$_CS_WD_REL" ] && exit 0
   _CS_WORK_DIR="$PROJECT_ROOT/$_CS_WD_REL"
   _CS_OUTDIR="$PROJECT_ROOT/.deep-work/compaction-states"

@@ -38,6 +38,8 @@ const {
   validateHandoffPayload,
   HANDOFF_REQUIRED,
   VALID_HANDOFF_KINDS,
+  KIND_DIRECTIONS,
+  tryReadEnvelopeRunId,
 } = require('../hooks/scripts/emit-handoff.js');
 const {
   validateCompactionPayload,
@@ -215,10 +217,18 @@ describe('emit-handoff — HANDOFF_REQUIRED matches dashboard contract', () => {
     assert.ok(errors.some((e) => /handoff_kind must be one of/.test(e)), errors.join(';'));
   });
 
-  it('accepts every schema-enum handoff_kind value', () => {
+  it('accepts every schema-enum handoff_kind value with matching direction', () => {
+    // R2 review fix: direction enforcement now requires from/to producers to
+    // match the kind for direction-bound kinds (phase-5-to-evolve, evolve-to-
+    // deep-work). Other kinds (slice-to-slice, session-resume, custom) are
+    // direction-free — direction can be anything.
     for (const kind of VALID_HANDOFF_KINDS) {
       const payload = makeHandoffPayload();
       payload.handoff_kind = kind;
+      if (KIND_DIRECTIONS[kind]) {
+        payload.from.producer = KIND_DIRECTIONS[kind].from;
+        payload.to.producer = KIND_DIRECTIONS[kind].to;
+      }
       const errors = validateHandoffPayload(payload);
       assert.deepEqual(errors, [], `${kind} should be valid: ${errors.join(';')}`);
     }
@@ -235,6 +245,41 @@ describe('emit-handoff — HANDOFF_REQUIRED matches dashboard contract', () => {
         'slice-to-slice',
       ].sort(),
     );
+  });
+
+  // R2 review fix (Codex adversarial MEDIUM): direction enforcement.
+  it('rejects phase-5-to-evolve with wrong from.producer (R2)', () => {
+    const payload = makeHandoffPayload();
+    payload.from.producer = 'deep-evolve';  // wrong — should be deep-work
+    const errors = validateHandoffPayload(payload);
+    assert.ok(
+      errors.some((e) => /from\.producer.*must be "deep-work"/.test(e)),
+      errors.join(';'),
+    );
+  });
+
+  it('rejects phase-5-to-evolve with wrong to.producer (R2)', () => {
+    const payload = makeHandoffPayload();
+    payload.to.producer = 'deep-work';  // wrong — should be deep-evolve
+    const errors = validateHandoffPayload(payload);
+    assert.ok(
+      errors.some((e) => /to\.producer.*must be "deep-evolve"/.test(e)),
+      errors.join(';'),
+    );
+  });
+
+  it('accepts canonical phase-5-to-evolve direction', () => {
+    const payload = makeHandoffPayload();
+    assert.deepEqual(validateHandoffPayload(payload), []);
+  });
+
+  it('does not enforce direction for slice-to-slice / custom', () => {
+    const payload = makeHandoffPayload();
+    payload.handoff_kind = 'slice-to-slice';
+    // Direction doesn't matter for slice-to-slice
+    payload.from.producer = 'deep-evolve';
+    payload.to.producer = 'deep-evolve';
+    assert.deepEqual(validateHandoffPayload(payload), []);
   });
 });
 
@@ -303,6 +348,45 @@ describe('emit-handoff.js — CLI roundtrip satisfies dashboard unwrapStrict', (
       assert.match(stderr, /handoff_kind/);
     }
     assert.equal(fs.existsSync(outPath), false, 'should not have written output on failure');
+  });
+
+  // R2 review fix (Codex adversarial MEDIUM): tryReadEnvelopeRunId now rejects
+  // foreign envelope (wrong producer / artifact_kind / schema.name).
+  it('tryReadEnvelopeRunId rejects foreign envelope when expectedIdentities given (R2)', () => {
+    const dir = tmpDir();
+    // Build a deep-evolve evolve-receipt envelope (foreign for deep-work emit).
+    const foreign = {
+      $schema: 'https://example/envelope.schema.json',
+      schema_version: '1.0',
+      envelope: {
+        producer: 'deep-evolve',
+        producer_version: '3.3.0',
+        artifact_kind: 'evolve-receipt',
+        run_id: '01JTKGZQ7NABCDEFGHJKMNPQRS',
+        generated_at: new Date().toISOString(),
+        schema: { name: 'evolve-receipt', version: '1.0' },
+        git: { head: 'abc1234', branch: 'main', dirty: false },
+        provenance: { source_artifacts: [], tool_versions: { node: 'v20' } },
+      },
+      payload: { schema_version: '1.0', plugin: 'deep-evolve' },
+    };
+    const foreignPath = path.join(dir, 'foreign.json');
+    writeJson(foreignPath, foreign);
+
+    // Expected identity = deep-work session-receipt; foreign envelope rejected.
+    const result = tryReadEnvelopeRunId(foreignPath, [
+      { producer: 'deep-work', kind: 'session-receipt' },
+    ]);
+    assert.equal(result, null, 'foreign envelope must not yield a run_id');
+  });
+
+  it('tryReadEnvelopeRunId accepts matching identity (R2)', () => {
+    const dir = tmpDir();
+    const sr = makeSessionReceiptEnvelope(dir);
+    const result = tryReadEnvelopeRunId(sr.path, [
+      { producer: 'deep-work', kind: 'session-receipt' },
+    ]);
+    assert.equal(result, sr.runId);
   });
 
   // R1 review W1: stderr warning when --source-session-receipt resolves to a

@@ -149,14 +149,25 @@ function readJson(p) {
   }
 }
 
-function tryReadEnvelopeRunId(filePath) {
+// R2 review fix (Codex adversarial MEDIUM): identity-triplet check before
+// using source's run_id as parent_run_id. Same pattern as emit-handoff.js.
+function tryReadEnvelopeRunId(filePath, expectedIdentities) {
   if (!filePath || !fs.existsSync(filePath)) return null;
   try {
     const obj = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (env.isValidEnvelope(obj) && typeof obj.envelope.run_id === 'string') {
-      return obj.envelope.run_id;
+    if (!env.isValidEnvelope(obj)) return null;
+    if (typeof obj.envelope.run_id !== 'string') return null;
+    if (Array.isArray(expectedIdentities) && expectedIdentities.length > 0) {
+      const matches = expectedIdentities.some(
+        (id) =>
+          obj.envelope.producer === id.producer &&
+          obj.envelope.artifact_kind === id.kind &&
+          obj.envelope.schema &&
+          obj.envelope.schema.name === id.kind,
+      );
+      if (!matches) return null;
     }
-    return null;
+    return obj.envelope.run_id;
   } catch (_err) {
     return null;
   }
@@ -269,6 +280,20 @@ function main() {
     payload = buildPayloadFromFlags(args);
   }
 
+  // R2 review fix (Codex review P3): propagate --session-id to payload.session_id
+  // for --payload-file mode (buildPayloadFromFlags already handles this for the
+  // CLI-flag path at line 198). Dashboard drill-down counts unique sessions
+  // from payload.session_id.
+  if (
+    args['session-id'] &&
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    !payload.session_id
+  ) {
+    payload.session_id = args['session-id'];
+  }
+
   const errors = validateCompactionPayload(payload);
   if (errors.length > 0) {
     process.stderr.write('compaction-state payload validation failed:\n');
@@ -280,7 +305,10 @@ function main() {
   const sourceArtifacts = [];
   if (args['source-session-receipt']) {
     const srPath = path.resolve(process.cwd(), args['source-session-receipt']);
-    const srRunId = tryReadEnvelopeRunId(srPath);
+    // R2 review fix: require deep-work session-receipt envelope identity.
+    const srRunId = tryReadEnvelopeRunId(srPath, [
+      { producer: 'deep-work', kind: 'session-receipt' },
+    ]);
     sourceArtifacts.push({
       path: args['source-session-receipt'],
       ...(srRunId ? { run_id: srRunId } : {}),
