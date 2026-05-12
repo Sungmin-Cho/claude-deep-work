@@ -196,6 +196,91 @@ const SAFE_COMMAND_PATTERNS = [
 ];
 
 /**
+ * Dangerous-Bash-command denylist for non-implement phases (M5.5 #7).
+ *
+ * Catastrophic-blast-radius families that pass through the file-write gate
+ * because they are not literal file writes. Mirrors the example pack
+ * (hooks-strict-mode/scripts/denylist-guard.sh) family list + override env
+ * convention so users learn one mental model.
+ *
+ * `pattern` is anchored conservatively — we'd rather miss a creative
+ * variant than false-positive on legitimate research commands. The
+ * adversary model is "AI agent writing a destructive command by accident",
+ * not "human author actively trying to evade." For the latter, install
+ * the strict-mode example pack at the hook level (deeper defense).
+ *
+ * Phase 5 mode in phase-guard.sh ALSO catches these families via its
+ * read-mostly allowlist + destructive-target + compound-operator gates;
+ * this constant adds equivalent coverage to non-implement phases (which
+ * previously only checked file-writes).
+ */
+const DANGEROUS_NON_IMPLEMENT_PATTERNS = [
+  {
+    // Any `rm` with -r / -R recursive flag (catches `rm -rf`, `rm -fr`,
+    // `rm -Rf`, `rm -r --no-preserve-root`, etc.). Single-file `rm -f`
+    // is intentionally NOT matched — it's not catastrophic-blast-radius.
+    pattern: /\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*|-{2}recursive\b)/,
+    family: 'rm-rf',
+    override: 'CLAUDE_ALLOW_RM_RF',
+    why: 'recursive delete is catastrophic and unrecoverable',
+    safer: "prefer targeted file removal: 'rm path/to/file'",
+  },
+  {
+    pattern: /\bnpm\s+publish\b/,
+    family: 'npm-publish',
+    override: 'CLAUDE_ALLOW_NPM_PUBLISH',
+    why: 'publishes a package version irreversibly to the npm registry',
+    safer: 'bump version + git tag + manual publish from a CI release pipeline',
+  },
+  {
+    // kubectl delete with --all OR kubectl drain (cluster-level blast radius).
+    // Single-resource delete (e.g., `kubectl delete pod foo`) is allowed —
+    // user can scope by enabling the example pack for full strict mode.
+    pattern: /\bkubectl\s+(?:delete\s+[^|;&]*\B--all\b|drain\b)/,
+    family: 'kubectl-destructive',
+    override: 'CLAUDE_ALLOW_KUBECTL_DESTRUCTIVE',
+    why: 'kubectl delete --all / drain affects shared infrastructure',
+    safer: 'kubectl get to inspect first; coordinate with on-call before destructive ops',
+  },
+  {
+    // SQL DROP TABLE / TRUNCATE. Case-insensitive because SQL is, but most
+    // real foot-guns use the canonical uppercase keywords; `i` flag covers
+    // both. Anchored to keyword boundaries to avoid matching e.g.
+    // `mention DROP TABLE in docstring`.
+    pattern: /\b(?:DROP\s+TABLE|TRUNCATE\s+TABLE|TRUNCATE\s+\w)\b/i,
+    family: 'sql-destructive',
+    override: 'CLAUDE_ALLOW_SQL_DESTRUCTIVE',
+    why: 'DROP TABLE / TRUNCATE on production data is unrecoverable',
+    safer: 'run against a staging database, or wrap in a transaction with rollback rehearsal',
+  },
+  {
+    // curl|sh / curl|bash — arbitrary code execution from the network.
+    // Matches the pipe-to-shell pattern with curl or wget upstream.
+    pattern: /\b(?:curl|wget)[^|;&]*\|\s*(?:sh|bash)\b/,
+    family: 'curl-pipe-shell',
+    override: 'CLAUDE_ALLOW_CURL_PIPE_SHELL',
+    why: 'executes arbitrary code fetched over the network; supply-chain risk',
+    safer: 'download the script, inspect, then run locally',
+  },
+];
+
+/**
+ * Returns the first matching dangerous-command descriptor for the given
+ * Bash command, or null if none match. Used by non-implement preToolUse
+ * enforcement to short-circuit before the generic file-write gate.
+ *
+ * @param {string} command - The bash command string
+ * @returns {{pattern: RegExp, family: string, override: string, why: string, safer: string} | null}
+ */
+function matchDangerousNonImplement(command) {
+  if (!command || typeof command !== 'string') return null;
+  for (const entry of DANGEROUS_NON_IMPLEMENT_PATTERNS) {
+    if (entry.pattern.test(command)) return entry;
+  }
+  return null;
+}
+
+/**
  * Extracts the target file path from a bash command that writes files.
  * Used to determine whether the target is a test file or production file
  * for TDD enforcement on bash commands.
@@ -564,15 +649,45 @@ function processHook(input) {
     };
   }
 
-  // ─── Non-implement phases: block all writes ────────────
+  // ─── Non-implement phases: block writes + dangerous commands ────────────
+  // M5.5 #7 closure: non-implement Bash goes through TWO gates in sequence:
+  //   1. dangerous-command denylist (catastrophic-blast-radius families)
+  //   2. file-write detection (BASH_FILE_WRITE_PATTERNS)
+  // Denylist families mirror the example pack (hooks-strict-mode/scripts/
+  // denylist-guard.sh) so users learn one override convention. Each family
+  // has a CLAUDE_ALLOW_<FAMILY>=1 env override for legitimate exceptions.
   if (['research', 'plan', 'test', 'brainstorm'].includes(phase)) {
     if (toolName === 'Bash') {
-      const { isFileWrite, pattern } = detectBashFileWrite(toolInput.command);
+      const cmd = toolInput.command || '';
+
+      // Dangerous-command denylist — applied BEFORE file-write detection
+      // so a single error message points at the catastrophic family rather
+      // than the incidental "file write" classification.
+      const dangerous = matchDangerousNonImplement(cmd);
+      if (dangerous) {
+        // Override env var read at hook-execution time (Node child of bash
+        // wrapper inherits the user's shell env).
+        if (process.env[dangerous.override] !== '1') {
+          return {
+            decision: 'block',
+            reason:
+              `⛔ Deep Work Guard: ${phase} 단계에서 위험 명령 차단 ` +
+              `(${dangerous.family}: ${dangerous.why}).\n` +
+              `명령: ${cmd}\n` +
+              `Override (only after careful thought): set ${dangerous.override}=1 ` +
+              `in the shell that launched Claude Code, then retry.\n` +
+              `Safer alternative: ${dangerous.safer}`,
+          };
+        }
+        // Override active → fall through to file-write gate (still applies).
+      }
+
+      const { isFileWrite, pattern } = detectBashFileWrite(cmd);
       if (isFileWrite) {
         return {
           decision: 'block',
           reason: `⛔ Deep Work Guard: ${phase} 단계에서 파일 쓰기가 차단되었습니다.\n` +
-            `감지된 패턴: ${pattern}\n명령: ${toolInput.command}`,
+            `감지된 패턴: ${pattern}\n명령: ${cmd}`,
         };
       }
       return { decision: 'allow' };
@@ -736,6 +851,8 @@ module.exports = {
   VALID_TRANSITIONS,
   isValidTransition,
   checkTddEnforcement,
+  DANGEROUS_NON_IMPLEMENT_PATTERNS,
+  matchDangerousNonImplement,
   detectBashFileWrite,
   splitCommands,
   extractBashTargetFile,
