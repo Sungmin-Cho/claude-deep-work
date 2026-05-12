@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    name: tests (${{ matrix.os }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Show bash version (M5.5 #4 — bash 3.2 visibility)
+        run: bash --version
+
+      - name: Run envelope + handoff round-trip tests
+        run: npm test
+
+      - name: Run bash regression scripts (phase-guard / migrate / notify / recommender)
+        run: |
+          bash hooks/scripts/test/test-no-notification-trigger.sh
+          bash hooks/scripts/test/test-recommender-integration.sh
+          bash hooks/scripts/test/test-v6.4.2-regression.sh
