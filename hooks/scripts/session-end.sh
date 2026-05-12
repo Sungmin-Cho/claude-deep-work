@@ -337,6 +337,56 @@ append_session_history() {
 # Run in subshell — errors must never block session close
 (append_session_history) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
 
+# ─── v6.6.0 (M5.7) — compaction-state emit at session-stop ────────────
+# Emit an envelope-wrapped `compaction-state.json` so the dashboard
+# (`suite.compaction.frequency`, `suite.compaction.preserved_artifact_ratio`)
+# can attribute this session's stop to a known compaction boundary. The Stop
+# hook contract is "must not block session close" — every step here is
+# best-effort, redirected to the guard-errors log, and ends in `|| true`.
+#
+# Strategy: receipt-only on session-stop (the session-receipt is comprehensive;
+# in-flight working memory is not worth preserving since the next session
+# starts fresh).
+(
+  EMIT_SCRIPT="$SCRIPT_DIR/emit-compaction-state.js"
+  [ -f "$EMIT_SCRIPT" ] || exit 0  # plugin version without emit helper — skip silently
+  command -v node >/dev/null 2>&1 || exit 0
+
+  _CS_WD_REL="$(read_frontmatter_field "$STATE_FILE" "work_dir" 2>/dev/null || echo "")"
+  [ -z "$_CS_WD_REL" ] && exit 0
+  _CS_WORK_DIR="$PROJECT_ROOT/$_CS_WD_REL"
+  _CS_OUTDIR="$PROJECT_ROOT/.deep-work/compaction-states"
+  mkdir -p "$_CS_OUTDIR" 2>/dev/null || exit 0
+
+  # Resolve session id (matches Section 1 fallback chain in deep-finish.md).
+  _CS_SID="${DEEP_WORK_SESSION_ID:-}"
+  if [ -z "$_CS_SID" ] && [ -f "$PROJECT_ROOT/.claude/deep-work-current-session" ]; then
+    _CS_SID="$(tr -d '\n\r' < "$PROJECT_ROOT/.claude/deep-work-current-session" 2>/dev/null || echo "")"
+  fi
+  _CS_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  _CS_OUT="$_CS_OUTDIR/${_CS_TS}-${_CS_SID:-session-stop}.json"
+
+  # Preserved set: session-receipt if it exists (finalized session); otherwise
+  # the state file (so the next session can resume from disk).
+  _CS_PRESERVED=""
+  _CS_RECEIPT="$_CS_WORK_DIR/session-receipt.json"
+  if [ -f "$_CS_RECEIPT" ]; then
+    _CS_PRESERVED="$_CS_WORK_DIR/session-receipt.json"
+    _CS_PARENT_FLAG=(--source-session-receipt "$_CS_RECEIPT")
+  else
+    _CS_PRESERVED="$STATE_FILE"
+    _CS_PARENT_FLAG=()
+  fi
+
+  node "$EMIT_SCRIPT" \
+    --trigger session-stop \
+    --output "$_CS_OUT" \
+    --preserved "$_CS_PRESERVED" \
+    --strategy receipt-only \
+    ${_CS_SID:+--session-id "$_CS_SID"} \
+    "${_CS_PARENT_FLAG[@]}" >/dev/null 2>&1 || true
+) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+
 # v6.2.4 post-review: cleanup stale PostToolUse stdin-cache files.
 # Remove our own PPID cache (no longer needed after session close) and any
 # orphaned .hook-tool-input.* files older than 60 minutes. Best-effort.

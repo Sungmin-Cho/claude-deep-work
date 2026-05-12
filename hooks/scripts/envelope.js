@@ -18,8 +18,11 @@
  *   isEnvelope(obj)                 boolean — strict M3 envelope shape detector
  *
  * Identity contract: producer === 'deep-work', artifact_kind ∈ {session-receipt,
- * slice-receipt}, schema.name === artifact_kind. unwrapEnvelope() enforces all
- * three (handoff §4 round-4 "envelope identity guards").
+ * slice-receipt, handoff, compaction-state}, schema.name === artifact_kind.
+ * unwrapEnvelope() enforces all three (handoff §4 round-4 "envelope identity
+ * guards"). 'handoff' and 'compaction-state' added in v6.6.0 for M5.7
+ * cross-plugin long-run handoff + dashboard compaction telemetry; cf.
+ * claude-deep-suite/schemas/handoff.schema.json + compaction-state.schema.json.
  */
 
 const fs = require('node:fs');
@@ -28,7 +31,9 @@ const { execFileSync } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 
 const PLUGIN_NAME = 'deep-work';
-const ALLOWED_ARTIFACT_KINDS = Object.freeze(new Set(['session-receipt', 'slice-receipt']));
+const ALLOWED_ARTIFACT_KINDS = Object.freeze(
+  new Set(['session-receipt', 'slice-receipt', 'handoff', 'compaction-state']),
+);
 
 // Crockford's Base32 alphabet (per ULID spec) — excludes I/L/O/U.
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';

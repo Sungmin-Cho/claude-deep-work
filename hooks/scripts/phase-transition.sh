@@ -109,4 +109,44 @@ if [[ "$HAS_CONDITIONS" == "true" ]]; then
   printf '%s' "$OUTPUT"
 fi
 
+# ─── v6.6.0 (M5.7) — compaction-state emit on phase transition ────────
+# Each Phase boundary is a compaction event: the Phase's primary artifact
+# (research.md, plan.md, ...) becomes the next Phase's only input; intermediate
+# working memory is discarded. Strategy: key-artifacts-only. PostToolUse hook
+# contract is "informational, never block" — wrap in subshell + `|| true`.
+(
+  EMIT_SCRIPT="$SCRIPT_DIR/emit-compaction-state.js"
+  [ -f "$EMIT_SCRIPT" ] || exit 0
+  command -v node >/dev/null 2>&1 || exit 0
+
+  _PT_WD_REL="$(read_frontmatter_field "$FILE_PATH" "work_dir" 2>/dev/null || echo "")"
+  [ -z "$_PT_WD_REL" ] && exit 0
+  _PT_WORK_DIR="$PROJECT_ROOT/$_PT_WD_REL"
+  _PT_OUTDIR="$PROJECT_ROOT/.deep-work/compaction-states"
+  mkdir -p "$_PT_OUTDIR" 2>/dev/null || exit 0
+
+  _PT_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  _PT_OUT="$_PT_OUTDIR/${_PT_TS}-${SESSION_ID}-phase-${NEW_PHASE}.json"
+
+  # Preserved artifacts depend on which Phase we just entered. Each Phase
+  # produces a primary artifact the next Phase consumes; keep the chain
+  # observable in compaction telemetry.
+  _PT_PRESERVED=""
+  case "$NEW_PHASE" in
+    research)  _PT_PRESERVED="$_PT_WORK_DIR/research.md" ;;
+    plan)      _PT_PRESERVED="$_PT_WORK_DIR/research.md,$_PT_WORK_DIR/plan.md" ;;
+    implement) _PT_PRESERVED="$_PT_WORK_DIR/plan.md" ;;
+    test)      _PT_PRESERVED="$_PT_WORK_DIR/plan.md,$_PT_WORK_DIR/receipts" ;;
+    idle)      _PT_PRESERVED="$_PT_WORK_DIR/session-receipt.json" ;;
+    *)         _PT_PRESERVED="$_PT_WORK_DIR" ;;
+  esac
+
+  node "$EMIT_SCRIPT" \
+    --trigger phase-transition \
+    --output "$_PT_OUT" \
+    --preserved "$_PT_PRESERVED" \
+    --strategy key-artifacts-only \
+    --session-id "$SESSION_ID" >/dev/null 2>&1 || true
+) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+
 exit 0

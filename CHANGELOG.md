@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-05-12
+
+### Added — M5.7.A plugin-side adoption of cross-plugin handoff + dashboard compaction telemetry
+
+- **`hooks/scripts/emit-handoff.js`** — CLI helper that wraps a handoff payload in the M3 envelope (`artifact_kind = "handoff"`, `schema.name = "handoff"`, `schema.version = "1.0"`) and writes it under `.deep-work/handoffs/` (or per-session). Flags: `--payload-file`, `--output`, `--source-session-receipt` (auto-chains `parent_run_id`), `--source-review-report`, `--parent-run-id`, `--session-id`. Payload required fields enforced before write: `schema_version`, `handoff_kind`, `from{producer,completed_at}`, `to{producer,intent}`, `summary`, `next_action_brief` — matches `claude-deep-suite/schemas/handoff.schema.json` + dashboard's `PAYLOAD_REQUIRED_FIELDS["deep-work/handoff"]`.
+- **`hooks/scripts/emit-compaction-state.js`** — CLI helper that wraps a compaction-state payload in the M3 envelope (`artifact_kind = "compaction-state"`, `schema.name = "compaction-state"`). Two input modes: build payload from CLI flags (`--trigger`, `--preserved`, `--discarded`, `--strategy`, `--pre-tokens`, `--post-tokens`) for hook-driven emit, OR `--payload-file` for skill-composed emit. Trigger enum validated against suite schema (`phase-transition`, `slice-green`, `loop-epoch-end`, `window-threshold`, `manual`, `session-stop`). Strategy enum validated. Powers dashboard metrics `suite.compaction.frequency` + `suite.compaction.preserved_artifact_ratio`.
+- **`commands/deep-finish.md` §7-Z-A** — new section after envelope wrap that emits a cross-plugin handoff when `--handoff-to=<plugin>` is supplied (or user opts-in interactively). Chains `parent_run_id` to the session-receipt envelope automatically. Writes to `.deep-work/handoffs/<UTC-ts>-<session_id>.json` matching dashboard's flat-dir `SOURCE_SPECS`.
+- **`hooks/scripts/session-end.sh`** Stop hook — best-effort `compaction-state.json` emit on session close (`trigger: session-stop`, `strategy: receipt-only` when session-receipt exists, otherwise preserves the state file). Wrapped in subshell + `|| true` to preserve the Stop hook's "must not block session close" contract.
+- **`hooks/scripts/phase-transition.sh`** PostToolUse hook — emits `compaction-state.json` on each Phase boundary (`trigger: phase-transition`, `strategy: key-artifacts-only`). Preserved set chosen per Phase: research→research.md, plan→research+plan, implement→plan, test→plan+receipts, idle→session-receipt.
+- **`tests/handoff-roundtrip.test.js`** — 16 assertions covering M5.5 #8 (deep-work half): payload-required-field contract identical to dashboard, CLI roundtrip producing envelopes that satisfy a mirrored `unwrapStrict`, cross-plugin chain (`parent_run_id === session-receipt.envelope.run_id`), trigger enum coverage (all 6 values), failure paths (missing required field → exit 1, unknown trigger → exit 1).
+
+### Changed
+
+- **`hooks/scripts/envelope.js`** — `ALLOWED_ARTIFACT_KINDS` extended from `{session-receipt, slice-receipt}` to include `handoff` and `compaction-state`. The set is consumed by both `wrapEnvelope` (output guard) and `unwrapEnvelope` (input guard); existing identity-triplet semantics preserved for session-receipt / slice-receipt callers.
+- **`scripts/validate-envelope-emit.js`** — `ALLOWED_KINDS` extended symmetrically so the CI validator accepts the two new envelope kinds. Payload `schema_version === "1.0"` enforcement carries through unchanged.
+
+### Notes
+
+- This release is **producer-only** for the new artifact kinds. deep-work does not consume `handoff.json` or `compaction-state.json` from other plugins; the dashboard does. Cross-plugin contract is enforced by `claude-deep-dashboard/lib/suite-collector.js unwrapStrict`.
+- See `claude-deep-suite/docs/superpowers/plans/2026-05-11-m5.7-plugin-adoption-handoff.md` §M5.7.A for the M5 acceptance criteria this milestone closes.
+
 ## [6.5.0] - 2026-05-07
 
 ### Added
