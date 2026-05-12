@@ -66,6 +66,17 @@ const HANDOFF_REQUIRED = [
   'next_action_brief',
 ];
 
+// R1 review C4: handoff_kind enum from claude-deep-suite/schemas/handoff.schema.json.
+// Previously not enforced — a typo (`phase-5-evolve` missing `to`) would write
+// successfully and pollute dashboard telemetry.
+const VALID_HANDOFF_KINDS = new Set([
+  'phase-5-to-evolve',
+  'evolve-to-deep-work',
+  'slice-to-slice',
+  'session-resume',
+  'custom',
+]);
+
 function usage(extra) {
   if (extra) process.stderr.write(`error: ${extra}\n`);
   process.stderr.write(
@@ -144,6 +155,13 @@ function validateHandoffPayload(payload) {
       `payload.schema_version must be "1.0", got ${JSON.stringify(payload.schema_version)}`,
     );
   }
+  // R1 review C4: enforce handoff_kind enum (previously omitted — typos passed).
+  if ('handoff_kind' in payload && !VALID_HANDOFF_KINDS.has(payload.handoff_kind)) {
+    errors.push(
+      `payload.handoff_kind must be one of ${[...VALID_HANDOFF_KINDS].join(', ')}, ` +
+        `got ${JSON.stringify(payload.handoff_kind)}`,
+    );
+  }
   if (
     'from' in payload &&
     (payload.from === null ||
@@ -205,6 +223,18 @@ function main() {
       ...(srRunId ? { run_id: srRunId } : {}),
     });
     if (!parentRunId && srRunId) parentRunId = srRunId;
+    // R1 review W1 (Opus W-1): stderr warn when --source-session-receipt is
+    // provided but yields no run_id (file missing, corrupt, or not an envelope).
+    // Producer-side: previously silently emitted handoff with no parent_run_id,
+    // which dashboard counts as an orphan (legitimate "no upstream" looks
+    // identical to "user passed wrong file"). The warning lets the caller
+    // diagnose chain breakage at emit time.
+    if (!parentRunId && !srRunId && !args['parent-run-id']) {
+      process.stderr.write(
+        `warning: --source-session-receipt ${args['source-session-receipt']} is not a ` +
+          `valid envelope (chain broken; suite.handoff.roundtrip_success_rate will skip)\n`,
+      );
+    }
   }
 
   if (args['source-review-report']) {
@@ -245,6 +275,7 @@ if (require.main === module) {
 
 module.exports = {
   HANDOFF_REQUIRED,
+  VALID_HANDOFF_KINDS,
   validateHandoffPayload,
   tryReadEnvelopeRunId,
 };

@@ -234,6 +234,16 @@ function validateCompactionPayload(payload) {
   ) {
     errors.push('payload.preserved_artifact_paths must be array');
   }
+  // R1 review C4: enforce compaction_strategy enum in --payload-file mode as
+  // well. Previously buildPayloadFromFlags validated strategy at CLI level but
+  // --payload-file path bypassed it; a SKILL-composed payload with typo could
+  // pass through.
+  if ('compaction_strategy' in payload && !VALID_STRATEGIES.has(payload.compaction_strategy)) {
+    errors.push(
+      `payload.compaction_strategy must be one of ${[...VALID_STRATEGIES].join(', ')}, ` +
+        `got ${JSON.stringify(payload.compaction_strategy)}`,
+    );
+  }
   return errors;
 }
 
@@ -276,6 +286,14 @@ function main() {
       ...(srRunId ? { run_id: srRunId } : {}),
     });
     if (!parentRunId && srRunId) parentRunId = srRunId;
+    // R1 review W1 (Opus W-1): stderr warn when --source-session-receipt is
+    // provided but yields no run_id (file missing, corrupt, or non-envelope).
+    if (!parentRunId && !srRunId && !args['parent-run-id']) {
+      process.stderr.write(
+        `warning: --source-session-receipt ${args['source-session-receipt']} is not a ` +
+          `valid envelope (chain broken; suite.compaction.frequency lineage skipped)\n`,
+      );
+    }
   }
 
   let wrapped;

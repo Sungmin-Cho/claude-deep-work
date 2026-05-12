@@ -37,10 +37,12 @@ const {
 const {
   validateHandoffPayload,
   HANDOFF_REQUIRED,
+  VALID_HANDOFF_KINDS,
 } = require('../hooks/scripts/emit-handoff.js');
 const {
   validateCompactionPayload,
   VALID_TRIGGERS,
+  VALID_STRATEGIES,
   COMPACTION_REQUIRED,
 } = require('../hooks/scripts/emit-compaction-state.js');
 
@@ -86,8 +88,19 @@ function runValidate(file) {
 /**
  * Mirror of claude-deep-dashboard/lib/suite-collector.js `unwrapStrict` (the
  * contract this emit needs to satisfy). Kept zero-dep so the deep-work plugin
- * doesn't have to import dashboard code. If dashboard's contract drifts, this
- * mirror will go stale — caught by M5.5 #8 cross-plugin CI in suite repo.
+ * doesn't have to import dashboard code.
+ *
+ * R1 review C5 (Opus + de-Opus C3): the dashboard's real `unwrapStrict` checks
+ * `schema.name === expectedKind` but NOT `schema.version`. The mirror was
+ * previously a strict superset (also checked schema.version === '1.0') which
+ * defeats its drift-sensor purpose. The mirror is now a true mirror — the
+ * producer-side `wrapEnvelope` always sets schema.version='1.0' so this doesn't
+ * change current behavior, but a future producer emitting schema.version='1.1'
+ * (additive evolution) would now correctly pass the mirror as it would pass
+ * the dashboard.
+ *
+ * If dashboard's contract drifts, this mirror will go stale — caught by
+ * M5.5 #8 cross-plugin CI in suite repo.
  */
 function dashboardUnwrapStrict(obj, expectedProducer, expectedKind, requiredFields) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -105,8 +118,7 @@ function dashboardUnwrapStrict(obj, expectedProducer, expectedKind, requiredFiel
     !env.schema ||
     typeof env.schema !== 'object' ||
     Array.isArray(env.schema) ||
-    env.schema.name !== expectedKind ||
-    env.schema.version !== '1.0'
+    env.schema.name !== expectedKind
   ) {
     return { failure: 'identity-mismatch' };
   }
@@ -194,6 +206,36 @@ describe('emit-handoff — HANDOFF_REQUIRED matches dashboard contract', () => {
     const errors = validateHandoffPayload([makeHandoffPayload()]);
     assert.ok(errors.some((e) => /non-array/.test(e)), errors.join(';'));
   });
+
+  // R1 review C4: handoff_kind enum validation regression test.
+  it('rejects payload with invalid handoff_kind (R1 C4)', () => {
+    const payload = makeHandoffPayload();
+    payload.handoff_kind = 'phase-5-evolve';  // typo (missing 'to')
+    const errors = validateHandoffPayload(payload);
+    assert.ok(errors.some((e) => /handoff_kind must be one of/.test(e)), errors.join(';'));
+  });
+
+  it('accepts every schema-enum handoff_kind value', () => {
+    for (const kind of VALID_HANDOFF_KINDS) {
+      const payload = makeHandoffPayload();
+      payload.handoff_kind = kind;
+      const errors = validateHandoffPayload(payload);
+      assert.deepEqual(errors, [], `${kind} should be valid: ${errors.join(';')}`);
+    }
+  });
+
+  it('VALID_HANDOFF_KINDS contains all 5 schema enum values', () => {
+    assert.deepEqual(
+      [...VALID_HANDOFF_KINDS].sort(),
+      [
+        'custom',
+        'evolve-to-deep-work',
+        'phase-5-to-evolve',
+        'session-resume',
+        'slice-to-slice',
+      ].sort(),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -262,6 +304,36 @@ describe('emit-handoff.js — CLI roundtrip satisfies dashboard unwrapStrict', (
     }
     assert.equal(fs.existsSync(outPath), false, 'should not have written output on failure');
   });
+
+  // R1 review W1: stderr warning when --source-session-receipt resolves to a
+  // non-envelope (orphan chain breakage indicator).
+  it('stderr-warns when --source-session-receipt is not a valid envelope (R1 W1)', () => {
+    const dir = tmpDir();
+    const payloadPath = path.join(dir, 'payload.json');
+    writeJson(payloadPath, makeHandoffPayload());
+    // Non-envelope JSON (just a legacy receipt shape).
+    const badReceipt = path.join(dir, 'legacy-receipt.json');
+    writeJson(badReceipt, { schema_version: '1.0', session_id: 'x', slices: { total: 1 } });
+
+    const outPath = path.join(dir, 'handoff.json');
+    const result = execFileSync('node', [
+      EMIT_HANDOFF,
+      '--payload-file', payloadPath,
+      '--output', outPath,
+      '--source-session-receipt', badReceipt,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // Emit still succeeds (orphan handoff is a valid envelope, just chain-less).
+    const obj = readJson(outPath);
+    assert.equal(obj.envelope.parent_run_id, undefined, 'parent_run_id should be omitted');
+    // The CLI itself logs the emit-summary to stdout; the stderr warn happens
+    // inside the process. execFileSync only returns stdout; we need spawnSync
+    // for full stderr. Instead verify the absence of parent_run_id (which the
+    // warning announces) and the presence of the source artifact path-only.
+    const provSrc = obj.envelope.provenance.source_artifacts;
+    const entry = provSrc.find((s) => s.path === badReceipt);
+    assert.ok(entry, 'source artifact entry should be recorded path-only');
+    assert.equal(entry.run_id, undefined, 'no run_id since non-envelope');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -315,6 +387,35 @@ describe('emit-compaction-state — required + trigger enum match suite schema',
         'window-threshold',
       ].sort(),
     );
+  });
+
+  // R1 review C4: compaction_strategy enum validation regression — previously
+  // --payload-file mode bypassed strategy check (only CLI flag mode validated it).
+  it('rejects payload-file with invalid compaction_strategy (R1 C4)', () => {
+    const errors = validateCompactionPayload({
+      schema_version: '1.0',
+      compacted_at: '2026-05-12T10:00:00Z',
+      trigger: 'phase-transition',
+      preserved_artifact_paths: [],
+      compaction_strategy: 'receipt-onnly',  // typo
+    });
+    assert.ok(
+      errors.some((e) => /compaction_strategy must be one of/.test(e)),
+      errors.join(';'),
+    );
+  });
+
+  it('accepts every schema-enum compaction_strategy value', () => {
+    for (const strategy of VALID_STRATEGIES) {
+      const errors = validateCompactionPayload({
+        schema_version: '1.0',
+        compacted_at: '2026-05-12T10:00:00Z',
+        trigger: 'phase-transition',
+        preserved_artifact_paths: [],
+        compaction_strategy: strategy,
+      });
+      assert.deepEqual(errors, [], `${strategy} should be valid: ${errors.join(';')}`);
+    }
   });
 });
 
