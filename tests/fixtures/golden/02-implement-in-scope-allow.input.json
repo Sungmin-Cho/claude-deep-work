@@ -1,0 +1,15 @@
+{
+  "description": "implement phase Write inside slice_files — allow",
+  "state": {
+    "current_phase": "implement",
+    "work_dir": ".deep-work/test",
+    "active_slice": "SLICE-001",
+    "tdd_mode": "strict",
+    "tdd_state": "GREEN",
+    "strict_scope": "true",
+    "slice_files": ["foo.py", "bar.py"]
+  },
+  "session_id": "s-golden-implement-ok",
+  "tool_name": "Write",
+  "tool_input": { "file_path": "foo.py" }
+}

@@ -1,0 +1,15 @@
+{
+  "description": "implement phase Write outside slice_files with strict_scope=true — block",
+  "state": {
+    "current_phase": "implement",
+    "work_dir": ".deep-work/test",
+    "active_slice": "SLICE-001",
+    "tdd_mode": "strict",
+    "tdd_state": "GREEN",
+    "strict_scope": "true",
+    "slice_files": ["foo.py"]
+  },
+  "session_id": "s-golden-implement-oos",
+  "tool_name": "Write",
+  "tool_input": { "file_path": "unrelated.py" }
+}

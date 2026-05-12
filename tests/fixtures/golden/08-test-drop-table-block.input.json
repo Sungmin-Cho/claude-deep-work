@@ -1,0 +1,10 @@
+{
+  "description": "test phase Bash with DROP TABLE — denylist sql-destructive block",
+  "state": {
+    "current_phase": "test",
+    "work_dir": ".deep-work/test"
+  },
+  "session_id": "s-golden-droptab",
+  "tool_name": "Bash",
+  "tool_input": { "command": "echo 'DROP TABLE users' | psql mydb" }
+}

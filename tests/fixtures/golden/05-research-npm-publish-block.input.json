@@ -1,0 +1,10 @@
+{
+  "description": "research phase Bash npm publish — denylist block",
+  "state": {
+    "current_phase": "research",
+    "work_dir": ".deep-work/test"
+  },
+  "session_id": "s-golden-npmpub",
+  "tool_name": "Bash",
+  "tool_input": { "command": "npm publish" }
+}

@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.3] - 2026-05-12
+
+### Added — M5.5 #3 hook golden test + M5.5.X (§9) phase-guard hardening rollup
+
+- **`tests/phase-guard-golden.test.js`** — fixture-driven golden test (M5.5 #3). Loads `tests/fixtures/golden/<name>.input.json` + `<name>.expected.json` pairs and asserts exit code + decision + reason regex against `phase-guard.sh`. Initial corpus: 8 scenarios covering idle allow, implement slice scope (in/out), four non-implement denylist families (rm-rf, npm-publish, curl-pipe-shell, sql-destructive), and override pass-through. Driver fails loud on half-commits (missing `.input` or `.expected`).
+- **`hooks/scripts/test-helpers/run-phase-guard.js`** — shared `scrubHostEnv()` + `runPhaseGuard()` + `parseGuardOutput()` helpers (§9.2 W-R2.2). Consolidates the host-env scrub (`DEEP_WORK_SESSION_ID` / `DEEP_WORK_ROOT` / `CLAUDE_PROJECT_DIR`) that `tests/phase-guard-denylist.test.js` introduced inline, so sibling hook tests get host-env isolation without duplicating an incomplete deletion list per file.
+- **`tests/phase-guard-denylist.test.js` §9.3 additions** — 7 new assertions:
+  - Pre-flight assertion that `NON_IMPLEMENT_DANGEROUS` corpus covers every `family:` entry in `phase-guard-core.js` `DANGEROUS_NON_IMPLEMENT_PATTERNS`.
+  - Per-family override loop (5 families × research phase) — exercises every `CLAUDE_ALLOW_<FAMILY>=1` env var end-to-end so a typo in any override field gets caught at CI.
+  - Override fall-through composition test (`CLAUDE_ALLOW_RM_RF=1 + 'rm -rf foo && cp x.txt /etc/host.conf'`) — pins the contract that override env suppresses ONLY the denylist branch and falls through to the file-write gate.
+
+### Changed
+
+- **`hooks/scripts/phase-guard-core.js`** — §9.1 comment block extended at the non-implement branch entry to document (a) gate order, (b) load-bearing ordering rationale, (c) override-env semantics (suppresses denylist only, file-write still applies), (d) Phase 5 cross-coverage from `phase-guard.sh`.
+- **`hooks/scripts/phase-guard-core.js`** — §9.3 I-R3.1 `DANGEROUS_NON_IMPLEMENT_PATTERNS` docblock extended with intentional scope omissions (`DELETE FROM`, `DROP DATABASE`, alternate shell pipes, `yarn publish`, disk-level commands).
+- **`hooks/scripts/{phase-guard-hardening,phase5-guard,worktree-guard,multi-session,input-parsing-e2e}.test.js`** — §9.2 migration: replaced inline `{ ...process.env, ... }` spreads with `scrubHostEnv()` from the shared helper.
+
+### Notes
+
+- This PR is the M5.5 #3 (deep-work side) + M5.5.X (§9.1 + §9.2 + §9.3) rollup spec'd in `claude-deep-suite/docs/superpowers/plans/2026-05-12-m5.5-remaining-tests-handoff.md` §9 "Suggested rollup PR". M5.5 #3 for deep-evolve / deep-wiki and #5 for deep-review / deep-wiki / deep-evolve are tracked in separate PRs.
+- Test count: **162 → 177** (+15: 8 golden + 7 §9.3 = 15 new). npm test runtime ~29s on macOS bash 3.2.
+
+## [6.6.2] - 2026-05-12
+
+### Added — M5.5 #7 non-implement dangerous-command denylist (PR #28, 3 review rounds)
+
+- **`tests/phase-guard-denylist.test.js`** — 162-assertion phase-guard contract test covering Phase 5 read-mostly allowlist (7 spec families) + non-implement denylist (5 families × 4 phases + controls + regression guards).
+- **`hooks/scripts/phase-guard-core.js`** — `DANGEROUS_NON_IMPLEMENT_PATTERNS` (5 families: rm-rf, npm-publish, kubectl-destructive, sql-destructive, curl-pipe-shell) + `matchDangerousNonImplement()` + denylist gate at research/plan/test/brainstorm Bash entry. Each family has a `CLAUDE_ALLOW_<FAMILY>=1` env override.
+- **R3 regex fixes**: W-R3.1 (SQL TRUNCATE single-char bug) + W-R3.2 (kubectl `--all-namespaces` false-positive).
+
+## [6.6.1] - 2026-05-12
+
+### Added — M5.5 #4 cross-platform CI matrix (PR #27)
+
+- **`.github/workflows/tests.yml`** — `os: [ubuntu-latest, macos-latest]` × `node-version: '20'` matrix running `npm test` + 3 bash regression scripts.
+- **`hooks/scripts/test/test-v6.4.2-regression.sh` §2** — cross-platform `stat` fallback (`stat -c '%a' || stat -f '%A'`) caught by the new ubuntu leg on first run.
+
 ## [6.6.0] - 2026-05-12
 
 ### Added — M5.7.A plugin-side adoption of cross-plugin handoff + dashboard compaction telemetry

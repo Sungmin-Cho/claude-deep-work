@@ -4,6 +4,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
+
+// §9.2 W-R2.2 (M5.5.X): host-env scrub via shared helper so a leaked
+// DEEP_WORK_SESSION_ID from a parallel session doesn't redirect the
+// state-file lookup away from tmpDir.
 
 const PHASE_GUARD = path.resolve(__dirname, 'phase-guard.sh');
 const PHASE_GUARD_CORE = path.resolve(__dirname, 'phase-guard-core.js');
@@ -88,7 +93,7 @@ describe('phase-guard.sh slice_files enforcement (v6.2.4 — was silently no-op)
       strict_scope: 'true',
     });
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: 's-scope1',
     };
@@ -103,7 +108,7 @@ describe('phase-guard.sh slice_files enforcement (v6.2.4 — was silently no-op)
       strict_scope: 'true',
     });
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: 's-scope2',
     };
@@ -119,7 +124,7 @@ describe('phase-guard.sh slice_files enforcement (v6.2.4 — was silently no-op)
       strict_scope: 'false',
     });
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: 's-scope3',
     };
@@ -133,7 +138,7 @@ describe('phase-guard.sh slice_files enforcement (v6.2.4 — was silently no-op)
       strict_scope: 'true',
     });
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: 's-scope4',
     };

@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.3] - 2026-05-12
+
+### Added — M5.5 #3 hook golden test + M5.5.X (§9) phase-guard 강화 롤업
+
+- **`tests/phase-guard-golden.test.js`** — fixture 기반 golden test (M5.5 #3). `tests/fixtures/golden/<name>.input.json` + `<name>.expected.json` 페어를 로드하여 `phase-guard.sh` 의 exit code + decision + reason 정규식을 검증한다. 초기 corpus 8개: idle allow, implement slice scope (in/out), 4개 non-implement denylist family (rm-rf / npm-publish / curl-pipe-shell / sql-destructive), override pass-through. 한쪽만 커밋된 fixture(`.input` 또는 `.expected` 누락) 는 로더에서 즉시 throw.
+- **`hooks/scripts/test-helpers/run-phase-guard.js`** — 공유 `scrubHostEnv()` + `runPhaseGuard()` + `parseGuardOutput()` 헬퍼 (§9.2 W-R2.2). `tests/phase-guard-denylist.test.js` 에 인라인으로 들어있던 host-env scrub (`DEEP_WORK_SESSION_ID` / `DEEP_WORK_ROOT` / `CLAUDE_PROJECT_DIR`) 을 한 곳으로 모아, 형제 hook 테스트가 호스트-env 격리를 무료로 상속받도록 한다.
+- **`tests/phase-guard-denylist.test.js` §9.3 추가** — 7건의 신규 단언:
+  - `NON_IMPLEMENT_DANGEROUS` 코퍼스가 `phase-guard-core.js` `DANGEROUS_NON_IMPLEMENT_PATTERNS` 의 모든 `family:` 를 커버한다는 pre-flight 단언.
+  - per-family override 루프 (5 family × research phase) — 모든 `CLAUDE_ALLOW_<FAMILY>=1` 환경변수를 end-to-end 로 검증, override field 의 오타를 CI 에서 잡는다.
+  - Override fall-through 합성 테스트 (`CLAUDE_ALLOW_RM_RF=1 + 'rm -rf foo && cp x.txt /etc/host.conf'`) — override env 는 denylist 만 억제하고 file-write 게이트는 그대로 적용된다는 계약을 핀.
+
+### Changed
+
+- **`hooks/scripts/phase-guard-core.js`** — §9.1 비-implement 분기 진입부의 코멘트 블록 확장: (a) 게이트 순서, (b) load-bearing ordering 근거, (c) override-env 의미 (denylist 만 억제, file-write 그대로), (d) `phase-guard.sh` Phase 5 의 cross-coverage.
+- **`hooks/scripts/phase-guard-core.js`** — §9.3 I-R3.1 `DANGEROUS_NON_IMPLEMENT_PATTERNS` docblock 에 의도된 scope 누락(`DELETE FROM`, `DROP DATABASE`, 대체 shell 파이프, `yarn publish`, 디스크 레벨 명령) 명시.
+- **`hooks/scripts/{phase-guard-hardening,phase5-guard,worktree-guard,multi-session,input-parsing-e2e}.test.js`** — §9.2 마이그레이션: 인라인 `{ ...process.env, ... }` 스프레드를 공유 헬퍼의 `scrubHostEnv()` 로 교체.
+
+### Notes
+
+- 본 PR 은 `claude-deep-suite/docs/superpowers/plans/2026-05-12-m5.5-remaining-tests-handoff.md` §9 "Suggested rollup PR" 에 명시된 M5.5 #3 (deep-work 측) + M5.5.X (§9.1 + §9.2 + §9.3) 롤업이다. deep-evolve / deep-wiki 의 M5.5 #3 과 deep-review / deep-wiki / deep-evolve 의 #5 는 별도 PR.
+- 테스트 수: **162 → 177** (+15: golden 8 + §9.3 7). npm test 런타임 ~29s on macOS bash 3.2.
+
+## [6.6.2] - 2026-05-12
+
+### Added — M5.5 #7 non-implement dangerous-command denylist (PR #28, 3 리뷰 라운드)
+
+- **`tests/phase-guard-denylist.test.js`** — Phase 5 read-mostly allowlist (7 spec family) + non-implement denylist (5 family × 4 phase + 컨트롤 + 회귀 가드) 를 검증하는 162-단언 phase-guard 계약 테스트.
+- **`hooks/scripts/phase-guard-core.js`** — `DANGEROUS_NON_IMPLEMENT_PATTERNS` (5 family: rm-rf, npm-publish, kubectl-destructive, sql-destructive, curl-pipe-shell) + `matchDangerousNonImplement()` + research/plan/test/brainstorm Bash 진입부의 denylist 게이트. 각 family 는 `CLAUDE_ALLOW_<FAMILY>=1` 환경변수 override 를 가진다.
+- **R3 regex 수정**: W-R3.1 (SQL TRUNCATE 단일 문자 버그) + W-R3.2 (kubectl `--all-namespaces` false-positive).
+
+## [6.6.1] - 2026-05-12
+
+### Added — M5.5 #4 cross-platform CI matrix (PR #27)
+
+- **`.github/workflows/tests.yml`** — `os: [ubuntu-latest, macos-latest]` × `node-version: '20'` 매트릭스로 `npm test` + 3 개 bash 회귀 스크립트 실행.
+- **`hooks/scripts/test/test-v6.4.2-regression.sh` §2** — cross-platform `stat` fallback (`stat -c '%a' || stat -f '%A'`). 새 ubuntu 레그가 첫 실행에서 BSD/GNU 차이를 즉시 검출.
+
 ## [6.6.0] - 2026-05-12
 
 ### Added — M5.7.A 플러그인측 cross-plugin handoff + dashboard compaction telemetry 채택

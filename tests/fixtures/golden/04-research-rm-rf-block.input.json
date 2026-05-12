@@ -1,0 +1,10 @@
+{
+  "description": "research phase Bash rm -rf — denylist block (M5.5 #7)",
+  "state": {
+    "current_phase": "research",
+    "work_dir": ".deep-work/test"
+  },
+  "session_id": "s-golden-rmrf",
+  "tool_name": "Bash",
+  "tool_input": { "command": "rm -rf node_modules" }
+}
