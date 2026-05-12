@@ -38,7 +38,10 @@ result=$(node "$REPO_ROOT/scripts/migrate-profile-v2-to-v3.js" "$tmp/p.yaml" 2>&
 echo "$result" | grep -q '"migrated":\s*true' || fail "v3 마이그레이션 실행 안 됨: $result"
 grep -q "plan: main" "$tmp/p.yaml" || fail "v3 마이그레이션 후 plan: main 사라짐"
 # chmod 600 검증 (macOS / Linux 양쪽)
-mode=$(stat -f '%A' "$tmp/p.yaml" 2>/dev/null || stat -c '%a' "$tmp/p.yaml" 2>/dev/null || echo "unknown")
+# NOTE: GNU stat 의 `-f` 는 "filesystem status" 라서 macOS BSD 의 `-f format` 과 의미가
+# 다르고 exit 0 으로 fall-through 하지 않는다. GNU `-c '%a'` 를 먼저 시도해야
+# Linux 에서 mode 가 multi-line FS stats 로 오염되지 않는다 (M5.5 #4 CI 매트릭스에서 적발).
+mode=$(stat -c '%a' "$tmp/p.yaml" 2>/dev/null || stat -f '%A' "$tmp/p.yaml" 2>/dev/null || echo "unknown")
 [[ "$mode" == "600" ]] || fail "v3 파일 권한이 0o600이 아님: $mode"
 pass "v3 마이그레이션 model_routing.plan 보존 + chmod 600"
 
