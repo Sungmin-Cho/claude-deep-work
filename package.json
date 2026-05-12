@@ -1,6 +1,6 @@
 {
   "name": "@claude-deep-work/deep-work",
-  "version": "6.6.0",
+  "version": "6.6.1",
   "scripts": {
     "test": "node --test tests/envelope-emit.test.js tests/envelope-chain.test.js tests/handoff-roundtrip.test.js"
   },
