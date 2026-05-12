@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.6.0] - 2026-05-12
+
+### Added — M5.7.A 플러그인측 cross-plugin handoff + dashboard compaction telemetry 채택
+
+- **`hooks/scripts/emit-handoff.js`** — handoff payload를 M3 envelope으로 wrap하여 (`artifact_kind = "handoff"`, `schema.name = "handoff"`, `schema.version = "1.0"`) `.deep-work/handoffs/` 또는 세션별 디렉토리에 기록하는 CLI 헬퍼. 플래그: `--payload-file`, `--output`, `--source-session-receipt` (자동 `parent_run_id` chain), `--source-review-report`, `--parent-run-id`, `--session-id`. write 전 payload required 필드 enforce: `schema_version`, `handoff_kind`, `from{producer,completed_at}`, `to{producer,intent}`, `summary`, `next_action_brief` — `claude-deep-suite/schemas/handoff.schema.json` + dashboard `PAYLOAD_REQUIRED_FIELDS["deep-work/handoff"]`와 일치.
+- **`hooks/scripts/emit-compaction-state.js`** — compaction-state payload를 M3 envelope으로 wrap하는 CLI 헬퍼 (`artifact_kind = "compaction-state"`, `schema.name = "compaction-state"`). 두 입력 모드: hook-driven용 CLI 플래그 (`--trigger`, `--preserved`, `--discarded`, `--strategy`, `--pre-tokens`, `--post-tokens`) 또는 skill 합성용 `--payload-file`. Trigger enum을 suite schema 기준으로 검증 (`phase-transition`, `slice-green`, `loop-epoch-end`, `window-threshold`, `manual`, `session-stop`). Strategy enum 검증. Dashboard 메트릭 `suite.compaction.frequency` + `suite.compaction.preserved_artifact_ratio`를 구동.
+- **`commands/deep-finish.md` §7-Z-A** — envelope wrap 후 새 섹션이 `--handoff-to=<plugin>` 지정 시 (또는 사용자가 인터랙티브로 opt-in 시) cross-plugin handoff를 emit. session-receipt envelope에 `parent_run_id`를 자동 chain. dashboard flat-dir `SOURCE_SPECS`에 맞게 `.deep-work/handoffs/<UTC-ts>-<session_id>.json`로 기록.
+- **`hooks/scripts/session-end.sh`** Stop hook — 세션 종료 시 best-effort로 `compaction-state.json` emit (`trigger: session-stop`, session-receipt 존재 시 `strategy: receipt-only`, 부재 시 state file 보존). Stop hook의 "must not block session close" 계약 유지를 위해 subshell + `|| true`로 wrap.
+- **`hooks/scripts/phase-transition.sh`** PostToolUse hook — 각 Phase 경계마다 `compaction-state.json` emit (`trigger: phase-transition`, `strategy: key-artifacts-only`). Phase별 preserved 셋: research→research.md, plan→research+plan, implement→plan, test→plan+receipts, idle→session-receipt.
+- **`tests/handoff-roundtrip.test.js`** — M5.5 #8 (deep-work 절반)을 다루는 16개 assertion: dashboard와 동일한 payload-required-field 계약, mirror된 `unwrapStrict`를 만족하는 envelope을 emit하는 CLI roundtrip, cross-plugin chain (`parent_run_id === session-receipt.envelope.run_id`), trigger enum 6개 값 전체 커버리지, 실패 경로 (필수 필드 누락 → exit 1, unknown trigger → exit 1).
+
+### Changed
+
+- **`hooks/scripts/envelope.js`** — `ALLOWED_ARTIFACT_KINDS`를 `{session-receipt, slice-receipt}`에서 `handoff`와 `compaction-state` 포함으로 확장. set은 `wrapEnvelope` (출력 가드)와 `unwrapEnvelope` (입력 가드) 양쪽에서 사용; session-receipt / slice-receipt 호출자의 기존 identity-triplet 의미론은 그대로 유지.
+- **`scripts/validate-envelope-emit.js`** — `ALLOWED_KINDS`를 대칭 확장하여 CI validator가 두 신규 envelope kind를 수락. Payload `schema_version === "1.0"` enforcement는 그대로 유지.
+
+### Notes
+
+- 이 릴리스는 신규 artifact kind에 대해 **producer-only**. deep-work는 다른 플러그인의 `handoff.json` 또는 `compaction-state.json`을 consume 하지 않으며 — dashboard가 한다. Cross-plugin contract는 `claude-deep-dashboard/lib/suite-collector.js unwrapStrict`가 enforce.
+- M5 acceptance criteria는 `claude-deep-suite/docs/superpowers/plans/2026-05-11-m5.7-plugin-adoption-handoff.md` §M5.7.A 참조.
+
 ## [6.5.0] - 2026-05-07
 
 ### Added

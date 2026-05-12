@@ -109,4 +109,85 @@ if [[ "$HAS_CONDITIONS" == "true" ]]; then
   printf '%s' "$OUTPUT"
 fi
 
+# ─── v6.6.0 (M5.7) — compaction-state emit on phase transition ────────
+# Each Phase boundary is a compaction event: the just-closed Phase's primary
+# artifact (research.md, plan.md, ...) becomes the next Phase's only input;
+# intermediate working memory is discarded. Strategy: key-artifacts-only.
+# PostToolUse hook contract is "informational, never block" — wrap in subshell
+# + `|| true`.
+#
+# R1 review C2 fix: preserved set now references the JUST-CLOSED phase's
+# artifact (which exists when the hook fires) rather than the entering phase's
+# artifact (which does not exist yet). All preserved paths are filtered to
+# existing files at emit time.
+#
+# R1 review C3 fix: explicit --discarded set (concrete sensor + tmp files for
+# the just-closed phase + a sentinel for the compacted in-memory LLM context)
+# so the dashboard's suite.compaction.preserved_artifact_ratio metric gets
+# data points. Without --discarded the dashboard treats the ratio as undefined
+# per guides/context-management.md §5.
+(
+  EMIT_SCRIPT="$SCRIPT_DIR/emit-compaction-state.js"
+  [ -f "$EMIT_SCRIPT" ] || exit 0
+  command -v node >/dev/null 2>&1 || exit 0
+
+  _PT_WD_REL="$(read_frontmatter_field "$FILE_PATH" "work_dir" 2>/dev/null || echo "")"
+  [ -z "$_PT_WD_REL" ] && exit 0
+  _PT_WORK_DIR="$PROJECT_ROOT/$_PT_WD_REL"
+  _PT_OUTDIR="$PROJECT_ROOT/.deep-work/compaction-states"
+  mkdir -p "$_PT_OUTDIR" 2>/dev/null || exit 0
+
+  _PT_TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  _PT_OUT="$_PT_OUTDIR/${_PT_TS}-${SESSION_ID}-phase-${NEW_PHASE}.json"
+
+  # Preserved: the artifact produced by the just-closed phase (OLD_PHASE in
+  # this hook's variable scope). For the first phase entry (empty OLD_PHASE
+  # or "init"), no predecessor artifact exists yet.
+  _PT_PRESERVED=""
+  case "$NEW_PHASE" in
+    research)  _PT_PRESERVED="$_PT_WORK_DIR/brainstorm.md" ;;
+    plan)      _PT_PRESERVED="$_PT_WORK_DIR/research.md" ;;
+    implement) _PT_PRESERVED="$_PT_WORK_DIR/plan.md" ;;
+    test)      _PT_PRESERVED="$_PT_WORK_DIR/plan.md,$_PT_WORK_DIR/receipts" ;;
+    idle)      _PT_PRESERVED="$_PT_WORK_DIR/session-receipt.json" ;;
+    *)         _PT_PRESERVED="" ;;
+  esac
+
+  # Filter preserved to existing paths only (avoid recording future/missing
+  # artifacts in the dashboard ratio).
+  _PT_PRESERVED_FILTERED=""
+  if [ -n "$_PT_PRESERVED" ]; then
+    IFS=',' read -ra _PT_PATHS <<< "$_PT_PRESERVED"
+    for _p in "${_PT_PATHS[@]}"; do
+      [ -z "$_p" ] && continue
+      if [ -e "$_p" ]; then
+        _PT_PRESERVED_FILTERED="${_PT_PRESERVED_FILTERED:+$_PT_PRESERVED_FILTERED,}$_p"
+      fi
+    done
+  fi
+
+  # Discarded: concrete intermediate state from the just-closed phase + a
+  # sentinel path representing the compacted LLM working memory (no file
+  # representation but a real semantic). The sentinel ensures the dashboard's
+  # ratio formula has a denominator > 0.
+  _PT_DISCARDED=""
+  _PT_PREV_PHASE="${OLD_PHASE:-session-start}"
+  # Concrete: sensor outputs and tmp files attributable to the just-closed phase.
+  for f in "$_PT_WORK_DIR/sensors/${_PT_PREV_PHASE}"* "$_PT_WORK_DIR/.tmp.${_PT_PREV_PHASE}".*; do
+    [ -e "$f" ] && _PT_DISCARDED="${_PT_DISCARDED:+$_PT_DISCARDED,}$f"
+  done
+  # Sentinel for in-memory LLM context that was compacted at this boundary.
+  _PT_DISCARDED="${_PT_DISCARDED:+$_PT_DISCARDED,}.deep-work/$SESSION_ID/.compacted/${_PT_PREV_PHASE}-llm-context"
+
+  # Emit. --preserved accepts empty string (helper splits to empty array per
+  # schema 'preserved_artifact_paths can be empty array').
+  node "$EMIT_SCRIPT" \
+    --trigger phase-transition \
+    --output "$_PT_OUT" \
+    --preserved "$_PT_PRESERVED_FILTERED" \
+    --discarded "$_PT_DISCARDED" \
+    --strategy key-artifacts-only \
+    --session-id "$SESSION_ID" >/dev/null 2>&1 || true
+) 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+
 exit 0
