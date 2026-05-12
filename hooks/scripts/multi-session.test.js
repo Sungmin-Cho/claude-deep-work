@@ -4,6 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
+
+// §9.2 W-R2.2 (M5.5.X): utils.sh consumes DEEP_WORK_SESSION_ID for state-file
+// lookup; without scrubbing, a developer shell that sources another session's
+// env will silently route assertions away from this tmpDir.
 
 const UTILS_SH = path.resolve(__dirname, 'utils.sh');
 
@@ -29,7 +34,7 @@ function bash(code, env = {}) {
   return execFileSync('bash', ['-c', script], {
     encoding: 'utf8',
     cwd: tmpDir,
-    env: { ...process.env, ...env },
+    env: scrubHostEnv(env),
     timeout: 10000,
   }).trim();
 }

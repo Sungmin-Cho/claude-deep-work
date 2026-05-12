@@ -4,9 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
 
 // v6.3.0 review RC-1: Phase 5 mode (idle + phase5_entered_at + !phase5_completed_at)에서
 // phase-guard가 Write/Edit/NotebookEdit과 write-bash를 차단하고, 읽기 도구는 통과시키는지 검증.
+// §9.2 W-R2.2 (M5.5.X): host-env scrub via shared helper to avoid leaks from
+// developer shell / CI (DEEP_WORK_SESSION_ID / DEEP_WORK_ROOT / CLAUDE_PROJECT_DIR).
 
 const PHASE_GUARD = path.resolve(__dirname, 'phase-guard.sh');
 
@@ -28,7 +31,7 @@ function runGuard(toolName, toolInput) {
     input: JSON.stringify(toolInput),
     encoding: 'utf8',
     cwd: tmpRoot,
-    env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: toolName, DEEP_WORK_ROOT: tmpRoot },
+    env: scrubHostEnv({ CLAUDE_TOOL_USE_TOOL_NAME: toolName, DEEP_WORK_ROOT: tmpRoot }),
   });
 }
 

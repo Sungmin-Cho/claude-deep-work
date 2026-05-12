@@ -587,3 +587,166 @@ describe('phase-guard.sh — non-implement dangerous-command denylist (M5.5 #7 c
     assert.equal(r.status, 0, `read-only kubectl get must pass, got ${r.status}`);
   });
 });
+
+// =============================================================================
+// §9.3 follow-up — per-family override + composition (R3 I-R3.2 + I-R3.3)
+// =============================================================================
+//
+// **I-R3.2 — per-family override loop**
+//
+//   The pre-§9.3 corpus exercised only `CLAUDE_ALLOW_NPM_PUBLISH=1` end-to-end.
+//   A typo in any of the OTHER four overrides (RM_RF, KUBECTL_DESTRUCTIVE,
+//   SQL_DESTRUCTIVE, CURL_PIPE_SHELL) would silently fail — the family would
+//   still block, but the user's escape hatch would not work, and no test
+//   would catch it. This loop pins all five override env vars × representative
+//   commands so a typo or removal of an override field on
+//   DANGEROUS_NON_IMPLEMENT_PATTERNS gets caught at CI.
+//
+// **I-R3.3 — override fall-through composition**
+//
+//   The §9.1 comment block above the non-implement branch (phase-guard-core.js
+//   ~line 660) pins the contract: override env vars suppress ONLY the denylist
+//   branch and fall through to the file-write gate. The previous corpus did
+//   not have an automated test for this composition. This adds one explicit
+//   case: `rm -rf` followed by a `cp` file-write, with CLAUDE_ALLOW_RM_RF=1.
+//   Pre-fix the override would allow the whole compound command; post-fix
+//   the file-write gate still catches the `cp` half.
+//
+// Spec: docs/superpowers/plans/2026-05-12-m5.5-remaining-tests-handoff.md §9.3
+
+const UNIQUE_FAMILY_OVERRIDES = (() => {
+  // Deduplicate NON_IMPLEMENT_DANGEROUS by family — we want one representative
+  // command per family for the loop. Picking the first entry per family
+  // keeps the order stable across renames.
+  const seen = new Set();
+  const out = [];
+  for (const row of NON_IMPLEMENT_DANGEROUS) {
+    if (!seen.has(row.family)) {
+      seen.add(row.family);
+      out.push(row);
+    }
+  }
+  return out;
+})();
+
+describe('phase-guard.sh — per-family override loop (§9.3 I-R3.2)', () => {
+  let tmpRoot;
+  beforeEach(() => { tmpRoot = makeTmpRoot(); });
+  afterEach(() => { fs.rmSync(tmpRoot, { recursive: true, force: true }); });
+
+  // Pre-flight: assert the test corpus covers every family declared in
+  // phase-guard-core.js. If a new family is added there without a matching
+  // NON_IMPLEMENT_DANGEROUS entry, this assertion fires and forces the
+  // contributor to extend the corpus rather than discover the gap later.
+  it('NON_IMPLEMENT_DANGEROUS covers every family in DANGEROUS_NON_IMPLEMENT_PATTERNS', () => {
+    const coreSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'hooks', 'scripts', 'phase-guard-core.js'),
+      'utf8',
+    );
+    const familyMatches = coreSrc.match(/family:\s*'([a-z-]+)'/g) || [];
+    const coreFamilies = new Set(
+      familyMatches.map((m) => m.replace(/family:\s*'/, '').replace(/'$/, '')),
+    );
+    const testFamilies = new Set(UNIQUE_FAMILY_OVERRIDES.map((r) => r.family));
+    for (const f of coreFamilies) {
+      assert.ok(
+        testFamilies.has(f),
+        `family "${f}" in phase-guard-core.js has no representative row in NON_IMPLEMENT_DANGEROUS`,
+      );
+    }
+  });
+
+  // The actual loop — research phase × override env = allow path.
+  // Picking research phase (the most common non-implement phase) keeps
+  // the loop cheap; the family×phase block matrix is already exercised
+  // by the 28-case block loop above.
+  for (const row of UNIQUE_FAMILY_OVERRIDES) {
+    it(`override CLAUDE_ALLOW_${row.family.toUpperCase().replace(/-/g, '_')} suppresses ${row.family} family`, () => {
+      writeState(tmpRoot, {
+        current_phase: 'research',
+        tdd_mode: 'strict',
+        tdd_state: 'PENDING',
+      });
+      const scrubbed = { ...process.env };
+      delete scrubbed.DEEP_WORK_SESSION_ID;
+      delete scrubbed.DEEP_WORK_ROOT;
+      delete scrubbed.CLAUDE_PROJECT_DIR;
+      const r = spawnSync('bash', [PHASE_GUARD], {
+        input: JSON.stringify({ command: row.command }),
+        encoding: 'utf8',
+        cwd: tmpRoot,
+        env: {
+          ...scrubbed,
+          CLAUDE_TOOL_USE_TOOL_NAME: 'Bash',
+          [row.override]: '1',
+        },
+        timeout: 8000,
+      });
+      assert.equal(
+        r.status,
+        0,
+        `${row.override}=1 should suppress ${row.family} for "${row.command}", ` +
+          `got status=${r.status}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`,
+      );
+    });
+  }
+});
+
+describe('phase-guard.sh — override fall-through composition (§9.3 I-R3.3)', () => {
+  let tmpRoot;
+  beforeEach(() => { tmpRoot = makeTmpRoot(); });
+  afterEach(() => { fs.rmSync(tmpRoot, { recursive: true, force: true }); });
+
+  // The contract: CLAUDE_ALLOW_<FAMILY>=1 falls through to the file-write
+  // gate, which still applies. If a future refactor accidentally returns
+  // `allow` from the denylist branch on override, this test fires.
+  //
+  // Command: `rm -rf foo && cp x.txt /etc/host.conf`
+  //   - denylist matches `rm -rf` → would block without override
+  //   - CLAUDE_ALLOW_RM_RF=1 → suppresses denylist
+  //   - file-write gate sees `cp ... DEST` → blocks (cp matches BASH_FILE_WRITE_PATTERNS)
+  //
+  // Pre-fix the override would have allowed the whole command (test would
+  // fail with status=0 from the early return). Post-fix the file-write
+  // gate catches the cp half (test passes with status=2 + cp pattern reason).
+  it('CLAUDE_ALLOW_RM_RF=1 + compound `rm -rf … && cp …` → file-write gate blocks', () => {
+    writeState(tmpRoot, {
+      current_phase: 'research',
+      tdd_mode: 'strict',
+      tdd_state: 'PENDING',
+    });
+    const scrubbed = { ...process.env };
+    delete scrubbed.DEEP_WORK_SESSION_ID;
+    delete scrubbed.DEEP_WORK_ROOT;
+    delete scrubbed.CLAUDE_PROJECT_DIR;
+    const cmd = 'rm -rf foo && cp x.txt /etc/host.conf';
+    const r = spawnSync('bash', [PHASE_GUARD], {
+      input: JSON.stringify({ command: cmd }),
+      encoding: 'utf8',
+      cwd: tmpRoot,
+      env: {
+        ...scrubbed,
+        CLAUDE_TOOL_USE_TOOL_NAME: 'Bash',
+        CLAUDE_ALLOW_RM_RF: '1',
+      },
+      timeout: 8000,
+    });
+    assert.equal(
+      r.status,
+      2,
+      `override should fall through to file-write gate; expected block (exit 2), ` +
+        `got status=${r.status}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`,
+    );
+    const parsed = parseBlockReason(r.stdout);
+    assert.ok(parsed, `block JSON missing: ${r.stdout}`);
+    assert.equal(parsed.decision, 'block');
+    // Reason should mention the file-write classification, NOT the rm-rf
+    // family — the denylist branch was suppressed; failure now comes from
+    // the file-write gate (which references BASH_FILE_WRITE_PATTERNS pattern).
+    assert.match(
+      parsed.reason,
+      /파일 쓰기|file write|cp/,
+      `expected file-write reason after override suppresses denylist; got: ${parsed.reason}`,
+    );
+  });
+});

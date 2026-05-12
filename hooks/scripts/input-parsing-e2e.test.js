@@ -4,6 +4,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
+const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
+
+// §9.2 W-R2.2 (M5.5.X): host-env scrub via shared helper to prevent a
+// leaked DEEP_WORK_SESSION_ID / DEEP_WORK_ROOT from a developer shell
+// redirecting state-file lookup away from tmpDir.
 
 const HOOKS = path.resolve(__dirname);
 
@@ -27,7 +32,7 @@ describe('e2e: file_path with escaped quotes does not break hooks', () => {
 
     const filePath = path.join(tmpDir, 'a "b" c.txt');
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: sid,
     };
@@ -54,7 +59,7 @@ describe('e2e: file_path with escaped quotes does not break hooks', () => {
 
     const filePath = path.join(tmpDir, 'src with "quotes".js');
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: sid,
     };
@@ -86,7 +91,7 @@ describe('e2e: file_path with escaped quotes does not break hooks', () => {
 
     const filePath = path.join(tmpDir, 'edge "quoted".py');
     const env = {
-      ...process.env,
+      ...scrubHostEnv(),
       CLAUDE_TOOL_USE_TOOL_NAME: 'Write',
       DEEP_WORK_SESSION_ID: sid,
     };
@@ -110,7 +115,7 @@ describe('e2e: file_path with escaped quotes does not break hooks', () => {
   it('phase-transition.sh: escaped-quote path in unrelated write does not crash', () => {
     // phase-transition only acts on .claude/deep-work.{sid}.md writes; a
     // regular file with quotes in its name must be a quick no-op exit 0.
-    const env = { ...process.env, CLAUDE_TOOL_USE_INPUT: JSON.stringify({ file_path: '/tmp/x "q" y.txt' }) };
+    const env = { ...scrubHostEnv(), CLAUDE_TOOL_USE_INPUT: JSON.stringify({ file_path: '/tmp/x "q" y.txt' }) };
     const result = spawnSync('bash', [path.join(HOOKS, 'phase-transition.sh')], {
       cwd: tmpDir,
       env,
@@ -138,7 +143,7 @@ describe('e2e: phase-transition.sh handles fork worktree paths', () => {
     fs.writeFileSync(statePath, '---\ncurrent_phase: plan\n---\n');
     fs.writeFileSync(path.join(tmpDir, '.claude', 'deep-work-current-session'), childSid);
 
-    const env = { ...process.env, CLAUDE_TOOL_USE_INPUT: JSON.stringify({ file_path: statePath }) };
+    const env = { ...scrubHostEnv(), CLAUDE_TOOL_USE_INPUT: JSON.stringify({ file_path: statePath }) };
     const result = spawnSync('bash', [path.join(HOOKS, 'phase-transition.sh')], {
       cwd: tmpDir,
       env,

@@ -1,0 +1,6 @@
+{
+  "description": "idle phase Write — passes through (no slice, no state)",
+  "session_id": "s-golden-idle",
+  "tool_name": "Write",
+  "tool_input": { "file_path": "/tmp/idle.py" }
+}

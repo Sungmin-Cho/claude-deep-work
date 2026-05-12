@@ -4,6 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
+
+// §9.2 W-R2.2 (M5.5.X): host-env scrub via shared helper. Previously a leaked
+// DEEP_WORK_SESSION_ID could route phase-guard.sh to a different state file
+// than the one writeStateFile() created under tmpDir, producing spurious passes.
 
 const PHASE_GUARD = path.resolve(__dirname, 'phase-guard.sh');
 
@@ -42,7 +47,7 @@ function runPhaseGuard(toolName, toolInput, env = {}) {
     const result = execFileSync('bash', ['-c', `echo '${JSON.stringify(toolInput).replace(/'/g, "'\\''")}' | CLAUDE_TOOL_NAME=${toolName} bash "${PHASE_GUARD}"`], {
       encoding: 'utf8',
       cwd: tmpDir,
-      env: { ...process.env, ...env },
+      env: scrubHostEnv(env),
       timeout: 10000,
     });
     return { exitCode: 0, stdout: result };

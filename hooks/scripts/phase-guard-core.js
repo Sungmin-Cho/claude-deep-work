@@ -213,6 +213,24 @@ const SAFE_COMMAND_PATTERNS = [
  * read-mostly allowlist + destructive-target + compound-operator gates;
  * this constant adds equivalent coverage to non-implement phases (which
  * previously only checked file-writes).
+ *
+ * **Intentional scope omissions** (R3 I-R3.1 — pin so future contributors
+ * don't re-discover and "fix" silently). The following families are
+ * deliberately NOT in this denylist; broadening requires a separate
+ * adversary-model + override-naming design pass (§9.4 charter):
+ *   - `DELETE FROM <table>` without WHERE — easy to false-positive on
+ *     legitimate research queries; opt in via example pack.
+ *   - `DROP DATABASE` — covered transitively by `psql`/`mysql` first-token
+ *     blocks in Phase 5; non-implement phases rely on example pack.
+ *   - `curl | zsh` / `bash <(curl ...)` — only `curl|sh` and `curl|bash`
+ *     are caught; alternate shell pipes / process-substitution are
+ *     uncommon-but-real bypasses left to example pack hardening.
+ *   - `yarn publish` — only `npm publish` is canonicalized here;
+ *     monorepo publishers (yarn, pnpm, lerna) require their own
+ *     family entries when added.
+ *   - `dd if=/dev/zero of=...`, `mkfs.*`, `fdisk` — disk-level
+ *     blast-radius deferred to example pack; very rare in AI-agent
+ *     command output.
  */
 const DANGEROUS_NON_IMPLEMENT_PATTERNS = [
   {
@@ -664,6 +682,19 @@ function processHook(input) {
   // Denylist families mirror the example pack (hooks-strict-mode/scripts/
   // denylist-guard.sh) so users learn one override convention. Each family
   // has a CLAUDE_ALLOW_<FAMILY>=1 env override for legitimate exceptions.
+  // **Override semantics** (do not weaken without contract review):
+  //   - The override env vars suppress ONLY the denylist branch — they
+  //     fall through to the file-write gate, which still applies. This
+  //     is the contract pinned by phase-guard-denylist.test.js §"override
+  //     fall-through composition" (I-R3.3). Hoisting the new gate above
+  //     denylist would silently weaken protection (denylist would never
+  //     fire for commands that also match file-write patterns) — order
+  //     is load-bearing.
+  // **Cross-coverage** — Phase 5 mode in phase-guard.sh provides
+  // independent enforcement via its read-mostly allowlist + destructive-
+  // target + compound-operator gates (M5.5 #7 A1 spec). The two layers
+  // overlap deliberately; either alone catches all 7 spec families, both
+  // together provide defense-in-depth against bash-side regex bypass.
   if (['research', 'plan', 'test', 'brainstorm'].includes(phase)) {
     if (toolName === 'Bash') {
       const cmd = toolInput.command || '';

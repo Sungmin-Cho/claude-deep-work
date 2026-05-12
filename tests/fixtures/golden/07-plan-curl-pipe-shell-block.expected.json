@@ -1,0 +1,5 @@
+{
+  "exit_code": 2,
+  "decision": "block",
+  "reason_match": "curl-pipe-shell"
+}
