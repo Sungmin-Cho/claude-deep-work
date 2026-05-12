@@ -12,8 +12,9 @@
 //       (BASH_FILE_WRITE_PATTERNS includes destructive git ops + tar -x +
 //       in-place edits + rsync).
 //
-// **Known scope limitation** (M5.5 #7 partial closure — documented in
-// commit msg; see review report 2026-05-12-152207-review.md §C1):
+// **Known scope limitation** (M5.5 #7 partial closure — documented in the
+// initial commit msg + handoff plan at
+// docs/superpowers/plans/2026-05-12-m5.5-remaining-tests-handoff.md):
 // Non-implement phases ONLY block commands that match the file-write
 // pattern list. The following destructive families pass through in
 // research/plan/test/brainstorm because they are not file-writes per se:
@@ -69,14 +70,15 @@ function writeState(tmpRoot, frontmatter) {
 }
 
 function runGuard(tmpRoot, toolName, toolInput) {
-  // Scrub host env vars that would redirect phase-guard.sh away from
-  // tmpRoot. DEEP_WORK_SESSION_ID is the dangerous one — if it is set on
-  // the host (active dev session, CI with leaked env), phase-guard.sh
-  // routes to .claude/deep-work.<id>.md which writeState() does not
-  // create, hitting the no-state fast-path (exit 0) and silently passing
-  // every BLOCK assertion. CLAUDE_PROJECT_DIR similarly redirects.
-  // DEEP_WORK_ROOT is currently not consumed by utils.sh, but we
-  // pre-emptively scrub it to keep the contract host-independent.
+  // Scrub host env vars that COULD redirect phase-guard.sh away from
+  // tmpRoot. Verified consumers (grep hooks/scripts/):
+  //   - DEEP_WORK_SESSION_ID — utils.sh:233 consumer, ACTIVE redirect risk
+  //     (routes state-file lookup to .claude/deep-work.<id>.md, which
+  //     writeState() doesn't create → no-state fast-path → silent pass).
+  //   - DEEP_WORK_ROOT and CLAUDE_PROJECT_DIR — NOT consumed by utils.sh
+  //     or any phase-guard script as of this PR. Scrubbed pre-emptively
+  //     so a future redirect consumer doesn't silently break host
+  //     independence; if grep contradicts this comment, update the comment.
   const scrubbed = { ...process.env };
   delete scrubbed.DEEP_WORK_SESSION_ID;
   delete scrubbed.DEEP_WORK_ROOT;
