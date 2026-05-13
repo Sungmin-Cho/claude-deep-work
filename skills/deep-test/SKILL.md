@@ -1,6 +1,6 @@
 ---
 name: deep-test
-description: "Phase 4 — Test: comprehensive verification + implement-test retry loop"
+description: "This skill should be used at Phase 4 of deep-work, after all slices in plan.md are marked [x], to run 9 verification gates: receipt completeness, plan-alignment drift, cross-slice spec/quality review, sensor clean, mutation, fitness delta, and health required/advisory. On failure, triggers the implement-test retry loop (cleanup implement_completed_at + receipt invalidation). Sets test_passed: true marker that gates deep-finish's session-receipt M3 envelope emit (with parent_run_id chain to consumed evolve-insights run)."
 ---
 
 > [!IMPORTANT]
@@ -154,6 +154,17 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
    ```
 3. Session report 자동 생성: `$WORK_DIR/report.md`
 4. Git commit 제안 (git_branch 설정 시)
+
+### Handoff to /deep-finish — M3 envelope chain (v6.5.0)
+
+본 skill은 envelope을 직접 emit하지 않으며, `/deep-finish §7-Z`가 session-receipt envelope을 쓸 수 있도록 다음 contract만 보장한다:
+
+- **`state.test_passed === true` + `state.test_completed_at`** 마커 기록 — `/deep-finish §7-Z`의 envelope writer dispatcher가 이 두 필드를 precondition으로 읽는다.
+- **모든 slice receipt가 M3 envelope 형태** (`producer === "deep-work"` + `artifact_kind === "slice-receipt"` + `schema.name === artifact_kind`)로 wrap된 상태 — §4-1 (Receipt Completeness) gate가 identity guard로 이를 검증하므로, gate를 통과한 시점에 모든 receipt가 envelope임이 보장됨.
+- **`parent_run_id` chain** — Phase 1 (deep-research)가 consume한 `evolve-insights` envelope의 `run_id`가 state에 보관되어 있으면, `/deep-finish §7-Z`가 session-receipt envelope의 `envelope.parent_run_id` 필드와 `envelope.provenance.source_artifacts[]`에 함께 기록한다 (cross-plugin chain trace).
+- **단일 writer 정책** — session-receipt는 `hooks/scripts/wrap-receipt-envelope.js`가 `--artifact-kind=session-receipt`로 호출되어 생성됨 (deep-implement Step D-1의 slice-receipt writer와 동일 helper). 본 skill은 helper를 호출하지 않는다.
+
+위 contract가 깨지면 `/deep-finish §7-Z`가 envelope emit을 실패시키므로, **Some Fail (retry exhausted) 분기의 receipt invalidation (NW1/NW6)** 은 envelope reader가 stale evidence를 받지 않도록 보장하는 contract의 일부다.
 
 ## Some Fail (retry available)
 

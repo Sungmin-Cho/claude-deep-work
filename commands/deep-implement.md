@@ -1,5 +1,6 @@
 ---
 allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+description: "Phase 3 — Implement: slice 기반 TDD 실행 (RED → GREEN → REFACTOR), sensor + slice review, M3 envelope slice receipt emit"
 ---
 
 # /deep-implement

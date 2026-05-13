@@ -1,6 +1,6 @@
 ---
 name: deep-work-orchestrator
-description: "Evidence-Driven Development — session initialization + auto-flow orchestration"
+description: "This skill should be used when the user invokes /deep-work \"task\", asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 5-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
 ---
 
 # Step 1: 세션 초기화

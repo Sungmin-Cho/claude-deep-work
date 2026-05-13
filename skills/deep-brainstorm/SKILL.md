@@ -1,6 +1,6 @@
 ---
 name: deep-brainstorm
-description: "Phase 0 — Brainstorm: explore why before how (skip-able)"
+description: "This skill should be used at Phase 0 of a deep-work session to explore the problem space before implementation — defining goals, success criteria, boundaries, and comparing 2-3 candidate approaches. Triggered when the /deep-work orchestrator enters brainstorm phase, or when /deep-brainstorm is invoked directly to ideate on a task without writing code yet. Skippable via --skip-brainstorm."
 ---
 
 > [!IMPORTANT]

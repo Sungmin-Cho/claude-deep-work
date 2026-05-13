@@ -1,5 +1,6 @@
 ---
 allowed-tools: Skill, Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
+description: "Evidence-Driven Development entry point — Brainstorm → Research → Plan → Implement → Test 5-phase auto-flow with session orchestration"
 ---
 
 # /deep-work

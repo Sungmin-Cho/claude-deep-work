@@ -5,7 +5,10 @@
   "author": {
     "name": "sungmin"
   },
-  "repository": "https://github.com/Sungmin-Cho/claude-deep-work",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sungmin-Cho/claude-deep-work.git"
+  },
   "license": "MIT",
   "keywords": [
     "workflow",
