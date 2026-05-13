@@ -1,109 +1,205 @@
-# deep-work v6.6.3
+# deep-work — Project Guide for Claude
 
-Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인. v6.6.3 (M5.5 hardening)에서는 `phase-guard` hook의 non-implement dangerous-command denylist가 강화되어 `curl|sh` pipe-shell, `rm -rf`, `npm publish`, `kubectl destructive`, SQL `DROP/DELETE`, `dd/mkfs/fdisk` 등을 정규식으로 차단하고 per-family `CLAUDE_ALLOW_*` override를 지원합니다 (8 golden 시나리오 + 5 override fall-through 시나리오 테스트). v6.5.0에서는 `session-receipt.json`과 `receipts/SLICE-*.json`이 claude-deep-suite M3 cross-plugin envelope으로 전환되어 cross-plugin run_id chain trace가 가능해졌고, v6.4.2에서는 세션 초기화 흐름이 LLM 추천 기반 항목별 ask로 전환되었으며 profile v2→v3 자동 마이그레이션과 알림 시스템 전면 제거가 포함되었습니다.
+Evidence-Driven Development Protocol. `/deep-work "task"` drives the full Brainstorm → Research → Plan → Implement → Test workflow automatically.
 
-## v6.5.0 — M3 Envelope Adoption (claude-deep-suite Phase 2 #3)
+For detailed version history see [`CHANGELOG.md`](CHANGELOG.md) / [`CHANGELOG.ko.md`](CHANGELOG.ko.md). This file is intentionally short — it holds the overview, structure, and drift-resistant conventions only. Version-by-version release notes live in CHANGELOG.
 
-`session-receipt.json` 및 `receipts/SLICE-*.json` 모두 다음 형식으로 emit:
+To check the current version: `jq -r .version .claude-plugin/plugin.json`
+
+---
+
+## Project Overview
+
+**deep-work** is a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that wraps an evidence-driven development cycle behind a single slash command. It enforces phase discipline via computational hooks (`phase-guard`), validates implementation receipts, and emits M3 envelope-wrapped artifacts for cross-plugin consumption.
+
+**Three-layer architecture:**
+1. **Skill-based phase dispatch** — one Skill per phase (`deep-brainstorm` / `deep-research` / `deep-plan` / `deep-implement` / `deep-test` / `deep-integrate`)
+2. **Computational enforcement** — `phase-guard` hook (worktree guard + phase transition injection + non-implement dangerous-command denylist) and TDD enforcement
+3. **Receipt validation** — `session-receipt.json` + `receipts/SLICE-*.json` as M3 cross-plugin envelopes with identity-triplet guards
+
+**Marketplace presence**: One of six plugins in the [claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suite) marketplace.
+
+---
+
+## 🚨 CRITICAL — Plugin Update Workflow
+
+**Every deep-work release must be accompanied by the following work. No exceptions.**
+
+### 1. Sync the deep-suite marketplace (required)
+
+Update the following files in `/Users/sungmin/Dev/claude-plugins/deep-suite/`:
+
+- **`.claude-plugin/marketplace.json`** — under the `deep-work` entry: `sha` = full 40-character merge commit hash on the new `main`; description = one-line headline summary.
+- **`README.md`** / **`README.ko.md`** — the `deep-work` row in the Plugins table and any narrative sections that reference the version.
+- **`guides/integrated-workflow-guide.md`** / **`integrated-workflow-guide.ko.md`** — version-tagged guidance, if any.
+
+After editing:
+```bash
+cd /Users/sungmin/Dev/claude-plugins/deep-suite
+git add .claude-plugin/marketplace.json README.md README.ko.md guides/integrated-workflow-guide*.md
+git commit -m "chore: bump deep-work to vX.Y.Z — <one-line summary>"
+git push
+```
+
+### 2. Update deep-work CHANGELOG (both languages, required)
+
+- Add a new version entry to both `CHANGELOG.md` and `CHANGELOG.ko.md`
+- Bump the version in `.claude-plugin/plugin.json` and `package.json`
+
+**Do NOT inline release notes in this CLAUDE.md** — CHANGELOG is the single source of truth.
+
+### 3. Critical — Do Not Touch
+
+- `~/.claude/plugins/marketplaces/claude-deep-suite/` — the Claude Code marketplace cache (holds install state). Never edit directly; push to the working repo and run `/plugin marketplace update`.
+- `~/.claude/plugins/cache/claude-deep-suite/` — plugin install cache. Same rule.
+
+---
+
+## Structure
+
+```
+deep-work/
+├── .claude-plugin/plugin.json    # plugin manifest
+├── package.json                   # npm manifest (files field controls distribution scope)
+├── commands/                      # slash commands (thin wrappers + utilities)
+├── agents/                        # Claude Code subagents
+│   └── session-recommender.md    # session-init recommendation sub-agent
+├── hooks/
+│   ├── hooks.json                # P0 worktree guard + P1 phase transition + non-implement denylist
+│   └── scripts/
+│       ├── phase-guard.sh                    # entry point — dispatches to phase-guard-core
+│       ├── phase-guard-core.js               # denylist regex engine
+│       ├── wrap-receipt-envelope.js          # M3 envelope writer (called from agents + commands)
+│       ├── verify-delegated-receipt.sh       # post-hoc receipt validation
+│       └── verify-receipt-core.js            # 8-item validation module
+├── skills/
+│   ├── deep-work-orchestrator/   # initialization + auto-flow
+│   ├── deep-brainstorm/          # Phase 0
+│   ├── deep-research/            # Phase 1
+│   ├── deep-plan/                # Phase 2
+│   ├── deep-implement/           # Phase 3
+│   ├── deep-test/                # Phase 4
+│   ├── deep-integrate/           # Phase 5 (cross-plugin, optional)
+│   ├── deep-work-workflow/       # workflow overview
+│   └── shared/references/        # cross-skill reference guides
+├── sensors/                       # linter/type/coverage detection + run
+├── health/                        # Health Engine — drift detection + fitness functions
+├── templates/                     # CI templates + topology engine
+├── tests/                         # regression tests
+├── assumptions.json               # assumption baseline (justifies hook enforcement)
+├── scripts/                       # plugin-level utilities
+│   ├── validate-agents.sh                 # agent frontmatter check
+│   ├── validate-envelope-emit.js          # release-lint (mirrors suite envelope schema)
+│   ├── migrate-profile-v2-to-v3.js        # profile migration helper
+│   ├── load-v3-profile.js                 # v3 schema profile reader
+│   ├── parse-deep-work-flags.js           # CLI flag parser
+│   ├── recommender-input.js               # session-recommender input sanitization
+│   ├── recommender-parser.js              # 5-key validation parser
+│   ├── detect-capability.js               # environment capability detection
+│   ├── format-ask-options.js              # AskUserQuestion option formatter
+│   └── migrate-model-routing.js           # model_routing legacy → "sonnet" atomic migration
+├── CHANGELOG.md / CHANGELOG.ko.md
+├── README.md / README.ko.md
+└── AGENTS.md                      # agent registry + invocation conventions
+```
+
+---
+
+## Key Concepts
+
+### Receipt envelope (M3)
+
+Both `session-receipt.json` and `receipts/SLICE-*.json` emit as M3 cross-plugin envelopes:
 
 ```
 {
   "schema_version": "1.0",
   "envelope": {
     "producer": "deep-work",
-    "producer_version": "6.6.3",
-    "artifact_kind": "session-receipt|slice-receipt",
+    "producer_version": "<from .claude-plugin/plugin.json>",
+    "artifact_kind": "session-receipt | slice-receipt",
     "run_id": "<ULID>",
     "session_id": "<dw-session-id>",
     "parent_run_id": "<consumed evolve-insights run_id, optional>",
     "generated_at": "<RFC 3339>",
-    "schema": { "name": "<same as artifact_kind>", "version": "1.0" },
+    "schema": { "name": "<matches artifact_kind>", "version": "1.0" },
     "git": { "head": "<sha>", "branch": "<name>", "dirty": false },
-    "provenance": {
-      "source_artifacts": [{ "path": "...", "run_id": "..." }],
-      "tool_versions": { "node": "v20.x" }
-    }
+    "provenance": { "source_artifacts": [...], "tool_versions": {...} }
   },
-  "payload": { /* legacy session/slice receipt body — schema_version: "1.0" preserved */ }
+  "payload": { /* legacy receipt body — schema_version: "1.0" preserved */ }
 }
 ```
 
-**Writer**: `hooks/scripts/wrap-receipt-envelope.js`(markdown agent prompt에서 호출하는 CLI helper). `agents/implement-slice-worker.md`(slice receipts)와 `commands/deep-finish.md`(session receipt, Section 7-Z) 양쪽이 이 helper를 사용. helper는 자기 모듈 path 기준으로 plugin의 `.claude-plugin/plugin.json`에서 `producer_version`을 읽는다 (handoff §4 literal-cwd-resolve 회피).
+**Writer**: `hooks/scripts/wrap-receipt-envelope.js` (CLI helper invoked from markdown agent prompts). Used by `agents/implement-slice-worker.md` for slice receipts and `commands/deep-finish.md` §7-Z for session receipts. Reads `producer_version` from `.claude-plugin/plugin.json` via literal-cwd-resolve.
 
-**Reader**: 모든 internal reader(`hooks/scripts/verify-delegated-receipt-runner.js`, `validate-receipt.sh`, `session-end.sh`, `receipt-migration.js`)와 cross-plugin consumer(`skills/deep-integrate/gather-signals.sh`, `skills/deep-research/SKILL.md`)가 M3 envelope 형태를 감지하고 identity guard(`producer === "deep-work"` + `artifact_kind` + `schema.name === artifact_kind`)를 검증한 뒤 `.payload`로 unwrap하고 legacy 필드를 읽는다. Legacy non-envelope receipt는 그대로 통과 (forward-compat).
+**Readers**: every internal reader (`verify-delegated-receipt-runner.js`, `validate-receipt.sh`, `session-end.sh`, `receipt-migration.js`) plus cross-plugin consumers (`skills/deep-integrate/gather-signals.sh`, `skills/deep-research/SKILL.md`) detect the envelope, verify the identity-triplet (`producer === "deep-work"`, `artifact_kind` matches, `schema.name === artifact_kind`), then unwrap to read legacy fields. Legacy non-envelope receipts pass through unmodified (forward-compat).
 
-**Self-test**: `scripts/validate-envelope-emit.js`가 suite envelope schema를 미러링한 zero-dep release-lint. `tests/envelope-emit.test.js` + `tests/envelope-chain.test.js`가 identity guard, corrupt-payload defense, ULID Crockford alphabet (I/L/O/U 거부), SemVer 2.0.0 strict, cross-plugin chain assertion (session-receipt.parent_run_id === consumed evolve-insights.run_id)를 cover.
+**Self-test**: `scripts/validate-envelope-emit.js` mirrors the suite envelope schema as a zero-dep release-lint. `tests/envelope-emit.test.js` + `tests/envelope-chain.test.js` cover identity guards, corrupt-payload defense, ULID Crockford alphabet (rejects I/L/O/U), strict SemVer 2.0.0, and the cross-plugin chain assertion `session-receipt.parent_run_id === consumed evolve-insights.run_id`.
 
-> **Suite-side 갱신**(marketplace.json SHA bump, payload-registry placeholder → authoritative, adoption ledger T+0 line)은 claude-deep-suite Phase 3 batch에서 일괄 처리 (handoff §1 정책). Phase 2 plugin PR은 plugin repo만 수정한다.
+### Phase-guard hook
 
-## Structure
+`hooks/scripts/phase-guard.sh` enforces phase transitions and blocks non-implement dangerous commands. The denylist (managed in `phase-guard-core.js`) covers:
 
-```
-.claude-plugin/plugin.json          # 플러그인 매니페스트
-package.json                         # npm 매니페스트 (files 필드에 배포 대상 명시)
-commands/                            # 슬래시 커맨드 (thin wrappers + utilities)
-hooks/hooks.json                     # 훅 설정 (P0 worktree guard + P1 phase transition)
-hooks/scripts/                       # 훅 스크립트 및 테스트
-skills/deep-work-orchestrator/       # Orchestrator Skill (초기화 + auto-flow)
-skills/deep-brainstorm/              # Phase 0 Skill
-skills/deep-research/                # Phase 1 Skill
-skills/deep-plan/                    # Phase 2 Skill
-skills/deep-implement/               # Phase 3 Skill
-skills/deep-test/                    # Phase 4 Skill
-skills/deep-integrate/               # Phase 5 Skill (cross-plugin integrate, optional)
-skills/deep-work-workflow/           # 워크플로우 개요 Skill
-skills/shared/references/            # 공통 레퍼런스 가이드
-sensors/                             # 센서 시스템 (linter/type/coverage detection + run)
-health/                              # Health Engine (드리프트 탐지 + fitness functions)
-templates/                           # CI 템플릿 + topology 엔진 (topologies/, topology-detector.js)
-tests/                               # 회귀 테스트 (envelope-emit/-chain, handoff-roundtrip, phase-guard golden/denylist)
-assumptions.json                     # assumption 기준선 (hook enforcement justification)
-agents/                              # Claude Code subagents (research/implement delegation)
-agents/session-recommender.md        # v6.4.2 session-init recommendation sub-agent
-hooks/scripts/verify-delegated-receipt.sh      # Post-hoc receipt validation (delegate precondition)
-hooks/scripts/verify-receipt-core.js # 8-item validation module
-hooks/scripts/wrap-receipt-envelope.js # v6.5.0 M3 envelope writer (called by implement-slice-worker + deep-finish §7-Z)
-hooks/scripts/phase-guard.sh         # v6.6.x non-implement dangerous-command denylist + per-family CLAUDE_ALLOW_* override
-hooks/scripts/phase-guard-core.js    # phase-guard regex engine (denylist evaluation)
-scripts/validate-agents.sh           # Static agent frontmatter check
-scripts/validate-envelope-emit.js    # v6.5.0 zero-dep release-lint (mirrors suite envelope schema)
-scripts/migrate-profile-v2-to-v3.js  # Profile v2→v3 migration helper (native YAML)
-scripts/load-v3-profile.js           # v3 schema profile reader (orchestrator §1-3-3)
-scripts/parse-deep-work-flags.js     # CLI flag parser (allowlists, priority matrix)
-scripts/recommender-input.js         # session-recommender input sanitization
-scripts/recommender-parser.js        # session-recommender output parser (5-key validation)
-scripts/detect-capability.js         # environment capability detection
-scripts/format-ask-options.js        # AskUserQuestion option formatter
-scripts/migrate-model-routing.js     # v6.4.0 model_routing legacy "main" → "sonnet" atomic migration
-```
+- `curl | sh` pipe-shells
+- `rm -rf` on protected paths
+- `npm publish`
+- `kubectl` destructive verbs
+- SQL `DROP` / `DELETE`
+- `dd` / `mkfs` / `fdisk`
 
-## Release Workflow — deep-suite marketplace 연동
+Each family supports a per-family `CLAUDE_ALLOW_*` override env var for legitimate use. The 8 golden scenarios plus 5 override fall-through scenarios are pinned in `tests/`.
 
-deep-work는 [Sungmin-Cho/claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suite) marketplace를 통해 사용자에게 배포된다. 본 repo의 release(버전 bump + tag)가 사용자 환경에 적용되려면 deep-suite repo의 `marketplace.json` + 관련 문서가 같이 갱신되어야 한다.
+---
 
-**연동 working repo**: `/Users/sungmin/Dev/claude-plugins/deep-suite` (origin: `Sungmin-Cho/claude-deep-suite`)
+## Workflows & Conventions
 
-**deep-work release 후 deep-suite에서 갱신해야 할 파일**:
+### Release flow
 
-```
-.claude-plugin/marketplace.json               # plugins[].source.sha를 새 release commit으로
-CLAUDE.md                                      # deep-work 버전/기능 변경 반영
-README.md / README.ko.md                       # deep-work 섹션 갱신 (영어/한국어)
-guides/integrated-workflow-guide.md            # deep-work 사용 가이드 (영어)
-guides/integrated-workflow-guide.ko.md         # 동일 (한국어)
-```
+1. Implementation + tests on a feature branch
+2. PR + merge to `main`
+3. CHANGELOG entries (both languages) + plugin.json/package.json bump (same PR or a follow-up)
+4. **Sync deep-suite per the CRITICAL section above**
 
-**절차** (deep-work main에 release commit이 들어간 후):
+### Atomic commit hygiene
 
-1. `git -C /Users/sungmin/Dev/claude-plugins/deep-work rev-parse main` → 새 sha 확보
-2. `cd /Users/sungmin/Dev/claude-plugins/deep-suite`
-3. `marketplace.json`의 `plugins[name="deep-work"].source.sha`를 새 sha로 갱신
-4. 위 docs 4종에서 deep-work 관련 섹션을 새 버전 내용으로 갱신 (CHANGELOG의 신규 기능/변경/breaking 요약)
-5. `git add … && git commit -m "chore: bump deep-work to vX.Y.Z — <한 줄 요약>"`
-6. `git push origin main`
+Each commit corresponds to exactly one task. Never use `git add -A` (risk of leaking sensitive files). Use HEREDOC commit messages with the Co-Authored-By trailer.
 
-**중요 — 수정 금지 위치**:
+### Receipt schema changes
 
-- `~/.claude/plugins/marketplaces/claude-deep-suite/` — Claude Code의 marketplace cache. plugin install 상태 보유. 직접 수정하지 말고 위 working repo에서 push 후 `/plugin marketplace update` 명령으로 갱신.
-- `~/.claude/plugins/cache/claude-deep-suite/` — plugin install cache. 마찬가지로 직접 수정 금지.
+Any change to the `payload` shape requires a corresponding bump in `schemas/payload-registry/<producer>/<artifact_kind>/v<MAJOR.MINOR>.schema.json` over in deep-suite. Forward-compatible additions are fine; breaking shape changes require a new minor version of the schema.
 
+### Suite-side updates
+
+`marketplace.json` SHA bump, payload-registry placeholder → authoritative, and adoption-ledger T+0 line are batched in deep-suite Phase 3 — NOT in this repo. Plugin PRs touch the plugin repo only.
+
+---
+
+## Quick references
+
+| Question | Answer |
+|---|---|
+| How do I add a new slash command? | New `.md` under `commands/` — auto-discovered |
+| How do I add a new skill? | New directory under `skills/<name>/` with `SKILL.md` + `references/` |
+| How do I add a new subagent? | New `agents/<name>.md` (frontmatter + prompt) |
+| How do I bypass `phase-guard`? | Set the matching `CLAUDE_ALLOW_<family>` env var (per-family override) — never disable globally |
+| Receipt validation failed? | Run `hooks/scripts/verify-delegated-receipt.sh <path>` to see which of the 8 checks failed |
+| How do I run the test suite? | `npm test` (Node 20+ required) |
+
+---
+
+## Related repositories
+
+- **deep-suite (marketplace)**: https://github.com/Sungmin-Cho/claude-deep-suite — `/Users/sungmin/Dev/claude-plugins/deep-suite`
+- **deep-wiki**: https://github.com/Sungmin-Cho/claude-deep-wiki
+- **deep-evolve**: https://github.com/Sungmin-Cho/claude-deep-evolve
+- **deep-review**: https://github.com/Sungmin-Cho/claude-deep-review
+- **deep-docs**: https://github.com/Sungmin-Cho/claude-deep-docs
+- **deep-dashboard**: https://github.com/Sungmin-Cho/claude-deep-dashboard
+
+---
+
+**🔁 Reminder**: This CLAUDE.md is intentionally kept short. For every new release:
+
+1. **Write the details in CHANGELOG** (not here — prevents drift)
+2. **Only sync the schema sections** (Receipt envelope, Phase-guard hook) if the schema or denylist itself changed
+3. **Sync the deep-suite marketplace** (see the "CRITICAL" section above)
