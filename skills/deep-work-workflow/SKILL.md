@@ -1,10 +1,6 @@
 ---
 name: deep-work-workflow
-description: |
-  Evidence-driven development protocol with auto-flow orchestration.
-  Use when: "deep work", "plan before code", "TDD", "evidence-driven",
-  "분석 후 구현", "structured workflow", or complex multi-file tasks
-  that benefit from structured planning before implementation.
+description: "This skill provides a high-level overview of the deep-work workflow (Brainstorm → Research → Plan → Implement → Test → Integrate, with M3 envelope receipt emit and Exit Gates between phases). Use when the user asks how deep-work works, requests a workflow overview, asks 'which phase should I start from', or needs to understand the phase-to-phase contracts. For executing an actual phase, prefer the phase-specific skills (deep-brainstorm, deep-research, deep-plan, deep-implement, deep-test, deep-integrate). Triggers: 'deep-work overview', 'workflow 개요', 'how does deep-work work', 'phase 구조 설명'."
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Plan → Implement → Test → Integrate

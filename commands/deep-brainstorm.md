@@ -1,5 +1,6 @@
 ---
 allowed-tools: Skill, Read, Write, Bash, Glob, Grep, Agent, AskUserQuestion
+description: "Phase 0 — Brainstorm: 문제 정의·성공 기준·접근법 비교 (skip-able, why before how)"
 ---
 
 > **Internal (v6.3.0)** — orchestrator §3-1이 `Skill("deep-brainstorm", ...)`로 호출하는 Phase 0 진입점. `/deep-work` auto-flow가 기본 경로이며, 특정 phase만 재실행할 때 수동 호출도 가능합니다.

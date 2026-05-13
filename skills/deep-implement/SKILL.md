@@ -1,6 +1,6 @@
 ---
 name: deep-implement
-description: "Phase 3 — Implement: slice-based TDD execution of approved plan"
+description: "This skill should be used at Phase 3 of deep-work to execute slice-based TDD (RED → GREEN → REFACTOR) for each approved plan slice. Dispatches in solo (inline) or team (implement-slice-worker subagent delegation by cluster_id) mode, runs computational sensors (lint/typecheck/coverage), performs 2-stage slice review (delegate reviewer + evaluator_model), and emits M3-envelope-wrapped receipts/SLICE-*.json via hooks/scripts/wrap-receipt-envelope.js. Triggered by 'implement phase', '구현 시작', '/deep-work continue', or orchestrator dispatch after plan approval."
 ---
 
 > [!IMPORTANT]
@@ -260,12 +260,12 @@ per-slice diff: `git diff $git_before_slice -- [slice files]`
 - Agent(evaluator_model): diff + Architecture Decision 검증
 - Critical finding → 수정 (max 1 retry)
 
-### Step D: Receipt 수집
+### Step D: Receipt 수집 — legacy payload 구성
 
 slice 종료 직전 (spec 검증 + slice review 완료 후):
 - `git_after_slice` = `git rev-parse HEAD`
 
-`$WORK_DIR/receipts/SLICE-NNN.json` 생성 — 필수 필드 (v6.4.0 per-slice baseline schema):
+먼저 **legacy payload** (v6.4.0 per-slice baseline schema)를 in-memory로 구성한다 — 다음 필수 필드:
 - **status** (필수): "complete" | "blocked"
 - **tdd**:
   - `state_transitions`: ["PENDING", "RED_VERIFIED", "GREEN", "SENSOR_CLEAN"] 등
@@ -274,6 +274,56 @@ slice 종료 직전 (spec 검증 + slice review 완료 후):
 - **changes.git_diff**: `git diff git_before_slice..git_after_slice` 출력
 - sensor_results, spec_compliance, slice_review, harness_metadata
 - slice_confidence: done | done_with_concerns + concerns 배열
+
+### Step D-1: M3 Envelope Wrap (v6.5.0)
+
+legacy payload 구성 후, **`hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 (단일 writer 정책 — CLAUDE.md §v6.5.0 Writer 절).
+
+호출 예시 (실제 CLI는 helper 상단 usage block 참조):
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" \
+  --artifact-kind slice-receipt \
+  --session-id "${SESSION_ID}" \
+  --payload-file <legacy payload JSON path> \
+  --output "${WORK_DIR}/receipts/SLICE-NNN.json" \
+  [--parent-run-id "${PARENT_RUN_ID:-}"] \
+  [--source-evolve-insights <path>] \
+  [--source-harnessability <path>]
+```
+
+- `run_id`는 helper가 ULID(Crockford base32)로 내부 생성 — CLI flag 없음.
+- `--parent-run-id` 미지정 시 `--source-evolve-insights`에서 cross-plugin envelope의 `run_id`를 자동 추출 (helper §tryReadEnvelopeRunId).
+- `--source-artifacts-glob`는 session-receipt 단계에서 slice-receipt들을 intra-plugin chain으로 집계하기 위한 옵션 (deep-finish §7-Z 사용).
+- `--source-harnessability`는 cross-plugin source artifact를 `provenance.source_artifacts[]`에만 추가하고 `parent_run_id`는 건드리지 않는다.
+
+최종 파일은 다음 구조 (CLAUDE.md §v6.5.0 envelope spec과 동일):
+
+```json
+{
+  "schema_version": "1.0",
+  "envelope": {
+    "producer": "deep-work",
+    "producer_version": "<read from .claude-plugin/plugin.json by helper>",
+    "artifact_kind": "slice-receipt",
+    "run_id": "<ULID — Crockford base32, I/L/O/U 금지>",
+    "session_id": "<dw-session-id>",
+    "parent_run_id": "<consumed evolve-insights run_id, optional>",
+    "generated_at": "<RFC 3339>",
+    "schema": { "name": "slice-receipt", "version": "1.0" },
+    "git": { "head": "<git_after_slice sha>", "branch": "<name>", "dirty": false },
+    "provenance": {
+      "source_artifacts": [{ "path": "plan.md", "run_id": "<plan run_id>" }],
+      "tool_versions": { "node": "v20.x" }
+    }
+  },
+  "payload": { /* Step D legacy v6.4.0 slice receipt body — schema_version: "1.0" preserved */ }
+}
+```
+
+- **Identity guard** — 모든 reader (`verify-delegated-receipt-runner.js`, `session-end.sh`, deep-test §4-1)가 `envelope.producer === "deep-work"` + `artifact_kind === "slice-receipt"` + `schema.name === artifact_kind` 3중 검증 후 `.payload`로 unwrap하여 legacy 필드를 읽는다.
+- **Self-test** — `scripts/validate-envelope-emit.js` (zero-dep release-lint) + `tests/envelope-emit.test.js` + `tests/envelope-chain.test.js`가 corrupt payload, ULID alphabet 위반, SemVer strict, cross-plugin chain assertion을 cover.
+- **Legacy compat** — non-envelope receipt(이전 세션 잔존)는 reader 측에서 forward-compat 통과. 본 skill의 writer 경로는 무조건 envelope-wrap.
 
 ### Step E: Mark Complete
 

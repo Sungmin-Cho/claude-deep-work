@@ -1,6 +1,6 @@
-# deep-work v6.5.0
+# deep-work v6.6.3
 
-Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인. v6.5.0에서는 `session-receipt.json`과 `receipts/SLICE-*.json`이 claude-deep-suite M3 cross-plugin envelope으로 전환되어 cross-plugin run_id chain trace가 가능해집니다. v6.4.2에서는 세션 초기화 흐름이 LLM 추천 기반 항목별 ask로 전환되었으며, profile v2→v3 자동 마이그레이션과 알림 시스템 전면 제거가 포함되었습니다.
+Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Claude Code 플러그인. v6.6.3 (M5.5 hardening)에서는 `phase-guard` hook의 non-implement dangerous-command denylist가 강화되어 `curl|sh` pipe-shell, `rm -rf`, `npm publish`, `kubectl destructive`, SQL `DROP/DELETE`, `dd/mkfs/fdisk` 등을 정규식으로 차단하고 per-family `CLAUDE_ALLOW_*` override를 지원합니다 (8 golden 시나리오 + 5 override fall-through 시나리오 테스트). v6.5.0에서는 `session-receipt.json`과 `receipts/SLICE-*.json`이 claude-deep-suite M3 cross-plugin envelope으로 전환되어 cross-plugin run_id chain trace가 가능해졌고, v6.4.2에서는 세션 초기화 흐름이 LLM 추천 기반 항목별 ask로 전환되었으며 profile v2→v3 자동 마이그레이션과 알림 시스템 전면 제거가 포함되었습니다.
 
 ## v6.5.0 — M3 Envelope Adoption (claude-deep-suite Phase 2 #3)
 
@@ -11,7 +11,7 @@ Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstor
   "schema_version": "1.0",
   "envelope": {
     "producer": "deep-work",
-    "producer_version": "6.5.0",
+    "producer_version": "6.6.3",
     "artifact_kind": "session-receipt|slice-receipt",
     "run_id": "<ULID>",
     "session_id": "<dw-session-id>",
@@ -50,16 +50,23 @@ skills/deep-research/                # Phase 1 Skill
 skills/deep-plan/                    # Phase 2 Skill
 skills/deep-implement/               # Phase 3 Skill
 skills/deep-test/                    # Phase 4 Skill
-skills/shared/references/            # 공통 레퍼런스 가이드
+skills/deep-integrate/               # Phase 5 Skill (cross-plugin integrate, optional)
 skills/deep-work-workflow/           # 워크플로우 개요 Skill
+skills/shared/references/            # 공통 레퍼런스 가이드
 sensors/                             # 센서 시스템 (linter/type/coverage detection + run)
 health/                              # Health Engine (드리프트 탐지 + fitness functions)
 templates/                           # CI 템플릿 + topology 엔진 (topologies/, topology-detector.js)
+tests/                               # 회귀 테스트 (envelope-emit/-chain, handoff-roundtrip, phase-guard golden/denylist)
 assumptions.json                     # assumption 기준선 (hook enforcement justification)
 agents/                              # Claude Code subagents (research/implement delegation)
+agents/session-recommender.md        # v6.4.2 session-init recommendation sub-agent
 hooks/scripts/verify-delegated-receipt.sh      # Post-hoc receipt validation (delegate precondition)
 hooks/scripts/verify-receipt-core.js # 8-item validation module
+hooks/scripts/wrap-receipt-envelope.js # v6.5.0 M3 envelope writer (called by implement-slice-worker + deep-finish §7-Z)
+hooks/scripts/phase-guard.sh         # v6.6.x non-implement dangerous-command denylist + per-family CLAUDE_ALLOW_* override
+hooks/scripts/phase-guard-core.js    # phase-guard regex engine (denylist evaluation)
 scripts/validate-agents.sh           # Static agent frontmatter check
+scripts/validate-envelope-emit.js    # v6.5.0 zero-dep release-lint (mirrors suite envelope schema)
 scripts/migrate-profile-v2-to-v3.js  # Profile v2→v3 migration helper (native YAML)
 scripts/load-v3-profile.js           # v3 schema profile reader (orchestrator §1-3-3)
 scripts/parse-deep-work-flags.js     # CLI flag parser (allowlists, priority matrix)
@@ -67,7 +74,7 @@ scripts/recommender-input.js         # session-recommender input sanitization
 scripts/recommender-parser.js        # session-recommender output parser (5-key validation)
 scripts/detect-capability.js         # environment capability detection
 scripts/format-ask-options.js        # AskUserQuestion option formatter
-agents/session-recommender.md        # v6.4.2 session-init recommendation sub-agent
+scripts/migrate-model-routing.js     # v6.4.0 model_routing legacy "main" → "sonnet" atomic migration
 ```
 
 ## Release Workflow — deep-suite marketplace 연동

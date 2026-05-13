@@ -1,6 +1,6 @@
 ---
 name: deep-research
-description: "Phase 1 — Research: exhaustively analyze the codebase"
+description: "This skill should be used during deep-work Phase 1 to research an existing codebase (architecture/patterns/risks) via research-codebase-worker, or to investigate a zero-base project's tech stack/conventions/data-model via research-zerobase-worker (using WebSearch + Context7 for up-to-date library docs). Consumes evolve-insights and harnessability M3 envelopes as context. Triggered by 'start research phase', 'analyze codebase', or orchestrator dispatch after brainstorm approval. Solo/Team mode automatic based on project size."
 ---
 
 > [!IMPORTANT]
