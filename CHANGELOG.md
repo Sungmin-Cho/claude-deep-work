@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
+
+### Added
+
+- **`.codex-plugin/plugin.json`** — Codex-native plugin manifest pointing at the same skill and hook surfaces as the Claude Code manifest while preserving the existing `claude-deep-*` repository identity.
+- **`AGENTS.md`** — Codex project guide covering runtime surfaces, verification commands, and the downstream suite marketplace update requirement.
+
+### Changed
+
+- Version bumped 6.7.0 → 6.7.1 across package and plugin manifests for a patch release.
+- README documentation now calls out Codex compatibility alongside the existing Claude Code surface.
+
+### Verification
+
+- Repository validation was run before release; see the PR checklist for the exact command output.
+
 ## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration completion)
 
 ### Changed — 24 slash commands promoted to `user-invocable: true` skills

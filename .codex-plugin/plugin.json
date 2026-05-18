@@ -1,0 +1,45 @@
+{
+  "name": "deep-work",
+  "version": "6.7.1",
+  "description": "Evidence-Driven Development Protocol with skill-based phase dispatch, computational enforcement, TDD discipline, and receipt validation",
+  "author": {
+    "name": "sungmin"
+  },
+  "repository": "https://github.com/Sungmin-Cho/claude-deep-work.git",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "deep-work",
+    "evidence-driven",
+    "tdd",
+    "auto-flow",
+    "slice",
+    "receipt",
+    "quality-gate",
+    "structured-development",
+    "agent-team",
+    "code-review",
+    "session-lifecycle"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Deep Work",
+    "shortDescription": "Evidence-driven development workflow",
+    "longDescription": "Run structured Brainstorm, Research, Plan, Implement, Test, and Integrate workflows with phase skills, receipt validation, and computational guardrails.",
+    "developerName": "sungmin",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "$deep-work:deep-work-orchestrator \"build this feature\"",
+      "$deep-work:deep-status",
+      "$deep-work:deep-finish"
+    ],
+    "brandColor": "#1F2937",
+    "screenshots": []
+  }
+}

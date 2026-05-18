@@ -1,30 +1,32 @@
-# deep-work v6.4.1
+# deep-work - Codex Project Guide
 
-Evidence-Driven Development Protocol — `/deep-work "task"` 하나로 Brainstorm → Research → Plan → Implement → Test 전체 워크플로우를 자동 진행하는 Codex 플러그인.
+Evidence-Driven Development Protocol for structured agent work. The plugin
+remains Claude Code compatible while also exposing native Codex plugin metadata.
 
-## Structure
+Current version: 6.7.1.
 
+## Runtime Surfaces
+
+- Codex manifest: `.codex-plugin/plugin.json`
+- Claude Code manifest: `.claude-plugin/plugin.json`
+- User-invocable skills: `skills/deep-*/SKILL.md`
+- Hooks: `hooks/hooks.json` and `hooks/scripts/`
+- Agents: `agents/`
+- Release history: `CHANGELOG.md` and `CHANGELOG.ko.md`
+
+Do not edit local install caches under `~/.claude/plugins/` or
+`~/.codex/plugins/cache/` directly. Update this repo, then update the suite
+marketplace pin after the plugin release lands on `main`.
+
+## Verification
+
+```bash
+node -e "JSON.parse(require('fs').readFileSync('.codex-plugin/plugin.json','utf8'))"
+npm test
 ```
-.Codex-plugin/plugin.json          # 플러그인 매니페스트
-package.json                         # npm 매니페스트 (files 필드에 배포 대상 명시)
-commands/                            # 슬래시 커맨드 (thin wrappers + utilities)
-hooks/hooks.json                     # 훅 설정 (P0 worktree guard + P1 phase transition)
-hooks/scripts/                       # 훅 스크립트 및 테스트
-skills/deep-work-orchestrator/       # Orchestrator Skill (초기화 + auto-flow)
-skills/deep-brainstorm/              # Phase 0 Skill
-skills/deep-research/                # Phase 1 Skill
-skills/deep-plan/                    # Phase 2 Skill
-skills/deep-implement/               # Phase 3 Skill
-skills/deep-test/                    # Phase 4 Skill
-skills/shared/references/            # 공통 레퍼런스 가이드
-skills/deep-work-workflow/           # 워크플로우 개요 Skill
-sensors/                             # 센서 시스템 (linter/type/coverage detection + run)
-health/                              # Health Engine (드리프트 탐지 + fitness functions)
-templates/                           # CI 템플릿 + topology 엔진 (topologies/, topology-detector.js)
-assumptions.json                     # assumption 기준선 (hook enforcement justification)
-agents/                              # Codex subagents (research/implement delegation)
-hooks/scripts/verify-delegated-receipt.sh      # Post-hoc receipt validation (delegate precondition)
-hooks/scripts/verify-receipt-core.js # 8-item validation module
-scripts/validate-agents.sh           # Static agent frontmatter check
-agents/session-recommender.md        # v6.4.2 session-init recommendation sub-agent (sonnet by default)
-```
+
+After a release, update `/Users/sungmin/Dev/claude-plugins/deep-suite/`:
+
+- `.claude-plugin/marketplace.json`
+- `.agents/plugins/marketplace.json`
+- generated README / guide marker regions when version text changes

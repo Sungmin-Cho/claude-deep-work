@@ -1,6 +1,6 @@
 {
   "name": "@claude-deep-work/deep-work",
-  "version": "6.7.0",
+  "version": "6.7.1",
   "scripts": {
     "test": "node --test tests/envelope-emit.test.js tests/envelope-chain.test.js tests/handoff-roundtrip.test.js tests/phase-guard-denylist.test.js tests/phase-guard-golden.test.js"
   },
@@ -20,6 +20,7 @@
   ],
   "files": [
     ".claude-plugin/",
+    ".codex-plugin/",
     "skills/",
     "hooks/",
     "sensors/",
