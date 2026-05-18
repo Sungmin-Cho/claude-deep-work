@@ -9,7 +9,7 @@ Current version: 6.7.1.
 
 - Codex manifest: `.codex-plugin/plugin.json`
 - Claude Code manifest: `.claude-plugin/plugin.json`
-- User-invocable skills: `skills/deep-*/SKILL.md`
+- User-invocable skills: `skills/*/SKILL.md`
 - Hooks: `hooks/hooks.json` and `hooks/scripts/`
 - Agents: `agents/`
 - Release history: `CHANGELOG.md` and `CHANGELOG.ko.md`
