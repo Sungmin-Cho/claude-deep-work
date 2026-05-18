@@ -25,11 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 추가
+
+- **`skills/deep-work/SKILL.md`** — Claude, Codex 및 기타 skill 호출자가 내부 `deep-work-orchestrator` 이름을 알 필요 없이 `$deep-work:deep-work "task"`로 시작할 수 있도록 primary `deep-work` skill entry alias를 복구. alias는 모든 인자를 `deep-work-orchestrator`로 그대로 전달한다.
+- **`tests/skill-entry-alias.test.js`** — skill-only entrypoint 계약을 고정: `commands/deep-work.md` wrapper 없이 `deep-work` skill이 `$ARGUMENTS`를 보존해 `deep-work-orchestrator`로 위임해야 한다.
+
+### 변경
+
+- Codex plugin default prompt의 첫 진입점을 `$deep-work:deep-work "build this feature"`로 변경.
+- Manifest/package 설명에서 entry alias를 Codex-only가 아니라 Claude/Codex skill-native 표면으로 정리.
+
 ## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration 완성)
 
-### Changed — 24 slash command 을 `user-invocable: true` skill 로 승격
+### Changed — 24 command-equivalent 표면을 `user-invocable: true` skill 로 승격
 
-- **Category A (7)**: `commands/` 의 얇은 `Skill()` 래퍼 삭제. 매칭 skill 본문에 `user-invocable: true` 한 줄 추가 (본문은 변경 없음). 대상: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. 슬래시 진입이 wrapper command 를 거치지 않고 skill 본문으로 직접 흐른다 — orchestrator 의 5-phase dispatch 는 변경 없음.
+- **Category A (7)**: `commands/` 의 얇은 `Skill()` 래퍼 삭제. 매칭 skill 본문에 `user-invocable: true` 한 줄 추가 (본문은 변경 없음). 대상: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. Skill invocation 이 wrapper command 를 거치지 않고 skill 본문으로 직접 흐른다 — orchestrator 의 5-phase dispatch 는 변경 없음.
 - **Category B (17)**: `skills/<verb>/SKILL.md` 신규 작성. `user-invocable: true` frontmatter + `## Invocation` / `## Inputs (skill args)` / `## Prerequisites` head sections 추가. 본문은 cross-reference path 재타깃팅만 적용하고 byte-단위 보존. 기존 `commands/<verb>.md` 삭제. 대상: `deep-assumptions`, `deep-cleanup`, `deep-debug`, `deep-finish` (660 lines — suite 단일 최대), `deep-fork`, `deep-history`, `deep-insight`, `deep-mutation-test`, `deep-phase-review`, `deep-receipt`, `deep-report`, `deep-resume`, `deep-sensor-scan`, `deep-slice`, `deep-status` (receipt/history/report/assumptions sub-page 의 hub), `drift-check`, `solid-review`.
 - **`commands/` 디렉토리 제거**. `package.json` `files` 필드에서 `commands/` 빠짐.
 - **deep-status hub sub-page 재타깃팅**: §6/§7/§8/§9 의 "Read the `/deep-X` command file and follow its logic inline" 문장이 "Read `skills/deep-X/SKILL.md` and follow its logic inline" 로 바뀜 — hub-spoke inline-dispatch 패턴 보존. 4 sub-skill (`deep-receipt` / `deep-history` / `deep-report` / `deep-assumptions`) 의 `참조처:` 라인도 `skills/deep-status/SKILL.md` §X 로 retargeting.
@@ -45,8 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration — 호출자별
 
-- **Claude Code 사용자**: zero-touch. 24개 슬래시 명령 모두 그대로 동작 (예: `/deep-work`, `/deep-status --history`, `/deep-finish --skip-integrate`) — `commands/*.md` 래퍼 대신 `user-invocable: true` skill 로 routing.
-- **Cross-platform 호출자**: 슬래시 대신 `Skill({ skill: "deep-work:<verb>", args: "..." })` 호출. 24 표면 모두 동일하게 응답. 예: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
+- **Claude Code / cross-platform skill 호출자**: `Skill({ skill: "deep-work:<verb>", args: "..." })` 또는 host별 동등한 skill invocation 문법으로 호출. 24 표면 모두 동일하게 응답. 예: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
 - **`$ARGUMENTS` 보존**: `$ARGUMENTS` 분기를 가진 본문 (특히 `deep-finish` 의 flag 다수, `deep-fork` 의 session-id + `--from-phase`, `deep-status` 의 flag matrix, `deep-insight` / `drift-check` / `solid-review` 의 target arg, `deep-assumptions` 의 subcommand) 은 byte-단위 보존됨 — `Skill()` 의 `args` 필드가 slash 호출과 동일하게 `$ARGUMENTS` 로 매핑됨.
 - **`phase-guard.sh` 손대지 않음** — Phase 5 enforcement 가 이미 `skills/deep-integrate/` 경로를 hardcode (v6.5 부터). Phase 5 dispatch 변경 없음.
 - **`BUG_REVIEW_REPORT.md` leave-as-is** — historical audit 산출물로 v6.5.x line 번호에 pin 되어 있음. historical accuracy 보호.

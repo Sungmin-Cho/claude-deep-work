@@ -35,7 +35,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "$deep-work:deep-work-orchestrator \"build this feature\"",
+      "$deep-work:deep-work \"build this feature\"",
       "$deep-work:deep-status",
       "$deep-work:deep-finish"
     ],

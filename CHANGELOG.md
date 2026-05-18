@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`skills/deep-work/SKILL.md`** — restored the primary `deep-work` skill entry alias so Claude, Codex, and other skill callers can invoke `$deep-work:deep-work "task"` instead of knowing the internal `deep-work-orchestrator` name. The alias forwards all arguments to `deep-work-orchestrator`.
+- **`tests/skill-entry-alias.test.js`** — pins the skill-only entrypoint contract: no `commands/deep-work.md` wrapper is required, and the `deep-work` skill delegates to `deep-work-orchestrator` with `$ARGUMENTS` preserved.
+
+### Changed
+
+- Codex plugin default prompt now uses `$deep-work:deep-work "build this feature"` as the first-run entrypoint.
+- Manifest/package descriptions now describe the entry alias as skill-native for Claude and Codex, not Codex-only.
+
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
 ### Added
@@ -27,9 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration completion)
 
-### Changed — 24 slash commands promoted to `user-invocable: true` skills
+### Changed — 24 command-equivalent surfaces promoted to `user-invocable: true` skills
 
-- **Category A (7)**: thin `Skill()` wrappers under `commands/` deleted; the matching skill bodies gain `user-invocable: true` in frontmatter (no body changes). Targets: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. Slash entry now flows directly to the skill bodies instead of through a wrapper command — orchestrator's 5-phase dispatch unchanged.
+- **Category A (7)**: thin `Skill()` wrappers under `commands/` deleted; the matching skill bodies gain `user-invocable: true` in frontmatter (no body changes). Targets: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. Skill invocation now flows directly to the skill bodies instead of through a wrapper command — orchestrator's 5-phase dispatch unchanged.
 - **Category B (17)**: new `skills/<verb>/SKILL.md` files created with `user-invocable: true` frontmatter + new `## Invocation` / `## Inputs (skill args)` / `## Prerequisites` head sections; bodies preserved byte-for-byte except internal cross-reference path retargeting. Old `commands/<verb>.md` files deleted. Targets: `deep-assumptions`, `deep-cleanup`, `deep-debug`, `deep-finish` (660 lines — single largest in the suite), `deep-fork`, `deep-history`, `deep-insight`, `deep-mutation-test`, `deep-phase-review`, `deep-receipt`, `deep-report`, `deep-resume`, `deep-sensor-scan`, `deep-slice`, `deep-status` (hub of receipt/history/report/assumptions sub-pages), `drift-check`, `solid-review`.
 - **`commands/` directory removed**. `package.json` `files` field updated to drop `commands/`.
 - **deep-status hub sub-page retargeting**: §6/§7/§8/§9 lines that previously read "Read the `/deep-X` command file and follow its logic inline" now read "Read `skills/deep-X/SKILL.md` and follow its logic inline" — preserving the inline-dispatch hub-spoke pattern. The 4 sub-skill files (`deep-receipt` / `deep-history` / `deep-report` / `deep-assumptions`) also have their `참조처:` lines retargeted to `skills/deep-status/SKILL.md` §X.
@@ -45,8 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration — for callers
 
-- **Claude Code users**: zero-touch. All 24 slash commands continue to work (e.g., `/deep-work`, `/deep-status --history`, `/deep-finish --skip-integrate`) — they now route through `user-invocable: true` skills instead of `commands/*.md` wrappers.
-- **Cross-platform callers**: invoke via `Skill({ skill: "deep-work:<verb>", args: "..." })` instead of slash. All 24 surfaces respond uniformly. Example: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
+- **Claude Code / cross-platform skill callers**: invoke via `Skill({ skill: "deep-work:<verb>", args: "..." })` or the host's equivalent skill invocation syntax. All 24 surfaces respond uniformly. Example: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
 - **`$ARGUMENTS` preservation**: bodies that branch on `$ARGUMENTS` (notably `deep-finish` flags, `deep-fork` session-id + `--from-phase`, `deep-status` flag matrix, `deep-insight` / `drift-check` / `solid-review` target args, `deep-assumptions` subcommands) are preserved byte-for-byte — `args` field of `Skill()` is mapped to `$ARGUMENTS` identically to slash invocation.
 - **`phase-guard.sh` untouched** — already hardcodes `skills/deep-integrate/` for Phase 5 enforcement (since v6.5). Phase 5 dispatch unchanged.
 - **`BUG_REVIEW_REPORT.md` left as-is** — historical audit artifact pinned to v6.5.x line numbers; preserving historical accuracy.

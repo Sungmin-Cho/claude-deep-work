@@ -62,7 +62,6 @@ deep-work/
 ├── .claude-plugin/plugin.json
 ├── .codex-plugin/plugin.json    # plugin manifest
 ├── package.json                   # npm manifest (files field controls distribution scope)
-├── commands/                      # slash commands (thin wrappers + utilities)
 ├── agents/                        # Claude Code subagents
 │   └── session-recommender.md    # session-init recommendation sub-agent
 ├── hooks/
@@ -70,10 +69,11 @@ deep-work/
 │   └── scripts/
 │       ├── phase-guard.sh                    # entry point — dispatches to phase-guard-core
 │       ├── phase-guard-core.js               # denylist regex engine
-│       ├── wrap-receipt-envelope.js          # M3 envelope writer (called from agents + commands)
+│       ├── wrap-receipt-envelope.js          # M3 envelope writer (called from agents + skills)
 │       ├── verify-delegated-receipt.sh       # post-hoc receipt validation
 │       └── verify-receipt-core.js            # 8-item validation module
 ├── skills/
+│   ├── deep-work/                 # primary entry alias for Claude/Codex skill callers
 │   ├── deep-work-orchestrator/   # initialization + auto-flow
 │   ├── deep-brainstorm/          # Phase 0
 │   ├── deep-research/            # Phase 1
@@ -179,7 +179,7 @@ Any change to the `payload` shape requires a corresponding bump in `schemas/payl
 
 | Question | Answer |
 |---|---|
-| How do I add a new slash command? | New `.md` under `commands/` — auto-discovered |
+| How do I add a new user entrypoint? | New `user-invocable: true` skill under `skills/<name>/SKILL.md` |
 | How do I add a new skill? | New directory under `skills/<name>/` with `SKILL.md` + `references/` |
 | How do I add a new subagent? | New `agents/<name>.md` (frontmatter + prompt) |
 | How do I bypass `phase-guard`? | Set the matching `CLAUDE_ALLOW_<family>` env var (per-family override) — never disable globally |
