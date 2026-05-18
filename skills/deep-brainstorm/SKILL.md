@@ -1,6 +1,7 @@
 ---
 name: deep-brainstorm
-description: "This skill should be used at Phase 0 of a deep-work session to explore the problem space before implementation — defining goals, success criteria, boundaries, and comparing 2-3 candidate approaches. Triggered when the /deep-work orchestrator enters brainstorm phase, or when /deep-brainstorm is invoked directly to ideate on a task without writing code yet. Skippable via --skip-brainstorm."
+description: "This skill should be used at Phase 0 of a deep-work session to explore the problem space before implementation — defining goals, success criteria, boundaries, and comparing 2-3 candidate approaches. Triggered when the /deep-work orchestrator enters brainstorm phase, when /deep-brainstorm is invoked directly, or via cross-platform Skill({ skill: \"deep-work:deep-brainstorm\", args: \"...\" }) to ideate on a task without writing code yet. Skippable via --skip-brainstorm."
+user-invocable: true
 ---
 
 > [!IMPORTANT]

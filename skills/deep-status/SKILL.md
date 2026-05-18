@@ -1,7 +1,42 @@
 ---
-allowed-tools: Read, Glob, Bash
-description: "Check the current deep work session status and progress"
+name: deep-status
+description: "Use when the user wants to see the current deep-work session status and progress — dashboard, badge, tree, or routing to sub-pages (receipts / history / report / assumptions). Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Hub command that dispatches to deep-receipt (§6), deep-history (§7), deep-report (§8), deep-assumptions (§9) sub-skills via inline body Read. Supports `--compare` (fork comparison), `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`."
+user-invocable: true
 ---
+
+## Invocation
+
+이 스킬은 두 가지 경로로 호출됩니다 — 어느 쪽이든 본 SKILL 본문의 절차를 그대로 실행합니다:
+
+1. **Claude Code 슬래시** — 사용자가 `/deep-status [args...]` 입력 (skill 의 `user-invocable: true` 가 슬래시 진입을 허용).
+2. **타 에이전트 / Codex / Copilot CLI / Gemini CLI / SDK** — `Skill({ skill: "deep-work:deep-status", args: "..." })` 형태로 명시 invoke (cross-platform 표준 경로).
+
+두 경로 모두 args 는 동일한 토큰 문자열로 전달되며, 본문 (`$ARGUMENTS` 자리) 의 파서가 동일하게 처리합니다.
+
+## Inputs (skill args)
+
+| 인자 | 의미 |
+|---|---|
+| (없음) | Default status dashboard |
+| `--compare` | Fork session 비교 (parent vs forks) |
+| `--receipts` | deep-receipt sub-skill 호출 (§6) |
+| `--history` | deep-history sub-skill 호출 (§7) |
+| `--report` | deep-report sub-skill 호출 (§8) |
+| `--assumptions` | deep-assumptions sub-skill 호출 (§9) |
+| `--all` | 4 sub-page 모두 순차 실행 |
+| `--tree` | Fork tree 출력 |
+| `--badge` | Shields.io 호환 badge 출력 |
+
+빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
+
+## Prerequisites
+
+이 entry skill 은 `deep-work-orchestrator` (Phase dispatch) 및 `deep-work-workflow` (reference skill — Phase 규약/Exit Gate/M3 envelope) 와 함께 동작합니다. 활성 deep-work 세션이 있을 때는 세션 state file (`.claude/deep-work.<SESSION_ID>.md`) 의 변수 (`work_dir`, `current_phase`, `active_slice` 등) 를 읽어 동작하며, 세션 외부에서도 standalone 실행이 가능한 경우 본문의 분기를 따릅니다.
+
+**Hub-spoke 관계**: 본 skill 은 `deep-receipt` / `deep-history` / `deep-report` / `deep-assumptions` 4 개 sub-skill 의 hub 입니다 — 본문 §6 ~ §9 가 각 sub-skill 의 SKILL.md 를 inline Read 하여 로직을 실행합니다. 4 sub-skill 은 standalone 으로도 호출 가능합니다.
+
+**Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
+
 
 # Deep Work Status
 
@@ -286,7 +321,7 @@ If no subdirectories exist and no flat files (research.md, plan.md) exist in `.d
 
 If `$ARGUMENTS` contains `--receipts`:
 
-Read the `/deep-receipt` command file and follow its display logic inline.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-receipt/SKILL.md` and follow its display logic inline.
 
 If a specific slice ID follows `--receipts` (e.g., `--receipts SLICE-001`):
 - Show detailed receipt for that slice (equivalent to `/deep-receipt view SLICE-NNN`)
@@ -303,7 +338,7 @@ Otherwise (bare `--receipts`):
 
 If `$ARGUMENTS` contains `--history`:
 
-Read the `/deep-history` command file and follow its display logic inline.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-history/SKILL.md` and follow its display logic inline.
 
 If insufficient session data (fewer than 2 completed sessions in `.deep-work/harness-history/harness-sessions.jsonl`):
 ```
@@ -337,15 +372,15 @@ Best: #[N] ([score])  Worst: #[N] ([score])
 
 If `$ARGUMENTS` contains `--report`:
 
-Read the `/deep-report` command file and follow its logic:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-report/SKILL.md` and follow its logic:
 - If `$WORK_DIR/report.md` exists: display its contents
-- If not: generate the report following `/deep-report`'s structure, then display
+- If not: generate the report following `${CLAUDE_PLUGIN_ROOT}/skills/deep-report/SKILL.md`'s structure, then display
 
 ### 9. --assumptions: Assumption Health
 
 If `$ARGUMENTS` contains `--assumptions`:
 
-Read the `/deep-assumptions` command file and follow its logic.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-assumptions/SKILL.md` and follow its logic.
 
 Sub-flags:
 - `--verbose`: Show per-signal per-session breakdown (equivalent to `/deep-assumptions report --verbose`)

@@ -1,10 +1,41 @@
 ---
-allowed-tools: Read, Bash
-description: "Assumption health report — validate whether deep-work's enforcement rules are still justified by session evidence"
+name: deep-assumptions
+description: "Use when the user wants to inspect deep-work's assumption health report — Wilson Score-based per-assumption confidence, verdict (justified / loosen / drop), model-aware split, and decay history. Triggers on `/deep-assumptions`, `/deep-status --assumptions`, \"assumption health\", \"rule justification\", \"loosen enforcement\", \"어썸션 헬스\", \"규칙 정당화\", \"가정 검증\". Reads session evidence to decide whether deep-work's hook denylist + receipt validation rules are still justified. Sub-page of the deep-status hub."
+user-invocable: true
 ---
 
+## Invocation
+
+이 스킬은 두 가지 경로로 호출됩니다 — 어느 쪽이든 본 SKILL 본문의 절차를 그대로 실행합니다:
+
+1. **Claude Code 슬래시** — 사용자가 `/deep-assumptions [args...]` 입력 (skill 의 `user-invocable: true` 가 슬래시 진입을 허용).
+2. **타 에이전트 / Codex / Copilot CLI / Gemini CLI / SDK** — `Skill({ skill: "deep-work:deep-assumptions", args: "..." })` 형태로 명시 invoke (cross-platform 표준 경로).
+
+두 경로 모두 args 는 동일한 토큰 문자열로 전달되며, 본문 (`$ARGUMENTS` 자리) 의 파서가 동일하게 처리합니다.
+
+## Inputs (skill args)
+
+| 인자 | 의미 |
+|---|---|
+| (없음) / `report` | Default — per-assumption confidence + Wilson Score + verdict + model-aware split |
+| `report --verbose` | Per-signal per-session breakdown |
+| `history` | ASCII confidence evolution timeline (requires 5+ sessions) |
+| `export --format=badge` | shields.io 호환 JSON badge 출력 |
+| `--rebuild` | Receipt 파일에서 JSONL 재생성 후 report 표시 |
+
+빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
+
+## Prerequisites
+
+이 entry skill 은 `deep-work-orchestrator` (Phase dispatch) 및 `deep-work-workflow` (reference skill — Phase 규약/Exit Gate/M3 envelope) 와 함께 동작합니다. 활성 deep-work 세션이 있을 때는 세션 state file (`.claude/deep-work.<SESSION_ID>.md`) 의 변수 (`work_dir`, `current_phase`, `active_slice` 등) 를 읽어 동작하며, 세션 외부에서도 standalone 실행이 가능한 경우 본문의 분기를 따릅니다.
+
+**Hub-spoke 관계**: 본 skill 은 `deep-status` hub 의 sub-page 입니다 — `/deep-status --<flag>` 가 본문 로직을 inline Read 하여 실행하는 것이 주 경로이며, 직접 호출도 동일하게 지원됩니다.
+
+**Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
+
+
 > **Internal (v6.3.0)** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
-> 참조처: `commands/deep-status.md` §9 (`Read the /deep-assumptions command file and follow its logic`).
+> 참조처: `skills/deep-status/SKILL.md` §9 (`Read skills/deep-assumptions/SKILL.md and follow its logic`).
 
 # Assumption Health Report (v5.0)
 
@@ -23,7 +54,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 - `/deep-assumptions export --format=badge` — shields.io JSON badge output
 - `/deep-assumptions --rebuild` — Regenerate JSONL from receipts, then show report
 
-## Prerequisites
+## Runtime Setup
 
 ### 1. Read state and paths
 

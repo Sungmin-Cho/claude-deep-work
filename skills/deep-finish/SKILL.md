@@ -1,10 +1,44 @@
 ---
-allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
-description: "Finish a deep work session — merge, PR, keep, or discard the branch"
+name: deep-finish
+description: "Use when the user finishes a deep-work session — merging, opening a PR, keeping the branch as-is, or discarding. Triggers on `/deep-finish`, \"finish session\", \"wrap up session\", \"세션 마무리\", \"세션 종료\", \"PR 만들어줘\", or orchestrator auto-call after Phase 5 (Integrate) completes. Emits an M3-envelope-wrapped `session-receipt.json` (and optionally a cross-plugin `handoff.json`). Supports `--skip-integrate` (Phase 5 bypass), `--handoff-to=<plugin>` / `--no-handoff` (post-finish handoff control)."
+user-invocable: true
 ---
 
+## Invocation
+
+이 스킬은 두 가지 경로로 호출됩니다 — 어느 쪽이든 본 SKILL 본문의 절차를 그대로 실행합니다:
+
+1. **Claude Code 슬래시** — 사용자가 `/deep-finish [args...]` 입력 (skill 의 `user-invocable: true` 가 슬래시 진입을 허용).
+2. **타 에이전트 / Codex / Copilot CLI / Gemini CLI / SDK** — `Skill({ skill: "deep-work:deep-finish", args: "..." })` 형태로 명시 invoke (cross-platform 표준 경로).
+
+두 경로 모두 args 는 동일한 토큰 문자열로 전달되며, 본문 (`$ARGUMENTS` 자리) 의 파서가 동일하게 처리합니다.
+
+## Inputs (skill args)
+
+| 인자 | 의미 |
+|---|---|
+| (없음) | AskUserQuestion: `outcome=merge\|pr\|keep\|discard` 분기 |
+| `--skip-integrate` | Phase 5 가 에러/사용자 요청으로 중단된 경로 — Section 1c 로 강제 진행 |
+| `--handoff-to=<plugin>` | 완료 후 명시된 plugin (deep-evolve / deep-wiki 등) 으로 fully-automated handoff |
+| `--no-handoff` | outcome=merge/pr 이어도 handoff 제안 스킵 |
+
+빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
+
+## Prerequisites
+
+이 entry skill 은 `deep-work-orchestrator` (Phase dispatch) 및 `deep-work-workflow` (reference skill — Phase 규약/Exit Gate/M3 envelope) 와 함께 동작합니다. 활성 deep-work 세션이 있을 때는 세션 state file (`.claude/deep-work.<SESSION_ID>.md`) 의 변수 (`work_dir`, `current_phase`, `active_slice` 등) 를 읽어 동작하며, 세션 외부에서도 standalone 실행이 가능한 경우 본문의 분기를 따릅니다.
+
+**Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
+
+**Runtime dependencies (cross-platform invokers must provide)**:
+- `CLAUDE_PLUGIN_ROOT` env var — absolute path to the deep-work plugin root (used by §7-Z `wrap-receipt-envelope.js` and §7-Z-A `emit-handoff.js`).
+- `PROJECT_ROOT` env var — absolute path to the repository root (used by §1, §7-Z, §7-Z-A). Standalone invokers can derive via `git rev-parse --show-toplevel`.
+- Node 20+ on PATH (the two hook scripts above are zero-dep Node CLIs).
+- Sibling skill helper at `skills/deep-integrate/phase5-record-error.sh` (used by §1c when `--skip-integrate` is taken with a stalled Phase 5).
+
+
 > **Internal (v6.3.0)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
-> 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read "/deep-finish"`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
+> 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read skills/deep-finish/SKILL.md`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
 
 # Deep Work Session Completion (v4.1)
 
@@ -354,7 +388,7 @@ Use AskUserQuestion:
 2. Get base branch from state: `worktree_base_branch` (stored at worktree creation time)
 3. Switch to base: `cd [project_root] && git checkout [worktree_base_branch]`
 4. Merge: `git merge [worktree_branch]`
-4. **Merge conflict handling**: If merge fails:
+5. **Merge conflict handling**: If merge fails:
    ```
    ⚠️ 충돌이 발생했습니다. 충돌 파일:
    [list conflict files]
@@ -362,8 +396,8 @@ Use AskUserQuestion:
    수동으로 충돌을 해결한 후 /deep-finish를 다시 실행하세요.
    ```
    Abort: `git merge --abort`. Stop here.
-5. On success: `git worktree remove [worktree_path]` + `git branch -d [worktree_branch]`
-6. Update session-receipt **payload**: set `outcome: "merge"` in
+6. On success: `git worktree remove [worktree_path]` + `git branch -d [worktree_branch]`
+7. Update session-receipt **payload**: set `outcome: "merge"` in
    `$WORK_DIR/.session-receipt.payload.json` (Edit tool — preserve existing
    fields). The envelope wrap happens in Section 7-Z.
 

@@ -1,7 +1,35 @@
 ---
-allowed-tools: Skill, Read, Write, Edit, Bash, Grep, Glob, Agent, AskUserQuestion, TeamCreate, TaskCreate, TaskUpdate, TaskList, TaskGet, SendMessage
-description: "Resume an active deep work session — restores context and continues from where you left off"
+name: deep-resume
+description: "Use when the user wants to resume an active deep-work session — restoring context from previous artifacts and continuing from the current phase. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or when interrupted mid-phase. Detects active session via env var → pointer file → legacy fallback, restores worktree context, migrates state if version-bumped, clears phase cache, and dispatches to the per-phase resume skill. Supports `--session=<id>`, `--resume-from=<phase>`, `--worktree=<path>`."
+user-invocable: true
 ---
+
+## Invocation
+
+이 스킬은 두 가지 경로로 호출됩니다 — 어느 쪽이든 본 SKILL 본문의 절차를 그대로 실행합니다:
+
+1. **Claude Code 슬래시** — 사용자가 `/deep-resume [args...]` 입력 (skill 의 `user-invocable: true` 가 슬래시 진입을 허용).
+2. **타 에이전트 / Codex / Copilot CLI / Gemini CLI / SDK** — `Skill({ skill: "deep-work:deep-resume", args: "..." })` 형태로 명시 invoke (cross-platform 표준 경로).
+
+두 경로 모두 args 는 동일한 토큰 문자열로 전달되며, 본문 (`$ARGUMENTS` 자리) 의 파서가 동일하게 처리합니다.
+
+## Inputs (skill args)
+
+| 인자 | 의미 |
+|---|---|
+| (없음) | Auto-detect active session + 현재 phase resume |
+| `--session=<id>` | 명시 세션 ID resume |
+| `--resume-from=<phase>` | `brainstorm|research|plan|implement|test` 강제 |
+| `--worktree=<path>` | worktree 경로 명시 |
+
+빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
+
+## Prerequisites
+
+이 entry skill 은 `deep-work-orchestrator` (Phase dispatch) 및 `deep-work-workflow` (reference skill — Phase 규약/Exit Gate/M3 envelope) 와 함께 동작합니다. 활성 deep-work 세션이 있을 때는 세션 state file (`.claude/deep-work.<SESSION_ID>.md`) 의 변수 (`work_dir`, `current_phase`, `active_slice` 등) 를 읽어 동작하며, 세션 외부에서도 standalone 실행이 가능한 경우 본문의 분기를 따릅니다.
+
+**Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
+
 
 > **Utility (v6.2.4)** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
 > 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).

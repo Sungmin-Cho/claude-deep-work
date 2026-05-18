@@ -1,6 +1,7 @@
 ---
 name: deep-implement
-description: "This skill should be used at Phase 3 of deep-work to execute slice-based TDD (RED → GREEN → REFACTOR) for each approved plan slice. Dispatches in solo (inline) or team (implement-slice-worker subagent delegation by cluster_id) mode, runs computational sensors (lint/typecheck/coverage), performs 2-stage slice review (delegate reviewer + evaluator_model), and emits M3-envelope-wrapped receipts/SLICE-*.json via hooks/scripts/wrap-receipt-envelope.js. Triggered by 'implement phase', '구현 시작', '/deep-work continue', or orchestrator dispatch after plan approval."
+description: "This skill should be used at Phase 3 of deep-work to execute slice-based TDD (RED → GREEN → REFACTOR) for each approved plan slice. Dispatches in solo (inline) or team (implement-slice-worker subagent delegation by cluster_id) mode, runs computational sensors (lint/typecheck/coverage), performs 2-stage slice review (delegate reviewer + evaluator_model), and emits M3-envelope-wrapped receipts/SLICE-*.json via hooks/scripts/wrap-receipt-envelope.js. Triggered by 'implement phase', '구현 시작', '/deep-work continue', /deep-implement slash, cross-platform Skill({ skill: \"deep-work:deep-implement\", args: \"...\" }), or orchestrator dispatch after plan approval."
+user-invocable: true
 ---
 
 > [!IMPORTANT]
