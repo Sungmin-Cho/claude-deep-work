@@ -1,8 +1,33 @@
 ---
-allowed-tools: Read, Grep, Glob, Bash, Write, Agent
-description: "SOLID design principles code review — evaluates SRP, OCP, LSP, ISP, DIP compliance. Standalone or deep-work Advisory Quality Gate."
-argument-hint: "target file or directory (optional)"
+name: solid-review
+description: "Use when the user wants SOLID design-principles code review — evaluating SRP / OCP / LSP / ISP / DIP compliance on a target file/directory/glob. Triggers on `/solid-review`, \"SOLID review\", \"design review\", \"design principles\", \"SOLID 검증\", \"디자인 리뷰\", \"원칙 검증\", or auto-invocation by `/deep-test` as the Advisory Quality Gate (does not block). Review-only — does NOT modify code. Saves results to `$WORK_DIR/solid-review.md` when in workflow mode."
+user-invocable: true
 ---
+
+## Invocation
+
+이 스킬은 두 가지 경로로 호출됩니다 — 어느 쪽이든 본 SKILL 본문의 절차를 그대로 실행합니다:
+
+1. **Claude Code 슬래시** — 사용자가 `/solid-review [args...]` 입력 (skill 의 `user-invocable: true` 가 슬래시 진입을 허용).
+2. **타 에이전트 / Codex / Copilot CLI / Gemini CLI / SDK** — `Skill({ skill: "deep-work:solid-review", args: "..." })` 형태로 명시 invoke (cross-platform 표준 경로).
+
+두 경로 모두 args 는 동일한 토큰 문자열로 전달되며, 본문 (`$ARGUMENTS` 자리) 의 파서가 동일하게 처리합니다.
+
+## Inputs (skill args)
+
+| 인자 | 의미 |
+|---|---|
+| (없음) | Auto-detect scope: 활성 세션의 changed files, 없으면 현재 디렉터리 |
+| `<target>` | File path / directory / glob pattern |
+
+빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
+
+## Prerequisites
+
+이 entry skill 은 `deep-work-orchestrator` (Phase dispatch) 및 `deep-work-workflow` (reference skill — Phase 규약/Exit Gate/M3 envelope) 와 함께 동작합니다. 활성 deep-work 세션이 있을 때는 세션 state file (`.claude/deep-work.<SESSION_ID>.md`) 의 변수 (`work_dir`, `current_phase`, `active_slice` 등) 를 읽어 동작하며, 세션 외부에서도 standalone 실행이 가능한 경우 본문의 분기를 따릅니다.
+
+**Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
+
 
 > **Quality Gate (v6.2.4)** — `/deep-test`가 Advisory Gate로 자동 실행합니다. 특정 파일/디렉터리에 대한 독립 SOLID 검증이 필요할 때 직접 사용하세요.
 > Standalone: `/solid-review [target]`

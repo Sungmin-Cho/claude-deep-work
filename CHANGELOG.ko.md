@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration 완성)
+
+### Changed — 24 slash command 을 `user-invocable: true` skill 로 승격
+
+- **Category A (7)**: `commands/` 의 얇은 `Skill()` 래퍼 삭제. 매칭 skill 본문에 `user-invocable: true` 한 줄 추가 (본문은 변경 없음). 대상: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. 슬래시 진입이 wrapper command 를 거치지 않고 skill 본문으로 직접 흐른다 — orchestrator 의 5-phase dispatch 는 변경 없음.
+- **Category B (17)**: `skills/<verb>/SKILL.md` 신규 작성. `user-invocable: true` frontmatter + `## Invocation` / `## Inputs (skill args)` / `## Prerequisites` head sections 추가. 본문은 cross-reference path 재타깃팅만 적용하고 byte-단위 보존. 기존 `commands/<verb>.md` 삭제. 대상: `deep-assumptions`, `deep-cleanup`, `deep-debug`, `deep-finish` (660 lines — suite 단일 최대), `deep-fork`, `deep-history`, `deep-insight`, `deep-mutation-test`, `deep-phase-review`, `deep-receipt`, `deep-report`, `deep-resume`, `deep-sensor-scan`, `deep-slice`, `deep-status` (receipt/history/report/assumptions sub-page 의 hub), `drift-check`, `solid-review`.
+- **`commands/` 디렉토리 제거**. `package.json` `files` 필드에서 `commands/` 빠짐.
+- **deep-status hub sub-page 재타깃팅**: §6/§7/§8/§9 의 "Read the `/deep-X` command file and follow its logic inline" 문장이 "Read `skills/deep-X/SKILL.md` and follow its logic inline" 로 바뀜 — hub-spoke inline-dispatch 패턴 보존. 4 sub-skill (`deep-receipt` / `deep-history` / `deep-report` / `deep-assumptions`) 의 `참조처:` 라인도 `skills/deep-status/SKILL.md` §X 로 retargeting.
+- **CLAUDE.md:133** 재타깃팅: `commands/deep-finish.md §7-Z` → `skills/deep-finish/SKILL.md §7-Z` (`wrap-receipt-envelope.js` 의 caller naming).
+- **`hooks/scripts/wrap-receipt-envelope.js`** JSDoc 갱신: caller naming `deep-finish.md, agents/implement-slice-worker.md` → `skills/deep-finish/SKILL.md §7-Z, agents/implement-slice-worker.md`.
+- **`skills/deep-work-orchestrator/SKILL.md`** 내부 참조 retargeting: `Read \`/deep-finish\`` → `Read \`skills/deep-finish/SKILL.md\``; `\`deep-resume.md\`가 사용` → `\`skills/deep-resume/SKILL.md\`가 사용`. orchestrator 의 `Skill("deep-X", args=...)` dispatch 는 `user-invocable: true` 등록 덕분에 skill 본문으로 정상 resolve.
+
+### Rationale — cross-platform parity 가 suite-wide migration 을 완성
+
+- 슬래시 커맨드는 Claude Code 전용; user-invocable skill 은 **Codex / Copilot CLI / Gemini CLI / Agent SDK** 에서 `Skill({ skill: "deep-work:<verb>", args: "..." })` 형태로 동작.
+- 본 PR 은 suite-wide command→skill 마이그레이션의 **4번째이자 최종** installment: deep-docs v1.3.0 (pilot, 1 command) → deep-evolve v3.4.0 (2nd, 1 command + `$ARGUMENTS`) → deep-wiki v1.6.0 (3rd, 5 commands) → **deep-work v6.7.0 (4th, 24 commands)**. 4개 installment 모두 동일한 mechanical 패턴 사용 — frontmatter `user-invocable: true`, `## Invocation` + `## Inputs (skill args)` + `## Prerequisites` head sections, body byte-보존, cross-ref sed retargeting — 3개 선행 PR 에서 검증됨.
+- 24개 atomic 전환 (부분 전환 아님) 이 필요한 이유: `deep-status` 가 4 sub-skill 을 inline body Read 로 dispatch 하는 hub 이므로 부분 전환 시 hub-spoke graph 가 깨짐. 24개 중 절반 (Category A, 7) 은 1-line frontmatter 변경 + wrapper 삭제이므로 실제 신규 skill 저작 분량은 17개.
+
+### Migration — 호출자별
+
+- **Claude Code 사용자**: zero-touch. 24개 슬래시 명령 모두 그대로 동작 (예: `/deep-work`, `/deep-status --history`, `/deep-finish --skip-integrate`) — `commands/*.md` 래퍼 대신 `user-invocable: true` skill 로 routing.
+- **Cross-platform 호출자**: 슬래시 대신 `Skill({ skill: "deep-work:<verb>", args: "..." })` 호출. 24 표면 모두 동일하게 응답. 예: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
+- **`$ARGUMENTS` 보존**: `$ARGUMENTS` 분기를 가진 본문 (특히 `deep-finish` 의 flag 다수, `deep-fork` 의 session-id + `--from-phase`, `deep-status` 의 flag matrix, `deep-insight` / `drift-check` / `solid-review` 의 target arg, `deep-assumptions` 의 subcommand) 은 byte-단위 보존됨 — `Skill()` 의 `args` 필드가 slash 호출과 동일하게 `$ARGUMENTS` 로 매핑됨.
+- **`phase-guard.sh` 손대지 않음** — Phase 5 enforcement 가 이미 `skills/deep-integrate/` 경로를 hardcode (v6.5 부터). Phase 5 dispatch 변경 없음.
+- **`BUG_REVIEW_REPORT.md` leave-as-is** — historical audit 산출물로 v6.5.x line 번호에 pin 되어 있음. historical accuracy 보호.
+
+### Tests
+
+- 기존 177개 `node:test` assertion 모두 PASS 유지: `envelope-emit`, `envelope-chain`, `handoff-roundtrip`, `phase-guard-denylist`, `phase-guard-golden`. 5개 test 파일 중 어느 것도 `commands/*` 경로를 참조하지 않음 (변환 전 검증). 테스트 변경 불필요.
+- 전체 plugin (CHANGELOG / BUG_REVIEW_REPORT / docs/ / node_modules / .git 제외) 에서 `grep -rn 'commands/deep-\|commands/drift\|commands/solid'` 결과 **0 hits** — 변환 완료 후.
+
 ## [6.6.3] - 2026-05-12
 
 ### Added — M5.5 #3 hook golden test + M5.5.X (§9) phase-guard 강화 롤업

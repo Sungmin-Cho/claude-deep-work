@@ -5,10 +5,10 @@
  * wrap-receipt-envelope.js — CLI to wrap a deep-work receipt payload in the
  * M3 cross-plugin envelope (cf. claude-deep-suite/docs/envelope-migration.md §1).
  *
- * Designed to be called from markdown agent prompts (deep-finish.md,
- * agents/implement-slice-worker.md) via the Bash tool. The agent writes the
- * domain payload to a temp file, then invokes this helper to produce the final
- * receipt artifact at the canonical path.
+ * Designed to be called from markdown agent / skill prompts
+ * (skills/deep-finish/SKILL.md §7-Z, agents/implement-slice-worker.md) via the
+ * Bash tool. The caller writes the domain payload to a temp file, then invokes
+ * this helper to produce the final receipt artifact at the canonical path.
  *
  * Usage:
  *   node wrap-receipt-envelope.js \

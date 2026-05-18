@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration completion)
+
+### Changed — 24 slash commands promoted to `user-invocable: true` skills
+
+- **Category A (7)**: thin `Skill()` wrappers under `commands/` deleted; the matching skill bodies gain `user-invocable: true` in frontmatter (no body changes). Targets: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. Slash entry now flows directly to the skill bodies instead of through a wrapper command — orchestrator's 5-phase dispatch unchanged.
+- **Category B (17)**: new `skills/<verb>/SKILL.md` files created with `user-invocable: true` frontmatter + new `## Invocation` / `## Inputs (skill args)` / `## Prerequisites` head sections; bodies preserved byte-for-byte except internal cross-reference path retargeting. Old `commands/<verb>.md` files deleted. Targets: `deep-assumptions`, `deep-cleanup`, `deep-debug`, `deep-finish` (660 lines — single largest in the suite), `deep-fork`, `deep-history`, `deep-insight`, `deep-mutation-test`, `deep-phase-review`, `deep-receipt`, `deep-report`, `deep-resume`, `deep-sensor-scan`, `deep-slice`, `deep-status` (hub of receipt/history/report/assumptions sub-pages), `drift-check`, `solid-review`.
+- **`commands/` directory removed**. `package.json` `files` field updated to drop `commands/`.
+- **deep-status hub sub-page retargeting**: §6/§7/§8/§9 lines that previously read "Read the `/deep-X` command file and follow its logic inline" now read "Read `skills/deep-X/SKILL.md` and follow its logic inline" — preserving the inline-dispatch hub-spoke pattern. The 4 sub-skill files (`deep-receipt` / `deep-history` / `deep-report` / `deep-assumptions`) also have their `참조처:` lines retargeted to `skills/deep-status/SKILL.md` §X.
+- **CLAUDE.md:133** retargeted: `commands/deep-finish.md §7-Z` → `skills/deep-finish/SKILL.md §7-Z` (caller-naming for `wrap-receipt-envelope.js`).
+- **`hooks/scripts/wrap-receipt-envelope.js`** JSDoc updated: caller naming `deep-finish.md, agents/implement-slice-worker.md` → `skills/deep-finish/SKILL.md §7-Z, agents/implement-slice-worker.md`.
+- **`skills/deep-work-orchestrator/SKILL.md`** internal references retargeted: `Read \`/deep-finish\`` → `Read \`skills/deep-finish/SKILL.md\``; `\`deep-resume.md\`가 사용` → `\`skills/deep-resume/SKILL.md\`가 사용`. `Skill("deep-X", args=...)` dispatches (already in orchestrator) now resolve to skill bodies via `user-invocable: true` enrollment.
+
+### Rationale — cross-platform parity completes the suite-wide migration
+
+- Slash commands are Claude Code-exclusive; user-invocable skills work in **Codex / Copilot CLI / Gemini CLI / Agent SDK** via `Skill({ skill: "deep-work:<verb>", args: "..." })`.
+- This is the **4th and final installment** of the suite-wide command→skill migration: deep-docs v1.3.0 (pilot, 1 command) → deep-evolve v3.4.0 (2nd, 1 command + `$ARGUMENTS`) → deep-wiki v1.6.0 (3rd, 5 commands) → **deep-work v6.7.0 (4th, 24 commands)**. All four installments share the same mechanical pattern (frontmatter `user-invocable: true`, `## Invocation` + `## Inputs (skill args)` + `## Prerequisites` head sections, body byte-preservation, cross-ref sed retargeting), proven across 3 prior PRs.
+- 24 atomic conversion (not partial) is required because `deep-status` is a hub that dispatches to 4 sub-skills via inline body Read; partial conversion would break the hub-spoke graph. Half of the 24 (Category A, 7) are 1-line frontmatter changes + wrapper deletion, so the real new-skill authoring volume is 17.
+
+### Migration — for callers
+
+- **Claude Code users**: zero-touch. All 24 slash commands continue to work (e.g., `/deep-work`, `/deep-status --history`, `/deep-finish --skip-integrate`) — they now route through `user-invocable: true` skills instead of `commands/*.md` wrappers.
+- **Cross-platform callers**: invoke via `Skill({ skill: "deep-work:<verb>", args: "..." })` instead of slash. All 24 surfaces respond uniformly. Example: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
+- **`$ARGUMENTS` preservation**: bodies that branch on `$ARGUMENTS` (notably `deep-finish` flags, `deep-fork` session-id + `--from-phase`, `deep-status` flag matrix, `deep-insight` / `drift-check` / `solid-review` target args, `deep-assumptions` subcommands) are preserved byte-for-byte — `args` field of `Skill()` is mapped to `$ARGUMENTS` identically to slash invocation.
+- **`phase-guard.sh` untouched** — already hardcodes `skills/deep-integrate/` for Phase 5 enforcement (since v6.5). Phase 5 dispatch unchanged.
+- **`BUG_REVIEW_REPORT.md` left as-is** — historical audit artifact pinned to v6.5.x line numbers; preserving historical accuracy.
+
+### Tests
+
+- All 177 existing `node:test` assertions continue to pass: `envelope-emit`, `envelope-chain`, `handoff-roundtrip`, `phase-guard-denylist`, `phase-guard-golden`. None of the 5 test files reference `commands/*` paths (verified pre-conversion), so no test updates were required.
+- `grep -rn 'commands/deep-\|commands/drift\|commands/solid'` across the entire plugin (excluding CHANGELOG / BUG_REVIEW_REPORT / docs/ / node_modules / .git) yields **0 hits** post-conversion.
+
 ## [6.6.3] - 2026-05-12
 
 ### Added — M5.5 #3 hook golden test + M5.5.X (§9) phase-guard hardening rollup

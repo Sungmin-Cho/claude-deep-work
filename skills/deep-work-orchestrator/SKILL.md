@@ -1,6 +1,7 @@
 ---
 name: deep-work-orchestrator
-description: "This skill should be used when the user invokes /deep-work \"task\", asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 5-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
+description: "This skill should be used when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 5-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
+user-invocable: true
 ---
 
 # Step 1: 세션 초기화
@@ -91,7 +92,7 @@ write_session_pointer "$SESSION_ID"
 | `--recommender=MODEL` | 신규 (v6.4.2): 추천 모델 override. allowlist `^(haiku\|sonnet\|opus)$`, 그 외 거부 + sonnet fallback + 1회 경고 |
 | `--no-recommender` | 신규 (v6.4.2): 추천 sub-agent skip (defaults 값으로 ask 진입) |
 | `--exec=<inline\|delegate>` | (v6.4.0) Implement 단계 실행 방식 override. parser → state.execution_override → deep-implement §1.5에서 read |
-| `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `deep-resume.md`가 사용. |
+| `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `skills/deep-resume/SKILL.md`가 사용. |
 
 ### §1-3-1. 플래그 파서 호출
 
@@ -577,7 +578,7 @@ Phase 5: 설치된 deep-suite 플러그인 아티팩트를 읽어 AI가 다음 �
 
 ## 3-6. Finish
 
-Read `/deep-finish` → 완료 옵션 제시:
+Read `skills/deep-finish/SKILL.md` → 완료 옵션 제시:
 - **Merge**: worktree를 base branch에 merge
 - **PR**: GitHub PR 생성
 - **Keep**: branch/worktree 유지, 나중에 처리

@@ -130,7 +130,7 @@ Both `session-receipt.json` and `receipts/SLICE-*.json` emit as M3 cross-plugin 
 }
 ```
 
-**Writer**: `hooks/scripts/wrap-receipt-envelope.js` (CLI helper invoked from markdown agent prompts). Used by `agents/implement-slice-worker.md` for slice receipts and `commands/deep-finish.md` §7-Z for session receipts. Reads `producer_version` from `.claude-plugin/plugin.json` via literal-cwd-resolve.
+**Writer**: `hooks/scripts/wrap-receipt-envelope.js` (CLI helper invoked from markdown agent/skill prompts). Used by `agents/implement-slice-worker.md` for slice receipts and `skills/deep-finish/SKILL.md` §7-Z for session receipts. Reads `producer_version` from `.claude-plugin/plugin.json` via literal-cwd-resolve.
 
 **Readers**: every internal reader (`verify-delegated-receipt-runner.js`, `validate-receipt.sh`, `session-end.sh`, `receipt-migration.js`) plus cross-plugin consumers (`skills/deep-integrate/gather-signals.sh`, `skills/deep-research/SKILL.md`) detect the envelope, verify the identity-triplet (`producer === "deep-work"`, `artifact_kind` matches, `schema.name === artifact_kind`), then unwrap to read legacy fields. Legacy non-envelope receipts pass through unmodified (forward-compat).
 

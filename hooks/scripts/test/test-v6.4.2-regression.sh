@@ -77,11 +77,13 @@ if [[ -d "$REPO_ROOT/.github/workflows" ]]; then
 fi
 
 # 7. --exec 플래그가 v6.4.0 코드 path에 보존됨 (C5/C-F)
-# active_cluster_takeover까지 포함해 v6.4.0 핵심 state 필드 모두 검증 (R3-W6 fix: >= 4)
+# active_cluster_takeover까지 포함해 v6.4.0 핵심 state 필드 모두 검증.
+# v6.7.0 (commands→skills migration): commands/deep-work.md thin wrapper 가 4번째 ref 였으나 삭제됨.
+# 남은 3개 (deep-work-orchestrator + deep-implement + deep-resume) 가 active code path 전체 cover.
 exec_refs=$(grep -rln "exec=inline\|exec=delegate\|execution_override\|active_cluster_takeover" \
-  "$REPO_ROOT/commands/" "$REPO_ROOT/skills/" 2>/dev/null \
+  "$REPO_ROOT/skills/" 2>/dev/null \
   | grep -v "/${SELF_NAME}$" | wc -l | tr -d ' ')
-[[ "$exec_refs" -ge 4 ]] || fail "--exec/execution_override/active_cluster_takeover 참조 누락 (예상 ≥4, 현재 ${exec_refs})"
+[[ "$exec_refs" -ge 3 ]] || fail "--exec/execution_override/active_cluster_takeover 참조 누락 (예상 ≥3, 현재 ${exec_refs})"
 pass "--exec=inline/delegate + execution_override + active_cluster_takeover v6.4.0 보존"
 
 echo "All regression tests PASSED"

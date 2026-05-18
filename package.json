@@ -1,10 +1,10 @@
 {
   "name": "@claude-deep-work/deep-work",
-  "version": "6.6.3",
+  "version": "6.7.0",
   "scripts": {
     "test": "node --test tests/envelope-emit.test.js tests/envelope-chain.test.js tests/handoff-roundtrip.test.js tests/phase-guard-denylist.test.js tests/phase-guard-golden.test.js"
   },
-  "description": "Deep Work plugin for Claude Code - Evidence-Driven Development Protocol with TDD enforcement, Health Engine (drift detection + fitness functions), worktree isolation, model auto-routing, receipt validation, 6-phase workflow with Phase 5 Integrate",
+  "description": "Deep Work plugin for Claude Code (cross-platform via 24 user-invocable skills) - Evidence-Driven Development Protocol with TDD enforcement, Health Engine (drift detection + fitness functions), worktree isolation, model auto-routing, receipt validation, 6-phase workflow with Phase 5 Integrate",
   "author": "sungmin",
   "license": "MIT",
   "repository": {
@@ -20,7 +20,6 @@
   ],
   "files": [
     ".claude-plugin/",
-    "commands/",
     "skills/",
     "hooks/",
     "sensors/",
