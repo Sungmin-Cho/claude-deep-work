@@ -21,6 +21,10 @@ In the 2×2 matrix (Guide/Sensor × Computational/Inferential), deep-work covers
 
 deep-work also produces receipts and health reports consumed by [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard).
 
+## Codex Compatibility
+
+This release includes native Codex plugin metadata in `.codex-plugin/plugin.json` and a Codex project guide in `AGENTS.md`. The Claude Code manifest remains in `.claude-plugin/plugin.json`, and the unchanged `claude-deep-suite` marketplace namespace lets existing installs keep their plugin keys while Codex reads the suite's `.agents/plugins/marketplace.json`.
+
 ## What's New in v6.5.0
 
 ### M3 Cross-Plugin Envelope Adoption (claude-deep-suite Phase 2 #3)

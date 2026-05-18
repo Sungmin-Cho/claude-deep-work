@@ -29,14 +29,14 @@ To check the current version: `jq -r .version .claude-plugin/plugin.json`
 
 Update the following files in `/Users/sungmin/Dev/claude-plugins/deep-suite/`:
 
-- **`.claude-plugin/marketplace.json`** — under the `deep-work` entry: `sha` = full 40-character merge commit hash on the new `main`; description = one-line headline summary.
+- **`.claude-plugin/marketplace.json`** and **`.agents/plugins/marketplace.json`** — under the `deep-work` entry: `sha` = full 40-character merge commit hash on the new `main`; description = one-line headline summary.
 - **`README.md`** / **`README.ko.md`** — the `deep-work` row in the Plugins table and any narrative sections that reference the version.
 - **`guides/integrated-workflow-guide.md`** / **`integrated-workflow-guide.ko.md`** — version-tagged guidance, if any.
 
 After editing:
 ```bash
 cd /Users/sungmin/Dev/claude-plugins/deep-suite
-git add .claude-plugin/marketplace.json README.md README.ko.md guides/integrated-workflow-guide*.md
+git add .claude-plugin/marketplace.json .agents/plugins/marketplace.json README.md README.ko.md guides/integrated-workflow-guide*.md
 git commit -m "chore: bump deep-work to vX.Y.Z — <one-line summary>"
 git push
 ```
@@ -44,7 +44,7 @@ git push
 ### 2. Update deep-work CHANGELOG (both languages, required)
 
 - Add a new version entry to both `CHANGELOG.md` and `CHANGELOG.ko.md`
-- Bump the version in `.claude-plugin/plugin.json` and `package.json`
+- Bump the version in `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `package.json`
 
 **Do NOT inline release notes in this CLAUDE.md** — CHANGELOG is the single source of truth.
 
@@ -59,7 +59,8 @@ git push
 
 ```
 deep-work/
-├── .claude-plugin/plugin.json    # plugin manifest
+├── .claude-plugin/plugin.json
+├── .codex-plugin/plugin.json    # plugin manifest
 ├── package.json                   # npm manifest (files field controls distribution scope)
 ├── commands/                      # slash commands (thin wrappers + utilities)
 ├── agents/                        # Claude Code subagents

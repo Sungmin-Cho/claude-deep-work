@@ -7,6 +7,22 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
+
+### 추가
+
+- **`.codex-plugin/plugin.json`** — Claude Code manifest 와 동일한 skill/hook 표면을 가리키는 Codex 네이티브 플러그인 manifest. 기존 `claude-deep-*` repository identity 는 유지.
+- **`AGENTS.md`** — Codex 프로젝트 가이드. runtime surface, 검증 명령, downstream suite marketplace 갱신 요구사항을 명시.
+
+### 변경
+
+- patch release 로 package/plugin manifest 버전을 6.7.0 → 6.7.1 로 동기화.
+- README 문서에 기존 Claude Code 표면과 함께 Codex 호환성을 명시.
+
+### 검증
+
+- 릴리스 전 repository 검증을 실행. 정확한 명령 출력은 PR 체크리스트 참조.
+
 ## [Unreleased]
 
 ## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration 완성)
