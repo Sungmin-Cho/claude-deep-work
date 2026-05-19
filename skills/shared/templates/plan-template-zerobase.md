@@ -43,18 +43,37 @@ project-root/
 2. [initial config]
 3. ...
 
+## Worker Handoff
+
+- 담당 worker: [Worker ID 또는 "단일 worker"]
+- write scope: [생성/수정 허용 파일/디렉토리의 Exact file path 목록]
+- read-only scope: [참조만 허용되는 파일/디렉토리]
+- 금지 범위: [수정 금지 파일/디렉토리]
+- handoff notes: [초기화 순서, 병렬 작업자와의 충돌 방지 규칙, undefined reference 없음 확인]
+
+## Verification Plan
+
+- red command: [failing_test 실행 명령과 예상 실패]
+- green command: [verification_cmd와 expected_output]
+- regression command: [필요 시 전체 회귀 명령]
+- evidence to capture: [테스트 출력, 생성 파일 경로, 주요 expected output]
+
 ## Slice Checklist
 
 - [ ] SLICE-001: [Goal]
   - files: [...]
+  - depends_on: []
   - failing_test: [...]
   - verification_cmd: [...]
   - expected_output: [...]
+  - code_sketch: [...]
   - spec_checklist: [...]
   - contract: [...]
   - acceptance_threshold: all
   - size: S / M / L
-  - steps: ...
+  - steps:
+    1. ...
+    2. ...
 
 ## Open Questions
 

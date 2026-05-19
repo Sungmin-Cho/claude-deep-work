@@ -23,7 +23,29 @@ deep-work는 [deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와
 
 ## Codex 호환성
 
-이번 릴리스는 `.codex-plugin/plugin.json` Codex 네이티브 플러그인 메타데이터와 `AGENTS.md` Codex 프로젝트 가이드를 포함합니다. Claude Code 매니페스트는 `.claude-plugin/plugin.json`에 그대로 유지되며, Claude/Codex skill 호출자의 primary entrypoint는 `$deep-work:deep-work "task"`입니다. 기존 `claude-deep-suite` marketplace namespace를 유지해 기존 설치 키를 보존하면서 Codex는 suite의 `.agents/plugins/marketplace.json`을 읽습니다.
+deep-work는 기존 claude-deep-suite marketplace namespace를 유지하면서 Claude Code와 Codex 플러그인 런타임을 모두 지원합니다. Claude Code와 Codex는 각자의 네이티브 manifest를 읽고, skill 호출자는 아래 릴리스 노트에 정리된 동일한 skill-native invocation 모델을 사용합니다.
+
+## v6.8.0 새 기능
+
+### Plan-Quality contract 강제 + CI 견고화 + receipt-tracker 안정성
+
+이번 릴리스는 plan-quality 강제, CI 위생, receipt-tracker 안정성을 세 가지 협업 변경으로 끌어올립니다:
+
+- **Plan-quality contract**: 모든 비-인라인 S/M/L slice는 이제 `failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`를 반드시 선언해야 합니다. Plan review gate (`skills/shared/references/review-gate.md`)가 이 contract와 정렬됨 — 누락 필드에 대한 "권장" 헷지나 v5.8 하위 호환 fallback이 더 이상 없음. `tests/plan-quality-contract.test.js`가 템플릿과 review-gate 문구 모두를 고정하여 silently 이탈하지 못하도록 함.
+- **CI 견고화**: non-blocking `shellcheck` advisory 스텝이 `hooks/scripts/**/*.sh`를 lint (`tests/ci-workflow-contract.test.js`로 고정). `npm test`가 이제 재귀 `node --test "**/*.test.js"` 글로브로 48+개 테스트를 모두 발견하며, 글로브 지원을 위해 CI Node 20 → 22 (LTS)로 bump.
+- **Receipt-tracker 안정성**: `hooks/scripts/file-tracker.sh`의 pre-lock receipt 초기화를 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 stale lock으로 in-lock update가 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. `hooks/scripts/file-tracker-lock-timeout.test.js`가 end-to-end drain contract를 검증.
+
+## v6.7.1 새 기능
+
+### Codex 네이티브 manifest 와 skill entry alias
+
+이번 릴리스는 `.codex-plugin/plugin.json` 과 `AGENTS.md` 를 추가해 Codex가 Claude Code와 같은 플러그인 표면을 읽도록 하며, 내부 orchestrator 이름을 몰라도 auto-flow를 시작할 수 있도록 `$deep-work:deep-work "task"` skill entry alias를 복구합니다.
+
+## v6.7.0 새 기능
+
+### 24개 커맨드를 user-invocable skill 로 승격
+
+24개 command-equivalent 표면이 모두 `skills/` 아래 `user-invocable: true` skill 로 이동했습니다. 기존 `commands/` wrapper는 제거되었고, 내부 참조는 이제 `skills/deep-status/SKILL.md` 및 `skills/deep-receipt/SKILL.md` 같은 skill 파일을 가리킵니다.
 
 ## v6.5.0 새 기능
 
@@ -100,88 +122,88 @@ AI 코딩 도구가 복잡한 작업을 수행할 때 흔히 발생하는 문제
 
 Phase 0, 1, 2, 4에서는 **코드 파일 수정이 물리적으로 차단**됩니다 (PreToolUse 훅). **Bash 파일 쓰기 명령**(`echo >`, `sed -i`, `cp`)도 차단됩니다. Phase 3에서는 **파일 변경과 receipt 데이터가 자동 수집**됩니다 (PostToolUse 훅).
 
-## 사용법 (Auto-Flow)
+## 사용법 (Skill-Native Auto-Flow)
 
 ```bash
-# 커맨드 하나로 전체 워크플로우가 자동 진행됩니다
-/deep-work "JWT 기반 사용자 인증 구현"
+# skill 호출 하나로 전체 워크플로우가 자동 진행됩니다
+$deep-work:deep-work "JWT 기반 사용자 인증 구현"
 
 # Auto-flow가 자동 오케스트레이션: Brainstorm → Research → Plan → [사용자 승인] → Implement → Test → Integrate → Report
 # Plan 승인이 유일한 필수 인터랙션입니다
 
-# 통합 상태 조회 — 플래그는 standalone /deep-report, /deep-receipt, /deep-history, /deep-assumptions와 동일한 구현으로 라우팅됨
-/deep-status              # 현재 진행 상태
-/deep-status --report     # 세션 리포트
-/deep-status --receipts   # receipt 대시보드
-/deep-status --history    # 크로스 세션 트렌드
-/deep-status --assumptions # 가설 건강도
-/deep-status --all        # 전체 통합 뷰
+# 통합 상태 조회 — 플래그는 standalone report/receipt/history/assumptions skill과 동일한 구현으로 라우팅됨
+$deep-work:deep-status              # 현재 진행 상태
+$deep-work:deep-status --report     # 세션 리포트
+$deep-work:deep-status --receipts   # receipt 대시보드
+$deep-work:deep-status --history    # 크로스 세션 트렌드
+$deep-work:deep-status --assumptions # 가설 건강도
+$deep-work:deep-status --all        # 전체 통합 뷰
 
 # 두 세션 비교
-/deep-status --compare
+$deep-work:deep-status --compare
 ```
 
-## 커맨드
+## Skill 호출
 
-### Primary 커맨드 (7개)
+### Primary Skills (7개)
 
-| 커맨드 | 설명 |
-|--------|------|
-| `/deep-work <task>` | **Auto-flow 오케스트레이션** — Brainstorm → Research → Plan → Implement → Test → Integrate 전체 파이프라인을 자동 실행. Plan 승인이 유일한 필수 인터랙션. |
-| `/deep-research` | 수동 오버라이드 — Phase 1 (Research): 코드베이스 심층 분석 |
-| `/deep-plan` | 수동 오버라이드 — Phase 2 (Plan): slice 기반 구현 계획 |
-| `/deep-implement` | 수동 오버라이드 — Phase 3 (Implement): TDD 강제 slice 실행 |
-| `/deep-test` | Phase 4: Receipt 검증 → spec compliance → code quality → quality gates. drift-check, SOLID 리뷰, insight 분석을 자동 실행. |
-| `/deep-status` | **통합 뷰** — 현재 진행 상태, 리포트, receipt, 히스토리, 가설 건강도. 플래그: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
-| `/deep-debug` | 체계적 디버깅: investigate → analyze → hypothesize → fix (실패 시 자동 진입) |
+| Skill | 설명 |
+|-------|------|
+| `$deep-work:deep-work <task>` | **Auto-flow 오케스트레이션** — Brainstorm → Research → Plan → Implement → Test → Integrate 전체 파이프라인을 자동 실행. Plan 승인이 유일한 필수 인터랙션. |
+| `$deep-work:deep-research` | 수동 오버라이드 — Phase 1 (Research): 코드베이스 심층 분석 |
+| `$deep-work:deep-plan` | 수동 오버라이드 — Phase 2 (Plan): slice 기반 구현 계획 |
+| `$deep-work:deep-implement` | 수동 오버라이드 — Phase 3 (Implement): TDD 강제 slice 실행 |
+| `$deep-work:deep-test` | Phase 4: Receipt 검증 → spec compliance → code quality → quality gates. drift-check, SOLID 리뷰, insight 분석을 자동 실행. |
+| `$deep-work:deep-status` | **통합 뷰** — 현재 진행 상태, 리포트, receipt, 히스토리, 가설 건강도. 플래그: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
+| `$deep-work:deep-debug` | 체계적 디버깅: investigate → analyze → hypothesize → fix (실패 시 자동 진입) |
 
 ### Special Utility (4개)
 
 Phase나 툴체인 헬퍼. 필요할 때 수동으로 호출합니다.
 
-| 커맨드 | 용도 |
-|--------|------|
-| `/deep-fork` | 세션을 fork하여 다른 접근법 탐색 |
-| `/deep-mutation-test` | 변경 파일 대상 mutation testing |
-| `/deep-phase-review` | brainstorm/research/plan 문서 수동 리뷰 |
-| `/deep-sensor-scan` | 린터/타입체커/커버리지를 독립 실행 |
+| Skill | 용도 |
+|-------|------|
+| `$deep-work:deep-fork` | 세션을 fork하여 다른 접근법 탐색 |
+| `$deep-work:deep-mutation-test` | 변경 파일 대상 mutation testing |
+| `$deep-work:deep-phase-review` | brainstorm/research/plan 문서 수동 리뷰 |
+| `$deep-work:deep-sensor-scan` | 린터/타입체커/커버리지를 독립 실행 |
 
-### Quality Gate (3개) — /deep-test 자동 실행, standalone 가능
+### Quality Gate (3개) — `$deep-work:deep-test` 자동 실행, standalone 가능
 
-| 커맨드 | /deep-test 내 역할 | Standalone |
-|--------|---------------------|------------|
-| `/drift-check` | Required Gate — plan 정합성 | `/drift-check [plan-file]` |
-| `/solid-review` | Advisory Gate — SOLID 원칙 | `/solid-review [target]` |
-| `/deep-insight` | Insight Tier — 메트릭/복잡도 | `/deep-insight [target]` |
+| Skill | `$deep-work:deep-test` 내 역할 | Standalone |
+|-------|----------------------------------|------------|
+| `$deep-work:drift-check` | Required Gate — plan 정합성 | `$deep-work:drift-check [plan-file]` |
+| `$deep-work:solid-review` | Advisory Gate — SOLID 원칙 | `$deep-work:solid-review [target]` |
+| `$deep-work:deep-insight` | Insight Tier — 메트릭/복잡도 | `$deep-work:deep-insight [target]` |
 
 ### Internal (7개) — 자동 호출, 수동도 공식 경로
 
-orchestrator 또는 `/deep-status`가 호출합니다. 수동 호출도 일등급 경로입니다 (특히 test 통과 후 `/deep-finish`, Phase 4 이후 `/deep-integrate`).
+orchestrator 또는 `$deep-work:deep-status`가 호출합니다. 수동 호출도 일등급 경로입니다 (특히 test 통과 후 `$deep-work:deep-finish`, Phase 4 이후 `$deep-work:deep-integrate`).
 
-| 커맨드 | 호출 주체 |
-|--------|-----------|
-| `/deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
-| `/deep-integrate` | orchestrator Phase 5 (`Skill` dispatch); test 통과 후 수동 호출 |
-| `/deep-finish` | orchestrator Step 3-6 (`Read`); test 통과 후 수동 호출 |
-| `/deep-report` | `/deep-status --report` (`Read`) |
-| `/deep-receipt` | `/deep-status --receipts` (`Read`) |
-| `/deep-history` | `/deep-status --history` (`Read`) |
-| `/deep-assumptions` | `/deep-status --assumptions` (`Read`) |
+| Skill | 호출 주체 |
+|-------|-----------|
+| `$deep-work:deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
+| `$deep-work:deep-integrate` | orchestrator Phase 5 (`Skill` dispatch); test 통과 후 수동 호출 |
+| `$deep-work:deep-finish` | orchestrator Step 3-6 (`Read`); test 통과 후 수동 호출 |
+| `$deep-work:deep-report` | `$deep-work:deep-status --report` (`Read`) |
+| `$deep-work:deep-receipt` | `$deep-work:deep-status --receipts` (`Read`) |
+| `$deep-work:deep-history` | `$deep-work:deep-status --history` (`Read`) |
+| `$deep-work:deep-assumptions` | `$deep-work:deep-status --assumptions` (`Read`) |
 
 ### Escape Hatch (1개)
 
-| 커맨드 | 노출 위치 |
-|--------|-----------|
-| `/deep-slice` | `phase-guard` TDD 블록 안내 메시지 (`spike`, `reset`) |
+| Skill | 노출 위치 |
+|-------|-----------|
+| `$deep-work:deep-slice` | `phase-guard` TDD 블록 안내 메시지 (`spike`, `reset`) |
 
 ### Utility (2개) — standalone, 기능 이관 예정
 
-특정 동작의 유일한 경로인 커맨드. 기능이 이관되면 삭제 예정 (`/deep-work --resume=<session-id>`, `/deep-status --cleanup` 로드맵 참고).
+특정 동작의 유일한 경로인 skill입니다. 기능이 이관되면 삭제 예정 (`$deep-work:deep-work --resume=<session-id>`, `$deep-work:deep-status --cleanup` 로드맵 참고).
 
-| 커맨드 | 고유 기능 |
-|--------|-----------|
-| `/deep-cleanup` | `git worktree list` 스캔, stale/active 분류, fork/registry 정리 |
-| `/deep-resume` | active 세션 선택, worktree 컨텍스트 복원, phase별 resume dispatch |
+| Skill | 고유 기능 |
+|-------|-----------|
+| `$deep-work:deep-cleanup` | `git worktree list` 스캔, stale/active 분류, fork/registry 정리 |
+| `$deep-work:deep-resume` | active 세션 선택, worktree 컨텍스트 복원, phase별 resume dispatch |
 
 ## 산출물
 

@@ -20,6 +20,25 @@ function loadFixture(name) {
   return { plan, state, receipts };
 }
 
+function releaseSection(text, version) {
+  const heading = `## [${version}]`;
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `missing release section ${heading}`);
+
+  const next = text.indexOf('\n## [', start + heading.length);
+  return next === -1 ? text.slice(start) : text.slice(start, next);
+}
+
+function sectionBetween(text, startMarker, endMarker) {
+  const start = text.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing section start ${startMarker}`);
+
+  const end = text.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(end, -1, `missing section end ${endMarker}`);
+
+  return text.slice(start, end);
+}
+
 describe('v6.4.0 integration — verify-delegated-receipt', () => {
   it('passing fixture → pass=true (exercises parsePlanMd + parseStateFile)', () => {
     const { plan, state, receipts } = loadFixture('passing');
@@ -176,8 +195,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
   });
 
   it('status and receipt commands read the actual health_report schema', () => {
-    const status = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'deep-status.md'), 'utf8');
-    const receipt = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'deep-receipt.md'), 'utf8');
+    const status = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'deep-status', 'SKILL.md'), 'utf8');
+    const receipt = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'deep-receipt', 'SKILL.md'), 'utf8');
     const combined = `${status}\n${receipt}`;
 
     assert.match(combined, /health_report\.drift\.dead_exports\.count/);
@@ -192,18 +211,69 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('current release metadata and docs are bumped to 6.5.0', () => {
+  it('active release metadata and docs are bumped to 6.8.0', () => {
+    const version = '6.8.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-    const plugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
-    const claude = fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8');
+    const claudePlugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
+    const codexPlugin = JSON.parse(fs.readFileSync(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
     const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
     const changelogKo = fs.readFileSync(path.join(root, 'CHANGELOG.ko.md'), 'utf8');
+    const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    const readmeKo = fs.readFileSync(path.join(root, 'README.ko.md'), 'utf8');
 
-    assert.equal(pkg.version, '6.5.0');
-    assert.equal(plugin.version, '6.5.0');
-    assert.match(claude, /^# deep-work v6\.5\.0/m);
-    assert.match(changelog, /^## \[6\.5\.0\] - 2026-05-07/m);
-    assert.match(changelogKo, /^## \[6\.5\.0\] - 2026-05-07/m);
+    assert.equal(pkg.version, version);
+    assert.equal(claudePlugin.version, version);
+    assert.equal(codexPlugin.version, version);
+
+    const changelogRelease = releaseSection(changelog, version);
+    const changelogKoRelease = releaseSection(changelogKo, version);
+    const changelogUnreleased = releaseSection(changelog, 'Unreleased');
+    const changelogKoUnreleased = releaseSection(changelogKo, 'Unreleased');
+
+    assert.match(changelogRelease, /Plan-quality contract enforcement \+ CI hardening \+ receipt-tracker robustness/);
+    assert.match(changelogKoRelease, /Plan-quality contract 강제 \+ CI 견고화 \+ receipt-tracker 안정성/);
+    assert.ok(changelogRelease.includes('tests/plan-quality-contract.test.js'),
+      'CHANGELOG.md 6.8.0 section must attribute the plan-quality contract test');
+    assert.ok(changelogRelease.includes('tests/ci-workflow-contract.test.js'),
+      'CHANGELOG.md 6.8.0 section must attribute the ci-workflow contract test');
+    assert.ok(changelogRelease.includes('hooks/scripts/file-tracker-lock-timeout.test.js'),
+      'CHANGELOG.md 6.8.0 section must attribute the file-tracker lock-timeout test');
+    assert.ok(changelogKoRelease.includes('tests/plan-quality-contract.test.js'),
+      'CHANGELOG.ko.md 6.8.0 section must attribute the plan-quality contract test');
+    assert.ok(changelogKoRelease.includes('tests/ci-workflow-contract.test.js'),
+      'CHANGELOG.ko.md 6.8.0 section must attribute the ci-workflow contract test');
+    assert.ok(changelogKoRelease.includes('hooks/scripts/file-tracker-lock-timeout.test.js'),
+      'CHANGELOG.ko.md 6.8.0 section must attribute the file-tracker lock-timeout test');
+    assert.equal(changelogUnreleased.includes('tests/plan-quality-contract.test.js'), false,
+      'CHANGELOG.md Unreleased section must not retain the 6.8.0 plan-quality contract note');
+    assert.equal(changelogKoUnreleased.includes('tests/plan-quality-contract.test.js'), false,
+      'CHANGELOG.ko.md Unreleased section must not retain the 6.8.0 plan-quality contract note');
+    assert.deepEqual({
+      'README.md': readme.includes("## What's New in v6.8.0"),
+      'README.ko.md': readmeKo.includes('## v6.8.0 새 기능'),
+    }, {
+      'README.md': true,
+      'README.ko.md': true,
+    });
+
+    const readmeCurrentUsage = sectionBetween(readme, '## Usage', '## Output Files');
+    const readmeKoCurrentUsage = sectionBetween(readmeKo, '## 사용법', '## 산출물');
+
+    assert.ok(readmeCurrentUsage.includes('$deep-work:deep-work "Implement JWT-based user authentication"'),
+      'README.md current usage must document the skill-native deep-work entrypoint');
+    assert.ok(readmeCurrentUsage.includes('$deep-work:deep-status --report'),
+      'README.md current usage must document the skill-native status entrypoint');
+    assert.doesNotMatch(readmeCurrentUsage,
+      /\/deep-(work|status|research|plan|implement|test|debug|fork|mutation-test|phase-review|sensor-scan|insight|slice|cleanup|resume)\b/,
+      'README.md current usage must not advertise removed slash command entrypoints');
+
+    assert.ok(readmeKoCurrentUsage.includes('$deep-work:deep-work "JWT 기반 사용자 인증 구현"'),
+      'README.ko.md current usage must document the skill-native deep-work entrypoint');
+    assert.ok(readmeKoCurrentUsage.includes('$deep-work:deep-status --report'),
+      'README.ko.md current usage must document the skill-native status entrypoint');
+    assert.doesNotMatch(readmeKoCurrentUsage,
+      /\/deep-(work|status|research|plan|implement|test|debug|fork|mutation-test|phase-review|sensor-scan|insight|slice|cleanup|resume)\b/,
+      'README.ko.md current usage must not advertise removed slash command entrypoints');
   });
 });

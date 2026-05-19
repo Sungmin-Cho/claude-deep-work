@@ -12,12 +12,12 @@ The best implementation phase is a boring one. No surprises, no creativity, no "
 
 ### Step-by-Step Execution
 
-For each task in the checklist:
+For each slice in the checklist:
 
 #### 1. Announce
 Tell the user what you're about to do:
 ```
-Task 3/8: path/to/file.ts — Adding UserService class
+SLICE-003: path/to/file.ts — Adding UserService class
 ```
 
 #### 2. Read First
@@ -35,14 +35,14 @@ Run applicable checks:
 #### 5. Mark Complete
 Update the checklist in `$WORK_DIR/plan.md`:
 ```diff
-- - [ ] Task 3: `path/to/file.ts` — Add UserService class
-+ - [x] Task 3: `path/to/file.ts` — Add UserService class
+- - [ ] SLICE-003: Add UserService class
++ - [x] SLICE-003: Add UserService class
 ```
 
 #### 6. Report
 Brief status update:
 ```
-✅ Task 3/8 완료: UserService 클래스 추가됨
+SLICE-003 완료: UserService 클래스 추가됨
 ```
 
 ## Error Handling Protocol
@@ -55,7 +55,7 @@ Brief status update:
    ## Issues Encountered
 
    ### Issue 1: [Description]
-   - **Task**: Task 3
+   - **Slice**: SLICE-003
    - **Expected**: [what was supposed to happen]
    - **Actual**: [what actually happened]
    - **Possible causes**: [analysis]

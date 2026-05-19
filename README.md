@@ -23,7 +23,29 @@ deep-work also produces receipts and health reports consumed by [deep-review](ht
 
 ## Codex Compatibility
 
-This release includes native Codex plugin metadata in `.codex-plugin/plugin.json` and a Codex project guide in `AGENTS.md`. The Claude Code manifest remains in `.claude-plugin/plugin.json`, and the primary skill-native entrypoint is `$deep-work:deep-work "task"` for Claude/Codex skill callers. The unchanged `claude-deep-suite` marketplace namespace lets existing installs keep their plugin keys while Codex reads the suite's `.agents/plugins/marketplace.json`.
+deep-work supports both Claude Code and Codex plugin runtimes while preserving the existing claude-deep-suite marketplace namespace. Claude Code and Codex read their native manifests, and skill callers use the same skill-native invocation model described in the release notes below.
+
+## What's New in v6.8.0
+
+### Plan-Quality Contract Enforcement + CI Hardening + Receipt-Tracker Robustness
+
+This release lifts plan-quality enforcement, CI hygiene, and receipt-tracker robustness through three coordinated changes:
+
+- **Plan-quality contract**: every non-inline S/M/L slice now must declare `failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, and `steps`. The plan review gate (`skills/shared/references/review-gate.md`) is aligned with this contract — no more "recommended" hedge or v5.8 backward-compat fallback for missing fields. `tests/plan-quality-contract.test.js` pins both the templates and the review-gate wording so they cannot drift.
+- **CI hardening**: a non-blocking `shellcheck` advisory step now lints `hooks/scripts/**/*.sh` (pinned by `tests/ci-workflow-contract.test.js`). `npm test` now discovers all 48+ test files via a recursive `node --test "**/*.test.js"` glob, with CI Node bumped from 20 to 22 (LTS) to support the glob form.
+- **Receipt-tracker robustness**: the pre-lock receipt init in `hooks/scripts/file-tracker.sh` is restored and made `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) so single-write slices retain a canonical `SLICE-NNN.json` even when the in-lock update path times out on a stale lock. `hooks/scripts/file-tracker-lock-timeout.test.js` verifies the end-to-end drain contract.
+
+## What's New in v6.7.1
+
+### Codex-Native Manifest And Skill Entry Alias
+
+This release adds `.codex-plugin/plugin.json` and `AGENTS.md` so Codex can read the same plugin surfaces as Claude Code, and it restores `$deep-work:deep-work "task"` as the skill-native entry alias for starting the auto-flow without knowing the internal orchestrator name.
+
+## What's New in v6.7.0
+
+### 24 Commands Promoted To User-Invocable Skills
+
+All 24 command-equivalent surfaces now live as `user-invocable: true` skills under `skills/`. The old `commands/` wrappers were removed, and internal references now point at skill files such as `skills/deep-status/SKILL.md` and `skills/deep-receipt/SKILL.md`.
 
 ## What's New in v6.5.0
 
@@ -100,88 +122,88 @@ The **Brainstorm → Research → Plan → Implement → Test → Integrate** wo
 
 Code file modifications are **physically blocked** during Phases 0, 1, 2, and 4 (via PreToolUse hook). **Bash file-writing commands** (`echo >`, `sed -i`, `cp`) are also intercepted. File changes and receipt data are **automatically collected** during Phase 3 (via PostToolUse hook).
 
-## Usage (Auto-Flow)
+## Usage (Skill-Native Auto-Flow)
 
 ```bash
-# Just one command — the entire workflow runs automatically
-/deep-work "Implement JWT-based user authentication"
+# Just one skill invocation — the entire workflow runs automatically
+$deep-work:deep-work "Implement JWT-based user authentication"
 
 # The auto-flow orchestrates: Brainstorm → Research → Plan → [user approves] → Implement → Test → Integrate → Report
 # Plan approval is the ONLY required interaction
 
-# Unified status — flags route to the same implementations as the standalone /deep-report, /deep-receipt, /deep-history, /deep-assumptions
-/deep-status              # current progress
-/deep-status --report     # session report
-/deep-status --receipts   # receipt dashboard
-/deep-status --history    # cross-session trends
-/deep-status --assumptions # assumption health
-/deep-status --all        # everything at once
+# Unified status — flags route to the same implementations as the standalone report/receipt/history/assumptions skills
+$deep-work:deep-status              # current progress
+$deep-work:deep-status --report     # session report
+$deep-work:deep-status --receipts   # receipt dashboard
+$deep-work:deep-status --history    # cross-session trends
+$deep-work:deep-status --assumptions # assumption health
+$deep-work:deep-status --all        # everything at once
 
 # Compare two sessions
-/deep-status --compare
+$deep-work:deep-status --compare
 ```
 
-## Commands
+## Skill Invocations
 
-### Primary Commands (7)
+### Primary Skills (7)
 
-| Command | Description |
-|---------|-------------|
-| `/deep-work <task>` | **Auto-flow orchestration** — runs the entire Brainstorm → Research → Plan → Implement → Test → Integrate pipeline automatically. Plan approval is the only required interaction. |
-| `/deep-research` | Manual override for Phase 1 (Research) — deep codebase analysis |
-| `/deep-plan` | Manual override for Phase 2 (Plan) — slice-based implementation planning |
-| `/deep-implement` | Manual override for Phase 3 (Implement) — TDD-enforced slice execution |
-| `/deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates. Now auto-runs drift-check, SOLID review, and insight analysis. |
-| `/deep-status` | **Unified view** — current progress, report, receipts, history, assumptions. Flags: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
-| `/deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix (auto-triggers on failures) |
+| Skill | Description |
+|-------|-------------|
+| `$deep-work:deep-work <task>` | **Auto-flow orchestration** — runs the entire Brainstorm → Research → Plan → Implement → Test → Integrate pipeline automatically. Plan approval is the only required interaction. |
+| `$deep-work:deep-research` | Manual override for Phase 1 (Research) — deep codebase analysis |
+| `$deep-work:deep-plan` | Manual override for Phase 2 (Plan) — slice-based implementation planning |
+| `$deep-work:deep-implement` | Manual override for Phase 3 (Implement) — TDD-enforced slice execution |
+| `$deep-work:deep-test` | Phase 4: Receipt check → spec compliance → code quality → quality gates. Now auto-runs drift-check, SOLID review, and insight analysis. |
+| `$deep-work:deep-status` | **Unified view** — current progress, report, receipts, history, assumptions. Flags: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
+| `$deep-work:deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix (auto-triggers on failures) |
 
 ### Special Utility (4)
 
 Phase or toolchain helpers, run manually when needed.
 
-| Command | Purpose |
-|---------|---------|
-| `/deep-fork` | Fork a session to explore a different approach |
-| `/deep-mutation-test` | Mutation testing on changed files |
-| `/deep-phase-review` | Manual Phase document review (brainstorm/research/plan) |
-| `/deep-sensor-scan` | Run linters, type checkers, coverage tools independently |
+| Skill | Purpose |
+|-------|---------|
+| `$deep-work:deep-fork` | Fork a session to explore a different approach |
+| `$deep-work:deep-mutation-test` | Mutation testing on changed files |
+| `$deep-work:deep-phase-review` | Manual Phase document review (brainstorm/research/plan) |
+| `$deep-work:deep-sensor-scan` | Run linters, type checkers, coverage tools independently |
 
-### Quality Gate (3) — auto-runs in /deep-test, standalone available
+### Quality Gate (3) — auto-runs in `$deep-work:deep-test`, standalone available
 
-| Command | Role in /deep-test | Standalone |
-|---------|---------------------|------------|
-| `/drift-check` | Required Gate — plan alignment | `/drift-check [plan-file]` |
-| `/solid-review` | Advisory Gate — SOLID principles | `/solid-review [target]` |
-| `/deep-insight` | Insight Tier — metrics/complexity | `/deep-insight [target]` |
+| Skill | Role in `$deep-work:deep-test` | Standalone |
+|-------|-------------------------------|------------|
+| `$deep-work:drift-check` | Required Gate — plan alignment | `$deep-work:drift-check [plan-file]` |
+| `$deep-work:solid-review` | Advisory Gate — SOLID principles | `$deep-work:solid-review [target]` |
+| `$deep-work:deep-insight` | Insight Tier — metrics/complexity | `$deep-work:deep-insight [target]` |
 
 ### Internal (7) — auto-runs, manual supported
 
-These commands are called by the orchestrator or `/deep-status`. Manual invocation remains a first-class path (especially `/deep-finish` after tests pass, and `/deep-integrate` after Phase 4).
+These skills are called by the orchestrator or `$deep-work:deep-status`. Manual invocation remains a first-class path, especially `$deep-work:deep-finish` after tests pass and `$deep-work:deep-integrate` after Phase 4.
 
-| Command | Called by |
-|---------|-----------|
-| `/deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
-| `/deep-integrate` | orchestrator Phase 5 (`Skill` dispatch); manual after test pass |
-| `/deep-finish` | orchestrator Step 3-6 (`Read`); manual after test pass |
-| `/deep-report` | `/deep-status --report` (`Read`) |
-| `/deep-receipt` | `/deep-status --receipts` (`Read`) |
-| `/deep-history` | `/deep-status --history` (`Read`) |
-| `/deep-assumptions` | `/deep-status --assumptions` (`Read`) |
+| Skill | Called by |
+|-------|-----------|
+| `$deep-work:deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
+| `$deep-work:deep-integrate` | orchestrator Phase 5 (`Skill` dispatch); manual after test pass |
+| `$deep-work:deep-finish` | orchestrator Step 3-6 (`Read`); manual after test pass |
+| `$deep-work:deep-report` | `$deep-work:deep-status --report` (`Read`) |
+| `$deep-work:deep-receipt` | `$deep-work:deep-status --receipts` (`Read`) |
+| `$deep-work:deep-history` | `$deep-work:deep-status --history` (`Read`) |
+| `$deep-work:deep-assumptions` | `$deep-work:deep-status --assumptions` (`Read`) |
 
 ### Escape Hatch (1)
 
-| Command | Surfaced by |
-|---------|-------------|
-| `/deep-slice` | `phase-guard` TDD block message (`spike`, `reset`) |
+| Skill | Surfaced by |
+|-------|-------------|
+| `$deep-work:deep-slice` | `phase-guard` TDD block message (`spike`, `reset`) |
 
 ### Utility (2) — standalone, feature migration pending
 
-These commands are the sole path for certain behaviors. They will be removed once their functionality is migrated (see `/deep-work --resume=<session-id>` and `/deep-status --cleanup` roadmap).
+These skills are the sole path for certain behaviors. They will be removed once their functionality is migrated (see `$deep-work:deep-work --resume=<session-id>` and `$deep-work:deep-status --cleanup` roadmap).
 
-| Command | Unique capability |
-|---------|-------------------|
-| `/deep-cleanup` | `git worktree list` scan, stale/active classification, fork/registry cleanup |
-| `/deep-resume` | Active session selection, worktree context restore, phase-specific resume dispatch |
+| Skill | Unique capability |
+|-------|-------------------|
+| `$deep-work:deep-cleanup` | `git worktree list` scan, stale/active classification, fork/registry cleanup |
+| `$deep-work:deep-resume` | Active session selection, worktree context restore, phase-specific resume dispatch |
 
 ## Output Files
 

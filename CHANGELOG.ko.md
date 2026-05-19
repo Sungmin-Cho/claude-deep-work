@@ -7,33 +7,52 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [6.8.0] — 2026-05-19 (Plan-quality contract 강제 + CI 견고화 + receipt-tracker 안정성)
+
+### 추가
+
+- **`tests/plan-quality-contract.test.js`** — 실행 가능한 `deep-plan` slice contract를 고정하고 planning/implementation reference에 legacy `Task N:` 행이 돌아오는 것을 차단. 또한 (신규 4번째 블록) `skills/shared/references/review-gate.md`를 v6.7 필수 슬라이스 계약에 고정하여 review gate가 contract와 silently 이탈하지 못하도록 함.
+- **`tests/ci-workflow-contract.test.js`** — GitHub Actions advisory `shellcheck` 스텝의 모양 (이름, `continue-on-error: true`, 대상, 심각도, `npm test` 이후 순서, 바이너리 누락 graceful skip)을 고정.
+- **`hooks/scripts/file-tracker-lock-timeout.test.js`** — receipt-tracker stale-lock recovery contract에 대한 end-to-end 회귀 테스트: Phase 1 (lock 점유 시) canonical receipt + pending sidecar 상태 검증; Phase 2 (lock 해제 후 두 번째 호출) drain된 파일과 새 파일 모두 canonical `changes.files_modified`에 반영되는지 검증.
+
+### 변경
+
+- **Plan slice format (v6.7 executable steps)** — S/M/L slice 모두 `steps` 필드를 필수화 (`S: 2-4`, `M: 3-7`, `L: 5-12`)하고, 모든 code-changing step에 exact file path와 code sketch 또는 function signature 수준의 구현 세부를 요구.
+- **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, `plan-template-zerobase.md`가 `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, `expected_output`을 포함한 `SLICE-NNN` slice checklist 형식으로 정리됨.
+- **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
+- **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
+- **Plan review-gate를 v6.7 필수 슬라이스 계약과 정렬** — `skills/shared/references/review-gate.md`가 더 이상 `expected_output`을 "권장"으로 표시하지 않으며, `steps`/`expected_output` 누락을 `testability`/`buildability`/`code_completeness` 평가에서 면제하던 v5.8 하위 호환 fallback도 제거. 모든 비-인라인 S/M/L slice에 대해 5개 필수 필드 (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`)를 요구하도록 문구 수정 — 인라인 plan 및 legacy/resume 입력은 좁게 한정된 예외.
+- **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). 게이트 변경 없음.
+- **`npm test` 발견 범위를 6개 명시적 subtree 글로브로 확장** — 기존 6파일 명시 형식을 `node --test --test-concurrency=1 hooks/**/*.test.js tests/**/*.test.js skills/**/*.test.js sensors/**/*.test.js templates/**/*.test.js scripts/**/*.test.js` 로 교체. 느린 CI 러너에서 timing-sensitive 테스트가 안정되도록 직렬 실행. 글로브 지원을 위해 CI Node 버전을 20에서 22 (LTS)로 bump (`--test` positional args의 glob 지원은 Node 21.0.0에서 도입되었고 20.x로 back-port된 적이 없음). `health/**/*.test.js`는 별도 `npm run test:health` 스크립트로 분리 — 단독 실행 시 64/64 통과하나 GitHub-hosted 러너에서 다른 suite와 interleave될 때 `health/health-check.test.js:236` ("overall timeout enforcement") 의 사전 존재하는 event-loop leak이 노출됨; 본 leak은 follow-up으로 추적. 발견되는 테스트들은 여전히 POSIX-only (`bash` 직접 호출 + `/tmp` hardcode)이므로 Windows 실행을 활성화하는 것은 아님; ubuntu+macos CI 매트릭스에서 대부분의 suite가 안정적으로 실행되도록 함이 목적.
+- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 동시 writer race 안전 보장. in-lock update가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. pending-changes sidecar는 `file-tracker.sh`의 다음 lock-acquire 성공에서 drain됨 (session-end은 현재 pending-changes를 sweep하지 않음 — 향후 개선 과제).
+- 6.7.1 → 6.8.0으로 package 및 plugin manifest 버전을 minor release로 bump.
+
+### 검증
+
+- `npm test`: 901 / 901 pass (150 suites). 3개 contract suite가 신규 표면을 고정 (`plan-quality-contract`, `ci-workflow-contract`, `file-tracker-lock-timeout`).
+- 3-way deep-review (Claude Opus + Codex review + Codex adversarial)가 3개 라운드 반복 실행됨; round-3 fix commit이 모든 round-2 발견을 해소했고 round 3이 round-3 fix 범위에 대해 APPROVE로 수렴; O1 alignment commit이 round 3에서 제기된 범위 외 발견 1건을 해소.
+
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
 ### 추가
 
 - **`.codex-plugin/plugin.json`** — Claude Code manifest 와 동일한 skill/hook 표면을 가리키는 Codex 네이티브 플러그인 manifest. 기존 `claude-deep-*` repository identity 는 유지.
 - **`AGENTS.md`** — Codex 프로젝트 가이드. runtime surface, 검증 명령, downstream suite marketplace 갱신 요구사항을 명시.
-
-### 변경
-
-- patch release 로 package/plugin manifest 버전을 6.7.0 → 6.7.1 로 동기화.
-- README 문서에 기존 Claude Code 표면과 함께 Codex 호환성을 명시.
-
-### 검증
-
-- 릴리스 전 repository 검증을 실행. 정확한 명령 출력은 PR 체크리스트 참조.
-
-## [Unreleased]
-
-### 추가
-
 - **`skills/deep-work/SKILL.md`** — Claude, Codex 및 기타 skill 호출자가 내부 `deep-work-orchestrator` 이름을 알 필요 없이 `$deep-work:deep-work "task"`로 시작할 수 있도록 primary `deep-work` skill entry alias를 복구. alias는 모든 인자를 `deep-work-orchestrator`로 그대로 전달한다.
 - **`tests/skill-entry-alias.test.js`** — skill-only entrypoint 계약을 고정: `commands/deep-work.md` wrapper 없이 `deep-work` skill이 `$ARGUMENTS`를 보존해 `deep-work-orchestrator`로 위임해야 한다.
 
 ### 변경
 
+- patch release 로 package/plugin manifest 버전을 6.7.0 → 6.7.1 로 동기화.
+- README 문서에 기존 Claude Code 표면과 함께 Codex 호환성을 명시.
 - Codex plugin default prompt의 첫 진입점을 `$deep-work:deep-work "build this feature"`로 변경.
 - Manifest/package 설명에서 entry alias를 Codex-only가 아니라 Claude/Codex skill-native 표면으로 정리.
+
+### 검증
+
+- 릴리스 전 repository 검증을 실행. 정확한 명령 출력은 PR 체크리스트 참조.
 
 ## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration 완성)
 

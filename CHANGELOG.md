@@ -9,15 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.0] — 2026-05-19 (Plan-quality contract enforcement + CI hardening + receipt-tracker robustness)
+
 ### Added
 
-- **`skills/deep-work/SKILL.md`** — restored the primary `deep-work` skill entry alias so Claude, Codex, and other skill callers can invoke `$deep-work:deep-work "task"` instead of knowing the internal `deep-work-orchestrator` name. The alias forwards all arguments to `deep-work-orchestrator`.
-- **`tests/skill-entry-alias.test.js`** — pins the skill-only entrypoint contract: no `commands/deep-work.md` wrapper is required, and the `deep-work` skill delegates to `deep-work-orchestrator` with `$ARGUMENTS` preserved.
+- **`tests/plan-quality-contract.test.js`** — pins the executable `deep-plan` slice contract, rejects legacy `Task N:` rows in planning/implementation references, and (new 4th block) pins `skills/shared/references/review-gate.md` to the v6.7 mandatory slice contract so the review gate cannot silently drift away from the test.
+- **`tests/ci-workflow-contract.test.js`** — pins the GitHub Actions advisory `shellcheck` step shape (name, `continue-on-error: true`, target, severity, ordering after `npm test`, missing-binary graceful skip).
+- **`hooks/scripts/file-tracker-lock-timeout.test.js`** — end-to-end regression test for the receipt-tracker stale-lock recovery contract: Phase 1 (lock held) asserts canonical receipt + pending sidecar state; Phase 2 (lock released, second invocation) asserts the drained file and the new file both land in canonical `changes.files_modified`.
 
 ### Changed
 
-- Codex plugin default prompt now uses `$deep-work:deep-work "build this feature"` as the first-run entrypoint.
-- Manifest/package descriptions now describe the entry alias as skill-native for Claude and Codex, not Codex-only.
+- **Plan slice format (v6.7 executable steps)** — `steps` are now required for S/M/L slices (`S: 2-4`, `M: 3-7`, `L: 5-12`), and every code-changing step must include exact file paths plus code sketch or function signature detail.
+- **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, and `plan-template-zerobase.md` now use `SLICE-NNN` slice checklists with `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, and `expected_output`.
+- **Completeness Policy** — expanded to reject vague `Write tests for the above`, missing `failing_test` red signal, and missing exact `expected_output` fragment.
+- **Contract validation scope** — updated from the stale M/L/XL wording to all S/M/L slices.
+- **Plan review-gate aligned with v6.7 mandatory slice contract** — `skills/shared/references/review-gate.md` no longer marks `expected_output` as "recommended" and no longer applies a v5.8 backward-compat fallback that absolved missing `steps`/`expected_output` from the `testability`/`buildability`/`code_completeness` rubric. The wording now requires all five mandatory slice fields (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`) for every non-inline S/M/L slice, with narrow exceptions for inline plans and legacy/resume inputs.
+- **Advisory shellcheck CI step** — runs `shellcheck --severity=warning --external-sources` against `hooks/scripts/**/*.sh`, non-blocking (`continue-on-error: true`). No gate change.
+- **`npm test` discovery widened to 6 explicit subtree globs** — replace the explicit-6-file list with `node --test --test-concurrency=1 hooks/**/*.test.js tests/**/*.test.js skills/**/*.test.js sensors/**/*.test.js templates/**/*.test.js scripts/**/*.test.js`. Runs serially to keep timing-sensitive tests stable on slower CI runners. CI Node version bumped from 20 to 22 (LTS) to support the glob form (glob support in `--test` positional args landed in Node 21.0.0 and was never back-ported to 20.x). `health/**/*.test.js` is covered by a separate `npm run test:health` script that runs cleanly in isolation but exposes a pre-existing event-loop leak in `health/health-check.test.js:236` ("overall timeout enforcement") when interleaved with other suites on GitHub-hosted runners — that leak is tracked as a follow-up. Discovered tests remain POSIX-only (use `bash` directly + `/tmp` hardcodes), so this does not enable Windows execution; it only ensures the bulk of the suite runs in the ubuntu+macos CI matrix.
+- **Receipt-tracker lock-timeout hardening** — restore the unconditional pre-lock receipt init in `hooks/scripts/file-tracker.sh` with `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) so concurrent writers race safely. Single-write slices retain a canonical `SLICE-NNN.json` even when the in-lock update path times out on a stale lock. Pending-changes sidecar drains on the next successful lock-acquire in `file-tracker.sh` (session-end does not currently sweep pending-changes — tracked as a future improvement).
+- Version bumped 6.7.1 → 6.8.0 across package and plugin manifests for a minor release.
+
+### Verification
+
+- `npm test`: 901 / 901 pass (150 suites). Three contract suites pin the new surfaces (`plan-quality-contract`, `ci-workflow-contract`, `file-tracker-lock-timeout`).
+- 3-way deep-review (Claude Opus + Codex review + Codex adversarial) ran three iterative rounds; the round-3 fix commit closed every round-2 finding and round 3 converged with APPROVE for the round-3 fix scope; the O1 alignment commit closed the one out-of-scope finding raised in round 3.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
@@ -25,11 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`.codex-plugin/plugin.json`** — Codex-native plugin manifest pointing at the same skill and hook surfaces as the Claude Code manifest while preserving the existing `claude-deep-*` repository identity.
 - **`AGENTS.md`** — Codex project guide covering runtime surfaces, verification commands, and the downstream suite marketplace update requirement.
+- **`skills/deep-work/SKILL.md`** — restored the primary `deep-work` skill entry alias so Claude, Codex, and other skill callers can invoke `$deep-work:deep-work "task"` instead of knowing the internal `deep-work-orchestrator` name. The alias forwards all arguments to `deep-work-orchestrator`.
+- **`tests/skill-entry-alias.test.js`** — pins the skill-only entrypoint contract: no `commands/deep-work.md` wrapper is required, and the `deep-work` skill delegates to `deep-work-orchestrator` with `$ARGUMENTS` preserved.
 
 ### Changed
 
 - Version bumped 6.7.0 → 6.7.1 across package and plugin manifests for a patch release.
 - README documentation now calls out Codex compatibility alongside the existing Claude Code surface.
+- Codex plugin default prompt now uses `$deep-work:deep-work "build this feature"` as the first-run entrypoint.
+- Manifest/package descriptions now describe the entry alias as skill-native for Claude and Codex, not Codex-only.
 
 ### Verification
 
