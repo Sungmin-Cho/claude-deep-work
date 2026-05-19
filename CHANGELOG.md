@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Completeness Policy** — expanded to reject vague `Write tests for the above`, missing `failing_test` red signal, and missing exact `expected_output` fragment.
 - **Contract validation scope** — updated from the stale M/L/XL wording to all S/M/L slices.
 - **Advisory shellcheck CI step** — runs `shellcheck --severity=warning --external-sources` against `hooks/scripts/**/*.sh`, non-blocking (`continue-on-error: true`). Pinned by `tests/ci-workflow-contract.test.js`. No gate change.
+- **`npm test` cross-shell portability** — replace POSIX-only `$(find ... | sort)` subshell in `test:all` with the cross-shell glob `node --test "**/*.test.js"`. Same test discovery; works on Windows `cmd.exe`/PowerShell `script-shell`.
+- **Receipt-tracker lock-timeout hardening** — restore unconditional pre-lock receipt init in `hooks/scripts/file-tracker.sh` so single-write slices retain their canonical `SLICE-NNN.json` even when the in-lock update path times out on a stale lock. Pinned by `hooks/scripts/file-tracker-lock-timeout.test.js`.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 

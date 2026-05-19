@@ -3,7 +3,7 @@
   "version": "6.7.1",
   "scripts": {
     "test:core": "node --test tests/envelope-emit.test.js tests/envelope-chain.test.js tests/handoff-roundtrip.test.js tests/phase-guard-denylist.test.js tests/phase-guard-golden.test.js tests/skill-entry-alias.test.js",
-    "test:all": "node --test $(find . -name '*.test.js' -not -path './node_modules/*' | sort)",
+    "test:all": "node --test \"**/*.test.js\"",
     "test": "npm run test:all"
   },
   "description": "Deep Work plugin for Claude Code and Codex (cross-platform via 24 command-equivalent skills plus deep-work entry alias) - Evidence-Driven Development Protocol with TDD enforcement, Health Engine (drift detection + fitness functions), worktree isolation, model auto-routing, receipt validation, 6-phase workflow with Phase 5 Integrate",

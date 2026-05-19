@@ -132,6 +132,27 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
   RECEIPT_FILE="$RECEIPT_DIR/${ACTIVE_SLICE}.json"
   mkdir -p "$RECEIPT_DIR" 2>/dev/null || true
 
+  # Pre-lock init — ensures the canonical receipt always exists, even if the
+  # locked update path below times out on a stale lock. Idempotent: the in-lock
+  # code uses fs.existsSync ? parse : create, so a concurrent first-write race
+  # is a no-op (both writers produce identical initial schema). Restoring this
+  # block (removed in 6982166) prevents single-write slices from losing their
+  # canonical receipt when lock contention exceeds the 40-retry budget.
+  if [[ ! -f "$RECEIPT_FILE" ]]; then
+    node -e "
+      const fs = require('fs');
+      const args = process.argv.filter(a => a !== '[eval]');
+      const sliceId = args[1], ts = args[2], receiptPath = args[3];
+      const data = {
+        slice_id: sliceId, status: 'in_progress', tdd_state: 'PENDING',
+        tdd: {}, changes: { files_modified: [], lines_added: 0, lines_removed: 0 },
+        verification: {}, spec_compliance: {}, code_review: {}, debug: null,
+        timestamp: ts
+      };
+      fs.writeFileSync(receiptPath, JSON.stringify(data, null, 2));
+    " "$ACTIVE_SLICE" "$TIMESTAMP" "$RECEIPT_FILE" 2>/dev/null || true
+  fi
+
   # 파일 변경을 receipt의 changes.files_modified에 추가 (best-effort).
   # Serialized by _acquire_lock; on lock timeout, queue to pending file that
   # a subsequent invocation will drain before its own update. Prevents lost

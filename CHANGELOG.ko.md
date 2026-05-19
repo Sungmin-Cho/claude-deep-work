@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
 - **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
 - **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). `tests/ci-workflow-contract.test.js`로 계약 고정. 게이트 변경 없음.
+- **`npm test` cross-shell 이식성** — `test:all` 스크립트의 POSIX-only `$(find ... | sort)` 서브셸을 cross-shell 글로브 `node --test "**/*.test.js"`로 교체. 테스트 발견 결과 동일; Windows `cmd.exe`/PowerShell `script-shell`에서 동작.
+- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원. in-lock update 경로가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 잃지 않도록 보장. `hooks/scripts/file-tracker-lock-timeout.test.js`로 계약 고정.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
