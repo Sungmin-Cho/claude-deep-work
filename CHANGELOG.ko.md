@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 추가
+
+- **`tests/plan-quality-contract.test.js`** — 실행 가능한 `deep-plan` slice contract를 고정하고 planning/implementation reference에 legacy `Task N:` 행이 돌아오는 것을 차단.
+
+### 변경
+
+- **Plan slice format (v6.7 executable steps)** — S/M/L slice 모두 `steps` 필드를 필수화 (`S: 2-4`, `M: 3-7`, `L: 5-12`)하고, 모든 code-changing step에 exact file path와 code sketch 또는 function signature 수준의 구현 세부를 요구.
+- **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, `plan-template-zerobase.md`가 `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, `expected_output`을 포함한 `SLICE-NNN` slice checklist 형식으로 정리됨.
+- **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
+- **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
+
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
 ### 추가

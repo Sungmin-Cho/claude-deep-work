@@ -35,18 +35,34 @@ Changes often have dependencies:
 3. **Group by milestone**: Optional — group related changes
 4. **Mark parallelizable items**: Items that could be done in any order
 
-### Step 4: Create the Checklist
+### Step 4: Create the Slice Checklist
 
-Each task should be:
+Each slice should be:
 - **Atomic**: One clear action per checkbox
 - **Verifiable**: You can tell when it's done
 - **Ordered**: Dependencies are respected
 - **Specific**: Exact file path and change description
+- **Executable**: Includes `failing_test`, `verification_cmd`, `expected_output`, and concrete `steps`
+- **Self-contained**: Defines every referenced file, symbol, test, or dependency
 
 Format:
 ```markdown
-- [ ] Task 1: `path/to/file.ts` — Add UserService class with authenticate() method — Required for JWT auth flow
-- [ ] Task 2: `path/to/routes.ts` — Add POST /auth/login route using UserService — Exposes auth endpoint
+- [ ] SLICE-001: User authentication service and login route
+  - files: [src/auth/user-service.ts, src/routes/auth.ts, tests/auth/login.test.ts]
+  - depends_on: []
+  - failing_test: tests/auth/login.test.ts — "POST /auth/login returns JWT for valid credentials"
+  - verification_cmd: npm test -- --grep "auth/login"
+  - expected_output: "1 passing, 0 failing"
+  - code_sketch: "class UserService { authenticate(email: string, password: string): Promise<AuthResult> }"
+  - spec_checklist: [UserService.authenticate validates credentials, route returns JWT, invalid credentials return 401]
+  - contract: [POST /auth/login valid body -> 200 + {token: string}, invalid body -> 401 + {error: string}]
+  - acceptance_threshold: all
+  - size: M
+  - steps:
+    1. Add the failing route test in tests/auth/login.test.ts.
+    2. Implement UserService.authenticate in src/auth/user-service.ts.
+    3. Register POST /auth/login in src/routes/auth.ts.
+    4. Run npm test -- --grep "auth/login" and confirm the expected output.
 ```
 
 ### Step 5: Plan for Failure
@@ -128,8 +144,21 @@ The plan document MUST begin with Plan Summary (pyramid principle: conclusions f
 ## Rollback Strategy
 [How to undo if needed]
 
-## Task Checklist
-- [ ] Task 1: `path/to/file` — [What to do] — [Why]
+## Slice Checklist
+- [ ] SLICE-001: [Outcome-oriented slice goal]
+  - files: [`path/to/file`, `tests/path/to/file.test.ts`]
+  - depends_on: []
+  - failing_test: tests/path/to/file.test.ts — "[specific failing behavior]"
+  - verification_cmd: [exact command]
+  - expected_output: [exact green output or stable success marker]
+  - code_sketch: "[function signature or pseudocode]"
+  - spec_checklist: [[observable requirement 1], [observable requirement 2]]
+  - contract: [[input/state] -> [expected output/state]]
+  - acceptance_threshold: all
+  - size: S / M / L
+  - steps:
+    1. [first exact implementation step]
+    2. [second exact implementation step]
 
 ## Open Questions
 [Unresolved decisions]
@@ -145,6 +174,13 @@ A good plan:
 - Respects the architecture and patterns found during research
 - Includes rollback instructions
 - Has been reviewed and approved by the user
+- Uses `SLICE-NNN` checklist entries, not legacy task rows
+- Gives every slice exact file paths, including tests and generated artifacts
+- Defines the failing test or red-state command before implementation begins
+- Defines the green verification command and the expected output string or stable success marker
+- Includes a code sketch, pseudocode, or function signature for each changed code path
+- Lists `depends_on` for each slice, even when the value is empty
+- Avoids undefined references: every symbol, path, requirement ID, test name, and dependency is introduced in the plan or linked to research evidence
 
 ## Plan Diff (v3.1.0)
 
