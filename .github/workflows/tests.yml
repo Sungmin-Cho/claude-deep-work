@@ -27,7 +27,7 @@ jobs:
       - name: Show bash version (M5.5 #4 — bash 3.2 visibility)
         run: bash --version
 
-      - name: Run envelope + handoff round-trip tests
+      - name: Run full Node test suite
         run: npm test
 
       - name: Run bash regression scripts (phase-guard / migrate / notify / recommender)

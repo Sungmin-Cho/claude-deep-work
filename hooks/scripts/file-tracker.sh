@@ -132,22 +132,6 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
   RECEIPT_FILE="$RECEIPT_DIR/${ACTIVE_SLICE}.json"
   mkdir -p "$RECEIPT_DIR" 2>/dev/null || true
 
-  # receipt 파일이 없으면 초기 생성
-  if [[ ! -f "$RECEIPT_FILE" ]]; then
-    node -e "
-      const fs = require('fs');
-      const args = process.argv.filter(a => a !== '[eval]');
-      const sliceId = args[1], ts = args[2], receiptPath = args[3];
-      const data = {
-        slice_id: sliceId, status: 'in_progress', tdd_state: 'PENDING',
-        tdd: {}, changes: { files_modified: [], lines_added: 0, lines_removed: 0 },
-        verification: {}, spec_compliance: {}, code_review: {}, debug: null,
-        timestamp: ts
-      };
-      fs.writeFileSync(receiptPath, JSON.stringify(data, null, 2));
-    " "$ACTIVE_SLICE" "$TIMESTAMP" "$RECEIPT_FILE" 2>/dev/null || true
-  fi
-
   # 파일 변경을 receipt의 changes.files_modified에 추가 (best-effort).
   # Serialized by _acquire_lock; on lock timeout, queue to pending file that
   # a subsequent invocation will drain before its own update. Prevents lost
@@ -162,10 +146,17 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
     if _acquire_lock "$_RECEIPT_LOCK" 40 0.05; then
       node -e '
         const fs = require("fs");
-        const [, receiptFile, pendingFile, filePath, ts] = process.argv;
+        const [, receiptFile, pendingFile, filePath, ts, sliceId] = process.argv;
         const drainingFile = pendingFile + ".draining." + process.pid;
         try {
-          const r = JSON.parse(fs.readFileSync(receiptFile, "utf8"));
+          const r = fs.existsSync(receiptFile)
+            ? JSON.parse(fs.readFileSync(receiptFile, "utf8"))
+            : {
+                slice_id: sliceId, status: "in_progress", tdd_state: "PENDING",
+                tdd: {}, changes: { files_modified: [], lines_added: 0, lines_removed: 0 },
+                verification: {}, spec_compliance: {}, code_review: {}, debug: null,
+                timestamp: ts
+              };
           if (!r.changes) r.changes = { files_modified: [] };
           if (!r.changes.files_modified) r.changes.files_modified = [];
 
@@ -220,7 +211,7 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
           try { fs.unlinkSync(receiptFile + ".tmp." + process.pid); } catch(_) {}
           // NOTE: do not delete .draining on error — it is recoverable.
         }
-      ' "$RECEIPT_FILE" "$_RECEIPT_PENDING" "$FILE_PATH" "$TIMESTAMP" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
+      ' "$RECEIPT_FILE" "$_RECEIPT_PENDING" "$FILE_PATH" "$TIMESTAMP" "$ACTIVE_SLICE" 2>>"$PROJECT_ROOT/.claude/deep-work-guard-errors.log" || true
       _release_lock "$_RECEIPT_LOCK"
     else
       # Lock timeout (very rare after retry bump) — queue for the next

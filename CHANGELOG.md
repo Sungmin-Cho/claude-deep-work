@@ -9,27 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **`skills/deep-work/SKILL.md`** — restored the primary `deep-work` skill entry alias so Claude, Codex, and other skill callers can invoke `$deep-work:deep-work "task"` instead of knowing the internal `deep-work-orchestrator` name. The alias forwards all arguments to `deep-work-orchestrator`.
-- **`tests/skill-entry-alias.test.js`** — pins the skill-only entrypoint contract: no `commands/deep-work.md` wrapper is required, and the `deep-work` skill delegates to `deep-work-orchestrator` with `$ARGUMENTS` preserved.
-
-### Changed
-
-- Codex plugin default prompt now uses `$deep-work:deep-work "build this feature"` as the first-run entrypoint.
-- Manifest/package descriptions now describe the entry alias as skill-native for Claude and Codex, not Codex-only.
-
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
 ### Added
 
 - **`.codex-plugin/plugin.json`** — Codex-native plugin manifest pointing at the same skill and hook surfaces as the Claude Code manifest while preserving the existing `claude-deep-*` repository identity.
 - **`AGENTS.md`** — Codex project guide covering runtime surfaces, verification commands, and the downstream suite marketplace update requirement.
+- **`skills/deep-work/SKILL.md`** — restored the primary `deep-work` skill entry alias so Claude, Codex, and other skill callers can invoke `$deep-work:deep-work "task"` instead of knowing the internal `deep-work-orchestrator` name. The alias forwards all arguments to `deep-work-orchestrator`.
+- **`tests/skill-entry-alias.test.js`** — pins the skill-only entrypoint contract: no `commands/deep-work.md` wrapper is required, and the `deep-work` skill delegates to `deep-work-orchestrator` with `$ARGUMENTS` preserved.
 
 ### Changed
 
 - Version bumped 6.7.0 → 6.7.1 across package and plugin manifests for a patch release.
 - README documentation now calls out Codex compatibility alongside the existing Claude Code surface.
+- Codex plugin default prompt now uses `$deep-work:deep-work "build this feature"` as the first-run entrypoint.
+- Manifest/package descriptions now describe the entry alias as skill-native for Claude and Codex, not Codex-only.
 
 ### Verification
 
