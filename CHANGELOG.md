@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, and `plan-template-zerobase.md` now use `SLICE-NNN` slice checklists with `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, and `expected_output`.
 - **Completeness Policy** — expanded to reject vague `Write tests for the above`, missing `failing_test` red signal, and missing exact `expected_output` fragment.
 - **Contract validation scope** — updated from the stale M/L/XL wording to all S/M/L slices.
+- **Advisory shellcheck CI step** — runs `shellcheck --severity=warning --external-sources` against `hooks/scripts/**/*.sh`, non-blocking (`continue-on-error: true`). Pinned by `tests/ci-workflow-contract.test.js`. No gate change.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 

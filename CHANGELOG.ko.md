@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, `plan-template-zerobase.md`가 `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, `expected_output`을 포함한 `SLICE-NNN` slice checklist 형식으로 정리됨.
 - **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
 - **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
+- **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). `tests/ci-workflow-contract.test.js`로 계약 고정. 게이트 변경 없음.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 

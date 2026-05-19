@@ -35,3 +35,21 @@ jobs:
           bash hooks/scripts/test/test-no-notification-trigger.sh
           bash hooks/scripts/test/test-recommender-integration.sh
           bash hooks/scripts/test/test-v6.4.2-regression.sh
+
+      - name: Shellcheck hooks (advisory)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            echo "shellcheck not installed on this runner; skipping advisory step"
+            exit 0
+          fi
+          count=$(find hooks/scripts -type f -name '*.sh' | wc -l | tr -d ' ')
+          if [ "$count" -eq 0 ]; then
+            echo "no hook scripts found; skipping"
+            exit 0
+          fi
+          echo "running shellcheck on $count files"
+          find hooks/scripts -type f -name '*.sh' -print0 \
+            | xargs -0 shellcheck --severity=warning --external-sources
