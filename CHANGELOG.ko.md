@@ -20,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
 - **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
 - **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). `tests/ci-workflow-contract.test.js`로 계약 고정. 게이트 변경 없음.
-- **`npm test` cross-shell 이식성** — `test:all` 스크립트의 POSIX-only `$(find ... | sort)` 서브셸을 cross-shell 글로브 `node --test "**/*.test.js"`로 교체. 테스트 발견 결과 동일; Windows `cmd.exe`/PowerShell `script-shell`에서 동작.
-- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원. in-lock update 경로가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 잃지 않도록 보장. `hooks/scripts/file-tracker-lock-timeout.test.js`로 계약 고정.
+- **`npm test` 발견 범위를 전체 48개 테스트로 확장** — 기존 6파일 명시 형식을 재귀 `node --test "**/*.test.js"` 글로브로 교체. 글로브 지원을 위해 CI Node 버전을 22 (LTS)로 bump. 발견되는 테스트들은 여전히 POSIX-only (`bash` 직접 호출 + `/tmp` hardcode)이므로 Windows 실행을 활성화하는 것은 아님; 스크립트 단순화와 ubuntu+macos CI 매트릭스에서 전체 테스트 실행 보장이 목적.
+- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 동시 writer race 안전 보장. in-lock update가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. pending-changes sidecar는 `file-tracker.sh`의 다음 lock-acquire 성공에서 drain됨 (session-end은 현재 pending-changes를 sweep하지 않음 — 향후 개선 과제). `hooks/scripts/file-tracker-lock-timeout.test.js`가 양쪽 모두 end-to-end 검증.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 

@@ -133,11 +133,16 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
   mkdir -p "$RECEIPT_DIR" 2>/dev/null || true
 
   # Pre-lock init — ensures the canonical receipt always exists, even if the
-  # locked update path below times out on a stale lock. Idempotent: the in-lock
-  # code uses fs.existsSync ? parse : create, so a concurrent first-write race
-  # is a no-op (both writers produce identical initial schema). Restoring this
-  # block (removed in 6982166) prevents single-write slices from losing their
-  # canonical receipt when lock contention exceeds the 40-retry budget.
+  # locked update path below times out on a stale lock. The `flag: 'wx'`
+  # (O_CREAT | O_EXCL) is what makes this idempotent vs. the in-lock atomic
+  # rename: bash's `[[ ! -f ]]` test is not atomic with the subsequent node
+  # writeFileSync, so without `wx` a concurrent in-lock writer could rename
+  # the file in between, and the pre-lock writer would then silently
+  # overwrite the in-lock writer's accumulated state. `wx` causes the
+  # pre-lock writer to fail silently in that race, leaving the in-lock
+  # writer's state intact. Restoring this block (removed in 6982166)
+  # prevents single-write slices from losing their canonical receipt when
+  # lock contention exceeds the 40-retry budget.
   if [[ ! -f "$RECEIPT_FILE" ]]; then
     node -e "
       const fs = require('fs');
@@ -149,7 +154,12 @@ if [[ -n "$ACTIVE_SLICE" ]]; then
         verification: {}, spec_compliance: {}, code_review: {}, debug: null,
         timestamp: ts
       };
-      fs.writeFileSync(receiptPath, JSON.stringify(data, null, 2));
+      try {
+        fs.writeFileSync(receiptPath, JSON.stringify(data, null, 2), { flag: 'wx' });
+      } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        // EEXIST: a concurrent writer beat us — that is fine.
+      }
     " "$ACTIVE_SLICE" "$TIMESTAMP" "$RECEIPT_FILE" 2>/dev/null || true
   fi
 
