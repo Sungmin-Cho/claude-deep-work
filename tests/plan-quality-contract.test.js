@@ -57,3 +57,31 @@ test('plan templates expose worker handoff and verification plan', () => {
     assert.match(template, /^\s+- steps:/m);
   }
 });
+
+test('plan review-gate enforces v6.7 mandatory slice contract', () => {
+  const reviewGate = readRepoFile('skills/shared/references/review-gate.md');
+
+  // testability dimension must require all three fields together (no "권장" / "recommended" for expected_output)
+  assert.match(reviewGate, /testability.*failing_test.*verification_cmd.*expected_output/);
+  assert.doesNotMatch(reviewGate, /expected_output은 권장/);
+  assert.doesNotMatch(reviewGate, /expected_output is recommended/i);
+
+  // v6.7 mandatory section + reference to the contract test
+  assert.ok(reviewGate.includes('v6.7+ 필수 슬라이스 계약'),
+    'review-gate.md must declare the v6.7+ mandatory slice contract');
+  assert.ok(reviewGate.includes('tests/plan-quality-contract.test.js'),
+    'review-gate.md must reference the contract test that enforces this');
+
+  // Legacy v5.8 fallback wording (which made expected_output absence a non-issue)
+  // must be gone — it contradicts the contract.
+  assert.doesNotMatch(reviewGate, /expected_output.*부재는 감점하지 않음/,
+    'legacy v5.8 fallback "expected_output absence does not deduct" must be removed');
+  assert.doesNotMatch(reviewGate, /하위 호환성 \(v5\.8\)/,
+    'legacy v5.8 backward-compat block must be removed');
+
+  // Narrow exceptions are still acknowledged
+  assert.match(reviewGate, /인라인 plan.*skip/,
+    'inline-plan exception must remain (no plan artifact to review)');
+  assert.match(reviewGate, /legacy\/resume/,
+    'legacy/resume exception must remain (narrow, verdict-neutral)');
+});
