@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.0] — 2026-05-19 (Plan-quality contract 강제 + CI 견고화 + receipt-tracker 안정성)
+
 ### 추가
 
-- **`tests/plan-quality-contract.test.js`** — 실행 가능한 `deep-plan` slice contract를 고정하고 planning/implementation reference에 legacy `Task N:` 행이 돌아오는 것을 차단.
+- **`tests/plan-quality-contract.test.js`** — 실행 가능한 `deep-plan` slice contract를 고정하고 planning/implementation reference에 legacy `Task N:` 행이 돌아오는 것을 차단. 또한 (신규 4번째 블록) `skills/shared/references/review-gate.md`를 v6.7 필수 슬라이스 계약에 고정하여 review gate가 contract와 silently 이탈하지 못하도록 함.
+- **`tests/ci-workflow-contract.test.js`** — GitHub Actions advisory `shellcheck` 스텝의 모양 (이름, `continue-on-error: true`, 대상, 심각도, `npm test` 이후 순서, 바이너리 누락 graceful skip)을 고정.
+- **`hooks/scripts/file-tracker-lock-timeout.test.js`** — receipt-tracker stale-lock recovery contract에 대한 end-to-end 회귀 테스트: Phase 1 (lock 점유 시) canonical receipt + pending sidecar 상태 검증; Phase 2 (lock 해제 후 두 번째 호출) drain된 파일과 새 파일 모두 canonical `changes.files_modified`에 반영되는지 검증.
 
 ### 변경
 
@@ -19,10 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, `plan-template-zerobase.md`가 `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, `expected_output`을 포함한 `SLICE-NNN` slice checklist 형식으로 정리됨.
 - **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
 - **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
-- **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). `tests/ci-workflow-contract.test.js`로 계약 고정. 게이트 변경 없음.
-- **`npm test` 발견 범위를 전체 48개 테스트로 확장** — 기존 6파일 명시 형식을 재귀 `node --test "**/*.test.js"` 글로브로 교체. 글로브 지원을 위해 CI Node 버전을 22 (LTS)로 bump. 발견되는 테스트들은 여전히 POSIX-only (`bash` 직접 호출 + `/tmp` hardcode)이므로 Windows 실행을 활성화하는 것은 아님; 스크립트 단순화와 ubuntu+macos CI 매트릭스에서 전체 테스트 실행 보장이 목적.
-- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 동시 writer race 안전 보장. in-lock update가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. pending-changes sidecar는 `file-tracker.sh`의 다음 lock-acquire 성공에서 drain됨 (session-end은 현재 pending-changes를 sweep하지 않음 — 향후 개선 과제). `hooks/scripts/file-tracker-lock-timeout.test.js`가 양쪽 모두 end-to-end 검증.
-- **Plan review-gate를 v6.7 필수 슬라이스 계약과 정렬** — `skills/shared/references/review-gate.md`가 더 이상 `expected_output`을 "권장"으로 표시하지 않으며, `steps`/`expected_output` 누락을 `testability`/`buildability`/`code_completeness` 평가에서 면제하던 v5.8 하위 호환 fallback도 제거. 모든 비-인라인 S/M/L slice에 대해 5개 필수 필드 (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`)를 요구하도록 문구 수정 — 인라인 plan 및 legacy/resume 입력은 좁게 한정된 예외. `tests/plan-quality-contract.test.js`에 4번째 블록을 추가하여 review-gate 문구가 contract에서 silently 이탈하지 못하도록 고정.
+- **Plan review-gate를 v6.7 필수 슬라이스 계약과 정렬** — `skills/shared/references/review-gate.md`가 더 이상 `expected_output`을 "권장"으로 표시하지 않으며, `steps`/`expected_output` 누락을 `testability`/`buildability`/`code_completeness` 평가에서 면제하던 v5.8 하위 호환 fallback도 제거. 모든 비-인라인 S/M/L slice에 대해 5개 필수 필드 (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`)를 요구하도록 문구 수정 — 인라인 plan 및 legacy/resume 입력은 좁게 한정된 예외.
+- **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). 게이트 변경 없음.
+- **`npm test` 발견 범위를 전체 48+개 테스트로 확장** — 기존 6파일 명시 형식을 재귀 `node --test "**/*.test.js"` 글로브로 교체. 글로브 지원을 위해 CI Node 버전을 20에서 22 (LTS)로 bump (`--test` positional args의 glob 지원은 Node 21.0.0에서 도입되었고 20.x로 back-port된 적이 없음). 발견되는 테스트들은 여전히 POSIX-only (`bash` 직접 호출 + `/tmp` hardcode)이므로 Windows 실행을 활성화하는 것은 아님; 스크립트 단순화와 ubuntu+macos CI 매트릭스에서 전체 테스트 실행 보장이 목적.
+- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 동시 writer race 안전 보장. in-lock update가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. pending-changes sidecar는 `file-tracker.sh`의 다음 lock-acquire 성공에서 drain됨 (session-end은 현재 pending-changes를 sweep하지 않음 — 향후 개선 과제).
+- 6.7.1 → 6.8.0으로 package 및 plugin manifest 버전을 minor release로 bump.
+
+### 검증
+
+- `npm test`: 901 / 901 pass (150 suites). 3개 contract suite가 신규 표면을 고정 (`plan-quality-contract`, `ci-workflow-contract`, `file-tracker-lock-timeout`).
+- 3-way deep-review (Claude Opus + Codex review + Codex adversarial)가 3개 라운드 반복 실행됨; round-3 fix commit이 모든 round-2 발견을 해소했고 round 3이 round-3 fix 범위에 대해 APPROVE로 수렴; O1 alignment commit이 round 3에서 제기된 범위 외 발견 1건을 해소.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 

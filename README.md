@@ -25,6 +25,16 @@ deep-work also produces receipts and health reports consumed by [deep-review](ht
 
 deep-work supports both Claude Code and Codex plugin runtimes while preserving the existing claude-deep-suite marketplace namespace. Claude Code and Codex read their native manifests, and skill callers use the same skill-native invocation model described in the release notes below.
 
+## What's New in v6.8.0
+
+### Plan-Quality Contract Enforcement + CI Hardening + Receipt-Tracker Robustness
+
+This release lifts plan-quality enforcement, CI hygiene, and receipt-tracker robustness through three coordinated changes:
+
+- **Plan-quality contract**: every non-inline S/M/L slice now must declare `failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, and `steps`. The plan review gate (`skills/shared/references/review-gate.md`) is aligned with this contract — no more "recommended" hedge or v5.8 backward-compat fallback for missing fields. `tests/plan-quality-contract.test.js` pins both the templates and the review-gate wording so they cannot drift.
+- **CI hardening**: a non-blocking `shellcheck` advisory step now lints `hooks/scripts/**/*.sh` (pinned by `tests/ci-workflow-contract.test.js`). `npm test` now discovers all 48+ test files via a recursive `node --test "**/*.test.js"` glob, with CI Node bumped from 20 to 22 (LTS) to support the glob form.
+- **Receipt-tracker robustness**: the pre-lock receipt init in `hooks/scripts/file-tracker.sh` is restored and made `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) so single-write slices retain a canonical `SLICE-NNN.json` even when the in-lock update path times out on a stale lock. `hooks/scripts/file-tracker-lock-timeout.test.js` verifies the end-to-end drain contract.
+
 ## What's New in v6.7.1
 
 ### Codex-Native Manifest And Skill Entry Alias

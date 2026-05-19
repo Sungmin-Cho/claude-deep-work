@@ -25,6 +25,16 @@ deep-work는 [deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와
 
 deep-work는 기존 claude-deep-suite marketplace namespace를 유지하면서 Claude Code와 Codex 플러그인 런타임을 모두 지원합니다. Claude Code와 Codex는 각자의 네이티브 manifest를 읽고, skill 호출자는 아래 릴리스 노트에 정리된 동일한 skill-native invocation 모델을 사용합니다.
 
+## v6.8.0 새 기능
+
+### Plan-Quality contract 강제 + CI 견고화 + receipt-tracker 안정성
+
+이번 릴리스는 plan-quality 강제, CI 위생, receipt-tracker 안정성을 세 가지 협업 변경으로 끌어올립니다:
+
+- **Plan-quality contract**: 모든 비-인라인 S/M/L slice는 이제 `failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`를 반드시 선언해야 합니다. Plan review gate (`skills/shared/references/review-gate.md`)가 이 contract와 정렬됨 — 누락 필드에 대한 "권장" 헷지나 v5.8 하위 호환 fallback이 더 이상 없음. `tests/plan-quality-contract.test.js`가 템플릿과 review-gate 문구 모두를 고정하여 silently 이탈하지 못하도록 함.
+- **CI 견고화**: non-blocking `shellcheck` advisory 스텝이 `hooks/scripts/**/*.sh`를 lint (`tests/ci-workflow-contract.test.js`로 고정). `npm test`가 이제 재귀 `node --test "**/*.test.js"` 글로브로 48+개 테스트를 모두 발견하며, 글로브 지원을 위해 CI Node 20 → 22 (LTS)로 bump.
+- **Receipt-tracker 안정성**: `hooks/scripts/file-tracker.sh`의 pre-lock receipt 초기화를 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 stale lock으로 in-lock update가 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. `hooks/scripts/file-tracker-lock-timeout.test.js`가 end-to-end drain contract를 검증.
+
 ## v6.7.1 새 기능
 
 ### Codex 네이티브 manifest 와 skill entry alias

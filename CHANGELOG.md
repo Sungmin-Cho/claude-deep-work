@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.8.0] — 2026-05-19 (Plan-quality contract enforcement + CI hardening + receipt-tracker robustness)
+
 ### Added
 
-- **`tests/plan-quality-contract.test.js`** — pins the executable `deep-plan` slice contract and rejects legacy `Task N:` rows in planning/implementation references.
+- **`tests/plan-quality-contract.test.js`** — pins the executable `deep-plan` slice contract, rejects legacy `Task N:` rows in planning/implementation references, and (new 4th block) pins `skills/shared/references/review-gate.md` to the v6.7 mandatory slice contract so the review gate cannot silently drift away from the test.
+- **`tests/ci-workflow-contract.test.js`** — pins the GitHub Actions advisory `shellcheck` step shape (name, `continue-on-error: true`, target, severity, ordering after `npm test`, missing-binary graceful skip).
+- **`hooks/scripts/file-tracker-lock-timeout.test.js`** — end-to-end regression test for the receipt-tracker stale-lock recovery contract: Phase 1 (lock held) asserts canonical receipt + pending sidecar state; Phase 2 (lock released, second invocation) asserts the drained file and the new file both land in canonical `changes.files_modified`.
 
 ### Changed
 
@@ -19,10 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, and `plan-template-zerobase.md` now use `SLICE-NNN` slice checklists with `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, and `expected_output`.
 - **Completeness Policy** — expanded to reject vague `Write tests for the above`, missing `failing_test` red signal, and missing exact `expected_output` fragment.
 - **Contract validation scope** — updated from the stale M/L/XL wording to all S/M/L slices.
-- **Advisory shellcheck CI step** — runs `shellcheck --severity=warning --external-sources` against `hooks/scripts/**/*.sh`, non-blocking (`continue-on-error: true`). Pinned by `tests/ci-workflow-contract.test.js`. No gate change.
-- **`npm test` discovery widened to all 48 test files** — replace the explicit-6-file list with a recursive `node --test "**/*.test.js"` glob; CI Node version bumped to 22 (LTS) to support the glob form. Discovered tests remain POSIX-only (use `bash` directly + `/tmp` hardcodes), so the change does not enable Windows execution; it only simplifies the script and ensures all tests run in CI matrix (ubuntu + macos).
-- **Receipt-tracker lock-timeout hardening** — restore the unconditional pre-lock receipt init in `hooks/scripts/file-tracker.sh` with `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) so concurrent writers race safely. Single-write slices retain a canonical `SLICE-NNN.json` even when the in-lock update path times out on a stale lock. Pending-changes sidecar drains on the next successful lock-acquire in `file-tracker.sh` (session-end does not currently sweep pending-changes — tracked as a future improvement). `hooks/scripts/file-tracker-lock-timeout.test.js` verifies both halves end-to-end.
-- **Plan review-gate aligned with v6.7 mandatory slice contract** — `skills/shared/references/review-gate.md` no longer marks `expected_output` as "recommended" and no longer applies a v5.8 backward-compat fallback that absolved missing `steps`/`expected_output` from the `testability`/`buildability`/`code_completeness` rubric. The wording now requires all five mandatory slice fields (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`) for every non-inline S/M/L slice, with narrow exceptions for inline plans and legacy/resume inputs. `tests/plan-quality-contract.test.js` gains a 4th block that pins the wording so the review gate cannot silently drift away from the contract.
+- **Plan review-gate aligned with v6.7 mandatory slice contract** — `skills/shared/references/review-gate.md` no longer marks `expected_output` as "recommended" and no longer applies a v5.8 backward-compat fallback that absolved missing `steps`/`expected_output` from the `testability`/`buildability`/`code_completeness` rubric. The wording now requires all five mandatory slice fields (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`) for every non-inline S/M/L slice, with narrow exceptions for inline plans and legacy/resume inputs.
+- **Advisory shellcheck CI step** — runs `shellcheck --severity=warning --external-sources` against `hooks/scripts/**/*.sh`, non-blocking (`continue-on-error: true`). No gate change.
+- **`npm test` discovery widened to all 48+ test files** — replace the explicit-6-file list with a recursive `node --test "**/*.test.js"` glob. CI Node version bumped from 20 to 22 (LTS) to support the glob form (the glob in `--test` positional args landed in Node 21.0.0 and was never back-ported to 20.x). Discovered tests remain POSIX-only (use `bash` directly + `/tmp` hardcodes), so this does not enable Windows execution; it only simplifies the script and ensures all tests run in the ubuntu+macos CI matrix.
+- **Receipt-tracker lock-timeout hardening** — restore the unconditional pre-lock receipt init in `hooks/scripts/file-tracker.sh` with `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) so concurrent writers race safely. Single-write slices retain a canonical `SLICE-NNN.json` even when the in-lock update path times out on a stale lock. Pending-changes sidecar drains on the next successful lock-acquire in `file-tracker.sh` (session-end does not currently sweep pending-changes — tracked as a future improvement).
+- Version bumped 6.7.1 → 6.8.0 across package and plugin manifests for a minor release.
+
+### Verification
+
+- `npm test`: 901 / 901 pass (150 suites). Three contract suites pin the new surfaces (`plan-quality-contract`, `ci-workflow-contract`, `file-tracker-lock-timeout`).
+- 3-way deep-review (Claude Opus + Codex review + Codex adversarial) ran three iterative rounds; the round-3 fix commit closed every round-2 finding and round 3 converged with APPROVE for the round-3 fix scope; the O1 alignment commit closed the one out-of-scope finding raised in round 3.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 

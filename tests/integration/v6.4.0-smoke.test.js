@@ -211,8 +211,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata and docs are bumped to 6.7.1', () => {
-    const version = '6.7.1';
+  it('active release metadata and docs are bumped to 6.8.0', () => {
+    const version = '6.8.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const claudePlugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -231,23 +231,27 @@ describe('release metadata', () => {
     const changelogUnreleased = releaseSection(changelog, 'Unreleased');
     const changelogKoUnreleased = releaseSection(changelogKo, 'Unreleased');
 
-    assert.match(changelogRelease, /Codex-native plugin manifest and AGENTS guide/);
-    assert.match(changelogKoRelease, /Codex-native plugin manifest and AGENTS guide/);
-    assert.ok(changelogRelease.includes('skills/deep-work/SKILL.md'),
-      'CHANGELOG.md 6.7.1 section must attribute the deep-work skill alias');
-    assert.ok(changelogRelease.includes('$deep-work:deep-work "task"'),
-      'CHANGELOG.md 6.7.1 section must document the primary skill invocation');
-    assert.ok(changelogKoRelease.includes('skills/deep-work/SKILL.md'),
-      'CHANGELOG.ko.md 6.7.1 section must attribute the deep-work skill alias');
-    assert.ok(changelogKoRelease.includes('$deep-work:deep-work "task"'),
-      'CHANGELOG.ko.md 6.7.1 section must document the primary skill invocation');
-    assert.equal(changelogUnreleased.includes('skills/deep-work/SKILL.md'), false,
-      'CHANGELOG.md Unreleased section must not retain the 6.7.1 skill alias note');
-    assert.equal(changelogKoUnreleased.includes('skills/deep-work/SKILL.md'), false,
-      'CHANGELOG.ko.md Unreleased section must not retain the 6.7.1 skill alias note');
+    assert.match(changelogRelease, /Plan-quality contract enforcement \+ CI hardening \+ receipt-tracker robustness/);
+    assert.match(changelogKoRelease, /Plan-quality contract 강제 \+ CI 견고화 \+ receipt-tracker 안정성/);
+    assert.ok(changelogRelease.includes('tests/plan-quality-contract.test.js'),
+      'CHANGELOG.md 6.8.0 section must attribute the plan-quality contract test');
+    assert.ok(changelogRelease.includes('tests/ci-workflow-contract.test.js'),
+      'CHANGELOG.md 6.8.0 section must attribute the ci-workflow contract test');
+    assert.ok(changelogRelease.includes('hooks/scripts/file-tracker-lock-timeout.test.js'),
+      'CHANGELOG.md 6.8.0 section must attribute the file-tracker lock-timeout test');
+    assert.ok(changelogKoRelease.includes('tests/plan-quality-contract.test.js'),
+      'CHANGELOG.ko.md 6.8.0 section must attribute the plan-quality contract test');
+    assert.ok(changelogKoRelease.includes('tests/ci-workflow-contract.test.js'),
+      'CHANGELOG.ko.md 6.8.0 section must attribute the ci-workflow contract test');
+    assert.ok(changelogKoRelease.includes('hooks/scripts/file-tracker-lock-timeout.test.js'),
+      'CHANGELOG.ko.md 6.8.0 section must attribute the file-tracker lock-timeout test');
+    assert.equal(changelogUnreleased.includes('tests/plan-quality-contract.test.js'), false,
+      'CHANGELOG.md Unreleased section must not retain the 6.8.0 plan-quality contract note');
+    assert.equal(changelogKoUnreleased.includes('tests/plan-quality-contract.test.js'), false,
+      'CHANGELOG.ko.md Unreleased section must not retain the 6.8.0 plan-quality contract note');
     assert.deepEqual({
-      'README.md': readme.includes("## What's New in v6.7.1"),
-      'README.ko.md': readmeKo.includes('## v6.7.1 새 기능'),
+      'README.md': readme.includes("## What's New in v6.8.0"),
+      'README.ko.md': readmeKo.includes('## v6.8.0 새 기능'),
     }, {
       'README.md': true,
       'README.ko.md': true,
