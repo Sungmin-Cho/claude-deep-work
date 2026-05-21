@@ -112,18 +112,87 @@ test('cited path — memory_id regex extracts ULIDs from a planted fixture brief
   }
 });
 
-test('memory_id regex rejects invalid Crockford characters (I/L/O/U)', () => {
-  // Forbidden chars: I, L, O, U. Each invalid token below differs from the same-length
-  // valid ULID only by containing one forbidden character — the regex must reject all four.
+test('memory_id regex rejects invalid Crockford characters (I/L/O/U) — R1-Y1', () => {
+  // R1-Y1: each token must be EXACTLY 26 chars after `mem-` so the {26} quantifier
+  // is satisfied on length — that way the character class is the sole rejection axis.
+  // Earlier 27-char tokens conflated length with character-class rejection.
+  // Strategy: 25 valid Crockford chars + 1 forbidden char at the tail.
+  const baseValid25 = '01HXY0123456789ABCDEFGHJK';  // 25 chars, all valid Crockford
   const invalid = [
-    'mem-I1HXY0123456789ABCDEFGHJKM7',  // contains I
-    'mem-L1HXY0123456789ABCDEFGHJKM7',  // contains L
-    'mem-O1HXY0123456789ABCDEFGHJKM7',  // contains O
-    'mem-U1HXY0123456789ABCDEFGHJKM7',  // contains U
+    `mem-${baseValid25}I`,  // 26 chars, forbidden I at tail
+    `mem-${baseValid25}L`,  // 26 chars, forbidden L at tail
+    `mem-${baseValid25}O`,  // 26 chars, forbidden O at tail
+    `mem-${baseValid25}U`,  // 26 chars, forbidden U at tail
   ];
   for (const token of invalid) {
+    // Length sanity — guards the test against accidental drift back to length-confounded form.
+    assert.equal(token.length - 'mem-'.length, 26, `${token} body must be 26 chars (R1-Y1 invariant)`);
     // Reset lastIndex since MEMORY_ID_RE is a /g regex (stateful across .test calls).
     MEMORY_ID_RE.lastIndex = 0;
-    assert.equal(MEMORY_ID_RE.test(token), false, `regex must reject ${token}`);
+    assert.equal(MEMORY_ID_RE.test(token), false, `regex must reject ${token} purely by character class`);
   }
+});
+
+// R1-Y3 (a): stale warning wording is part of the spec contract (handoff §2.1 step 4 / SKILL step 2).
+// If either side drifts the wording, the test breaks first.
+test('stale warning wording stays in sync between SKILL and handoff doc — R1-Y3a', () => {
+  const STALE_WARNING_RE = /brief is stale — re-run \/deep-memory-brief/;
+  const research = fs.readFileSync(researchSkillPath, 'utf8');
+  const handoff = fs.readFileSync(handoffDocPath, 'utf8');
+  assert.match(research, STALE_WARNING_RE, 'SKILL.md must carry the exact stale warning string');
+  assert.match(handoff, STALE_WARNING_RE, 'handoff doc must mirror the same stale warning string');
+});
+
+// R1-Y3 (b): heading-shift +2 rule from SKILL step 3 / handoff §2.1 step 2.
+// Without this assertion, a refactor could re-set the brief's heading hierarchy preservation
+// rule (e.g. switch to +1) and the only signal would be at runtime, not in CI.
+test('heading-shift +2 rule documented in SKILL and handoff — R1-Y3b', () => {
+  const research = fs.readFileSync(researchSkillPath, 'utf8');
+  // SKILL: `# Deep-Memory Brief — ...` → `### Deep-Memory Brief — ...`
+  assert.match(research, /# Deep-Memory Brief — \.\.\.` → `### Deep-Memory Brief — \.\.\./,
+    'SKILL must document the H1 → H3 shift for the brief title');
+  // SKILL: `## <idx>. <type> — ...` → `#### <idx>. ...`
+  assert.match(research, /## <idx>\. <type> — \.\.\.` → `#### <idx>\. \.\.\./,
+    'SKILL must document the H2 → H4 shift for per-memory headings');
+  const handoff = fs.readFileSync(handoffDocPath, 'utf8');
+  // Handoff doc: same rule, English wording — "two `#` levels"
+  assert.match(handoff, /two `#` levels/,
+    'handoff doc must explain the heading shift in the same +2 terms');
+});
+
+// R1-Y3 (c): empty / 0-byte brief edge case. Per SKILL step 4 — "빈 배열도 유효 (인용 자체가 빈 brief일 수 있음)".
+// Verifies the regex extracts [] from a 0-byte brief so the provenance pipeline doesn't false-fire.
+test('empty brief produces empty cited_memory_ids — R1-Y3c', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deep-memory-empty-brief-'));
+  try {
+    const briefDir = path.join(tmpDir, '.deep-memory');
+    fs.mkdirSync(briefDir, { recursive: true });
+    const briefPath = path.join(briefDir, 'latest-brief.md');
+    fs.writeFileSync(briefPath, '');  // 0-byte brief
+
+    const planted = fs.readFileSync(briefPath, 'utf8');
+    assert.equal(planted.length, 0, 'fixture must be 0 bytes (R1-Y3c invariant)');
+    MEMORY_ID_RE.lastIndex = 0;
+    const ids = planted.match(MEMORY_ID_RE) || [];
+    assert.deepEqual(ids, [], 'empty brief must yield an empty cited_memory_ids array');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// R1-Y2 contract assertion: absent-brief path must NOT write `## Cross-project Memory` to research.md.
+// Locks the SKILL body wording that defines this privacy boundary.
+test('absent brief stays out of research.md — R1-Y2 contract', () => {
+  const research = fs.readFileSync(researchSkillPath, 'utf8');
+  // SKILL step 1 must declare "부재 시 research.md에 아무것도 쓰지 않는다" (or equivalent)
+  // — paired with "runtime Research context 에는 한 줄 안내만 emit".
+  assert.match(research, /부재 시.*research\.md.*에 아무것도 쓰지 않는다/,
+    'SKILL must declare research.md gets nothing when brief is absent');
+  assert.match(research, /runtime Research context.*한 줄 안내/,
+    'SKILL must declare absent-brief suggestion is runtime-only');
+  const handoff = fs.readFileSync(handoffDocPath, 'utf8');
+  assert.match(handoff, /research artifact stays deep-memory-agnostic/,
+    'handoff doc must mirror the agnostic-artifact contract');
+  assert.match(handoff, /runtime Research context only/,
+    'handoff doc must declare the runtime-only emission rule');
 });
