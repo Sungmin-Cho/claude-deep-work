@@ -6,7 +6,7 @@ const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.resolve(__dirname, 'detect-plugins.sh');
-const TARGETS = ['deep-review', 'deep-evolve', 'deep-docs', 'deep-wiki', 'deep-dashboard'];
+const TARGETS = ['deep-review', 'deep-evolve', 'deep-docs', 'deep-wiki', 'deep-dashboard', 'deep-memory'];
 
 let tmpRoot;
 
@@ -36,7 +36,7 @@ describe('detect-plugins.sh', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('all 5 plugins installed → all in installed[], none in missing[]', () => {
+  it('all targets installed → all in installed[], none in missing[]', () => {
     for (const p of TARGETS) installPlugin(p);
     const result = run();
     assert.deepEqual(new Set(result.installed), new Set(TARGETS));
@@ -49,7 +49,27 @@ describe('detect-plugins.sh', () => {
     installPlugin('deep-wiki');
     const result = run();
     assert.deepEqual(new Set(result.installed), new Set(['deep-review', 'deep-docs', 'deep-wiki']));
-    assert.deepEqual(new Set(result.missing), new Set(['deep-evolve', 'deep-dashboard']));
+    assert.deepEqual(new Set(result.missing), new Set(['deep-evolve', 'deep-dashboard', 'deep-memory']));
+  });
+
+  // R1-C1 regression: deep-memory must be in TARGETS so the Phase 5 harvest
+  // recommendation gate (skills/deep-integrate/SKILL.md §3-2 / §3-4) can actually fire.
+  it('deep-memory present → enumerated in installed[]; absent → enumerated in missing[]', () => {
+    // present case
+    installPlugin('deep-memory');
+    const presentResult = run();
+    assert.ok(presentResult.installed.includes('deep-memory'),
+      'deep-memory must be enumerated in installed[] when present');
+    assert.ok(!presentResult.missing.includes('deep-memory'),
+      'deep-memory must not appear in missing[] when present');
+
+    // absent case (separate temp root via afterEach/beforeEach reset)
+    fs.rmSync(path.join(tmpRoot, 'plugins', 'cache', 'some-marketplace', 'deep-memory'), { recursive: true });
+    const absentResult = run();
+    assert.ok(!absentResult.installed.includes('deep-memory'),
+      'deep-memory must not appear in installed[] when absent');
+    assert.ok(absentResult.missing.includes('deep-memory'),
+      'deep-memory must be enumerated in missing[] when absent');
   });
 
   it('no plugins installed → installed=[], missing=all', () => {

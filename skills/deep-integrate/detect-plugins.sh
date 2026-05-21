@@ -10,7 +10,7 @@ warn() {
 }
 
 PLUGINS_ROOT="${HOME}/.claude/plugins/cache"
-TARGETS=(deep-review deep-evolve deep-docs deep-wiki deep-dashboard)
+TARGETS=(deep-review deep-evolve deep-docs deep-wiki deep-dashboard deep-memory)
 PLUGINS_ROOT_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do

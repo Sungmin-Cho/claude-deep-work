@@ -211,8 +211,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata and docs are bumped to 6.8.0', () => {
-    const version = '6.8.0';
+  it('active release metadata and docs are bumped to 6.9.0', () => {
+    const version = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const claudePlugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -231,27 +231,27 @@ describe('release metadata', () => {
     const changelogUnreleased = releaseSection(changelog, 'Unreleased');
     const changelogKoUnreleased = releaseSection(changelogKo, 'Unreleased');
 
-    assert.match(changelogRelease, /Plan-quality contract enforcement \+ CI hardening \+ receipt-tracker robustness/);
-    assert.match(changelogKoRelease, /Plan-quality contract 강제 \+ CI 견고화 \+ receipt-tracker 안정성/);
-    assert.ok(changelogRelease.includes('tests/plan-quality-contract.test.js'),
-      'CHANGELOG.md 6.8.0 section must attribute the plan-quality contract test');
-    assert.ok(changelogRelease.includes('tests/ci-workflow-contract.test.js'),
-      'CHANGELOG.md 6.8.0 section must attribute the ci-workflow contract test');
-    assert.ok(changelogRelease.includes('hooks/scripts/file-tracker-lock-timeout.test.js'),
-      'CHANGELOG.md 6.8.0 section must attribute the file-tracker lock-timeout test');
-    assert.ok(changelogKoRelease.includes('tests/plan-quality-contract.test.js'),
-      'CHANGELOG.ko.md 6.8.0 section must attribute the plan-quality contract test');
-    assert.ok(changelogKoRelease.includes('tests/ci-workflow-contract.test.js'),
-      'CHANGELOG.ko.md 6.8.0 section must attribute the ci-workflow contract test');
-    assert.ok(changelogKoRelease.includes('hooks/scripts/file-tracker-lock-timeout.test.js'),
-      'CHANGELOG.ko.md 6.8.0 section must attribute the file-tracker lock-timeout test');
-    assert.equal(changelogUnreleased.includes('tests/plan-quality-contract.test.js'), false,
-      'CHANGELOG.md Unreleased section must not retain the 6.8.0 plan-quality contract note');
-    assert.equal(changelogKoUnreleased.includes('tests/plan-quality-contract.test.js'), false,
-      'CHANGELOG.ko.md Unreleased section must not retain the 6.8.0 plan-quality contract note');
+    assert.match(changelogRelease, /deep-memory v0\.1\.0 consumer integration — Phase 1 recall \+ Phase 5 harvest recommendation/);
+    assert.match(changelogKoRelease, /deep-memory v0\.1\.0 consumer 통합 — Phase 1 recall \+ Phase 5 harvest 추천/);
+    assert.ok(changelogRelease.includes('tests/deep-memory-integration.test.js'),
+      'CHANGELOG.md 6.9.0 section must attribute the deep-memory integration test');
+    assert.ok(changelogRelease.includes('skills/deep-integrate/detect-plugins.sh'),
+      'CHANGELOG.md 6.9.0 section must cite the detect-plugins TARGETS extension');
+    assert.ok(changelogRelease.includes('docs/deep-memory-integration-handoff.md'),
+      'CHANGELOG.md 6.9.0 section must cite the consumer-integration handoff doc');
+    assert.ok(changelogKoRelease.includes('tests/deep-memory-integration.test.js'),
+      'CHANGELOG.ko.md 6.9.0 section must attribute the deep-memory integration test');
+    assert.ok(changelogKoRelease.includes('skills/deep-integrate/detect-plugins.sh'),
+      'CHANGELOG.ko.md 6.9.0 section must cite the detect-plugins TARGETS extension');
+    assert.ok(changelogKoRelease.includes('docs/deep-memory-integration-handoff.md'),
+      'CHANGELOG.ko.md 6.9.0 section must cite the consumer-integration handoff doc');
+    assert.equal(changelogUnreleased.includes('tests/deep-memory-integration.test.js'), false,
+      'CHANGELOG.md Unreleased section must not retain the 6.9.0 deep-memory integration note');
+    assert.equal(changelogKoUnreleased.includes('tests/deep-memory-integration.test.js'), false,
+      'CHANGELOG.ko.md Unreleased section must not retain the 6.9.0 deep-memory integration note');
     assert.deepEqual({
-      'README.md': readme.includes("## What's New in v6.8.0"),
-      'README.ko.md': readmeKo.includes('## v6.8.0 새 기능'),
+      'README.md': readme.includes("## What's New in v6.9.0"),
+      'README.ko.md': readmeKo.includes('## v6.9.0 새 기능'),
     }, {
       'README.md': true,
       'README.ko.md': true,

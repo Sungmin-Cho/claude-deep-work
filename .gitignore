@@ -8,5 +8,6 @@ plans/
 .claude/
 .deep-review/
 .deep-docs/
+.deep-memory/
 .serena/
 --help

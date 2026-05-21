@@ -25,6 +25,17 @@ deep-work는 [deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와
 
 deep-work는 기존 claude-deep-suite marketplace namespace를 유지하면서 Claude Code와 Codex 플러그인 런타임을 모두 지원합니다. Claude Code와 Codex는 각자의 네이티브 manifest를 읽고, skill 호출자는 아래 릴리스 노트에 정리된 동일한 skill-native invocation 모델을 사용합니다.
 
+## v6.9.0 새 기능
+
+### Deep-Memory v0.1.0 consumer 통합 — Phase 1 recall + Phase 5 harvest
+
+이번 릴리스는 deep-work를 새 `deep-memory` 플러그인 (claude-deep-suite v0.1.0) 의 **read-only consumer** 로 연결합니다. opt-in 가능한 두 affordance:
+
+- **Phase 1 Research recall** — `skills/deep-research/SKILL.md` 가 `.deep-memory/latest-brief.md` 존재 여부를 probe 하고, 존재 시 brief 를 verbatim 으로 `research.md` 의 새 `## Cross-project Memory` 섹션에 인용 (deep-memory 의 render 보존을 위해 heading hierarchy +2 shift). Brief 가 **부재** 면 research artifact 는 deep-memory-agnostic 상태 유지 — runtime context 에만 한 줄 안내 emit, `research.md` 에는 아무것도 쓰지 않음. `/deep-memory-brief` 는 절대 자동 호출하지 않음 — recall 은 사용자 주도. Provenance 토큰 (`mem-<ULID>`, Crockford-base32 uppercase) 은 새 `cross_project_memory.cited_memory_ids[]` state 필드로 캡처되어 향후 feedback-hook (Phase 4+) 에 사용.
+- **Phase 5 Integrate harvest** — `skills/deep-integrate/SKILL.md` 가 `deep-memory ∈ plugins.installed` 이고 session 변경 > 0 파일일 때 top-3 LLM 추천과 결정적 B-fallback 리스트에 `/deep-memory-harvest` 를 제안. `detect-plugins.sh` 가 `plugins.installed` / `plugins.missing` 에 deep-memory 를 올바르게 enumerate 하도록 확장.
+
+본 통합은 **forward-compatible**: deep-memory 를 설치하지 않은 프로젝트는 동작 변화 없음. 보류된 `/deep-memory feedback` hook (spec §14.2 item 5) 은 Phase 4+ joint PR 을 위해 `docs/deep-memory-integration-handoff.md` 에 추적됨. 13 개 신규 contract 테스트가 privacy 경계, ULID 정규식, stale-warning wording, heading-shift rule, edge case 등 모든 문서화된 invariant 를 고정.
+
 ## v6.8.0 새 기능
 
 ### Plan-Quality contract 강제 + CI 견고화 + receipt-tracker 안정성
