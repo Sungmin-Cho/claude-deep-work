@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.0] — 2026-05-21 (deep-memory v0.1.0 consumer integration — Phase 1 recall + Phase 5 harvest recommendation)
+
+### Added
+
+- **`skills/deep-research/SKILL.md` — Deep-Memory Brief Context subsection** (Cross-Plugin Context block, alongside Harnessability + Evolve Insights). When `.deep-memory/latest-brief.md` exists in the project root, the brief is quoted **verbatim** under a new `## Cross-project Memory` heading in `research.md` (heading hierarchy shifted by +2 to preserve deep-memory's render). When absent, the research artifact stays deep-memory-agnostic — a runtime-only suggestion is emitted but **nothing is written to `research.md`** (privacy invariant). `/deep-memory-brief` is **never auto-invoked**; recall stays user-driven. Provenance tokens (`mem-<ULID>`, Crockford-base32 uppercase, I/L/O/U excluded) extracted into the new `cross_project_memory.cited_memory_ids[]` state field.
+- **`skills/deep-integrate/SKILL.md` — `/deep-memory-harvest` recommendation** in the Phase 5 LLM prompt rule (§3-2) and the deterministic B-fallback list (§3-4). Gated on `deep-memory ∈ plugins.installed`, `session.changes.files_changed > 0`, and `loop.already_executed` not containing `deep-memory`. Installation suggestion path mirrors existing sibling-plugin convention.
+- **`skills/deep-integrate/detect-plugins.sh`** — `deep-memory` added to the `TARGETS` enumeration so the Phase 5 harvest gate's `plugins.installed`/`plugins.missing` signal correctly reports its presence. Regression test in `detect-plugins.test.js` asserts present→installed[] / absent→missing[].
+- **`docs/deep-memory-integration-handoff.md`** — spec-of-record for this PR (force-added under `docs/`, which is normally gitignored). Covers all 6 consumer items from deep-memory spec §14.2 — five landed, item 5 (`/deep-memory feedback`) deferred to Phase 4+ joint PR with the `cited_memory_ids[]` field forward-compatible.
+- **`tests/deep-memory-integration.test.js`** — 12 fixture-based contract tests pinning every documented invariant: spec doc structure, SKILL section wording, state-field schema, harvest gate language, ULID provenance regex (including character-class + length + Crockford-uppercase isolation), absent-brief privacy boundary, stale-warning wording, heading-shift +2 rule, 0-byte brief, non-empty no-ULID brief, and a defensive `assert.doesNotMatch(/또는 부재 안내/)` guarding against pre-fix wording re-entering the SKILL silently.
+
+### Changed
+
+- **Research artifact schema** — additive `cross_project_memory` block (`brief_path`, `brief_mtime`, `brief_stale`, `cited_memory_ids[]`) recorded in the research state frontmatter. All four fields default to `null` / `[]` when the brief is absent, preserving forward-compat for projects that never install deep-memory.
+- **`.gitignore`** — `.deep-memory/` ignored at the project root (deep-memory manages its own persistence under `~/.deep-memory/`; the per-project brief is regenerated on demand).
+- Version bumped 6.8.0 → 6.9.0 across package and plugin manifests for a minor release.
+
+### Verification
+
+- `npm test`: 850 / 850 pass (137 suites) — baseline 837 + 13 new (5 graceful/cited + 1 detect-plugins regression + 3 stale/heading/empty + 1 R1-Y1 length-isolated + 1 R1-Y2 contract + 1 R2-N1 negative + 1 R2-N2 non-empty).
+- 3-round `/deep-review-loop` to convergence: round 1 REQUEST_CHANGES (🔴 1 / 🟡 3 / ℹ️ 2) → round 2 CONCERN (🟡 1 / ℹ️ 2) → round 3 APPROVE (natural convergence per §3.A.1). All 7 actionable findings ACCEPTED + fixed across 6 Respond commits; 1 info item deferred (R2-N3 — `.git` worktree-as-file wording, defensible as-is).
+- Reports retained under `.deep-review/reports/` and `.deep-review/responses/` (gitignored; author-local).
+
 ## [6.8.0] — 2026-05-19 (Plan-quality contract enforcement + CI hardening + receipt-tracker robustness)
 
 ### Added

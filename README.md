@@ -25,6 +25,17 @@ deep-work also produces receipts and health reports consumed by [deep-review](ht
 
 deep-work supports both Claude Code and Codex plugin runtimes while preserving the existing claude-deep-suite marketplace namespace. Claude Code and Codex read their native manifests, and skill callers use the same skill-native invocation model described in the release notes below.
 
+## What's New in v6.9.0
+
+### Deep-Memory v0.1.0 Consumer Integration — Phase 1 Recall + Phase 5 Harvest
+
+This release wires deep-work into the new `deep-memory` plugin (claude-deep-suite v0.1.0) as a **read-only consumer with two opt-in affordances**:
+
+- **Phase 1 Research recall** — `skills/deep-research/SKILL.md` now probes for `.deep-memory/latest-brief.md` and, when present, quotes the brief verbatim under a new `## Cross-project Memory` section in `research.md` (heading hierarchy shifted by +2 to preserve deep-memory's rendering). When the brief is **absent**, the research artifact stays deep-memory-agnostic — only a runtime-only suggestion is emitted, never written to `research.md`. `/deep-memory-brief` is never auto-invoked; recall stays user-driven. Provenance tokens (`mem-<ULID>`, Crockford-base32 uppercase) are captured into the new `cross_project_memory.cited_memory_ids[]` state field for downstream feedback-hook consumption (Phase 4+).
+- **Phase 5 Integrate harvest** — `skills/deep-integrate/SKILL.md` proposes `/deep-memory-harvest` in the top-3 LLM recommendations and the deterministic B-fallback list when `deep-memory ∈ plugins.installed` and the session changed > 0 files. `detect-plugins.sh` extended so `plugins.installed` / `plugins.missing` correctly enumerates deep-memory.
+
+The integration is **fully forward-compatible**: projects that never install deep-memory see no behavior change, and the deferred `/deep-memory feedback` hook (spec §14.2 item 5) is tracked in `docs/deep-memory-integration-handoff.md` for a Phase 4+ joint PR. 13 new contract tests pin every documented invariant (privacy boundary, ULID regex, stale-warning wording, heading-shift rule, edge cases).
+
 ## What's New in v6.8.0
 
 ### Plan-Quality Contract Enforcement + CI Hardening + Receipt-Tracker Robustness

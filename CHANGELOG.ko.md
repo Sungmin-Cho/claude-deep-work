@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.0] — 2026-05-21 (deep-memory v0.1.0 consumer 통합 — Phase 1 recall + Phase 5 harvest 추천)
+
+### 추가
+
+- **`skills/deep-research/SKILL.md` — Deep-Memory Brief Context 서브섹션** (Cross-Plugin Context 블록, Harnessability + Evolve Insights와 동급). `.deep-memory/latest-brief.md` 가 프로젝트 루트에 존재하면 brief 를 **verbatim** 으로 `research.md` 의 새 `## Cross-project Memory` 섹션에 인용 (heading hierarchy +2 shift 로 deep-memory render 보존). 부재 시 research artifact 는 deep-memory-agnostic 유지 — runtime context 에만 한 줄 안내 emit, **`research.md` 에는 아무것도 쓰지 않음** (privacy invariant). `/deep-memory-brief` 는 **자동 호출 금지** — recall 은 사용자 주도. Provenance 토큰 (`mem-<ULID>`, Crockford-base32 uppercase, I/L/O/U 제외) 을 새 `cross_project_memory.cited_memory_ids[]` state 필드로 추출.
+- **`skills/deep-integrate/SKILL.md` — `/deep-memory-harvest` 추천** Phase 5 LLM 프롬프트 규칙 (§3-2) 과 결정적 B-fallback 리스트 (§3-4) 에 추가. Gate 조건: `deep-memory ∈ plugins.installed`, `session.changes.files_changed > 0`, `loop.already_executed` 에 `deep-memory` 부재. Installation suggestion 경로는 다른 형제 플러그인 관례를 그대로 따름.
+- **`skills/deep-integrate/detect-plugins.sh`** — `TARGETS` enumeration 에 `deep-memory` 추가. Phase 5 harvest gate 의 `plugins.installed`/`plugins.missing` 신호가 deep-memory 존재를 올바르게 보고하도록. `detect-plugins.test.js` 의 regression test 가 present→installed[] / absent→missing[] 을 검증.
+- **`docs/deep-memory-integration-handoff.md`** — 본 PR 의 spec-of-record (`docs/` 는 평상시 gitignored 라 force-add). deep-memory spec §14.2 의 6 가지 consumer item 중 5 개 landed, item 5 (`/deep-memory feedback`) 은 `cited_memory_ids[]` forward-compat 필드를 남긴 채 Phase 4+ joint PR 로 deferred.
+- **`tests/deep-memory-integration.test.js`** — 12 개의 fixture-based contract 테스트. 모든 문서화된 invariant 를 pin: spec doc 구조, SKILL 섹션 wording, state-field schema, harvest gate 언어, ULID provenance 정규식 (character-class + length + Crockford-uppercase 분리 검증 포함), absent-brief privacy 경계, stale-warning wording, heading-shift +2 rule, 0-byte brief, non-empty no-ULID brief, 그리고 pre-fix wording 이 SKILL 에 silently 재진입하지 못하도록 방어하는 `assert.doesNotMatch(/또는 부재 안내/)`.
+
+### 변경
+
+- **Research artifact schema** — additive `cross_project_memory` 블록 (`brief_path`, `brief_mtime`, `brief_stale`, `cited_memory_ids[]`) 을 research state frontmatter 에 기록. 4 개 필드 모두 brief 부재 시 `null` / `[]` 기본값 — deep-memory 를 설치하지 않은 프로젝트에 forward-compat.
+- **`.gitignore`** — `.deep-memory/` 를 프로젝트 루트에서 ignore (deep-memory 는 `~/.deep-memory/` 하위에 자체 persistence 관리; 프로젝트별 brief 는 on-demand regenerate).
+- Version 6.8.0 → 6.9.0 — package 및 plugin manifest 전체 동기화 (minor 릴리스).
+
+### 검증
+
+- `npm test`: 850 / 850 pass (137 suites) — baseline 837 + 13 신규 (5 graceful/cited + 1 detect-plugins regression + 3 stale/heading/empty + 1 R1-Y1 length-isolated + 1 R1-Y2 contract + 1 R2-N1 negative + 1 R2-N2 non-empty).
+- 3 라운드 `/deep-review-loop` 수렴: 라운드 1 REQUEST_CHANGES (🔴 1 / 🟡 3 / ℹ️ 2) → 라운드 2 CONCERN (🟡 1 / ℹ️ 2) → 라운드 3 APPROVE (§3.A.1 자연 수렴). 7 개 actionable finding 모두 ACCEPT + 6 Respond commit 으로 수정; 1 개 info DEFER (R2-N3 — `.git` worktree-as-file wording, defensible as-is).
+- 리포트는 `.deep-review/reports/` 와 `.deep-review/responses/` 에 보관 (gitignored; author-local).
+
 ## [6.8.0] — 2026-05-19 (Plan-quality contract 강제 + CI 견고화 + receipt-tracker 안정성)
 
 ### 추가
