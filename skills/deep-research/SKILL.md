@@ -238,7 +238,7 @@ v6.3.x의 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` precheck과 TeamCreate+TaskCrea
 - [ ] [RF-NNN] / [RA-NNN] 태그 포함
 - [ ] 각 상세 섹션에 코드 스니펫 포함
 - [ ] 테스팅 패턴(프레임워크, assertion, 파일 네이밍) 문서화
-- [ ] (해당 시) `## Cross-project Memory` 섹션 포함 + `cited_memory_ids` 추출 또는 부재 안내
+- [ ] (brief 있을 때만) `## Cross-project Memory` 섹션 포함 + `cited_memory_ids` 추출 — 부재 시 이 항목 skip (research.md 는 deep-memory-agnostic 유지)
 
 ## Phase Review Gate
 

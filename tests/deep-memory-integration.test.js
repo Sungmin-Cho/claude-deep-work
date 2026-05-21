@@ -195,4 +195,9 @@ test('absent brief stays out of research.md — R1-Y2 contract', () => {
     'handoff doc must mirror the agnostic-artifact contract');
   assert.match(handoff, /runtime Research context only/,
     'handoff doc must declare the runtime-only emission rule');
+  // R2-N1: the Research Quality Checklist must NOT mention "부재 안내" — that pre-R1-Y2 phrasing
+  // would tell an LLM running self-review to write an absence note into research.md, re-opening
+  // the leak this contract is meant to close. Step 1 wording and checklist wording must agree.
+  assert.doesNotMatch(research, /또는 부재 안내/,
+    'SKILL self-review checklist must not carry the pre-R1-Y2 "또는 부재 안내" wording (re-introduces the leak)');
 });
