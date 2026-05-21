@@ -180,6 +180,31 @@ test('empty brief produces empty cited_memory_ids — R1-Y3c', () => {
   }
 });
 
+// R2-N2: non-empty brief with no valid `mem-<ULID>` tokens — e.g. deep-memory's "No memories
+// yet" render, or a brief whose `mem-` prefixes are partial/malformed. Distinct from R1-Y3c
+// (0-byte) because the body has content; the regex just finds no full matches. Closes the
+// coverage gap flagged in round-2 review (R2-N2) and proves the regex requires the FULL
+// 26-char body, not just the prefix.
+test('non-empty brief without valid ULIDs yields empty cited_memory_ids — R2-N2', () => {
+  const noMatchBrief = [
+    '# Deep-Memory Brief — sample task',
+    '',
+    'No memories yet — run `/deep-memory-harvest` first or broaden the task wording.',
+    '',
+    // Partial / malformed `mem-` prefixes — these MUST NOT match (regex requires 26-char body):
+    'Stray prefix: mem-short (only 5 chars)',
+    'Wrong shape: mem-01HXY0123456789ABCDEFGHJK (only 25 chars — one short of {26})',
+    'Inline mention of `mem-` without a ULID body.',
+  ].join('\n');
+  assert.ok(noMatchBrief.length > 0, 'fixture must have content (R2-N2 invariant)');
+  // Sanity: fixture contains literal `mem-` prefixes to prove the regex doesn't match on prefix alone.
+  assert.ok(noMatchBrief.includes('mem-short'), 'fixture must contain a too-short mem- prefix');
+  assert.ok(noMatchBrief.includes('mem-01HXY0123456789ABCDEFGHJK '), 'fixture must contain a 25-char (off-by-one) mem- body');
+  MEMORY_ID_RE.lastIndex = 0;
+  const ids = noMatchBrief.match(MEMORY_ID_RE) || [];
+  assert.deepEqual(ids, [], 'no-ULID brief must yield empty cited_memory_ids — partial or off-by-one "mem-" prefixes must not match');
+});
+
 // R1-Y2 contract assertion: absent-brief path must NOT write `## Cross-project Memory` to research.md.
 // Locks the SKILL body wording that defines this privacy boundary.
 test('absent brief stays out of research.md — R1-Y2 contract', () => {
