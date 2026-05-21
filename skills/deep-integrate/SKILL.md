@@ -105,6 +105,12 @@ Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_ty
   installation_suggestions에 1건 추가.
 - 변경이 없고(session.changes.files_changed == 0) recurring findings도 없으면
   finish_recommended=true.
+- `deep-memory`가 plugins.installed에 있고 session.changes.files_changed > 0 이면서
+  loop.already_executed에 `deep-memory` 항목이 없으면 후보 중 하나로
+  `/deep-memory-harvest`를 제안 (rationale 예: "session 결과를 cross-project memory에
+  누적 — files_changed=N, recurring-findings=M"). harvest는 deep-memory 측에서 직접
+  무엇이 학습됐는지 결정하므로 args 불필요. `deep-memory`가 plugins.missing이면
+  installation_suggestions에 동일 신호로 1건 추가 가능.
 
 출력 스키마:
 <skills/deep-integrate/schema/llm-output.json 첨부>
@@ -147,12 +153,13 @@ Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_ty
 ### 3-4. B-fallback (LLM 실패 시)
 
 ```
-자연어 추천 3개를 단순 규칙으로 표시:
+자연어 추천 3개를 단순 규칙으로 표시 (각 candidate는 해당 plugin이 plugins.installed에 있을 때만 노출):
   1. /deep-review (세션에 충분한 코드 변경 있음)
   2. /deep-docs scan (CLAUDE.md/README.md 변경 시)
   3. /wiki-ingest <work_dir> (세션 규모가 중간 이상일 때)
+  4. /deep-memory-harvest (session.changes.files_changed > 0 이고 deep-memory 가 설치되어 있을 때 — 결과를 cross-project memory 에 누적)
 
-"자동 ranking 실패 — 수동 선택:" 메시지 출력.
+"자동 ranking 실패 — 수동 선택:" 메시지 출력. 후보가 3개를 초과하면 신호 강도 순으로 상위 3개만 노출 (deep-memory-harvest는 changes.files_changed > 0 신호가 있을 때만 후보군 진입).
 ```
 
 ### 3-5. 선택된 커맨드 실행 및 이력 기록 (W6 fix — v1 UX 결정 명시)
