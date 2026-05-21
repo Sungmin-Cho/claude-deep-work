@@ -42,7 +42,7 @@ In `skills/deep-research/SKILL.md`, the `Cross-Plugin Context` block already enu
 
 When the Research skill enters Phase 1:
 
-1. **Probe** — check whether `.deep-memory/latest-brief.md` exists in `$WORK_DIR`'s project root.
+1. **Probe** — check whether `.deep-memory/latest-brief.md` exists in `$WORK_DIR`'s project root (resolved as `git rev-parse --show-toplevel` from `$WORK_DIR`; in non-git worktrees use the nearest ancestor containing a `.git/` directory — R1-I2 clarification).
 2. **Cite (present)** — read the file and reproduce its content **verbatim** under a `## Cross-project Memory` heading in `$WORK_DIR/research.md`. The brief's heading hierarchy is preserved by adding two `#` levels (the brief is `# Deep-Memory Brief — <task>` / `## <idx>. <memory_type> — <memory_id>`, so it becomes `### Deep-Memory Brief — <task>` / `#### <idx>. ...` under the research-side `## Cross-project Memory` parent). **The `## Cross-project Memory` section is created only in this case** — when the brief is absent the research artifact stays deep-memory-agnostic (see step 3).
 3. **Suggest (absent)** — emit a one-line note **into the runtime Research context only**, not into `research.md`: *"No `.deep-memory/latest-brief.md` found. Run `/deep-memory-brief \"<task>\"` first if you want cross-project recall."* Then continue normally — no `AskUserQuestion`, no auto-invoke. **The user must explicitly request recall.** This keeps the research artifact free of deep-memory-specific content for users who never opt in (R1-Y2 fix — prior behavior leaked the suggestion into every research.md unconditionally).
 4. **Stale guard** — if the brief's mtime is older than 14 days, emit a stale warning *(\"brief is stale — re-run /deep-memory-brief\")* but still cite it (the user opted in by writing it; let them decide).
@@ -175,7 +175,7 @@ Everything in this PR is **local to the deep-work repo**. No `claude-deep-suite/
 |---|---|
 | **brief** | `.deep-memory/latest-brief.{json,md}` — top-N retrieved memory cards for a task. Produced by `/deep-memory-brief`. |
 | **card** | `~/.deep-memory/cards/<type>/{global,project_id}/<memory_id>.json` — distilled, persistent memory atom. Produced by `/deep-memory-harvest`. |
-| **memory_id** | `mem-<ULID>` — Crockford-base32 ULID prefixed with `mem-`. Rendered inside backticks in the brief markdown. |
+| **memory_id** | `mem-<ULID>` — Crockford-base32 ULID prefixed with `mem-`, **uppercase-only** (I/L/O/U excluded). Rendered inside backticks in the brief markdown. |
 | **recall** | The act of reading a brief into the active context (Phase 1 Research). |
 | **harvest** | The act of writing cards from session artifacts (Phase 5 Integrate). |
 | **promotion** | Moving a `local` card to `global` (deep-memory side, `/deep-memory-audit --promote <id>`). Out of scope for deep-work. |
