@@ -6,6 +6,8 @@ For detailed version history see [`CHANGELOG.md`](CHANGELOG.md) / [`CHANGELOG.ko
 
 To check the current version: `jq -r .version .claude-plugin/plugin.json`
 
+> 📄 **Docs maintenance**: this repo's documentation follows `docs/DOCS_RULE.md` (local maintainer guide — single-source-of-truth rules for README / CHANGELOG / this file).
+
 ---
 
 ## Project Overview
