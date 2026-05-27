@@ -3,7 +3,9 @@
 Evidence-Driven Development Protocol for structured agent work. The plugin
 remains Claude Code compatible while also exposing native Codex plugin metadata.
 
-Current version: 6.7.1.
+To check the current version: `jq -r .version .claude-plugin/plugin.json`
+
+> 📄 **Docs maintenance**: this repo's documentation follows `docs/DOCS_RULE.md` (local maintainer guide — single-source-of-truth rules for README / CHANGELOG / this file).
 
 ## Runtime Surfaces
 

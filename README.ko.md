@@ -1,883 +1,163 @@
 [English](./README.md) | **한국어**
 
-# Deep Work Plugin
+# deep-work
 
-<!-- Badges (populated after sessions) -->
-<!-- ![Deep Work Quality](https://img.shields.io/badge/deep--work-quality-lightgrey) -->
-<!-- ![Sessions](https://img.shields.io/badge/sessions-0-blue) -->
+[![version](https://img.shields.io/github/package-json/v/Sungmin-Cho/claude-deep-work?label=version)](https://github.com/Sungmin-Cho/claude-deep-work)
+[![license](https://img.shields.io/github/license/Sungmin-Cho/claude-deep-work)](./LICENSE)
+[![part of deep-suite](https://img.shields.io/badge/part%20of-deep--suite-5b8def)](https://github.com/Sungmin-Cho/claude-deep-suite)
 
-**Evidence-Driven Development Protocol** — 단일 커맨드 auto-flow 오케스트레이션, TDD 강제, slice/receipt 시스템으로 모든 코드 변경에 증거를 요구하는 플러그인.
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code)와 Codex를 위한 **Evidence-Driven Development Protocol**. 단일 커맨드가 Brainstorm → Research → Plan → Implement → Test → Integrate 전체 워크플로우를 구동하며, TDD 강제, receipt 기반 증거 수집, 계획과 코딩의 엄격한 분리를 제공합니다.
 
-### 하네스 엔지니어링에서의 역할
+deep-work는 복잡한 작업에서 AI 코딩이 흔히 빠지는 실패 모드를 차단합니다: 기존 아키텍처를 무시한 새 패턴 도입, 이미 존재하는 유틸리티 재구현, 코드베이스를 이해하기 전에 구현 시작, 요청하지 않은 "개선"으로 인한 버그, 검증 없이 완료 처리.
 
-deep-work는 [Deep Suite](https://github.com/Sungmin-Cho/claude-deep-suite) 생태계의 **핵심 하네스 엔진**으로, [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) 프레임워크(Böckeler/Fowler, 2026)를 구현합니다.
+## deep-suite에서의 역할
 
-2×2 매트릭스(Guide/Sensor × Computational/Inferential)에서 deep-work의 역할:
+deep-work는 [claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suite)의 **핵심 하네스 엔진**으로, [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) 프레임워크(Böckeler/Fowler, 2026)를 구현합니다. Guide/Sensor × Computational/Inferential 매트릭스에서:
 
-- **Computational Guides**: Phase Guard hook(편집 물리적 차단), **Worktree Guard**(P0, worktree 외부 쓰기 hard block), TDD 상태 머신(RED→GREEN), 토폴로지 템플릿(phase별 가이드)
-- **Computational Sensors**: Linter/타입 체크 파이프라인, 커버리지, 뮤테이션 테스팅, 4개 드리프트 센서, fitness 규칙, review-check 센서, **Phase Transition Injector**(P1, 조건 context injection)
-- **Inferential Guides**: Research/plan/brainstorm 문서, Sprint Contract
-- **Self-Correction Loop**: SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN (센서별 독립 3회 교정)
+- **Computational Guides** — Phase Guard hook(편집 물리적 차단), Worktree Guard(P0, worktree 외부 쓰기 hard-block), TDD RED→GREEN 상태 머신, 토폴로지 템플릿.
+- **Computational Sensors** — linter/typecheck/coverage/mutation 파이프라인, 드리프트 센서, fitness 규칙, review-check 센서, Phase Transition Injector(P1).
+- **Inferential Guides** — research / plan / brainstorm 문서, Sprint Contract.
+- **Self-Correction Loop** — SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN, 센서별 3-round 제한.
 
-deep-work는 [deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와 [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard)가 소비하는 receipt과 health report를 생성합니다.
+[deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와 [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard)가 소비하는 receipt과 health report를 생성합니다.
 
-## Codex 호환성
+## 설치
 
-deep-work는 기존 claude-deep-suite marketplace namespace를 유지하면서 Claude Code와 Codex 플러그인 런타임을 모두 지원합니다. Claude Code와 Codex는 각자의 네이티브 manifest를 읽고, skill 호출자는 아래 릴리스 노트에 정리된 동일한 skill-native invocation 모델을 사용합니다.
-
-## v6.9.0 새 기능
-
-### Deep-Memory v0.1.0 consumer 통합 — Phase 1 recall + Phase 5 harvest
-
-이번 릴리스는 deep-work를 새 `deep-memory` 플러그인 (claude-deep-suite v0.1.0) 의 **read-only consumer** 로 연결합니다. opt-in 가능한 두 affordance:
-
-- **Phase 1 Research recall** — `skills/deep-research/SKILL.md` 가 `.deep-memory/latest-brief.md` 존재 여부를 probe 하고, 존재 시 brief 를 verbatim 으로 `research.md` 의 새 `## Cross-project Memory` 섹션에 인용 (deep-memory 의 render 보존을 위해 heading hierarchy +2 shift). Brief 가 **부재** 면 research artifact 는 deep-memory-agnostic 상태 유지 — runtime context 에만 한 줄 안내 emit, `research.md` 에는 아무것도 쓰지 않음. `/deep-memory-brief` 는 절대 자동 호출하지 않음 — recall 은 사용자 주도. Provenance 토큰 (`mem-<ULID>`, Crockford-base32 uppercase) 은 새 `cross_project_memory.cited_memory_ids[]` state 필드로 캡처되어 향후 feedback-hook (Phase 4+) 에 사용.
-- **Phase 5 Integrate harvest** — `skills/deep-integrate/SKILL.md` 가 `deep-memory ∈ plugins.installed` 이고 session 변경 > 0 파일일 때 top-3 LLM 추천과 결정적 B-fallback 리스트에 `/deep-memory-harvest` 를 제안. `detect-plugins.sh` 가 `plugins.installed` / `plugins.missing` 에 deep-memory 를 올바르게 enumerate 하도록 확장.
-
-본 통합은 **forward-compatible**: deep-memory 를 설치하지 않은 프로젝트는 동작 변화 없음. 보류된 `/deep-memory feedback` hook (spec §14.2 item 5) 은 Phase 4+ joint PR 을 위해 `docs/deep-memory-integration-handoff.md` 에 추적됨. 13 개 신규 contract 테스트가 privacy 경계, ULID 정규식, stale-warning wording, heading-shift rule, edge case 등 모든 문서화된 invariant 를 고정.
-
-## v6.8.0 새 기능
-
-### Plan-Quality contract 강제 + CI 견고화 + receipt-tracker 안정성
-
-이번 릴리스는 plan-quality 강제, CI 위생, receipt-tracker 안정성을 세 가지 협업 변경으로 끌어올립니다:
-
-- **Plan-quality contract**: 모든 비-인라인 S/M/L slice는 이제 `failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`를 반드시 선언해야 합니다. Plan review gate (`skills/shared/references/review-gate.md`)가 이 contract와 정렬됨 — 누락 필드에 대한 "권장" 헷지나 v5.8 하위 호환 fallback이 더 이상 없음. `tests/plan-quality-contract.test.js`가 템플릿과 review-gate 문구 모두를 고정하여 silently 이탈하지 못하도록 함.
-- **CI 견고화**: non-blocking `shellcheck` advisory 스텝이 `hooks/scripts/**/*.sh`를 lint (`tests/ci-workflow-contract.test.js`로 고정). `npm test`가 이제 재귀 `node --test "**/*.test.js"` 글로브로 48+개 테스트를 모두 발견하며, 글로브 지원을 위해 CI Node 20 → 22 (LTS)로 bump.
-- **Receipt-tracker 안정성**: `hooks/scripts/file-tracker.sh`의 pre-lock receipt 초기화를 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 stale lock으로 in-lock update가 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. `hooks/scripts/file-tracker-lock-timeout.test.js`가 end-to-end drain contract를 검증.
-
-## v6.7.1 새 기능
-
-### Codex 네이티브 manifest 와 skill entry alias
-
-이번 릴리스는 `.codex-plugin/plugin.json` 과 `AGENTS.md` 를 추가해 Codex가 Claude Code와 같은 플러그인 표면을 읽도록 하며, 내부 orchestrator 이름을 몰라도 auto-flow를 시작할 수 있도록 `$deep-work:deep-work "task"` skill entry alias를 복구합니다.
-
-## v6.7.0 새 기능
-
-### 24개 커맨드를 user-invocable skill 로 승격
-
-24개 command-equivalent 표면이 모두 `skills/` 아래 `user-invocable: true` skill 로 이동했습니다. 기존 `commands/` wrapper는 제거되었고, 내부 참조는 이제 `skills/deep-status/SKILL.md` 및 `skills/deep-receipt/SKILL.md` 같은 skill 파일을 가리킵니다.
-
-## v6.5.0 새 기능
-
-### M3 Cross-Plugin Envelope 채택 (claude-deep-suite Phase 2 #3)
-
-`session-receipt.json` 과 `receipts/SLICE-*.json` 이 M3 envelope-wrapped artifact 로 emit 됩니다 (cf. `claude-deep-suite/docs/envelope-migration.md` §1):
-
-```
-{
-  "schema_version": "1.0",
-  "envelope": {
-    "producer": "deep-work",
-    "producer_version": "6.5.0",
-    "artifact_kind": "session-receipt|slice-receipt",
-    "run_id": "<ULID>",
-    "session_id": "<dw-session-id>",
-    "parent_run_id": "<consumed evolve-insights run_id, optional>",
-    "generated_at": "<RFC 3339>",
-    "schema": { "name": "<same as artifact_kind>", "version": "1.0" },
-    "git": { ... },
-    "provenance": { "source_artifacts": [...], "tool_versions": {...} }
-  },
-  "payload": { /* legacy receipt body */ }
-}
-```
-
-session-receipt 의 `envelope.parent_run_id` 가 consumed `evolve-insights.json` envelope 으로 chain (handoff §3.3 cross-plugin trace), `provenance.source_artifacts[]` 가 모든 slice receipt run_id 를 aggregate (intra-plugin chain). Internal reader (`hooks/scripts/*`) 와 cross-plugin consumer (`gather-signals.sh`, `deep-research/SKILL.md`) 는 envelope 을 감지하고 identity guard 를 적용한 뒤 `.payload` 로 unwrap 후 legacy field 를 읽습니다. Legacy non-envelope receipt 는 forward-compat.
-
-## v6.4.2 새 기능
-
-### 유연한 세션 초기화
-
-`/deep-work`가 이제 단일 "이대로 진행할까요?" 프롬프트 대신 LLM 추천 기본값과 함께 항목별로 물어봅니다:
-
-- **Profile schema v3** + `interactive_each_session` — 매 세션 묻는 항목을 사용자별로 customize
-- **session-recommender sub-agent** (기본 sonnet) — task description과 workspace 컨텍스트에서 최적 `team_mode` / `start_phase` / `tdd_mode` / `git` / `model_routing`을 추론
-- 새 플래그: `--no-ask` (ask + recommender 모두 skip, 가장 빠른 경로), `--recommender=MODEL` (sub-agent 모델 override, allowlist `^(haiku|sonnet|opus)$`), `--no-recommender` (recommender만 skip)
-
-### Profile v2 → v3 자동 마이그레이션
-
-첫 호출 시 v6.4.x 프로필을 자동 업그레이드: atomic write + flock + idempotent + `.v2-backup` + rollback 절차. v6.4.1 `git_branch:` 프로필은 거부되지 않고 변환됩니다.
-
-### 알림 시스템 제거
-
-Slack/Discord/Telegram/webhook 통합이 제거되었습니다. `notify.sh` webhook에 의존하던 경우, v6.4.1을 fork하거나 다른 메커니즘으로 이관해야 합니다.
-
-### 마이그레이션
-
-기존 사용자: 별도 조치 불필요 — 첫 `/deep-work` 호출 시 프로필이 자동 마이그레이션됩니다. Rollback(프로젝트 로컬): `mv .claude/deep-work-profile.yaml.v2-backup .claude/deep-work-profile.yaml`.
-
-전체 변경 내역(breaking change 포함)은 `CHANGELOG.ko.md`를 참조하세요.
-
-## 문제
-
-AI 코딩 도구가 복잡한 작업을 수행할 때 흔히 발생하는 문제:
-- 기존 아키텍처를 무시하고 새로운 패턴을 도입
-- 이미 존재하는 유틸리티를 중복 구현
-- 코드베이스를 충분히 이해하기 전에 구현 시작
-- 요청하지 않은 "개선"을 추가하여 버그 유발
-- 구현 후 검증 없이 완료 처리
-
-## 해결책
-
-**Brainstorm → Research → Plan → Implement → Test → Integrate** 6단계 Evidence-Driven Protocol:
-
-- **Phase 0 (Brainstorm)**: "왜 만드는가" 디자인 탐색 (`--skip-brainstorm`으로 생략 가능)
-- **Phase 1 (Research)**: 코드베이스를 깊이 분석하여 문서화
-- **Phase 2 (Plan)**: Slice 기반 구현 계획 (per-slice TDD 필드 포함), 사용자 승인
-- **Phase 3 (Implement)**: TDD 강제 slice 실행 — failing test → production code → receipt 수집
-- **Phase 4 (Test)**: Receipt 완전성, spec compliance 리뷰, code quality 리뷰, 검증 증거 확인
-- **Phase 5 (Integrate, skippable)**: 추천 루프 — deep-suite 플러그인 아티팩트 기반 최대 3개 다음 단계 제안 (`--skip-integrate`로 생략 가능)
-
-**v6.3.1: Phase Exit Gate** — 5개 주요 phase(Brainstorm, Research, Plan, Implement, Test) 완료 시마다 명시적 사용자 결정을 요구합니다: 다음 phase 진행 / 현재 phase 수정 / 일시정지. "일시정지" 선택 시 `current_phase`가 유지되어 `/deep-resume` 재개 시 Exit Gate가 다시 표시됩니다. Phase 5 Integrate는 기존대로 interactive loop으로 유지됩니다.
-
-Phase 0, 1, 2, 4에서는 **코드 파일 수정이 물리적으로 차단**됩니다 (PreToolUse 훅). **Bash 파일 쓰기 명령**(`echo >`, `sed -i`, `cp`)도 차단됩니다. Phase 3에서는 **파일 변경과 receipt 데이터가 자동 수집**됩니다 (PostToolUse 훅).
-
-## 사용법 (Skill-Native Auto-Flow)
+`claude-deep-suite` 마켓플레이스 (권장):
 
 ```bash
-# skill 호출 하나로 전체 워크플로우가 자동 진행됩니다
+/plugin marketplace add Sungmin-Cho/claude-deep-suite
+/plugin install deep-work@Sungmin-Cho-claude-deep-suite
+```
+
+이 저장소에서 단독 설치:
+
+```bash
+/plugin marketplace add Sungmin-Cho/claude-deep-work
+/plugin install deep-work@Sungmin-Cho-claude-deep-work
+```
+
+deep-work는 Claude Code와 Codex 플러그인 런타임 모두에서 동작합니다 — 각자 native manifest를 읽고, skill 호출자는 동일한 skill-native invocation 모델을 사용합니다.
+
+> **Windows**: hook 스크립트는 PATH에 `bash`가 필요합니다 (Git for Windows 또는 WSL).
+
+## 사용법
+
+전체 워크플로우가 skill 호출 하나로 실행되며, plan 승인이 유일한 필수 인터랙션입니다.
+
+```bash
+# 전체 auto-flow 실행: Brainstorm → Research → Plan → [승인] → Implement → Test → Integrate → Report
 $deep-work:deep-work "JWT 기반 사용자 인증 구현"
 
-# Auto-flow가 자동 오케스트레이션: Brainstorm → Research → Plan → [사용자 승인] → Implement → Test → Integrate → Report
-# Plan 승인이 유일한 필수 인터랙션입니다
-
-# 통합 상태 조회 — 플래그는 standalone report/receipt/history/assumptions skill과 동일한 구현으로 라우팅됨
+# 통합 상태 조회 — 플래그는 standalone skill과 동일한 구현으로 라우팅됨
 $deep-work:deep-status              # 현재 진행 상태
 $deep-work:deep-status --report     # 세션 리포트
 $deep-work:deep-status --receipts   # receipt 대시보드
 $deep-work:deep-status --history    # 크로스 세션 트렌드
 $deep-work:deep-status --assumptions # 가설 건강도
 $deep-work:deep-status --all        # 전체 통합 뷰
-
-# 두 세션 비교
-$deep-work:deep-status --compare
+$deep-work:deep-status --compare    # 두 세션 비교
 ```
 
-## Skill 호출
+Claude Code에서는 동일한 표면을 슬래시 커맨드로도 사용할 수 있으며, Codex 등 다른 호스트에서는 `$deep-work:<verb>` skill 형태를 사용합니다.
 
-### Primary Skills (7개)
+## v6.9.0 새 기능
+
+deep-work v6.9.0은 새 `deep-memory` 플러그인에 Phase 1 recall과 Phase 5 harvest 추천을 read-only opt-in consumer로 연결합니다. 전체 릴리스 히스토리는 [CHANGELOG](CHANGELOG.ko.md)를 참조하세요.
+
+## Skills
+
+deep-work는 24개 command-equivalent skill을 노출합니다. 가장 많이 쓰는 것:
 
 | Skill | 설명 |
-|-------|------|
-| `$deep-work:deep-work <task>` | **Auto-flow 오케스트레이션** — Brainstorm → Research → Plan → Implement → Test → Integrate 전체 파이프라인을 자동 실행. Plan 승인이 유일한 필수 인터랙션. |
-| `$deep-work:deep-research` | 수동 오버라이드 — Phase 1 (Research): 코드베이스 심층 분석 |
-| `$deep-work:deep-plan` | 수동 오버라이드 — Phase 2 (Plan): slice 기반 구현 계획 |
-| `$deep-work:deep-implement` | 수동 오버라이드 — Phase 3 (Implement): TDD 강제 slice 실행 |
-| `$deep-work:deep-test` | Phase 4: Receipt 검증 → spec compliance → code quality → quality gates. drift-check, SOLID 리뷰, insight 분석을 자동 실행. |
-| `$deep-work:deep-status` | **통합 뷰** — 현재 진행 상태, 리포트, receipt, 히스토리, 가설 건강도. 플래그: `--report`, `--receipts`, `--history`, `--assumptions`, `--all`, `--compare` |
-| `$deep-work:deep-debug` | 체계적 디버깅: investigate → analyze → hypothesize → fix (실패 시 자동 진입) |
+|---|---|
+| `$deep-work:deep-work <task>` | Auto-flow 오케스트레이션 — 전체 파이프라인 실행; plan 승인이 유일한 필수 인터랙션 |
+| `$deep-work:deep-research` | Phase 1 (Research) — 코드베이스 심층 분석 |
+| `$deep-work:deep-plan` | Phase 2 (Plan) — slice 기반 구현 계획 |
+| `$deep-work:deep-implement` | Phase 3 (Implement) — TDD 강제 slice 실행 |
+| `$deep-work:deep-test` | Phase 4 (Test) — receipt + spec + quality gate; drift-check·SOLID·insight 자동 실행 |
+| `$deep-work:deep-integrate` | Phase 5 (Integrate) — 크로스 플러그인 다음 단계 추천 루프 |
+| `$deep-work:deep-status` | 통합 뷰 (`--report` / `--receipts` / `--history` / `--assumptions` / `--all` / `--compare`) |
+| `$deep-work:deep-finish` | 세션 종료 — worktree merge / PR / keep / discard |
+| `$deep-work:deep-debug` | 체계적 디버깅: investigate → analyze → hypothesize → fix |
 
-### Special Utility (4개)
+그 외 skill은 quality gate(`drift-check`, `solid-review`, `deep-insight`), 세션 유틸리티(`deep-fork`, `deep-resume`, `deep-cleanup`, `deep-slice`), 툴체인 헬퍼(`deep-mutation-test`, `deep-sensor-scan`, `deep-phase-review`), read-only status 서브 skill(`deep-report`, `deep-receipt`, `deep-history`, `deep-assumptions`)을 다룹니다. 모두 수동 호출 가능하며, 다수는 auto-flow 내에서 자동 실행됩니다.
 
-Phase나 툴체인 헬퍼. 필요할 때 수동으로 호출합니다.
+## 워크플로우
 
-| Skill | 용도 |
-|-------|------|
-| `$deep-work:deep-fork` | 세션을 fork하여 다른 접근법 탐색 |
-| `$deep-work:deep-mutation-test` | 변경 파일 대상 mutation testing |
-| `$deep-work:deep-phase-review` | brainstorm/research/plan 문서 수동 리뷰 |
-| `$deep-work:deep-sensor-scan` | 린터/타입체커/커버리지를 독립 실행 |
+| Phase | 역할 |
+|---|---|
+| **0 — Brainstorm** | 선택적 디자인 탐색, "왜 만드는가" (`--skip-brainstorm`으로 생략) |
+| **1 — Research** | 아키텍처·패턴·데이터·API·인프라·리스크 전반의 코드베이스 분석; `research.md` 산출 |
+| **2 — Plan** | per-slice TDD 필드를 갖춘 slice 기반 계획, 사용자 승인 필요; `plan.md` 산출 |
+| **3 — Implement** | TDD 강제 slice 실행: failing test → production code → receipt |
+| **4 — Test** | receipt 완전성·spec compliance·code quality·검증 증거, 최대 3회 implement→test 재시도 |
+| **5 — Integrate** | deep-suite 플러그인 아티팩트를 읽어 최대 3개 다음 단계 제안하는 skippable 루프 (`--skip-integrate`로 생략) |
 
-### Quality Gate (3개) — `$deep-work:deep-test` 자동 실행, standalone 가능
-
-| Skill | `$deep-work:deep-test` 내 역할 | Standalone |
-|-------|----------------------------------|------------|
-| `$deep-work:drift-check` | Required Gate — plan 정합성 | `$deep-work:drift-check [plan-file]` |
-| `$deep-work:solid-review` | Advisory Gate — SOLID 원칙 | `$deep-work:solid-review [target]` |
-| `$deep-work:deep-insight` | Insight Tier — 메트릭/복잡도 | `$deep-work:deep-insight [target]` |
-
-### Internal (7개) — 자동 호출, 수동도 공식 경로
-
-orchestrator 또는 `$deep-work:deep-status`가 호출합니다. 수동 호출도 일등급 경로입니다 (특히 test 통과 후 `$deep-work:deep-finish`, Phase 4 이후 `$deep-work:deep-integrate`).
-
-| Skill | 호출 주체 |
-|-------|-----------|
-| `$deep-work:deep-brainstorm` | orchestrator Phase 0 (`Skill` dispatch) |
-| `$deep-work:deep-integrate` | orchestrator Phase 5 (`Skill` dispatch); test 통과 후 수동 호출 |
-| `$deep-work:deep-finish` | orchestrator Step 3-6 (`Read`); test 통과 후 수동 호출 |
-| `$deep-work:deep-report` | `$deep-work:deep-status --report` (`Read`) |
-| `$deep-work:deep-receipt` | `$deep-work:deep-status --receipts` (`Read`) |
-| `$deep-work:deep-history` | `$deep-work:deep-status --history` (`Read`) |
-| `$deep-work:deep-assumptions` | `$deep-work:deep-status --assumptions` (`Read`) |
-
-### Escape Hatch (1개)
-
-| Skill | 노출 위치 |
-|-------|-----------|
-| `$deep-work:deep-slice` | `phase-guard` TDD 블록 안내 메시지 (`spike`, `reset`) |
-
-### Utility (2개) — standalone, 기능 이관 예정
-
-특정 동작의 유일한 경로인 skill입니다. 기능이 이관되면 삭제 예정 (`$deep-work:deep-work --resume=<session-id>`, `$deep-work:deep-status --cleanup` 로드맵 참고).
-
-| Skill | 고유 기능 |
-|-------|-----------|
-| `$deep-work:deep-cleanup` | `git worktree list` 스캔, stale/active 분류, fork/registry 정리 |
-| `$deep-work:deep-resume` | active 세션 선택, worktree 컨텍스트 복원, phase별 resume dispatch |
+5개 주요 phase는 각각 명시적 Exit Gate(진행 / 수정 / 일시정지)로 끝납니다. Brainstorm·Research·Plan·Test에서는 코드 파일 편집이 물리적으로 차단되며(`echo >`, `sed -i`, `cp` 같은 파일 쓰기 Bash 명령 포함), Implement에서는 파일 변경과 receipt 데이터가 자동 수집됩니다.
 
 ## 산출물
 
 각 세션의 산출물은 `.deep-work/<작업폴더>/`에 저장됩니다:
 
 | 파일 | 생성 시점 | 설명 |
-|------|----------|------|
-| `research.md` | Phase 1 완료 | 코드베이스 분석 결과 (Executive Summary 먼저) |
-| `plan.md` | Phase 2 완료 | 상세 구현 계획 (Plan Summary 먼저, per-slice contract + acceptance_threshold 필드) |
-| `plan.v{N}.md` | Plan 재작성 시 | 이전 Plan 버전 백업 |
-| `test-results.md` | Phase 4 완료 | 검증 결과 (시도별 누적) |
-| `report.md` | 세션 완료 | 전체 세션 리포트 (Phase별 소요 시간 포함) |
-| `quality-gates.md` | Phase 4 완료 | Quality Gate 결과 상세 (required/advisory) |
-| `drift-report.md` | Phase 4 완료 | Plan 정합성 검증 결과 |
-| `solid-review.md` | Phase 4 완료 | SOLID 설계 리뷰 스코어카드 및 제안 |
-| `insight-report.md` | Phase 4 완료 | 코드 메트릭, 복잡도, 의존성 분석 |
-| `file-changes.log` | Phase 3 진행 중 | PostToolUse 훅 자동 파일 변경 추적 (slice 매핑 포함) |
-| `plan-diff.md` | Plan 재작성 시 | Plan 버전 간 구조적 변경 비교 |
-| `brainstorm.md` | Phase 0 완료 | 디자인 스펙: 문제 정의, 접근법 비교, 성공 기준 |
-| `receipts/SLICE-NNN.json` | Phase 3 진행 중 | Per-slice 증거: TDD 출력, git diff, spec 체크, 리뷰, 사용 모델 |
-| `session-receipt.json` | 세션 완료 | 크로스 slice 세션 요약 — slice receipt에서 파생된 캐시 |
+|---|---|---|
+| `research.md` | Phase 1 | 코드베이스 분석 (Executive Summary 먼저) |
+| `plan.md` | Phase 2 | 구현 계획 (per-slice contract + acceptance 필드) |
+| `plan.v{N}.md` / `plan-diff.md` | Plan 재작성 | 이전 plan 백업 / 구조적 변경 비교 |
+| `brainstorm.md` | Phase 0 | 문제 정의, 접근법 비교, 성공 기준 |
+| `receipts/SLICE-NNN.json` | Phase 3 | Per-slice 증거: TDD 출력, git diff, spec check, 리뷰, 모델 |
+| `file-changes.log` | Phase 3 | slice 매핑을 갖춘 자동 파일 변경 추적 |
+| `test-results.md` | Phase 4 | 검증 결과 (시도별 누적) |
+| `quality-gates.md` / `drift-report.md` / `solid-review.md` / `insight-report.md` | Phase 4 | Quality gate, plan 정합성, SOLID, 메트릭 리포트 |
+| `report.md` | 세션 완료 | Phase 소요 시간 포함 전체 세션 리포트 |
+| `session-receipt.json` | 세션 종료 | 크로스 slice 세션 요약 (M3 envelope) |
 | `debug-log/RC-NNN.md` | Phase 3 (디버깅) | Root cause 분석 노트 |
-| `harness-history/harness-sessions.jsonl` | 세션 종료 | Per-session assumption engine 데이터 — per-slice 증거, 모델, 신뢰도 신호 |
+| `harness-history/harness-sessions.jsonl` | 세션 종료 | Per-session assumption-engine 데이터 |
 
-## 세션 상태
-
-`.claude/deep-work.local.md`에 YAML frontmatter로 저장:
-
-| 필드 | 설명 |
-|------|------|
-| `current_phase` | 현재 단계 (idle / brainstorm / research / plan / implement / test) |
-| `work_dir` | 작업 폴더 경로 |
-| `task_description` | 작업 설명 |
-| `team_mode` | 작업 모드 (solo / team) |
-| `project_type` | 프로젝트 타입 (existing / zero-base) |
-| `git_branch` | 생성된 Git 브랜치명 |
-| `test_retry_count` | 테스트 재시도 횟수 |
-| `test_passed` | 최종 테스트 통과 여부 |
-| `*_started_at`, `*_completed_at` | Phase별 시작/완료 타임스탬프 |
-| `model_routing` | Phase별 모델 설정 (research/plan/implement/test) |
-| `last_research_commit` | 마지막 리서치 시점의 git commit hash |
-| `quality_gates_passed` | Quality Gate 전체 통과 여부 |
-| `preset` | 활성 프리셋 이름 |
-| `plan_approved_at` | Plan 승인 시점 타임스탬프 (Drift Detection 기준) |
-| `tdd_mode` | TDD 강제 모드 (strict / relaxed / coaching / spike) |
-| `active_slice` | 현재 활성 slice ID (예: SLICE-001) |
-| `tdd_state` | 현재 TDD 상태 (PENDING / RED / RED_VERIFIED / GREEN_ELIGIBLE / GREEN / REFACTOR / SPIKE) |
-| `tdd_override` | Slice 단위 TDD override — 사용자가 AskUserQuestion으로 TDD를 건너뛸 때 활성 slice ID로 설정 |
-| `debug_mode` | 체계적 디버깅 활성 여부 |
-| `brainstorm_started_at`, `brainstorm_completed_at` | Phase 0 타임스탬프 |
-| `worktree_enabled` | Worktree 격리 활성 여부 |
-| `worktree_path` | Worktree 디렉토리 절대 경로 |
-| `worktree_branch` | Worktree 내부 브랜치명 |
-| `worktree_base_branch` | Worktree 생성 전 원본 브랜치 |
-| `worktree_base_commit` | Worktree 생성 시점 commit hash |
-| `evaluator_model` | 서브에이전트 기본 평가자 모델 — `"sonnet"` |
-| `plan_review_retries` | Plan 리뷰 auto-loop 재시도 횟수 — `0` |
-| `plan_review_max_retries` | Plan auto-loop 최대 재시도 횟수 — `3` |
-| `auto_loop_enabled` | Auto-loop 평가 활성 여부 — `true` |
-| `skipped_phases` | `--skip-to-implement`로 건너뛴 단계 — `[]` |
-| `assumption_adjustments` | Assumption Engine 활성 조정 목록 — `[]` |
-
-## 워크플로우 상세
-
-### Phase 1: Research
-
-**크로스 플러그인 컨텍스트 (v6.2):** Research 시작 시 외부 플러그인 데이터를 참조:
-- `.deep-dashboard/harnessability-report.json` — 점수 낮은 차원(< 5.0)을 context에 포함 (7일 이상 경과 시 skip)
-- `.deep-evolve/evolve-insights.json` — meta-archive 기반 인사이트를 참고 수준으로 포함
-
-코드베이스를 6개 영역으로 체계적으로 분석합니다:
-
-1. **Architecture & Structure** — 프로젝트 구조, 아키텍처 패턴, 모듈 경계
-2. **Code Patterns & Conventions** — 네이밍 컨벤션, 에러 처리, 테스팅 패턴
-3. **Data Layer** — ORM/DB 스키마, 마이그레이션, 캐싱 전략
-4. **API & Integration** — API 구조, 인증/인가, 외부 서비스 연동
-5. **Shared Infrastructure** — 공통 유틸리티, 설정 관리, 빌드 시스템
-6. **Dependencies & Risks** — 의존성 충돌, 호환성, 보안 리스크
-
-**v3.0 신규 기능:**
-- **Executive Summary 먼저 제시** — 피라미드 원칙: 결론 → 근거 → 세부사항
-- **제로베이스 모드** — 기술 스택 선정, 스캐폴딩 설계 등 새 프로젝트용 Research
-- **부분 재실행** — `/deep-research --scope=api,data`로 특정 영역만 재분석
-- **Research 캐싱** — 이전 세션 Research를 베이스라인으로 활용, 변경 영역만 재분석
-- **Team 모드 진행 알림** — 에이전트 완료 시 `[2/3] pattern-analyst 완료 ✅` 표시
-
-**v3.1 신규 기능:**
-- **증분 리서치** — `/deep-research --incremental`로 git diff 기반 변경 영역만 재분석 (시간 60~80% 절감)
-- **모델 라우팅** — Research Phase를 sonnet 모델 Agent에 위임하여 토큰 절감
-
-**v5.5 신규 기능:**
-- **Cross-Model Review** — codex/gemini가 research 결과를 전용 rubric으로 독립 평가
-- **종합 판단** — Claude가 모든 리뷰 결과를 종합 분석, 사용자 일괄 확인 후 진행
-
-### Phase 2: Plan
-
-연구 결과를 바탕으로 구체적인 구현 계획을 작성합니다:
-
-- Plan Summary (접근법, 변경 범위, 리스크, 핵심 결정) 먼저 제시
-- 변경할 파일 목록과 각 파일의 구체적 변경 내용
-- 코드 스케치, 실행 순서, 트레이드오프 분석, 롤백 전략
-- Slice 체크리스트: per-slice TDD 필드 (failing_test, verification_cmd, spec_checklist)
-
-**v3.0 신규 기능:**
-- **대화형 Plan 리뷰** — 채팅으로 "3번 항목 변경해줘" → plan.md 자동 수정
-- **Plan 템플릿** — API 엔드포인트, UI 컴포넌트, DB 마이그레이션 등 6종
-- **Plan 변경 이력** — 재작성 시 `plan.v{N}.md`로 백업, Change Log 추가
-- **모드 전환 제안** — Plan 분석 결과에 따라 Team↔Solo 전환 추천
-- **"승인" 입력 시 구현이 자동으로 시작됩니다.**
-
-**v3.1 신규 기능:**
-- **Plan Diff 시각화** — Plan 재작성 시 태스크/파일/아키텍처/리스크 변경을 `plan-diff.md`로 자동 비교
-
-**v5.5 신규 기능:**
-- **Claude 자체 재검토** — structural review 전 자동 품질 점검 — placeholder, 일관성, research 정합성
-- **종합 판단** — cross-review 결과를 Claude 판단과 함께 제시, 사용자 확인 후 plan 수정
-
-**v5.5.1 신규 기능:**
-- **Team research 교차 검증** — `team_mode: team`일 때 plan 단계에서 부분 리서치 파일(`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`)을 보조 참조로 로드하여 합성본과 교차 확인
-
-**v5.5.2 신규 기능:**
-- **확장된 bash 파일 쓰기 감지** — 20+ 신규 패턴: perl in-place, node -e `fs.writeFileSync`, python -c, ruby -e, awk, swift, git 파괴 연산, curl/wget 출력, ln, tar/unzip/cpio, rsync
-- **보안: file-write-first 감지 순서** — FILE_WRITE 패턴을 SAFE 패턴보다 먼저 검사하여 우회 방지
-- **확장된 테스트 파일 패턴** — Dart, Elixir, Lua, Vue, `fixtures/`, `__mocks__/`, `spec/` 디렉토리
-- **확장된 TDD exempt 패턴** — `.toml`, `.ini`, `.cfg`, `.lock`, `.editorconfig`, 이미지 파일 (`.svg`, `.png`, `.jpg`, `.gif`)
-- **TDD state 검증** — 알 수 없는 TDD 상태값 차단 + 안내 메시지
-- **Backtick/subshell 처리** — `splitCommands`가 backtick과 `$()` 깊이 추적
-- **에러 로깅** — hook 에러를 `.claude/deep-work-guard-errors.log`에 기록 (기존 묵살 대신)
-
-### Phase 3: Implement
-
-Slice 단위 TDD 강제 실행:
-
-- Slice별 TDD 사이클: RED (failing test) → GREEN (minimal code) → REFACTOR
-- **TDD State Machine** 기반 hook 강제 — failing test output 없이 production 코드 수정 차단
-- 각 slice 완료 시 **receipt JSON** 자동 수집 (test output, git diff, spec checklist)
-- 예기치 않은 테스트 실패 시 **debug 모드 자동 진입** (`/deep-debug`)
-- **Spike 모드**: 탐색적 코딩 허용, 종료 시 자동 git stash + TDD 재시작
-- **Coaching 모드**: TDD 초보자를 위한 교육적 메시지 제공 (차단 대신 가이드)
-- **TDD Override**: TDD가 production 수정을 차단하면 Claude가 사용자에게 테스트 작성 또는 TDD 건너뛰기를 질문 (override된 slice는 merge 가능하되 receipt에 경고 표시)
-- **차단 메시지에 탈출구 안내**: `/deep-slice spike`, `/deep-slice reset` 등 대안을 차단 시 표시
-- **TDD state 업데이트 필수화** — B-1 (RED_VERIFIED), B-2 (GREEN) state file 업데이트를 필수로 명시하고 phase guard 차단 경고 추가
-- **구현 완료 후 자동으로 Test 단계 진입**
-
-### Phase 4: Test
-
-구현 결과를 자동으로 검증합니다:
-
-- 프로젝트 설정 파일에서 테스트/린트/타입체크 명령어 자동 감지
-- 순차 실행 후 결과 기록 (`test-results.md`)
-- **모두 통과**: 세션 완료 → 리포트 자동 생성
-- **실패 시**: implement 단계로 복귀 → 수정 → 재테스트 (최대 3회)
-- 재시도 횟수 초과 시 루프 중단, 수동 개입 요청
-
-```
-implement → test → (통과) → idle + report
-                 → (실패) → implement → test → ...
-```
-
-**v3.1 신규 기능:**
-- **Quality Gate 시스템** — plan.md에 게이트 정의 (required ✅ / advisory ⚠️), `quality-gates.md` 산출물
-- **모델 라우팅** — Test Phase를 haiku 모델 Agent에 위임하여 비용 최소화
-
-**v3.2 신규 기능:**
-- **3계층 Quality Gate 시스템** — Required (차단) / Advisory (경고) / Insight (정보)
-- **Plan Alignment (Drift Detection)** — 내장 Required 게이트. Plan 대비 구현 정합성 자동 검증. 미구현 항목, 범위 초과, 설계 이탈 감지. `drift-report.md` 산출물.
-- **SOLID Design Review** — Advisory 게이트. SRP, OCP, LSP, ISP, DIP 기준 설계 품질 리뷰. 파일별 스코어카드, Top 5 리팩토링 제안. `solid-review.md` 산출물.
-
-**v3.3 신규 기능:**
-- **Insight 계층 Quality Gate** — `/deep-insight` 커맨드 및 내장 Insight 게이트. 파일 메트릭, 복잡도 지표, 의존성 그래프, 변경 요약 분석. `insight-report.md` 산출물. 워크플로우 차단 없음.
-- **PostToolUse 파일 추적** — Implement 단계에서 파일 수정을 자동으로 `file-changes.log`에 기록. `/deep-report`와 `/deep-insight`에서 활용.
-- **Stop 훅** — CLI 세션 종료 시 활성 deep-work 세션이 있으면 알림 메시지 출력 및 알림 전송.
-
-**v3.3.3 신규 기능:**
-- **멀티 프리셋 Profile System** — 작업 스타일별 Named 프리셋 (`dev`, `quick`, `review`) 생성. 프리셋 2개 이상 시 인터랙티브 선택. v1 단일 프로필 → v2 멀티 프리셋 자동 마이그레이션.
-
-**v4.0 신규 기능 (Evidence-Driven Protocol):**
-- **Receipt Completeness Gate** (Required) — 모든 slice에 receipt 존재 확인
-- **Spec Compliance Review** (Required) — plan의 spec_checklist 대비 구현 검증 (서브에이전트)
-- **Code Quality Review** (Advisory) — 코드 품질, 패턴, 에러 처리 리뷰 (서브에이전트)
-- **Verification Evidence Gate** (Required) — 실제 테스트 실행 증거(receipt) 확인
-
-### Phase 5: Integrate (v6.3.0, skippable)
-
-Test 통과 후 Deep Work는 옵션으로 **추천 루프**를 실행할 수 있다. 설치된 deep-suite 플러그인(`deep-review`, `deep-docs`, `deep-wiki`, `deep-dashboard`, `deep-evolve`) 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 rationale과 함께 제안한다. 사용자가 선택 → 실행 → 복귀 → 루프 계속 (최대 5 라운드), `finish` 선택 시 `/deep-finish`로 인계.
-
-`--skip-integrate`로 건너뛰거나 Phase 4 이후 언제든 `/deep-integrate`로 수동 호출.
-
-### Session Report
-
-세션 완료 후 자동 생성되는 리포트:
-
-- **Session Overview** — 작업명, 모드, 프로젝트 타입, Git 브랜치
-- **Phase Duration** — 각 Phase별 소요 시간
-- **Research/Plan Summary** — 핵심 분석 결과, 접근법
-- **Implementation Results** — 태스크별 실행 결과
-- **Verification Results** — 테스트/린트/타입체크 결과
-- **Test Retry History** — 시도별 결과 이력
-
-### Model Routing
-
-Phase별 최적 모델을 배정하여 토큰 비용을 30~40% 절감합니다.
-
-**v4.1: Slice 복잡도 기반 자동 라우팅** — Implement phase에서 각 slice의 크기에 따라 모델을 자동 선택:
-
-| Slice 크기 | 기본 모델 | 근거 |
-|-----------|----------|------|
-| S (Small) | haiku | 간단한 설정, 1-2 파일, 보일러플레이트 |
-| M (Medium) | sonnet | 표준 기능, 3-5 파일 |
-| L (Large) | sonnet | 복잡한 기능, 5+ 파일 |
-| XL (Extra-Large) | opus | 아키텍처 변경, 10+ 파일 |
-
-슬라이스별 override: `/deep-slice model SLICE-NNN opus`. 프리셋의 `routing_table` 필드로 라우팅 테이블 커스터마이즈 가능.
-
-**Phase별 기본값:**
-
-| Phase | 기본 모델 | 방식 | 근거 |
-|-------|----------|------|------|
-| Research | sonnet | Agent 위임 | 탐색/분석에 충분 |
-| Plan | 메인 세션 | 직접 실행 | 대화형 피드백 필요 |
-| Implement | **auto** | 크기 기반 선택 | 슬라이스별 비용 최적화 |
-| Test | haiku | Agent 위임 | 테스트 실행만 수행 |
-
-### Quality Gates
-
-plan.md에 Quality Gates를 정의하면 Test Phase에서 자동 실행됩니다:
-
-```markdown
-## Quality Gates
-
-| Gate | 명령어 | 필수 | 임계값 |
-|------|--------|------|--------|
-| Type Check | `npx tsc --noEmit` | ✅ | — |
-| Coverage | `npm test -- --coverage` | ⚠️ | ≥80% |
-```
-
-- **✅ 필수(required)**: 실패 시 implement 복귀
-- **⚠️ 권고(advisory)**: 경고만 기록, 차단 없음
-- **ℹ️ 인사이트(insight)**: 결과 기록만
-- 미정의 시 기존 auto-detection 유지
-
-## 다국어 지원
-
-모든 커맨드가 사용자의 언어를 자동으로 감지하여 해당 언어로 메시지를 출력합니다. 별도 설정 불필요.
-
-- **한국어**: 기본 참조 템플릿
-- **영어**: 자동 번역
-- **기타 언어**: 일본어, 중국어 등 Claude가 지원하는 모든 언어
-
-사용자 메시지 또는 Claude Code `language` 설정에서 언어를 감지합니다.
+세션 상태는 `.claude/deep-work.local.md`에 YAML frontmatter로 저장됩니다 (current phase, work dir, TDD state, model routing, worktree 정보, quality gate, health report 등).
 
 ## Hooks
 
-세션 라이프사이클과 computational enforcement를 관리하는 훅.
-
-> **Windows**: Hook 스크립트 실행에 `bash`가 PATH에 필요합니다 (Git for Windows 또는 WSL).
-
-| 훅 | 스크립트 | 트리거 | 용도 |
-|-----|--------|--------|------|
-| SessionStart | `update-check.sh` | 세션 시작 | Git 기반 자동 업데이트 확인 |
-| PreToolUse | `phase-guard.sh` | Write/Edit/MultiEdit/**Bash** | Phase 차단 + TDD 강제 + **P0 Worktree Guard** (worktree 외부 쓰기 hard block) |
-| PostToolUse | `file-tracker.sh` | Write/Edit/MultiEdit/**Bash** | 파일 변경 추적 + receipt 수집 |
-| PostToolUse | `sensor-trigger.js` | Write/Edit/MultiEdit/**Bash** | 센서 파이프라인 트리거 (lint, typecheck, review-check) |
-| PostToolUse | `phase-transition.sh` | Write/Edit/MultiEdit | **P1 Phase Transition Injector** — phase 전환 시 조건 context injection |
-| Stop | `session-end.sh` | CLI 세션 종료 | 활성 세션 알림 + phase cache 정리 |
-
-### Phase Guard
-
-| 단계 | 코드 수정 | Bash 파일쓰기 | 문서 수정 | 파일 추적 |
-|------|----------|-------------|----------|----------|
-| Brainstorm | ❌ 차단 | ❌ 차단 | ✅ 허용 | — |
-| Research | ❌ 차단 | ❌ 차단 | ✅ 허용 | — |
-| Plan | ❌ 차단 | ❌ 차단 | ✅ 허용 | — |
-| Implement | ✅ 허용 (TDD 강제) | ✅ 허용 (TDD 강제) | ✅ 허용 | ✅ 추적 + receipt |
-| Test | ❌ 차단 | ❌ 차단 | ✅ 허용 | — |
-| Idle | ✅ 허용 | ✅ 허용 | ✅ 허용 | — |
-
-## Profile System
-
-첫 실행 시 설정 질문을 받고 `default` 프리셋으로 저장됩니다. 이후 실행 시 프리셋이 자동 적용되어 작업 설명만 입력하면 됩니다.
-
-**멀티 프리셋 지원:** 작업 스타일별로 Named 프리셋을 생성할 수 있습니다. 프리셋이 2개 이상이면 세션 시작 시 선택합니다.
-
-```bash
-# 특정 프리셋 사용
-/deep-work --profile=quick "로그인 버그 수정"
-
-# 프리셋 관리 (생성, 수정)
-/deep-work --setup
-
-# 단일 세션 오버라이드
-/deep-work --team "대규모 리팩토링"
-```
-
-| 플래그 | 동작 |
-|--------|------|
-| `--profile=X` | 프리셋 X 직접 사용 |
-| `--setup` | 프리셋 관리 (생성/수정) |
-| `--team` | Team 모드 오버라이드 |
-| `--zero-base` | 제로베이스 오버라이드 |
-| `--skip-research` | Plan 단계부터 시작 |
-| `--skip-brainstorm` | Brainstorm 단계 생략, Research부터 시작 |
-| `--tdd=MODE` | TDD 모드 설정 (strict / relaxed / coaching / spike) |
-| `--skip-to-implement` | Implement 단계로 바로 진입 (인라인 slice 필요) |
-| `--no-branch` | Git 브랜치 생성 스킵 |
-
-## 세션 초기화 옵션
-
-`/deep-work` 실행 시 다음 옵션을 선택합니다 (또는 프리셋에 저장):
-
-| 옵션 | 선택지 | 설명 |
-|------|--------|------|
-| 작업 모드 | Solo / Team | 에이전트 병렬 실행 여부 |
-| 프로젝트 타입 | 기존 코드 / 제로베이스 | 새 프로젝트 여부 |
-| 시작 단계 | Research / Plan | 익숙한 코드면 Research 생략 가능 |
-| Git 브랜치 | 생성 / 건너뜀 | 세션용 브랜치 자동 생성 |
-| 모델 라우팅 | 기본값 / 커스텀 | Phase별 모델 배정 |
-
-## Team/Solo 모드 (v6.4.1)
-
-### 의미론
-- `--team` → 병렬도 = N (Research/Implement에 parallel subagent)
-- `--solo` (기본값) → 병렬도 = 1 (단일 subagent)
-
-### 작업 실행 위치
-모든 실제 작업은 기본적으로 **Claude Code subagent**에서 실행됩니다. 메인 세션은 오케스트레이터 역할만 합니다.
-
-### Escape hatches (Implement 전용)
-| 상황 | 동작 |
-|------|------|
-| `tdd_mode=spike` | 자동 inline |
-| `--skip-plan` + trivial slice 1개 | 자동 inline |
-| `--exec=inline` | inline 강제 |
-| `--exec=delegate` | delegate 강제 |
-| verify-receipt 실패 → "수동 수정" | Inline takeover |
-
-### Agent Team (선택 사항)
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`가 설정된 경우, team Implement 실행 시 classic Agent Team과 parallel subagent dispatch 중 선택을 요청합니다.
-
-## 복잡도별 사용 가이드
-
-| 복잡도 | 권장 워크플로우 | 기준 |
-|--------|---------------|------|
-| 높음 | Research → Plan → Implement → Test | 5+ 파일, 아키텍처 변경, 낯선 코드베이스 |
-| 중간 | Plan → Implement → Test (Research 생략) | 2-4 파일, 익숙한 영역의 확장 |
-| 낮음 | 워크플로우 불필요 | 단일 파일 수정, 설정 변경 |
-
-### Worktree 격리
-
-세션이 기본적으로 격리된 git worktree에서 실행됩니다. 개발 중 main 브랜치에 대한 우발적 변경을 방지합니다.
-
-- `/deep-work`이 `.worktrees/dw/<slug>/`에 전용 브랜치로 worktree 생성
-- 모든 작업이 worktree 내에서 진행 — main 브랜치는 깨끗하게 유지
-- `/deep-finish`에서 4가지 완료 옵션 제공: merge, PR, 브랜치 유지, 삭제
-- `/deep-cleanup`으로 오래된 worktree 정리 (7일 이상, 비활성 세션) — **standalone utility**
-- `/deep-resume`으로 worktree 컨텍스트 복원 및 phase 자동 dispatch — **standalone utility**; `/deep-work` init도 stale 세션을 자동 감지
-- `--no-branch` 플래그 또는 프리셋의 `git_branch: false`로 비활성화
-
-### 세션 라이프사이클
-
-완전한 세션 라이프사이클 관리:
-
-```
-/deep-work (시작) → worktree 생성 → phases 실행 → /deep-finish (종료)
-                                                        ├── merge
-                                                        ├── PR
-                                                        ├── keep
-                                                        └── discard
-```
-
-### Receipt 검증
-
-- Receipt 스키마 v1.0: `schema_version`, `model_used`, `git_before`/`git_after`, `estimated_cost`
-- `receipt-migration.js`로 v4.1 이전 receipt 자동 변환
-- `validate-receipt.sh`로 receipt 체인 무결성 검증
-- `templates/deep-work-ci.yml` — GitHub Actions CI/CD receipt 검증 워크플로우
-- `/deep-receipt export --format=ci`로 CI 친화적 번들 내보내기
-
-### 세션 히스토리
-
-`/deep-history`로 크로스 세션 트렌드 확인:
-- 과거 세션 목록: 모델 사용량, TDD 준수율, 완료율
-- 집계 통계 및 트렌드 지표
-- 모델 비용 추적 (slice 및 세션별 `estimated_cost`)
-
-## 멀티 모델 검증
-
-deep-work v4.2는 구현 전에 설계 결함을 잡기 위한 적대적 멀티 모델 리뷰를 추가합니다.
-
-### 작동 방식
-1. **구조적 리뷰** — 모든 페이즈 문서(brainstorm, research, plan)가 Claude haiku 서브에이전트로 페이즈별 차원으로 리뷰됨
-2. **적대적 리뷰** (plan만) — codex 및/또는 gemini-cli가 독립적으로 계획서를 리뷰. 갈등은 투명하게 표시되어 사용자가 해결
-3. **리뷰 게이트** — 낮은 구조적 점수 또는 비판적 합의 이슈가 있으면 자동 구현 차단
-
-### 설정
-크로스 모델 리뷰는 [codex](https://github.com/openai/codex) 및/또는 [gemini-cli](https://github.com/google/gemini-cli) 설치가 필요합니다. deep-work가 세션 초기화 시 자동 감지합니다.
-
-```bash
-# codex 설치 (선택)
-npm install -g @openai/codex
-
-# gemini-cli 설치 (선택)
-npm install -g @google/gemini-cli
-```
-
-두 도구 모두 미설치 시, deep-work는 구조적 리뷰만으로 정상 동작합니다.
-
-### 플래그
-- `--skip-review` — 모든 리뷰 건너뛰기 (spike/실험 작업에 유용)
-
-### 커맨드
-- `/deep-phase-review` — 현재 페이즈 문서에 리뷰 수동 트리거
-- `/deep-phase-review --adversarial` — 적대적 크로스 모델 리뷰만 실행
-
-## Auto-Loop 평가 & Contract 협상
-
-deep-work v5.1은 자기 교정 평가 루프와 contract 기반 slice 협상을 추가합니다.
-
-### Auto-Loop 평가
-- **Plan 리뷰 auto-loop** — Plan 작성 후 서브에이전트 평가자가 자동으로 리뷰합니다. 리뷰 점수가 임계값 미만이면 plan을 수정하고 재리뷰합니다 (최대 `plan_review_max_retries`회). 사용자 개입 불필요.
-- **Test phase auto-retry** — 테스트 실패 시 implement→test 사이클이 평가자 피드백과 함께 자동 재실행되어 수동 반복을 줄입니다.
-- 세션 상태의 `auto_loop_enabled`로 토글 (기본값: `true`).
-
-### Contract 협상
-`plan.md`의 각 slice에 `contract`와 `acceptance_threshold` 필드를 포함할 수 있습니다:
-- **`contract`** — slice의 예상 입력, 출력, 불변 조건 정의
-- **`acceptance_threshold`** — 평가자가 충족해야 하는 수치 임계값 (0.0–1.0)
-
-평가자가 test phase에서 각 slice를 contract 대비 검증합니다. 임계값 미달 slice는 수정 대상으로 플래그됩니다.
-
-### Assumption Engine Auto-Apply
-세션 시작 시 Assumption Engine이 과거 증거를 기반으로 자동 조정을 적용합니다. 이전에는 수동 `/deep-assumptions` 조정이 필요했으나, 이제 신뢰도가 충분히 높으면 사전에 제안 및 적용됩니다.
-
-### 적응형 평가자 모델
-- 기본 평가자 모델: **sonnet** (세션 상태의 `evaluator_model`로 설정 가능)
-- 엔진이 작업 복잡도와 과거 정확도 신호를 기반으로 평가자 모델을 자동 조정할 수 있습니다.
-
-### Phase 스킵 유연성
-- **`--skip-to-implement`** 플래그 — `/deep-work`에서 brainstorm, research, plan 단계를 건너뛰고 implement로 바로 진입. 작업 설명에 인라인 slice 정의 필요.
-- 건너뛴 단계는 `skipped_phases`에 기록되어 리포트와 receipt에서 추적 가능.
-
-## Auto-Flow 오케스트레이션
-
-deep-work v5.2는 전체 워크플로우를 단일 `/deep-work` 커맨드로 통합합니다. 각 Phase를 수동으로 호출하는 대신, auto-flow가 전체 파이프라인을 자동으로 오케스트레이션합니다.
-
-### 작동 방식
-1. `/deep-work "작업 설명"`으로 세션을 시작하면 auto-flow 시작
-2. Brainstorm → Research → Plan이 자동 실행
-3. **Plan 승인이 유일한 필수 인터랙션** — 계획서 검토, 피드백 제공, "승인" 입력
-4. 승인 후 Implement → Test → Report가 자동 실행
-5. `/deep-test`에서 drift-check, SOLID 리뷰, insight 분석이 내장 게이트로 자동 실행
-6. `/deep-status`가 모든 세션 정보를 통합 제공하는 대시보드로 확장
-
-### 변경 사항
-- **SKILL.md 축소**: 461줄 → 280줄 (더 명확하고 덜 중복)
-- **13개 커맨드 재분류 (v6.2.1)**: Quality Gate (3) / Internal (6) / Escape hatch (1) / Utility (2) / Special utility (1 이동). 삭제된 커맨드 없음; 수동 호출은 계속 공식 경로입니다.
-- **`/deep-status` 확장**: `--report` / `--receipts` / `--history` / `--assumptions` 플래그가 standalone 커맨드와 동일 구현으로 라우팅됩니다. 양쪽 경로 모두 동작합니다.
-- **`/deep-test` 확장**: drift-check, SOLID 리뷰, insight 분석을 자동 실행
-
-### v5.1에서 마이그레이션
-별도 작업 불필요. 기존 프리셋과 세션 상태는 완전히 호환됩니다. 이전에 "Deprecated"로 표기되었던 커맨드는 v6.2.1에서 Quality Gate / Internal / Escape hatch / Utility로 재분류되었고, 수동 호출이 여전히 공식 경로인 경우도 있습니다 (예: test 통과 후 `/deep-finish`).
-
-## Health Engine + 아키텍처 Fitness
-
-Phase 1 Research에서 자동 **Health Check**을 실행하여 코드베이스 드리프트를 감지하고 아키텍처 fitness 규칙을 검증합니다.
-
-### 드리프트 센서 (Phase 1, 자동)
-
-| 센서 | 감지 대상 | 스코프 |
-|------|----------|--------|
-| dead-export | 어디서도 import되지 않는 미사용 export | JS/TS |
-| stale-config | tsconfig, package.json, .eslintrc 깨진 경로 참조 | JS/TS |
-| dependency-vuln | `npm audit` 기반 high/critical 취약점 | JS/TS (Required gate) |
-| coverage-trend | 이전 세션 baseline 대비 커버리지 퇴화 | 범용 |
-
-### 아키텍처 Fitness Function (fitness.json)
-
-`.deep-review/fitness.json`에 계산적 아키텍처 규칙 선언:
-- **자동 생성**: fitness.json 미존재 시 Phase 1에서 프로젝트 분석 후 규칙 제안 (ecosystem-aware)
-- **규칙 타입**: `dependency` (dep-cruiser), `file-metric`, `forbidden-pattern`, `structure`
-- **Phase 4 게이트**: Fitness Delta (Advisory) + Health Required (Required)
-- **Baseline 관리**: commit/branch 기반 스코핑, 브랜치 전환/rebase 시 자동 무효화
-
-### deep-review 연동
-
-deep-review 설치 시:
-- fitness.json 규칙이 리뷰 에이전트 프롬프트에 주입되어 아키텍처 의도 기반 리뷰
-- receipt의 health_report가 scan_commit 기반 stale 체크 후 리뷰 컨텍스트로 활용
-
-## 토폴로지 템플릿
-
-Phase 1 Research에서 서비스 토폴로지를 자동 감지하고, 토폴로지별 가이드·센서 설정·fitness 기본값을 제공하는 매칭 템플릿을 로드합니다.
-
-### 토폴로지 감지
-
-`topology-detector.js`는 기존 ecosystem 감지 위에서 실행됩니다. 6개 내장 토폴로지를 우선순위 순으로 평가하여 첫 번째 일치 항목을 반환합니다:
-
-| 토폴로지 | 감지 기준 |
-|----------|----------|
-| `nextjs-app` | package.json의 `next` 의존성 |
-| `react-spa` | `react` 있고 `next`/`express` 없음 |
-| `express-api` | `express` 의존성 |
-| `python-web` | requirements의 `fastapi` / `django` / `flask` |
-| `python-lib` | 웹 프레임워크 없는 Python 프로젝트 |
-| `generic` | 그 외 모든 프로젝트 폴백 |
-
-감지 결과는 세션 상태에 저장되어 워크플로우 전반에 사용됩니다.
-
-### 템플릿 구조
-
-각 토폴로지 템플릿(`templates/topologies/<name>.json`)의 구성:
-
-```json
-{
-  "topology": "nextjs-app",
-  "guides": ["...토폴로지별 구현 가이드..."],
-  "sensors": { "dead-export": true, "stale-config": true },
-  "fitness_defaults": [
-    { "id": "no-circular-deps", "type": "dependency", "severity": "required" }
-  ],
-  "harnessability_hints": ["...리뷰 에이전트용 참고사항..."]
-}
-```
-
-- **`guides`** — Phase 1 연구 컨텍스트 및 Phase 3 구현 프롬프트에 주입
-- **`sensors`** — 토폴로지별 센서 활성화/비활성화 힌트
-- **`fitness_defaults`** — 기존 규칙과 충돌하지 않을 때 자동 생성 `fitness.json`에 병합
-- **`harnessability_hints`** — deep-review에 전달되어 토폴로지 인식 코드 리뷰 수행
-
-### 커스텀 토폴로지 Override
-
-`.deep-work/custom/<name>.json`에 동일 스키마로 파일을 배치합니다. 템플릿 로더는 **deep merge**를 수행(custom 값 우선)하므로 전체 템플릿을 재작성하지 않고도 원하는 필드만 덮어쓸 수 있습니다.
-
-```bash
-# 예시: nextjs-app 프로젝트의 fitness_defaults override
-.deep-work/custom/nextjs-app.json
-```
-
-### Phase 통합
-
-- **Phase 1/3**: 토폴로지 가이드가 연구 및 구현 컨텍스트에 주입
-- **Fitness generator**: 매칭 템플릿의 `fitness_defaults`가 자동 생성 `fitness.json` 초기값으로 사용 (토폴로지 적합 규칙만 포함)
-- **deep-review**: `harnessability_hints`가 리뷰 에이전트 프롬프트로 전달
-
-## 자기 교정 루프
-
-lint 및 typecheck 이후 새로운 `review-check` 센서가 자동 실행되어 Phase 4 이전에 두 레이어의 교정을 제공합니다.
-
-### review-check 센서
-
-`sensors/review-check.js`는 두 개의 독립 레이어로 동작합니다:
-
-| 레이어 | 트리거 | 검사 대상 |
-|--------|--------|----------|
-| **Always-on** | 모든 세션 | 토폴로지 가이드 준수 — 구현이 토폴로지별 패턴을 따르는지 확인 |
-| **Fitness** | `fitness.json` 존재 시 | 현재 구현으로 추가된 fitness 규칙 위반 |
-
-센서는 표준 파이프라인에 추가됩니다:
-
-```
-lint → typecheck → review-check
-```
-
-### 센서별 교정 제한
-
-각 센서(`review-check` 포함)는 독립적인 3회 교정 제한을 가집니다. 3회 자기 교정 후에도 센서가 실패하면 무한 루프 대신 수동 개입으로 에스컬레이션합니다.
-
-```
-1라운드: 센서 실패 → 자기 교정
-2라운드: 센서 실패 → 자기 교정
-3라운드: 센서 실패 → 자기 교정
-4라운드: 센서 실패 → 에스컬레이션 (수동 개입 필요)
-```
-
-제한은 센서별로 독립적입니다 — `review-check` 실패는 lint 또는 typecheck의 교정 횟수를 소모하지 않습니다.
-
-### review-check 비활성화
-
-`.deep-work/config.json`에 추가:
-
-```json
-{
-  "review_check": false
-}
-```
-
-always-on 레이어와 fitness 레이어가 모두 비활성화됩니다. v1에서는 레이어별 개별 비활성화를 지원하지 않습니다.
-
-### v1 범위
-
-- 계산적 검사만 수행 (패턴 매칭, fitness 규칙 평가)
-- 전체 프로젝트 fitness 검사 (증분 diff 방식 아님)
-- Receipt 스키마에 `review_check` 필드 추가 — 레이어 결과 및 사용된 교정 횟수 기록
-
-## 품질 측정
-
-모든 세션은 5가지 결과 메트릭을 기반으로 **세션 품질 점수** (0-100)를 산출합니다:
-
-| 메트릭 | 비중 | 측정 대상 |
-|--------|------|----------|
-| 테스트 통과율 | 25% | 첫 시도에 테스트가 통과하는 빈도 |
-| 재작업 사이클 | 20% | implement→test 루프 반복 횟수 |
-| Plan Fidelity | 25% | 구현이 승인된 Plan에 얼마나 부합하는지 |
-| 센서 클린율 | 15% | Lint/typecheck 센서 통과율 (not_applicable 제외) |
-| Mutation Score | 15% | Mutation testing 효과성 (not_applicable 제외) |
-
-Health Check 결과는 품질 점수에 포함되지 않음 — 코드베이스 상태 진단이지 세션 작업 품질이 아님. receipt에 별도 표시.
-
-추가 진단 메트릭 (코드 효율성, Phase 밸런스)도 참고용으로 추적됩니다.
-
-### 품질 트렌드
-`/deep-status --history`로 세션 간 품질 점수 추세를 확인하세요. 워크플로우가 시간에 따라 개선되고 있는지 파악할 수 있습니다.
-
-### 품질 뱃지
-`/deep-status --badge`로 최근 품질 추세(최근 5세션)를 반영하는 shield 뱃지를 생성합니다. 뱃지 레벨: Excellent (90+), Good (75-89), Improving (60-74), Developing (<60).
-
-## 자기 진화 규칙
-
-**Assumption Engine**은 각 강제 규칙(phase guard, TDD, research 요구 등)이 실제로 결과를 개선하는지 추적합니다. 각 세션 시작 시 **assumption snapshot**을 캡처합니다 — 모든 규칙의 강제 수준입니다. 세션 종료 시 품질 점수가 snapshot과 함께 기록됩니다.
-
-시간이 지나면서 엔진은 규칙이 활성화된 세션과 비활성화된 세션의 품질 점수를 비교합니다. 증거가 규칙이 도움이 되지 않거나 해가 된다면, 완화하거나 제거를 제안합니다. 규칙이 일관되게 높은 품질과 상관관계를 보이면, 강화를 제안합니다.
-
-이는 피드백 루프를 생성합니다: 가치를 증명한 규칙은 유지되고, 그렇지 않은 규칙은 조정됩니다. 워크플로우가 도그마가 아닌 증거를 기반으로 진화합니다.
-
-## 설치
-
-### 사전 요구사항
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 설치 및 설정 완료
-
-### Deep Suite 마켓플레이스 (권장)
-
-```bash
-# 1. 마켓플레이스 추가
-/plugin marketplace add Sungmin-Cho/claude-deep-suite
-
-# 2. 플러그인 설치
-/plugin install deep-work@Sungmin-Cho-claude-deep-suite
-```
-
-### 단독 설치
-
-```bash
-# 1. 이 레포를 마켓플레이스로 추가
-/plugin marketplace add Sungmin-Cho/claude-deep-work
-
-# 2. 설치
-/plugin install deep-work@Sungmin-Cho-claude-deep-work
-```
+훅은 세션 라이프사이클과 computational enforcement를 관리합니다.
+
+| 훅 | 트리거 | 용도 |
+|---|---|---|
+| SessionStart (`update-check.sh`) | 시작/재개 | Git 기반 버전 업데이트 확인 |
+| PreToolUse (`phase-guard.sh`) | Write/Edit/MultiEdit/Bash | Phase 기반 편집 차단 + P0 Worktree Path Guard + non-implement dangerous-command denylist |
+| PostToolUse (`file-tracker.sh`) | Write/Edit/MultiEdit/Bash | Implement 중 파일 변경 추적, receipt 업데이트 |
+| PostToolUse (`sensor-trigger.js`) | Write/Edit/MultiEdit/Bash | computational 센서 파이프라인 트리거 (lint, typecheck, review-check) |
+| PostToolUse (`phase-transition.sh`) | Write/Edit/MultiEdit | P1 Phase Transition Injector — phase 전환 시 worktree/team/cross-model context 주입 |
+| Stop (`session-end.sh`) | CLI 세션 종료 | 활성 세션 알림, worktree 정보, phase cache 정리 |
+
+Phase Guard denylist는 위험한 non-implement Bash도 차단합니다 (예: `curl | sh`, 보호 경로의 `rm -rf`, `npm publish`, 파괴적 `kubectl`/SQL, `dd`/`mkfs`). 각 family에는 `CLAUDE_ALLOW_*` override 환경변수가 있습니다.
+
+## 주요 기능
+
+- **TDD 강제** — hook 강제 상태 머신(PENDING → RED → RED_VERIFIED → GREEN_ELIGIBLE → GREEN → REFACTOR)이 failing test가 존재할 때까지 production 코드 편집을 차단. 모드: `strict`, `relaxed`, `coaching`, `spike` + slice-scoped TDD override.
+- **Worktree 격리** — 세션이 기본적으로 격리된 git worktree(`.worktrees/dw/<slug>/`)에서 실행; `/deep-finish`가 merge / PR / keep / discard 제공. `--no-branch`로 opt-out.
+- **Model routing** — phase별·slice별 모델 배정(S→haiku, M/L→sonnet, XL→opus)으로 토큰 비용 절감; slice별 또는 preset routing table로 override.
+- **M3 envelope receipt** — `session-receipt.json`과 slice receipt이 identity-triplet guard와 chained provenance를 갖춘 크로스 플러그인 envelope으로 emit되며, `validate-receipt.sh`와 CI 템플릿으로 검증.
+- **Health Engine + 아키텍처 fitness** — Phase 1이 병렬 드리프트 센서(dead-export, stale-config, dependency-vuln, coverage-trend)를 실행하고 `.deep-review/fitness.json`의 선언적 규칙을 검증; Phase 4에 Fitness Delta(advisory)와 Health Required(required) 게이트 추가.
+- **품질 측정** — 모든 세션이 Session Quality Score(테스트 통과율, 재작업 사이클, plan fidelity, 센서 클린율, mutation score)를 산출하고 세션 간 추세를 추적.
+- **자기 진화 규칙** — Assumption Engine이 각 강제 규칙을 반증 가능 가설로 취급하고 세션 품질 증거에 따라 완화 또는 강화를 제안.
+- **멀티 모델 리뷰** — phase 문서를 structural review하고, codex 및/또는 gemini-cli 설치 시 plan에 adversarial cross-model 리뷰 적용(`--skip-review`로 생략). [codex](https://github.com/openai/codex) · [gemini-cli](https://github.com/google/gemini-cli).
+- **프로필 & 플래그** — named preset(`--profile=X`, `--setup`)과 세션별 override(`--team`, `--zero-base`, `--skip-research`, `--skip-to-implement`, `--tdd=MODE`).
+- **다국어 지원** — 모든 메시지가 사용자 언어를 자동으로 따름(한국어 참조 템플릿, 실시간 번역).
 
 ## 플러그인 연동
 
-deep-work는 Claude Deep Suite의 다른 플러그인이 설치된 경우 연동됩니다:
+deep-work는 sibling 플러그인이 설치된 경우 연동되며, 모든 동작 전 사용자 확인을 거칩니다:
 
-### deep-review
-- **Sprint Contract** (Phase 2): plan 승인 후 슬라이스 기준에서 `.deep-review/contracts/` 자동 생성
-- **슬라이스 리뷰** (Phase 3): 각 슬라이스가 GREEN 도달 시 `/deep-review --contract SLICE-NNN` 실행 제안
-- **전체 리뷰** (Phase 4): quality gate 전 종합 리뷰를 위한 `/deep-review` 실행 제안
+- **deep-review** — 승인된 slice에서 `.deep-review/contracts/` 생성, slice·전체 리뷰 제안, 아키텍처 인식 리뷰를 위해 `fitness.json` + `health_report` 공유.
+- **deep-wiki** — 세션 후 research와 설계 결정 아카이브를 위해 `/wiki-ingest report.md` 제안.
+- **deep-memory** — Phase 1에서 크로스 프로젝트 brief recall, Phase 5에서 `/deep-memory-harvest` 추천(opt-in, read-only).
 
-### deep-wiki
-- **지식 캡처** (Phase 4): 세션 완료 후 리서치 및 설계 결정 사항 아카이브를 위해 `/wiki-ingest report.md` 실행 제안
+## 링크
 
-모든 연동은 선택적입니다 — 해당 플러그인이 감지된 경우에만 활성화되며, 항상 실행 전 사용자 확인이 필요합니다.
+- [CHANGELOG](CHANGELOG.ko.md) — 릴리스 히스토리
+- [claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suite) — 마켓플레이스와 sibling 플러그인
+- [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md)
 
 ## 라이선스
 

@@ -2,1159 +2,642 @@
 
 # Changelog
 
-All notable changes to the Deep Work plugin will be documented in this file.
+Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합니다.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
+이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
 ## [Unreleased]
 
 ## [6.9.0] — 2026-05-21 (deep-memory v0.1.0 consumer 통합 — Phase 1 recall + Phase 5 harvest 추천)
 
-### 추가
+### Added
 
-- **`skills/deep-research/SKILL.md` — Deep-Memory Brief Context 서브섹션** (Cross-Plugin Context 블록, Harnessability + Evolve Insights와 동급). `.deep-memory/latest-brief.md` 가 프로젝트 루트에 존재하면 brief 를 **verbatim** 으로 `research.md` 의 새 `## Cross-project Memory` 섹션에 인용 (heading hierarchy +2 shift 로 deep-memory render 보존). 부재 시 research artifact 는 deep-memory-agnostic 유지 — runtime context 에만 한 줄 안내 emit, **`research.md` 에는 아무것도 쓰지 않음** (privacy invariant). `/deep-memory-brief` 는 **자동 호출 금지** — recall 은 사용자 주도. Provenance 토큰 (`mem-<ULID>`, Crockford-base32 uppercase, I/L/O/U 제외) 을 새 `cross_project_memory.cited_memory_ids[]` state 필드로 추출.
-- **`skills/deep-integrate/SKILL.md` — `/deep-memory-harvest` 추천** Phase 5 LLM 프롬프트 규칙 (§3-2) 과 결정적 B-fallback 리스트 (§3-4) 에 추가. Gate 조건: `deep-memory ∈ plugins.installed`, `session.changes.files_changed > 0`, `loop.already_executed` 에 `deep-memory` 부재. Installation suggestion 경로는 다른 형제 플러그인 관례를 그대로 따름.
-- **`skills/deep-integrate/detect-plugins.sh`** — `TARGETS` enumeration 에 `deep-memory` 추가. Phase 5 harvest gate 의 `plugins.installed`/`plugins.missing` 신호가 deep-memory 존재를 올바르게 보고하도록. `detect-plugins.test.js` 의 regression test 가 present→installed[] / absent→missing[] 을 검증.
-- **`docs/deep-memory-integration-handoff.md`** — 본 PR 의 spec-of-record (`docs/` 는 평상시 gitignored 라 force-add). deep-memory spec §14.2 의 6 가지 consumer item 중 5 개 landed, item 5 (`/deep-memory feedback`) 은 `cited_memory_ids[]` forward-compat 필드를 남긴 채 Phase 4+ joint PR 로 deferred.
-- **`tests/deep-memory-integration.test.js`** — 12 개의 fixture-based contract 테스트. 모든 문서화된 invariant 를 pin: spec doc 구조, SKILL 섹션 wording, state-field schema, harvest gate 언어, ULID provenance 정규식 (character-class + length + Crockford-uppercase 분리 검증 포함), absent-brief privacy 경계, stale-warning wording, heading-shift +2 rule, 0-byte brief, non-empty no-ULID brief, 그리고 pre-fix wording 이 SKILL 에 silently 재진입하지 못하도록 방어하는 `assert.doesNotMatch(/또는 부재 안내/)`.
+- Phase 1 Research recall: `.deep-memory/latest-brief.md`가 존재하면 brief를 `research.md`의 새 `## Cross-project Memory` 섹션에 verbatim으로 인용하고, 부재 시에는 아무것도 쓰지 않습니다(privacy invariant). `/deep-memory-brief`는 절대 자동 호출하지 않습니다. 인용된 memory ID(`mem-<ULID>`)는 `cross_project_memory.cited_memory_ids[]` state 필드로 캡처됩니다.
+- Phase 5 Integrate는 `deep-memory`가 설치되어 있고 세션이 파일을 변경했을 때 `/deep-memory-harvest`를 추천합니다. `skills/deep-integrate/detect-plugins.sh`가 `plugins.installed`/`plugins.missing`에 deep-memory를 enumerate합니다.
+- `docs/deep-memory-integration-handoff.md`가 보류된 `/deep-memory feedback` hook을 향후 joint PR용으로 기록합니다.
+- `tests/deep-memory-integration.test.js`가 문서화된 invariant(privacy 경계, ULID 정규식, heading-shift rule, edge case)를 고정합니다.
 
-### 변경
+### Changed
 
-- **Research artifact schema** — additive `cross_project_memory` 블록 (`brief_path`, `brief_mtime`, `brief_stale`, `cited_memory_ids[]`) 을 research state frontmatter 에 기록. 4 개 필드 모두 brief 부재 시 `null` / `[]` 기본값 — deep-memory 를 설치하지 않은 프로젝트에 forward-compat.
-- **`.gitignore`** — `.deep-memory/` 를 프로젝트 루트에서 ignore (deep-memory 는 `~/.deep-memory/` 하위에 자체 persistence 관리; 프로젝트별 brief 는 on-demand regenerate).
-- Version 6.8.0 → 6.9.0 — package 및 plugin manifest 전체 동기화 (minor 릴리스).
-
-### 검증
-
-- `npm test`: 850 / 850 pass (137 suites) — baseline 837 + 13 신규 (5 graceful/cited + 1 detect-plugins regression + 3 stale/heading/empty + 1 R1-Y1 length-isolated + 1 R1-Y2 contract + 1 R2-N1 negative + 1 R2-N2 non-empty).
-- 3 라운드 `/deep-review-loop` 수렴: 라운드 1 REQUEST_CHANGES (🔴 1 / 🟡 3 / ℹ️ 2) → 라운드 2 CONCERN (🟡 1 / ℹ️ 2) → 라운드 3 APPROVE (§3.A.1 자연 수렴). 7 개 actionable finding 모두 ACCEPT + 6 Respond commit 으로 수정; 1 개 info DEFER (R2-N3 — `.git` worktree-as-file wording, defensible as-is).
-- 리포트는 `.deep-review/reports/` 와 `.deep-review/responses/` 에 보관 (gitignored; author-local).
+- Research artifact 스키마에 additive `cross_project_memory` 블록 추가 — brief 부재 시 null/empty로 기본 설정(forward-compatible).
 
 ## [6.8.0] — 2026-05-19 (Plan-quality contract 강제 + CI 견고화 + receipt-tracker 안정성)
 
-### 추가
+### Changed
 
-- **`tests/plan-quality-contract.test.js`** — 실행 가능한 `deep-plan` slice contract를 고정하고 planning/implementation reference에 legacy `Task N:` 행이 돌아오는 것을 차단. 또한 (신규 4번째 블록) `skills/shared/references/review-gate.md`를 v6.7 필수 슬라이스 계약에 고정하여 review gate가 contract와 silently 이탈하지 못하도록 함.
-- **`tests/ci-workflow-contract.test.js`** — GitHub Actions advisory `shellcheck` 스텝의 모양 (이름, `continue-on-error: true`, 대상, 심각도, `npm test` 이후 순서, 바이너리 누락 graceful skip)을 고정.
-- **`hooks/scripts/file-tracker-lock-timeout.test.js`** — receipt-tracker stale-lock recovery contract에 대한 end-to-end 회귀 테스트: Phase 1 (lock 점유 시) canonical receipt + pending sidecar 상태 검증; Phase 2 (lock 해제 후 두 번째 호출) drain된 파일과 새 파일 모두 canonical `changes.files_modified`에 반영되는지 검증.
-
-### 변경
-
-- **Plan slice format (v6.7 executable steps)** — S/M/L slice 모두 `steps` 필드를 필수화 (`S: 2-4`, `M: 3-7`, `L: 5-12`)하고, 모든 code-changing step에 exact file path와 code sketch 또는 function signature 수준의 구현 세부를 요구.
-- **Planning references and templates** — `planning-guide.md`, `implementation-guide.md`, `plan-templates.md`, `plan-template-existing.md`, `plan-template-zerobase.md`가 `depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, `expected_output`을 포함한 `SLICE-NNN` slice checklist 형식으로 정리됨.
-- **Completeness Policy** — `Write tests for the above`, `failing_test` red signal 누락, exact `expected_output` fragment 누락을 금지 패턴에 추가.
-- **Contract validation scope** — stale M/L/XL 문구를 모든 S/M/L slice 대상으로 갱신.
-- **Plan review-gate를 v6.7 필수 슬라이스 계약과 정렬** — `skills/shared/references/review-gate.md`가 더 이상 `expected_output`을 "권장"으로 표시하지 않으며, `steps`/`expected_output` 누락을 `testability`/`buildability`/`code_completeness` 평가에서 면제하던 v5.8 하위 호환 fallback도 제거. 모든 비-인라인 S/M/L slice에 대해 5개 필수 필드 (`failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`)를 요구하도록 문구 수정 — 인라인 plan 및 legacy/resume 입력은 좁게 한정된 예외.
-- **Advisory shellcheck CI 스텝** — `hooks/scripts/**/*.sh`에 대해 `shellcheck --severity=warning --external-sources` 실행, non-blocking (`continue-on-error: true`). 게이트 변경 없음.
-- **`npm test` 발견 범위를 6개 명시적 subtree 글로브로 확장** — 기존 6파일 명시 형식을 `node --test --test-concurrency=1 hooks/**/*.test.js tests/**/*.test.js skills/**/*.test.js sensors/**/*.test.js templates/**/*.test.js scripts/**/*.test.js` 로 교체. 느린 CI 러너에서 timing-sensitive 테스트가 안정되도록 직렬 실행. 글로브 지원을 위해 CI Node 버전을 20에서 22 (LTS)로 bump (`--test` positional args의 glob 지원은 Node 21.0.0에서 도입되었고 20.x로 back-port된 적이 없음). `health/**/*.test.js`는 별도 `npm run test:health` 스크립트로 분리 — 단독 실행 시 64/64 통과하나 GitHub-hosted 러너에서 다른 suite와 interleave될 때 `health/health-check.test.js:236` ("overall timeout enforcement") 의 사전 존재하는 event-loop leak이 노출됨; 본 leak은 follow-up으로 추적. 발견되는 테스트들은 여전히 POSIX-only (`bash` 직접 호출 + `/tmp` hardcode)이므로 Windows 실행을 활성화하는 것은 아님; ubuntu+macos CI 매트릭스에서 대부분의 suite가 안정적으로 실행되도록 함이 목적.
-- **Receipt-tracker lock-timeout 견고화** — `hooks/scripts/file-tracker.sh`의 pre-lock 무조건 receipt 초기화 블록 복원 + `O_CREAT | O_EXCL` (`fs.writeFileSync` `flag: 'wx'`) 적용으로 동시 writer race 안전 보장. in-lock update가 stale lock에 의해 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지. pending-changes sidecar는 `file-tracker.sh`의 다음 lock-acquire 성공에서 drain됨 (session-end은 현재 pending-changes를 sweep하지 않음 — 향후 개선 과제).
-- 6.7.1 → 6.8.0으로 package 및 plugin manifest 버전을 minor release로 bump.
-
-### 검증
-
-- `npm test`: 901 / 901 pass (150 suites). 3개 contract suite가 신규 표면을 고정 (`plan-quality-contract`, `ci-workflow-contract`, `file-tracker-lock-timeout`).
-- 3-way deep-review (Claude Opus + Codex review + Codex adversarial)가 3개 라운드 반복 실행됨; round-3 fix commit이 모든 round-2 발견을 해소했고 round 3이 round-3 fix 범위에 대해 APPROVE로 수렴; O1 alignment commit이 round 3에서 제기된 범위 외 발견 1건을 해소.
+- 모든 비-인라인 S/M/L slice는 `failing_test`, `verification_cmd`, `expected_output`, `code_sketch`, `steps`를 선언해야 합니다. Plan review gate가 이 contract와 정렬됨(누락 필드에 대한 "권장" 헷지나 하위 호환 fallback 없음).
+- Planning 참조와 템플릿을 `SLICE-NNN` 체크리스트(`depends_on`, `code_sketch`, `failing_test`, `verification_cmd`, `expected_output`)로 전환. `steps`는 필수(S: 2-4, M: 3-7, L: 5-12)이며 정확한 파일 경로 포함.
+- Completeness Policy를 확장하여 모호한 지시, 누락된 red signal, 누락된 정확한 `expected_output` 조각을 거부.
+- non-blocking `shellcheck` advisory 스텝이 `hooks/scripts/**/*.sh`를 lint; 재귀 `node --test` 글로브 발견을 위해 CI Node 20 → 22 (LTS) bump.
+- Receipt-tracker 견고화: pre-lock receipt 초기화를 `O_CREAT | O_EXCL`로 복원하여 in-lock update가 타임아웃되어도 single-write slice가 canonical `SLICE-NNN.json`을 유지; pending changes는 다음 lock acquire 시 drain.
 
 ## [6.7.1] — 2026-05-18 (Codex-native plugin manifest and AGENTS guide)
 
-### 추가
+### Added
 
-- **`.codex-plugin/plugin.json`** — Claude Code manifest 와 동일한 skill/hook 표면을 가리키는 Codex 네이티브 플러그인 manifest. 기존 `claude-deep-*` repository identity 는 유지.
-- **`AGENTS.md`** — Codex 프로젝트 가이드. runtime surface, 검증 명령, downstream suite marketplace 갱신 요구사항을 명시.
-- **`skills/deep-work/SKILL.md`** — Claude, Codex 및 기타 skill 호출자가 내부 `deep-work-orchestrator` 이름을 알 필요 없이 `$deep-work:deep-work "task"`로 시작할 수 있도록 primary `deep-work` skill entry alias를 복구. alias는 모든 인자를 `deep-work-orchestrator`로 그대로 전달한다.
-- **`tests/skill-entry-alias.test.js`** — skill-only entrypoint 계약을 고정: `commands/deep-work.md` wrapper 없이 `deep-work` skill이 `$ARGUMENTS`를 보존해 `deep-work-orchestrator`로 위임해야 한다.
-
-### 변경
-
-- patch release 로 package/plugin manifest 버전을 6.7.0 → 6.7.1 로 동기화.
-- README 문서에 기존 Claude Code 표면과 함께 Codex 호환성을 명시.
-- Codex plugin default prompt의 첫 진입점을 `$deep-work:deep-work "build this feature"`로 변경.
-- Manifest/package 설명에서 entry alias를 Codex-only가 아니라 Claude/Codex skill-native 표면으로 정리.
-
-### 검증
-
-- 릴리스 전 repository 검증을 실행. 정확한 명령 출력은 PR 체크리스트 참조.
-
-## [6.7.0] - 2026-05-18 (24 commands → user-invocable skills: cross-platform — suite-wide migration 완성)
-
-### Changed — 24 command-equivalent 표면을 `user-invocable: true` skill 로 승격
-
-- **Category A (7)**: `commands/` 의 얇은 `Skill()` 래퍼 삭제. 매칭 skill 본문에 `user-invocable: true` 한 줄 추가 (본문은 변경 없음). 대상: `deep-brainstorm`, `deep-research`, `deep-plan`, `deep-implement`, `deep-test`, `deep-integrate`, `deep-work-orchestrator`. Skill invocation 이 wrapper command 를 거치지 않고 skill 본문으로 직접 흐른다 — orchestrator 의 5-phase dispatch 는 변경 없음.
-- **Category B (17)**: `skills/<verb>/SKILL.md` 신규 작성. `user-invocable: true` frontmatter + `## Invocation` / `## Inputs (skill args)` / `## Prerequisites` head sections 추가. 본문은 cross-reference path 재타깃팅만 적용하고 byte-단위 보존. 기존 `commands/<verb>.md` 삭제. 대상: `deep-assumptions`, `deep-cleanup`, `deep-debug`, `deep-finish` (660 lines — suite 단일 최대), `deep-fork`, `deep-history`, `deep-insight`, `deep-mutation-test`, `deep-phase-review`, `deep-receipt`, `deep-report`, `deep-resume`, `deep-sensor-scan`, `deep-slice`, `deep-status` (receipt/history/report/assumptions sub-page 의 hub), `drift-check`, `solid-review`.
-- **`commands/` 디렉토리 제거**. `package.json` `files` 필드에서 `commands/` 빠짐.
-- **deep-status hub sub-page 재타깃팅**: §6/§7/§8/§9 의 "Read the `/deep-X` command file and follow its logic inline" 문장이 "Read `skills/deep-X/SKILL.md` and follow its logic inline" 로 바뀜 — hub-spoke inline-dispatch 패턴 보존. 4 sub-skill (`deep-receipt` / `deep-history` / `deep-report` / `deep-assumptions`) 의 `참조처:` 라인도 `skills/deep-status/SKILL.md` §X 로 retargeting.
-- **CLAUDE.md:133** 재타깃팅: `commands/deep-finish.md §7-Z` → `skills/deep-finish/SKILL.md §7-Z` (`wrap-receipt-envelope.js` 의 caller naming).
-- **`hooks/scripts/wrap-receipt-envelope.js`** JSDoc 갱신: caller naming `deep-finish.md, agents/implement-slice-worker.md` → `skills/deep-finish/SKILL.md §7-Z, agents/implement-slice-worker.md`.
-- **`skills/deep-work-orchestrator/SKILL.md`** 내부 참조 retargeting: `Read \`/deep-finish\`` → `Read \`skills/deep-finish/SKILL.md\``; `\`deep-resume.md\`가 사용` → `\`skills/deep-resume/SKILL.md\`가 사용`. orchestrator 의 `Skill("deep-X", args=...)` dispatch 는 `user-invocable: true` 등록 덕분에 skill 본문으로 정상 resolve.
-
-### Rationale — cross-platform parity 가 suite-wide migration 을 완성
-
-- 슬래시 커맨드는 Claude Code 전용; user-invocable skill 은 **Codex / Copilot CLI / Gemini CLI / Agent SDK** 에서 `Skill({ skill: "deep-work:<verb>", args: "..." })` 형태로 동작.
-- 본 PR 은 suite-wide command→skill 마이그레이션의 **4번째이자 최종** installment: deep-docs v1.3.0 (pilot, 1 command) → deep-evolve v3.4.0 (2nd, 1 command + `$ARGUMENTS`) → deep-wiki v1.6.0 (3rd, 5 commands) → **deep-work v6.7.0 (4th, 24 commands)**. 4개 installment 모두 동일한 mechanical 패턴 사용 — frontmatter `user-invocable: true`, `## Invocation` + `## Inputs (skill args)` + `## Prerequisites` head sections, body byte-보존, cross-ref sed retargeting — 3개 선행 PR 에서 검증됨.
-- 24개 atomic 전환 (부분 전환 아님) 이 필요한 이유: `deep-status` 가 4 sub-skill 을 inline body Read 로 dispatch 하는 hub 이므로 부분 전환 시 hub-spoke graph 가 깨짐. 24개 중 절반 (Category A, 7) 은 1-line frontmatter 변경 + wrapper 삭제이므로 실제 신규 skill 저작 분량은 17개.
-
-### Migration — 호출자별
-
-- **Claude Code / cross-platform skill 호출자**: `Skill({ skill: "deep-work:<verb>", args: "..." })` 또는 host별 동등한 skill invocation 문법으로 호출. 24 표면 모두 동일하게 응답. 예: `Skill({ skill: "deep-work:deep-finish", args: "--skip-integrate --handoff-to=deep-wiki" })`.
-- **`$ARGUMENTS` 보존**: `$ARGUMENTS` 분기를 가진 본문 (특히 `deep-finish` 의 flag 다수, `deep-fork` 의 session-id + `--from-phase`, `deep-status` 의 flag matrix, `deep-insight` / `drift-check` / `solid-review` 의 target arg, `deep-assumptions` 의 subcommand) 은 byte-단위 보존됨 — `Skill()` 의 `args` 필드가 slash 호출과 동일하게 `$ARGUMENTS` 로 매핑됨.
-- **`phase-guard.sh` 손대지 않음** — Phase 5 enforcement 가 이미 `skills/deep-integrate/` 경로를 hardcode (v6.5 부터). Phase 5 dispatch 변경 없음.
-- **`BUG_REVIEW_REPORT.md` leave-as-is** — historical audit 산출물로 v6.5.x line 번호에 pin 되어 있음. historical accuracy 보호.
-
-### Tests
-
-- 기존 177개 `node:test` assertion 모두 PASS 유지: `envelope-emit`, `envelope-chain`, `handoff-roundtrip`, `phase-guard-denylist`, `phase-guard-golden`. 5개 test 파일 중 어느 것도 `commands/*` 경로를 참조하지 않음 (변환 전 검증). 테스트 변경 불필요.
-- 전체 plugin (CHANGELOG / BUG_REVIEW_REPORT / docs/ / node_modules / .git 제외) 에서 `grep -rn 'commands/deep-\|commands/drift\|commands/solid'` 결과 **0 hits** — 변환 완료 후.
-
-## [6.6.3] - 2026-05-12
-
-### Added — M5.5 #3 hook golden test + M5.5.X (§9) phase-guard 강화 롤업
-
-- **`tests/phase-guard-golden.test.js`** — fixture 기반 golden test (M5.5 #3). `tests/fixtures/golden/<name>.input.json` + `<name>.expected.json` 페어를 로드하여 `phase-guard.sh` 의 exit code + decision + reason 정규식을 검증한다. 초기 corpus 8개: idle allow, implement slice scope (in/out), 4개 non-implement denylist family (rm-rf / npm-publish / curl-pipe-shell / sql-destructive), override pass-through. 한쪽만 커밋된 fixture(`.input` 또는 `.expected` 누락) 는 로더에서 즉시 throw.
-- **`hooks/scripts/test-helpers/run-phase-guard.js`** — 공유 `scrubHostEnv()` + `runPhaseGuard()` + `parseGuardOutput()` 헬퍼 (§9.2 W-R2.2). `tests/phase-guard-denylist.test.js` 에 인라인으로 들어있던 host-env scrub (`DEEP_WORK_SESSION_ID` / `DEEP_WORK_ROOT` / `CLAUDE_PROJECT_DIR`) 을 한 곳으로 모아, 형제 hook 테스트가 호스트-env 격리를 무료로 상속받도록 한다.
-- **`tests/phase-guard-denylist.test.js` §9.3 추가** — 7건의 신규 단언:
-  - `NON_IMPLEMENT_DANGEROUS` 코퍼스가 `phase-guard-core.js` `DANGEROUS_NON_IMPLEMENT_PATTERNS` 의 모든 `family:` 를 커버한다는 pre-flight 단언.
-  - per-family override 루프 (5 family × research phase) — 모든 `CLAUDE_ALLOW_<FAMILY>=1` 환경변수를 end-to-end 로 검증, override field 의 오타를 CI 에서 잡는다.
-  - Override fall-through 합성 테스트 (`CLAUDE_ALLOW_RM_RF=1 + 'rm -rf foo && cp x.txt /etc/host.conf'`) — override env 는 denylist 만 억제하고 file-write 게이트는 그대로 적용된다는 계약을 핀.
+- `.codex-plugin/plugin.json` — Claude Code manifest와 같은 skill·hook 표면을 가리키는 Codex-native manifest.
+- `AGENTS.md` — runtime surface, 검증, downstream suite marketplace 업데이트를 다루는 Codex 프로젝트 가이드.
+- 내부 orchestrator 이름을 몰라도 `$deep-work:deep-work "task"`로 호출할 수 있도록 primary `deep-work` skill alias 복구.
 
 ### Changed
 
-- **`hooks/scripts/phase-guard-core.js`** — §9.1 비-implement 분기 진입부의 코멘트 블록 확장: (a) 게이트 순서, (b) load-bearing ordering 근거, (c) override-env 의미 (denylist 만 억제, file-write 그대로), (d) `phase-guard.sh` Phase 5 의 cross-coverage.
-- **`hooks/scripts/phase-guard-core.js`** — §9.3 I-R3.1 `DANGEROUS_NON_IMPLEMENT_PATTERNS` docblock 에 의도된 scope 누락(`DELETE FROM`, `DROP DATABASE`, 대체 shell 파이프, `yarn publish`, 디스크 레벨 명령) 명시.
-- **`hooks/scripts/{phase-guard-hardening,phase5-guard,worktree-guard,multi-session,input-parsing-e2e}.test.js`** — §9.2 마이그레이션: 인라인 `{ ...process.env, ... }` 스프레드를 공유 헬퍼의 `scrubHostEnv()` 로 교체.
+- Manifest/package description이 entry alias를 Claude와 Codex 모두에 대한 skill-native로 기술; README가 Codex 호환성을 명시.
 
-### Notes
-
-- 본 PR 은 `claude-deep-suite/docs/superpowers/plans/2026-05-12-m5.5-remaining-tests-handoff.md` §9 "Suggested rollup PR" 에 명시된 M5.5 #3 (deep-work 측) + M5.5.X (§9.1 + §9.2 + §9.3) 롤업이다. deep-evolve / deep-wiki 의 M5.5 #3 과 deep-review / deep-wiki / deep-evolve 의 #5 는 별도 PR.
-- 테스트 수: **162 → 177** (+15: golden 8 + §9.3 7). npm test 런타임 ~29s on macOS bash 3.2.
-
-## [6.6.2] - 2026-05-12
-
-### Added — M5.5 #7 non-implement dangerous-command denylist (PR #28, 3 리뷰 라운드)
-
-- **`tests/phase-guard-denylist.test.js`** — Phase 5 read-mostly allowlist (7 spec family) + non-implement denylist (5 family × 4 phase + 컨트롤 + 회귀 가드) 를 검증하는 162-단언 phase-guard 계약 테스트.
-- **`hooks/scripts/phase-guard-core.js`** — `DANGEROUS_NON_IMPLEMENT_PATTERNS` (5 family: rm-rf, npm-publish, kubectl-destructive, sql-destructive, curl-pipe-shell) + `matchDangerousNonImplement()` + research/plan/test/brainstorm Bash 진입부의 denylist 게이트. 각 family 는 `CLAUDE_ALLOW_<FAMILY>=1` 환경변수 override 를 가진다.
-- **R3 regex 수정**: W-R3.1 (SQL TRUNCATE 단일 문자 버그) + W-R3.2 (kubectl `--all-namespaces` false-positive).
-
-## [6.6.1] - 2026-05-12
-
-### Added — M5.5 #4 cross-platform CI matrix (PR #27)
-
-- **`.github/workflows/tests.yml`** — `os: [ubuntu-latest, macos-latest]` × `node-version: '20'` 매트릭스로 `npm test` + 3 개 bash 회귀 스크립트 실행.
-- **`hooks/scripts/test/test-v6.4.2-regression.sh` §2** — cross-platform `stat` fallback (`stat -c '%a' || stat -f '%A'`). 새 ubuntu 레그가 첫 실행에서 BSD/GNU 차이를 즉시 검출.
-
-## [6.6.0] - 2026-05-12
-
-### Added — M5.7.A 플러그인측 cross-plugin handoff + dashboard compaction telemetry 채택
-
-- **`hooks/scripts/emit-handoff.js`** — handoff payload를 M3 envelope으로 wrap하여 (`artifact_kind = "handoff"`, `schema.name = "handoff"`, `schema.version = "1.0"`) `.deep-work/handoffs/` 또는 세션별 디렉토리에 기록하는 CLI 헬퍼. 플래그: `--payload-file`, `--output`, `--source-session-receipt` (자동 `parent_run_id` chain), `--source-review-report`, `--parent-run-id`, `--session-id`. write 전 payload required 필드 enforce: `schema_version`, `handoff_kind`, `from{producer,completed_at}`, `to{producer,intent}`, `summary`, `next_action_brief` — `claude-deep-suite/schemas/handoff.schema.json` + dashboard `PAYLOAD_REQUIRED_FIELDS["deep-work/handoff"]`와 일치.
-- **`hooks/scripts/emit-compaction-state.js`** — compaction-state payload를 M3 envelope으로 wrap하는 CLI 헬퍼 (`artifact_kind = "compaction-state"`, `schema.name = "compaction-state"`). 두 입력 모드: hook-driven용 CLI 플래그 (`--trigger`, `--preserved`, `--discarded`, `--strategy`, `--pre-tokens`, `--post-tokens`) 또는 skill 합성용 `--payload-file`. Trigger enum을 suite schema 기준으로 검증 (`phase-transition`, `slice-green`, `loop-epoch-end`, `window-threshold`, `manual`, `session-stop`). Strategy enum 검증. Dashboard 메트릭 `suite.compaction.frequency` + `suite.compaction.preserved_artifact_ratio`를 구동.
-- **`commands/deep-finish.md` §7-Z-A** — envelope wrap 후 새 섹션이 `--handoff-to=<plugin>` 지정 시 (또는 사용자가 인터랙티브로 opt-in 시) cross-plugin handoff를 emit. session-receipt envelope에 `parent_run_id`를 자동 chain. dashboard flat-dir `SOURCE_SPECS`에 맞게 `.deep-work/handoffs/<UTC-ts>-<session_id>.json`로 기록.
-- **`hooks/scripts/session-end.sh`** Stop hook — 세션 종료 시 best-effort로 `compaction-state.json` emit (`trigger: session-stop`, session-receipt 존재 시 `strategy: receipt-only`, 부재 시 state file 보존). Stop hook의 "must not block session close" 계약 유지를 위해 subshell + `|| true`로 wrap.
-- **`hooks/scripts/phase-transition.sh`** PostToolUse hook — 각 Phase 경계마다 `compaction-state.json` emit (`trigger: phase-transition`, `strategy: key-artifacts-only`). Phase별 preserved 셋: research→research.md, plan→research+plan, implement→plan, test→plan+receipts, idle→session-receipt.
-- **`tests/handoff-roundtrip.test.js`** — M5.5 #8 (deep-work 절반)을 다루는 16개 assertion: dashboard와 동일한 payload-required-field 계약, mirror된 `unwrapStrict`를 만족하는 envelope을 emit하는 CLI roundtrip, cross-plugin chain (`parent_run_id === session-receipt.envelope.run_id`), trigger enum 6개 값 전체 커버리지, 실패 경로 (필수 필드 누락 → exit 1, unknown trigger → exit 1).
+## [6.7.0] — 2026-05-18 (24 commands → user-invocable skills: cross-platform)
 
 ### Changed
 
-- **`hooks/scripts/envelope.js`** — `ALLOWED_ARTIFACT_KINDS`를 `{session-receipt, slice-receipt}`에서 `handoff`와 `compaction-state` 포함으로 확장. set은 `wrapEnvelope` (출력 가드)와 `unwrapEnvelope` (입력 가드) 양쪽에서 사용; session-receipt / slice-receipt 호출자의 기존 identity-triplet 의미론은 그대로 유지.
-- **`scripts/validate-envelope-emit.js`** — `ALLOWED_KINDS`를 대칭 확장하여 CI validator가 두 신규 envelope kind를 수락. Payload `schema_version === "1.0"` enforcement는 그대로 유지.
+- 24개 command-equivalent 표면이 모두 `skills/` 아래 `user-invocable: true` skill로 전환; `commands/` 디렉토리 제거 및 `package.json` `files`에서 제외.
+- Skill 호출이 skill body로 직접 흐름(`Skill({ skill: "deep-work:<verb>", args: "..." })`) — Claude Code뿐 아니라 Codex / Copilot CLI / Gemini CLI / Agent SDK에서도 동작; orchestrator의 5-phase dispatch는 불변.
+- `$ARGUMENTS`로 분기하는 body(`deep-finish` 플래그, `deep-fork`, `deep-status` 플래그 매트릭스 등)는 byte-for-byte 보존.
 
-### Notes
-
-- 이 릴리스는 신규 artifact kind에 대해 **producer-only**. deep-work는 다른 플러그인의 `handoff.json` 또는 `compaction-state.json`을 consume 하지 않으며 — dashboard가 한다. Cross-plugin contract는 `claude-deep-dashboard/lib/suite-collector.js unwrapStrict`가 enforce.
-- M5 acceptance criteria는 `claude-deep-suite/docs/superpowers/plans/2026-05-11-m5.7-plugin-adoption-handoff.md` §M5.7.A 참조.
-
-## [6.5.0] - 2026-05-07
+## [6.6.3] — 2026-05-12
 
 ### Added
-- **M3 cross-plugin envelope 채택** — `session-receipt.json` 와 `receipts/SLICE-*.json` 양쪽 (claude-deep-suite Phase 2 priority #3; cf. `claude-deep-suite/docs/envelope-migration.md` §1). 두 artifact 모두 `{ schema_version: "1.0", envelope: { producer, producer_version, artifact_kind, run_id, generated_at, schema, git, provenance, [parent_run_id], [session_id] }, payload: { ... legacy receipt body ... } }` 형식으로 emit.
-- **`hooks/scripts/envelope.js`** — 공유 zero-dep envelope 라이브러리: MSB-first ULID 생성기 (Crockford Base32, 26-char), `detectGit()` head/branch/dirty 감지 + safe `0000000` fallback, `loadProducerVersion()` 모듈 path 기준 resolve (handoff §4 literal-cwd-resolve), `wrapEnvelope()` builder, `unwrapEnvelope()` reader 와 full identity guard (producer / artifact_kind / schema.name) + corrupt-payload defense.
-- **`hooks/scripts/wrap-receipt-envelope.js`** — markdown agent prompt (`agents/implement-slice-worker.md`, `commands/deep-finish.md`) 에서 호출하는 CLI 헬퍼. `--source-evolve-insights`, `--source-harnessability`, `--source-artifacts-glob` 으로 cross-plugin / intra-plugin chain 추출 (envelope 인 evolve-insights 의 `run_id` 를 `parent_run_id` 로 자동 채우고, slice receipt 와 harnessability `run_id` 를 `provenance.source_artifacts[]` 에 누적).
-- **`scripts/validate-envelope-emit.js`** — suite envelope schema 를 미러링한 zero-dep self-test validator. root / envelope / git / schema / provenance / source_artifacts 모든 nested object 에 `additionalProperties: false`, ULID Crockford alphabet 강제 (I/L/O/U 거부), SemVer 2.0.0 strict, RFC 3339, kebab-case, `schema.name === artifact_kind` identity, payload non-null/non-array object 에 `schema_version: "1.0"` 보존.
-- **`tests/envelope-emit.test.js`** + **`tests/envelope-chain.test.js`** + **fixtures (`sample-session-receipt.json`, `sample-slice-receipt.json`)** — ULID/SemVer/RFC3339 패턴, identity guard, corrupt-payload defense, `parent_run_id` cross-plugin chain (session-receipt.envelope.parent_run_id === consumed evolve-insights.envelope.run_id), intra-plugin chain (session-receipt 의 `provenance.source_artifacts[]` 가 모든 SLICE-*.json `run_id` 를 aggregate) 50+ assertion.
+
+- `tests/phase-guard-golden.test.js` — `phase-guard.sh`용 fixture 기반 golden test(8 시나리오: idle allow, implement slice scope in/out, 4개 non-implement denylist family, override pass-through).
+- 공유 `scrubHostEnv()` / `runPhaseGuard()` / `parseGuardOutput()` 테스트 헬퍼; family별 `CLAUDE_ALLOW_<FAMILY>` override 루프와 override fall-through 합성 assertion.
 
 ### Changed
-- **`agents/implement-slice-worker.md`** — slice receipt 생성 프로토콜이 legacy body 를 `$WORK_DIR/receipts/.SLICE-NNN.payload.json` 에 먼저 쓰고, `node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js --artifact-kind slice-receipt ...` 로 final envelope-wrapped `SLICE-NNN.json` 을 emit. Payload 의 `schema_version` 은 literal string `"1.0"` 이어야 한다.
-- **`commands/deep-finish.md`** — Section 2 가 session-receipt body 를 `$WORK_DIR/.session-receipt.payload.json` 에 쓴다. Section 2-1 (quality fields) 과 Section 7 (outcome/outcome_ref) 가 같은 temp file 을 갱신. 새 Section 7-Z 가 outcome 결정 후 정확히 한 번 envelope wrap 을 수행하므로 `envelope.run_id` 가 세션당 한 번만 생성된다. Cross-plugin chain 은 `.deep-evolve/<session>/evolve-insights.json` 과 `.deep-dashboard/harnessability-report.json` 에서 auto-detect.
-- **`hooks/scripts/verify-delegated-receipt-runner.js`** — slice receipt loader 가 `unwrapEnvelope()` 를 호출하므로 verify-receipt-core 는 envelope 여부와 관계없이 legacy body 를 본다. Identity mismatch 는 descriptive error 로 throw.
-- **`hooks/scripts/validate-receipt.sh`** — `json_field` 헬퍼가 M3 envelope 감지 후 `.payload` 에서 읽고, full identity guard 를 unwrap 전에 적용. Legacy receipt 는 top-level pass-through.
-- **`hooks/scripts/session-end.sh`** — slice receipt aggregation loop 가 foreign envelope (producer/artifact_kind/schema.name mismatch) 를 `slices_total` 카운트 전에 skip.
-- **`hooks/scripts/receipt-migration.js`** — envelope-wrapped receipt 를 already-migrated 로 인식 (no-op). Legacy v0 → v1.0 lift 는 top-level legacy receipt 에만 적용.
-- **`skills/deep-integrate/gather-signals.sh`** — `read_json_safe` 가 optional `expected_producer` / `expected_artifact_kind` 를 받아 matching envelope 는 `.payload` 를 반환, foreign envelope 는 `null` (handoff §4 round-4 defense-in-depth). deep-work session-receipt, deep-docs last-scan, deep-dashboard harnessability-report, deep-evolve evolve-insights, deep-wiki index 모두 적용. deep-review/deep-evolve/deep-wiki Phase 2 priority #4–#6 forward-compat.
-- **`skills/deep-research/SKILL.md`** — Cross-Plugin Context (Harnessability + Evolve Insights) 가 envelope 감지 + identity guard 절차를 명시. legacy fallback 으로 forward-compat 유지.
-- **`commands/deep-receipt.md`** / **`commands/deep-status.md`** / **`commands/deep-report.md`** — receipt read 지침에 envelope-aware unwrap 규칙 (identity guard + payload extraction; legacy pass-through 유지) 명시.
 
-### Notes
-- Suite-side 갱신 (claude-deep-suite `marketplace.json` SHA bump, `payload-registry/deep-work/{session,slice}-receipt/v1.0.schema.json` placeholder → authoritative shape, adoption ledger 갱신) 은 본 PR 범위 밖. claude-deep-suite handoff §1 에 따라 Phase 2 plugin PR 은 plugin repo 만 수정하고, suite-side 작업은 Phase 3 에서 일괄 처리.
+- `phase-guard-core.js`의 gate 순서, override-env 의미론(denylist만 억제, file-write는 여전히 적용), 의도적 scope 생략에 대한 문서 확장.
+
+## [6.6.2] — 2026-05-12
+
+### Added
+
+- `phase-guard-core.js`에 non-implement dangerous-command denylist 5개 family(rm-rf, npm-publish, kubectl-destructive, sql-destructive, curl-pipe-shell) — 각 family에 `CLAUDE_ALLOW_<FAMILY>=1` override; research/plan/test/brainstorm Bash 진입에 게이트 적용.
+
+### Fixed
+
+- SQL `TRUNCATE` 단일 문자 매칭 버그와 kubectl `--all-namespaces` false-positive.
+
+## [6.6.1] — 2026-05-12
+
+### Added
+
+- 크로스 플랫폼 CI 매트릭스(`ubuntu-latest` + `macos-latest`) — `npm test`와 bash 회귀 스크립트 실행.
+
+### Fixed
+
+- 회귀 스크립트의 크로스 플랫폼 `stat` fallback(`stat -c '%a' || stat -f '%A'`).
+
+## [6.6.0] — 2026-05-12
+
+### Added
+
+- `hooks/scripts/emit-handoff.js` — handoff payload를 M3 envelope으로 감싸 `.deep-work/handoffs/`에 기록하고 session receipt에 `parent_run_id`를 자동 체인.
+- `hooks/scripts/emit-compaction-state.js` — compaction-state payload를 M3 envelope으로 감쌈(trigger/strategy enum 검증); dashboard compaction 메트릭에 사용.
+- `--handoff-to=<plugin>` 제공 시 `deep-finish`가 cross-plugin handoff emit.
+- Stop hook과 phase-transition hook이 세션 종료 시 및 각 phase 경계에서 best-effort `compaction-state.json` emit.
+
+### Changed
+
+- `ALLOWED_ARTIFACT_KINDS`를 envelope 라이브러리와 CI validator 전반에서 `handoff`와 `compaction-state`로 확장.
+
+## [6.5.0] — 2026-05-07
+
+### Added
+
+- M3 cross-plugin envelope 채택: `session-receipt.json`과 `receipts/SLICE-*.json`이 `{ schema_version, envelope, payload }`로 emit되며, session receipt의 `parent_run_id`가 consumed `evolve-insights.json`으로 체인되고 `provenance.source_artifacts[]`가 slice run ID를 aggregate.
+- `hooks/scripts/envelope.js` — zero-dep envelope 라이브러리(ULID 생성기, git 감지, identity guard와 corrupt-payload defense를 갖춘 `wrapEnvelope`/`unwrapEnvelope`).
+- `hooks/scripts/wrap-receipt-envelope.js` — cross-plugin/intra-plugin chain 추출 플래그를 갖춘 payload wrap CLI 헬퍼.
+- `scripts/validate-envelope-emit.js` — suite envelope 스키마를 미러링한 zero-dep self-test validator.
+
+### Changed
+
+- 내부 reader와 cross-plugin consumer가 envelope을 감지하고 identity guard를 적용한 뒤 `.payload`로 unwrap; legacy non-envelope receipt는 pass-through(forward-compatible).
 
 ## [6.4.2] — 2026-04-29
 
 ### Added
-- **Profile schema v3** — `interactive_each_session` 배열로 매 세션 묻는 항목을 사용자별 customize. `defaults.*`로 자동 적용 값 분리.
-- **session-recommender sub-agent** — sonnet 기본, task description + workspace meta + capability를 입력받아 fenced JSON 추천. allowlist `^(haiku|sonnet|opus)$`.
-- **`--no-ask` flag** — ask + 추천 모두 skip (가장 빠른 경로). `--profile=X --no-ask`로 v6.4.x "이대로 진행" 등가물.
-- **`--recommender=MODEL` / `--no-recommender` flags** — 추천 모델 override / skip.
-- **State file `recommendations` field** — 옵셔널, phase-guard enforcement에 영향 없음.
-- **State file 권한 600** — multi-user 환경 안내 README 추가.
-- **`scripts/load-v3-profile.js`** — v3 schema profile loader (orchestrator §1-3-3).
-- **`scripts/parse-deep-work-flags.js`** — CLI flag parser with allowlists (PROFILE_NAME / RECOMMENDER / EXEC / TDD / RESUME_FROM).
-- **`scripts/detect-capability.js`** + **`scripts/format-ask-options.js`** — environment capability detection + AskUserQuestion option formatter.
-- **`scripts/migrate-profile-v2-to-v3.js`** — profile v2→v3 마이그레이션 헬퍼: atomic write + `flock` + idempotent + `.v2-backup` + rollback 절차.
-- **`scripts/recommender-input.js`** + **`scripts/recommender-parser.js`** — session-recommender 입력 정제 및 출력 파서 (5-key 검증).
-- **`agents/session-recommender.md`** — 세션 초기화 추천 sub-agent (기본 sonnet).
+
+- Profile schema v3 + `interactive_each_session` — 매 세션 묻는 항목을 사용자별로 제어, `defaults.*`는 자동 적용.
+- `session-recommender` sub-agent(기본 sonnet)가 task와 workspace에서 최적 `team_mode` / `start_phase` / `tdd_mode` / `git` / `model_routing`을 추론.
+- 새 플래그: `--no-ask`(ask + recommender 모두 skip, 가장 빠른 경로), `--recommender=MODEL`, `--no-recommender`.
+- 멀티 유저 환경용 state-file 권한 가이드(600).
 
 ### Changed
-- **`--profile=X` 의미 유지** — v6.4.x와 동일하게 ask 단계 진행 (silent regression 방지). 기존 빠른 경로 사용자는 `--no-ask` 추가 필요.
-- **Profile v2 → v3 자동 마이그레이션** — atomic write + `flock` + idempotent + `.v2-backup` 백업 + rollback 절차 README.
-- **Orchestrator §1-3 통합** — 단일 confirm 폐기 → 항목별 ask N번 + LLM 추천. ask/추천은 in-memory only, §1-9 state 생성 시점에 atomic 직렬화.
-- **Assumption auto-adjust → recommender 순서** — auto-adjust 결과가 recommender 입력 `current_defaults`에 반영.
+
+- `--profile=X`가 이제 ask 단계를 거침(이전 빠른 경로는 `--no-ask` 추가).
+- Profile v2 → v3 자동 마이그레이션: atomic write + flock + idempotent + `.v2-backup` + rollback.
 
 ### Fixed
-- **플래그 파서 shell injection**: `parse-deep-work-flags`가 quoted 단일 문자열 `$ARGUMENTS`를 수락 — shell 메타문자가 allowlist 검사 전에 평가되지 않음 (orchestrator §1-3-1 호출 패턴).
-- **v6.4.1 `git_branch` 프로필 호환성**: `migrate-profile-v2-to-v3`가 `git_branch: <bool>` (v6.4.1 스키마)을 unsupported schema로 거부하는 대신 `defaults.git.use_branch`로 변환.
-- **capability 감지 오탐**: orchestrator §1-4-2가 `IS_GIT` 환경 변수 대신 `git rev-parse --is-inside-work-tree` + `git worktree list`를 사용 — 일반 git 저장소에서 비-git으로 오탐되던 문제 수정.
-- **`--profile=X`가 로더에 전달되지 않던 문제**: `--profile=X`가 이제 `DEEP_WORK_INITIAL_PRESET` 환경 변수를 통해 `load-v3-profile.js`로 전달됨 (migrate-profile 호출과 동등).
-- **preset 레벨 설정이 묵시적으로 누락**: `loadV3Profile`이 이제 `project_type`, `cross_model_preference`, `auto_update`를 반환 (기존에는 누락되어 zero-base / cross-model / auto-update 설정이 조용히 손실됨).
+
+- 플래그 파서의 shell injection(quoted single-string `$ARGUMENTS`가 allowlist 검사 전에 평가되지 않음).
+- v6.4.1 `git_branch:` 프로필을 거부하지 않고 변환.
+- 정상 git repo의 capability 감지 false negative(`git rev-parse`/`git worktree list` 사용).
+- `--profile=X`가 profile loader로 전달됨; preset 수준 설정(`project_type`, `cross_model_preference`, `auto_update`)이 더 이상 silently 누락되지 않음.
 
 ### Removed
-- **알림 시스템 전면 제거** — `hooks/scripts/notify.sh` (195 lines), `hooks/scripts/notify-parse.test.js` (125 lines), `skills/shared/references/notification-guide.md` (59 lines) 삭제. Phase skill 5개 + `multi-session.test.js` notify.sh 가드 정리. **Note**: `assumption-engine.{js,test.js}`의 `notification` 변수는 assumption auto-adjust 결과 메시지(자체 어휘)이며 외부 알림과 무관한 동음이의어 — 보존됨.
 
-### Breaking Changes (Patch bump이지만 명시 필수)
+- 알림 시스템 완전 제거 — `notify.sh`, 그 테스트, 알림 가이드 삭제 및 phase skill에서 notify 가드 정리.
 
-- **알림 webhook 사용자**: notify.sh + slack/discord/telegram/webhook 통합이 본 릴리스로 끊김. 사용자 결정에 따라 patch bump으로 진행하지만, webhook 외부 통합이 활성인 경우는 본 릴리스 직전 manual fork/backport 필요.
-- **자동 스크립트로 `--profile=X`만 사용한 사용자**: v6.4.2부터 `--profile=X`는 ask 단계를 진행함 (silent regression 회피 목적). 기존 동작을 유지하려면 `--profile=X --no-ask` 추가.
-- **Profile schema v2 → v3 자동 마이그레이션**: 보존되는 정보 손실은 없으나 `notifications.url` 등은 회수 불가능. `.v2-backup`은 보존됨 (rollback 가능).
+### Breaking
 
-### Migration
+- Slack/Discord/Telegram/webhook 통합이 severed됨; 활성 webhook 사용자는 업그레이드 전 v6.4.1을 fork해야 함.
+- bare `--profile=X`에 의존하는 자동화 스크립트는 이전 동작 유지를 위해 `--no-ask`를 추가해야 함.
+- Profile v2 → v3 자동 마이그레이션은 `notifications.url` 같은 복구 불가 필드를 잃음(rollback용 `.v2-backup` 보존).
 
-- v6.4.x → v6.4.2 첫 호출 시 자동 마이그레이션 + 1회 안내. 알림 webhook 외부 통합이 있으면 본 릴리스로 끊김.
-- Rollback: `mv .claude/deep-work-profile.yaml.v2-backup .claude/deep-work-profile.yaml` (project-local).
+## [6.4.1] — 2026-04-26
 
-### Spec & Plan
+### Changed
 
-- Design: `docs/superpowers/specs/2026-04-29-deep-work-flexible-init-design.md`
-- Plan: `docs/superpowers/plans/2026-04-29-deep-work-flexible-init.md`
-
-## [6.4.1] - 2026-04-26
-
-### 변경
-- **Harness Engineering hardening**: SessionStart sensor detection이 느린 `npx --no-install` probe를 기본으로 쓰지 않고, 로컬 `node_modules/.bin` 및 빠른 PATH lookup을 사용하여 tool 미설치 환경에서도 hook timeout 안에 안정적으로 종료됩니다.
-- **Phase 1 Health Engine 연결**: `deep-research`에 부모 세션 소유 topology 감지, fitness 제안, health report, baseline, unresolved required issue 기록 흐름을 명시했습니다. `health-check` CLI는 기본적으로 `.deep-review/fitness.json`을 자동 로드하고 `--fitness` / `--no-fitness`를 지원합니다.
-- **Health report schema 정렬**: `/deep-status`와 `/deep-receipt`가 실제 producer 경로인 `health_report.drift.*`, `health_report.fitness.*`를 읽도록 정리했습니다.
-
-### Fixed
-- **`multi-session.test.js:507` lint guard false-positive**. 제외 regex 가 `multi-session.test.js` 자기 자신만 면제하여 `phase5-guard.test.js` 의 정당한 테스트 픽스처 8건(legacy-path 코드 경로 검증을 위한 의도된 `deep-work.local.md` 참조)이 "active code에 하드코딩된 레거시 경로"로 오탐. Regex 를 `multi-session\.test\.js` → `\.test\.js` 로 확장하여 모든 테스트 파일을 제외 — 테스트 파일은 legacy behavior 검증을 위해 해당 경로가 정당하게 필요하므로. `node --test hooks/scripts/*.test.js` 결과 이제 428/428 pass (이전 427/428, v6.3.1 Excluded 섹션에 known failure로 기재됐던 건).
-- **Receipt sensor validation 호환성**: Parent receipt 검증이 빈/임의 `sensor_results`, `fail`, `timeout`, 근거 없는 `not_applicable`은 거부하면서도, 문서화된 `sensor_results.ecosystem` 메타데이터와 legacy delegated `skipped` 상태는 허용합니다.
-- **Health Check CLI root parsing**: `--fitness <file>` 및 `--fitness=<file>` 옵션 값을 positional project root로 오인하지 않도록 수정했습니다.
-
-## [6.4.0] - 2026-04-23
-
-### 변경 — Breaking
-- **`model_routing.{research, implement, test}="main"` 제거**. 기존 state 파일은 load 시 `"sonnet"`으로 자동 마이그레이션. `model_routing.plan="main"`은 유지 (Plan phase는 대화형 메인 세션 실행 유지).
-- **`team_mode` 의미론 단일화** — 병렬도만 의미 (solo=1, team=N). 메인 세션 inline 실행은 숨겨진 default가 아닌 명시적 escape hatch.
-
-### 추가
-- `agents/` 아래 3개 Claude Code subagent:
-  - `research-codebase-worker` — 기존 코드베이스 리서치 (read-only tool allowlist)
-  - `research-zerobase-worker` — 신규 프로젝트 리서치, web 접근 (WebSearch/WebFetch/Context7 MCP)
-  - `implement-slice-worker` — TDD 강제 slice cluster 구현
-- `hooks/scripts/verify-delegated-receipt.sh` + `verify-receipt-core.js` — 8개 항목 post-hoc receipt 검증 (scope, baseline chain, TDD hard-fail, verification output advisory)
-- §5.6a Rollback Protocol — verify-receipt 실패 시 `git reset --hard <delegation_snapshot>`
-- §5.5a inline escape hatches — 자동 라우팅 (spike, trivial inline plan) + `--exec=<inline|delegate>` CLI override + `active_cluster_takeover` state 필드 기반 debug takeover
-- `scripts/validate-agents.sh` — agents/*.md 정적 검증
-
-### 수정
-- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` 미설정 시 `team_mode=team` → solo 로의 silent fallback (원 버그)
-- 단일 `git_before` baseline을 multi-slice receipt에서 재사용하던 문제 → per-slice `git_before_slice`/`git_after_slice` (F1)
-- Path-filtered diff가 out-of-scope 편집을 가리던 문제 → unfiltered union-scope 검사 (F2)
-- Zero-base subagent가 Write/Edit/Bash + web 접근을 상속하던 security 문제 → 명시적 read-only tool allowlist (F3 security)
-
-### 마이그레이션
-`docs/migrations/v6.4.0.md` 참조.
-
-## v6.3.1 — 2026-04-21
+- SessionStart 센서 감지가 느린 `npx --no-install` probe를 피하고 로컬 `node_modules/.bin` + PATH 조회를 사용하여 missing-tool 환경이 hook 타임아웃 내에 완료.
+- Phase 1 Health Engine wiring을 `deep-research`에 문서화; `health-check` CLI가 `.deep-review/fitness.json`을 자동 로드(`--fitness` / `--no-fitness` override).
+- `/deep-status`와 `/deep-receipt`가 `health_report.drift.*` / `health_report.fitness.*` 실제 producer 경로를 읽음.
 
 ### Fixed
 
-- **Phase skill body echo 버그** — `Skill("deep-*")` 호출 시 SKILL.md 본문의 markdown 템플릿이 사용자에게 노출된 뒤 phase 작업(예: brainstorm의 명확화 질문)이 수행되지 않고 대화가 종료되는 현상. 브레인스톰의 명확화 질문 누락 및 리서치/플랜의 분석 단계 누락을 모두 해결.
-- **Exit Gate pause/resume 회귀** (F1) — phase skill이 완료 시 current_phase를 다음 phase로 미리 전환하던 기존 동작이 Exit Gate "일시정지" 선택 시 `/deep-resume` 재개 경로에서 Exit Gate를 건너뛰고 다음 phase로 자동 진입하는 문제를 야기. current_phase 변경 주체를 Orchestrator로 일원화하여 해결.
+- 테스트 fixture의 lint guard false-positive(예외를 한 파일에서 모든 `*.test.js`로 확장).
+- Parent receipt 검증이 empty/arbitrary 센서 결과, `fail`, `timeout`, 미지원 `not_applicable`을 거부하되 문서화된 메타데이터는 수용.
+- Health Check CLI가 `--fitness <file>`을 positional project root로 오인하지 않음.
+
+## [6.4.0] — 2026-04-23
+
+### Changed
+
+- **Breaking**: `model_routing.{research,implement,test}="main"` 제거(로드 시 `"sonnet"`로 자동 마이그레이션); `model_routing.plan="main"`은 보존.
+- **Breaking**: `team_mode` 의미론을 병렬도만으로 통일(solo=1, team=N); 메인 세션 inline 실행은 명시적 escape hatch.
 
 ### Added
 
-- **4계층 echo 방어** (5개 phase skill 공통):
-  1. `> [!IMPORTANT]` admonition 블록 — skill body echo 금지 + Pre-checks 예외 허용
-  2. 템플릿 외부 분리 — `skills/shared/templates/{brainstorm,research}-template.md` + `plan-template-{existing,zerobase}.md` (2-mode 분기)
-  3. First Action 서브섹션 — phase 진입 시 즉시 수행할 가시 첫 동작 명시
-  4. Section 3 실행 순서 안전장치
-- **Phase Exit Gate × 5** — 각 phase 완료 시 AskUserQuestion으로 "진행 / 재실행 / 일시정지" 선택. "진행" 선택 시 즉시 다음 skill 호출.
-- **완료-Marker 감지 분기** — 모든 5개 phase skill Section 1에서 `*_completed_at` 필드 감지 시 Orchestrator로 제어 반환 (Exit Gate 재표시).
+- `agents/` 아래 서브에이전트 3개: `research-codebase-worker`(read-only), `research-zerobase-worker`(read-only + 웹 접근), `implement-slice-worker`(TDD 강제).
+- `verify-delegated-receipt.sh` + `verify-receipt-core.js` — 8항목 post-hoc receipt 검증.
+- verify-receipt 실패 시 rollback 프로토콜(`git reset --hard <snapshot>`); inline escape hatch(auto-routing, `--exec=<inline|delegate>`, debug takeover).
+- `scripts/validate-agents.sh` — `agents/*.md` 정적 sanity check.
 
-### Changed
+### Fixed
 
-- **current_phase 변경 주체 일원화**: Brainstorm/Implement phase skill이 Section 3에서 직접 변경하던 동작 제거. 모든 phase의 current_phase 변경을 Orchestrator Exit Gate "진행" 분기로 이관.
-- Orchestrator §1-11 문구: "자동 흐름을 시작합니다..." → "각 phase 완료 시 진행 확인을 받으며 순차 실행합니다..."
-- `review-approval-workflow.md`: Exit Gate와의 관계 명시.
+- experimental-teams 환경변수 누락 시 `team_mode=team`이 solo로 silently fallback.
+- 멀티 slice receipt에서 단일 `git_before` baseline 재사용 → per-slice baseline.
+- Path-filtered diff가 out-of-scope 편집을 숨김 → unfiltered union-scope check.
+- Zero-base 서브에이전트가 Write/Edit/Bash + 웹 접근을 상속 → 명시적 read-only tool allowlist.
 
-### Excluded
+## [6.3.1] — 2026-04-21
 
-- Phase 5 Integrate는 이미 interactive loop이므로 Exit Gate 적용 대상에서 제외.
-- Hook 스크립트 로직 변경 없음. `node --test hooks/scripts/*.test.js` 결과: 397/398 pass. 1 pre-existing failure (`multi-session.test.js:507` - phase5-guard.test.js fixture와의 lint 충돌)는 main 브랜치에도 존재하며 v6.3.1과 무관.
+### Fixed
 
-### Added (v6.3.1 NW5 integrity check + NO3 data preservation)
+- Phase skill body echo 버그 — `Skill("deep-*")`가 SKILL.md 템플릿을 노출하고 phase 작업(brainstorm 명확화 질문, research/plan 분석)을 건너뛰던 현상 해결.
+- Exit Gate pause/resume 회귀 — `current_phase` 변경을 orchestrator로 일원화하여 "일시정지" 선택 시 `/deep-resume`에서 Exit Gate를 재표시(다음 phase 자동 진입 방지).
 
-- **Approval integrity hash** — Research/Plan approval 시점의 `sha256(research.md/plan.md)`를 `research_approved_hash` / `plan_approved_hash`로 state에 기록. `/deep-resume` Resume fast-path가 현재 파일 hash와 비교하여 out-of-band 편집(일시정지 중 외부 편집기 수정 등)을 자동 감지 — 불일치 시 **data preservation + in-place review** 경로 발동 (NO3): 편집된 문서를 `$WORK_DIR/{research,plan}.v{N}-edit.md`로 백업 + approval state invalidate + Skill 재호출 스킵하고 Review+Approval workflow 직접 진입. 편집 내용이 보존된 채 재검토되어 사용자 편집이 유실되지 않음. 필드 부재 시(pre-v6.3.1 세션 또는 재실행 후 재승인 전)는 Skill 재실행이 safer default.
-- **Backup filename collision 방지 (NP3)**: orchestrator가 생성하는 hash mismatch backup은 `-edit` 접미사를 사용하여 deep-plan/deep-research skill의 자체 backup(`v{N}.md`)과 파일명 충돌 방지.
+### Added
 
-### Known Limitations (v6.3.2 예정)
+- 5개 phase skill 공통 4계층 echo 방어(admonition 블록, 외부 템플릿, 명시적 First Action, 실행 순서 안전장치).
+- 각 5개 phase의 Phase Exit Gate(진행 / 재실행 / 일시정지) — AskUserQuestion.
+- 완료-marker 감지: `*_completed_at` 필드 존재 시 phase skill이 orchestrator로 제어 반환.
+- Approval integrity hash(`research_approved_hash` / `plan_approved_hash`)로 `/deep-resume`가 out-of-band 편집을 감지하고 편집 문서를 `{research,plan}.v{N}-edit.md`로 백업 후 재검토.
+- Backup 파일명 충돌 방지(`-edit` 접미사 vs. skill 자체 `v{N}.md`).
 
-- **Hash mismatch recovery의 plan-specific validation 부재**: NO3 data preservation 경로는 generic Review+Approval workflow를 실행하나, `deep-plan` 고유 validation(Completeness Policy, Contract Negotiation, Phase Review Gate)는 스킵됨. Out-of-band 편집이 `TBD` 같은 placeholder를 추가한 뒤 승인되는 경로는 현재 가드 불충분. Workaround: Exit Gate option 2 "재실행/수정"을 사용하면 skill 재실행으로 모든 validation 적용됨. v6.3.2에서 in-place review에도 phase-specific validation hook 추가 예정.
-- **Backup write-failure fail-safe 부재**: NO3 backup 복사 실패 시(권한/디스크 full 등) state 변경을 중단하는 가드 없음. 희귀 edge case이며 data는 여전히 원본 research.md/plan.md에 남아있음. v6.3.2에서 backup 실패 시 state 변경 중단 + 사용자 알림 가드 추가 예정.
+### Known limitations
+
+- Hash-mismatch 복구가 plan-specific validation(Completeness Policy, Contract Negotiation, Phase Review Gate) 없이 generic review/approval flow를 실행; 전체 validation은 Exit Gate "재실행"으로 적용. Backup write 실패가 아직 state 변경을 중단하지 않음.
 
 ## [6.3.0] — 2026-04-18
 
-### 추가됨
-- **Phase 5 "Integrate"** — Phase 4(Test) 완료 후 호출되는 skippable 단계. `deep-review`, `deep-docs`, `deep-wiki`, `deep-dashboard`, `deep-evolve` 플러그인 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면 사용자가 선택·실행한다. 대화형 루프 (최대 5라운드). 설계 문서: `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md`.
-- `/deep-integrate` 커맨드: Phase 5 수동 재진입용.
-- `--skip-integrate` 플래그: Phase 5 건너뛰고 `/deep-finish`로 직행.
-- `skills/deep-integrate/` 신규 스킬 + 헬퍼 스크립트(`detect-plugins.sh`, `gather-signals.sh`, `phase5-finalize.sh`, `phase5-record-error.sh`), JSON 스키마, L6 snapshot fixture.
-- `phase5_work_dir_snapshot` state 필드 — Phase 5 진입 시점의 work_dir을 불변 snapshot으로 기록. phase-guard가 이 값을 enforcement 기준으로 사용하므로 런타임에 state file의 `work_dir`이 변조돼도 boundary가 유지된다.
-- `phase5-finalize.sh` helper — state file의 `phase5_completed_at`만 atomically 기록. state file 경로가 현재 세션과 일치하는지 검증하며, Phase 5 중 state 수정은 이 helper 경유만 허용된다.
-- `phase5-record-error.sh` helper — `/deep-finish --skip-integrate` 경로에서 `integrate-loop.json`의 `terminated_by`를 `"error"`로 기록. Stop-hook의 `interrupted` 마킹과 함께 belt-and-suspenders.
-- Stop-hook: 세션 중단 시 `integrate-loop.json`에 `terminated_by: "interrupted"` 기록.
+### Added
 
-### 변경됨
-- `deep-work-orchestrator`가 Phase 4(Test) 완료 후 Phase 5로 dispatch한다. Phase 5 에러 시 `/deep-finish`에 `--skip-integrate`를 전달하여 state machine이 정상 종료되도록 한다.
-- `/deep-finish`: `integrate-loop.json` 부재 시 `/deep-integrate` 힌트. `--skip-integrate`는 Phase 5 중단 prompt를 우회하고 `phase5-record-error.sh`를 defensively 호출한다.
-- **`phase-guard.sh` Phase 5 mode 도입** (초기 계획 "phase-guard 변경 없음"은 보안 검토 결과 뒤집혔음). `current_phase=idle + phase5_entered_at + !phase5_completed_at` 상태에서 다음을 강제:
-  - `Write/Edit/MultiEdit/NotebookEdit`: 대상 경로가 snapshot `$WORK_DIR` 하위여야 함. state file 직접 수정은 차단 — `phase5-finalize.sh`만 허용.
-  - `Bash`: **allowlist-only (default-deny)**. 첫 command token(env 변수 prefix 이후)이 Phase 5 read-mostly allowlist에 있어야 통과: 파일시스템 read(`cat`/`head`/`tail`/`wc`/`ls`/`pwd`/`file`/`stat`/`realpath`/`readlink`/`dirname`/`basename`), 검색/필터(`grep`/`sort`/`uniq`/`diff`/`cut`/`paste`/`column`/`tr`/`find`), JSON/YAML read(`jq`/`yq` `-i` 제외), shell builtins(`echo`/`printf`/`date`/`env`/`true`/`false`/`test`/`which`/`type`/`command`/`xxd`/checksums), `git` read-only subcommand(`status`/`diff`/`log`/`show`/`blame`/`grep`/`rev-parse`/`rev-list`/`merge-base`/`symbolic-ref`/`ls-files`/`ls-tree`/`branch`/`tag`/`config`/`describe`/`cat-file`/`fsck`/`shortlog`/`reflog`/`name-rev`/`for-each-ref`/`count-objects`/`verify-pack`/`check-ignore`/`check-attr`/`var`/`help`/`version`), 인터프리터(`bash`/`sh`/`python`/`perl`/`ruby`/`node`/`awk`/`sed`/`php`/`osascript`/`tsx`/`deno`/`bun`) + script canonical check, 파일시스템 ops(`mv`/`cp`/`mkdir`/`rm`/`rmdir`/`chmod`/`chown`/`truncate`/`touch`/`ln`/`install`) + target-in-`$WORK_DIR` 검증. 알 수 없는 command는 즉시 block. 추가 제약: 파괴적 변형(`/bin/rm`, `\rm`, `command/exec/builtin rm`) 정규화; `git` global flags(`-C <path>`, `--git-dir [=]<path>`, `--work-tree [=]<path>`, `-c <k=v>`, `-p`/`--no-pager`/`--bare`/...) fixed-point iteration으로 제거; `git` mutating 서브커맨드(위 목록) 정규화 후 block; `find -delete/-exec/-ok/...` block; `jq/sed/perl/ruby -i` in-place flag block; 인터프리터 `-c/-e` flag block; compound 연산자(`;`, `&&`, `||`, `|`, `&`) reject; helper 경로 shell metacharacter(`$`, `` ` ``, `(`, `)`, `<`, `>`, newline, CR) reject. `mv`/`cp`는 SRC와 DEST 양쪽 검증. **인터프리터 + script 호출**은 script canonical `realpath`가 `${PROJECT_ROOT}/skills/deep-integrate/<helper>.sh` 또는 `${HOME}/.claude/plugins/cache/claude-deep-suite/deep-work/*/skills/deep-integrate/<helper>.sh`와 정확히 일치할 때만 허용. 읽기 도구(`Read`, `Glob`, `Grep`, `Agent`, `AskUserQuestion`, `Skill`)는 통과.
-- `/deep-integrate` tool allowlist 축소: `Skill, Read, Bash, Glob, Grep, Agent, AskUserQuestion` (`Write, Edit` 제거).
+- **Phase 5 "Integrate"** — Test 이후의 skippable phase로, deep-suite 플러그인 아티팩트를 읽어 AI가 interactive loop(최대 5 라운드)에서 top-3 다음 단계를 추천.
+- 수동 재진입용 `/deep-integrate` 커맨드; `/deep-finish`로 바로 가는 `--skip-integrate` 플래그.
+- 헬퍼 스크립트, JSON 스키마, fixture를 갖춘 `skills/deep-integrate/`.
+- `phase5_work_dir_snapshot` state 필드 — Phase 5 진입 시 기록되는 불변 경계로, 런타임에서 `work_dir`을 변조해도 write 경계를 넓힐 수 없음.
+- `phase5-finalize.sh`(Phase 5 중 state를 쓰는 유일한 인가 경로)와 `phase5-record-error.sh`(`terminated_by: "error"` 기록); Stop hook이 `terminated_by: "interrupted"` 기록.
 
-### 업그레이드 안내
-- v6.2.x에서 Phase 5 진입한 세션은 `phase5_work_dir_snapshot`이 없을 수 있다. phase-guard는 backward-compat으로 `work_dir` fallback을 사용하지만, 이 경로는 state-tampering 공격에 더 노출된다. v6.3.0 신규 Phase 5 진입은 snapshot을 자동 기록한다.
-- `phase5-finalize.sh`는 state file basename이 `deep-work.<sid>.md` 패턴이고 `.claude/` 디렉토리에 있는지 검증한다. 기존에 redirect로 state를 수정하던 로직은 이 helper 호출로 전환해야 한다.
-- **의존성**: `phase5-record-error.sh`, `gather-signals.sh`, Stop-hook `terminated_by` marker는 `jq`가 `PATH`에 있어야 한다 (없으면 helper가 명시적 에러로 종료). `phase5-finalize.sh`는 `awk`만 사용하여 `jq` 의존성 없음.
+### Changed
 
-### 알려진 제약
-- **인터프리터 커버리지**: `Rscript`/`julia`/`lua`/`groovy`/`tclsh`는 allowlist 미포함. 실제 Phase 5 workflow에 이들이 필요하면 명시적으로 추가해야 한다. v6.3.1에서 검토.
-- **`awk -f script.awk`**: `-f` 플래그 형태는 interpreter-with-script canonical check에서 커버되지 않는다(`-e/-c`는 `-c/-e` 규칙으로 차단). Phase 5 Bash allowlist가 알 수 없는 형태를 거부하고 legitimate workflow에서 `awk -f`를 쓰지 않아 실무 위험은 낮음.
-- **레거시 세션 업그레이드**: v6.2.x에서 `phase5_work_dir_snapshot` 없이 Phase 5 진입한 세션은 mutable `work_dir` fallback. v6.3.0에서 재진입 시 snapshot이 자동 기록됨.
-- **`phase5-record-error.sh` / `phase5-finalize.sh` 단위 테스트**: 현재 `phase5-guard.test.js`에서 간접 커버. 전용 단위 테스트 파일은 v6.3.1 예정.
-- **Allowlist 명령 악용**: read-mostly allowlist의 명령은 표준 read-only form에서 허용되며 niche invocation은 이론적으로 악용 가능(예: `find`의 mutating flag 차단됨; `jq -i` 차단; `mv`/`cp`/`mkdir`은 target 검증; 나머지는 safe 가정). `curl`은 allowlist 미포함; 네트워크 접근 helper의 data-exfil 방어 같은 per-command invocation audit은 v6.4.0에서 검토.
-- **Non-Bash 도구(`Agent`/`Skill`)**: Phase 5 guard를 통과. `Agent`로 dispatch된 subagent는 자체 tool set을 가지며 Phase 5 enforcement는 호출 세션의 Bash/Write/Edit에만 적용. v6.3.0에서는 out-of-scope trust boundary로 취급.
+- Orchestrator가 Test와 `/deep-finish` 사이에 Phase 5를 dispatch; 에러 시 `--skip-integrate` 전달.
+- 새 Phase 5 guard 모드: write는 snapshot `$WORK_DIR` 아래로 제한, state 변조는 `phase5-finalize.sh`로 제한, Bash는 allowlist-only(default-deny) — read-mostly 명령과 `$WORK_DIR` 범위 파일 작업만 허용하고 destructive/in-place/compound 형태는 차단.
+- `/deep-integrate` tool allowlist 축소(`Write`, `Edit` 제거).
+
+### Upgrade notes
+
+- snapshot 없이 v6.2.x에서 Phase 5에 진입한 세션은 mutable `work_dir`로 fallback; Phase 5 재진입 시 snapshot 기록. Phase 5 헬퍼는 PATH에 `jq` 필요(`phase5-finalize.sh` 제외).
+
+### Known limitations
+
+- 일부 인터프리터(`Rscript`/`julia`/`lua`/...)와 `awk -f`는 Phase 5 allowlist에 없음; 네트워크 exfil 완화와 per-command invocation audit은 추후 추적. `Agent`/`Skill` tool은 Phase 5 guard를 pass-through.
 
 ## [6.2.4] — 2026-04-17
 
-내부 감사(`BUG_REVIEW_REPORT.md`)로 식별된 hook 레이어 버그 15건 + 문서 드리프트 7건을 수정하는 버그 픽스 릴리스. 실행 전 플랜 독립 리뷰에서 추가로 발견된 critical 5건도 함께 해결.
+내부 audit에서 식별된 hook-layer 버그와 문서 드리프트를 다루는 버그 수정 릴리스.
 
-### 수정됨
+### Fixed
 
-**Hooks — 호환성 및 파싱**
-- `file-tracker.sh`: BSD 전용 `sed -i ''` 구문을 Node.js 인라인 스크립트로 교체. 기존 코드는 Linux의 GNU sed에서 무음 실패하여 marker 파일 수정 후에도 `sensor_cache_valid`가 stale로 남았음. macOS에서도 insert-when-missing 경로가 두 번째 `---` 구분자를 잘못 처리했던 문제도 함께 해결.
-- `update-check.sh`: 플러그인 경로를 `process.argv[1]`로 전달 (기존에는 셸 문자열 보간). 경로에 apostrophe(`/Users/O'Brien/...`)가 포함되면 JS 구문 오류로 업데이트 확인이 조용히 스킵되던 문제 해결.
-- `phase-guard.sh` / `file-tracker.sh` / `phase-transition.sh`: `file_path` 추출을 regex에서 `extract_file_path_from_json` (JSON 파서) 기반으로 교체. escape된 따옴표를 포함한 경로(`a \"b\" c.txt`)가 잘려서 오인 block 및 receipt 손상이 발생하던 문제 해결.
-- `phase-transition.sh`: `SESSION_ID` 추출 시 가장 안쪽의 `deep-work.XXXX` 세그먼트를 취함. Fork worktree 경로(`.deep-work/sessions/deep-work.s-parent/sub/.claude/deep-work.s-child.md`)가 이제 `s-child`로 정확히 해결됨 (기존엔 다중 매치로 cache 파일 경로가 깨짐).
+- `file-tracker.sh`: BSD 전용 `sed -i ''`를 Node inline 스크립트로 교체(이전 코드는 Linux에서 silently 실패).
+- `update-check.sh`: 플러그인 경로를 `process.argv`로 전달하여 apostrophe가 포함된 설치 경로가 update check를 깨지 않음.
+- `phase-guard.sh` / `file-tracker.sh` / `phase-transition.sh`: JSON 파서 기반 `file_path` 추출(escaped quote 경로가 truncate되던 문제 해결).
+- `phase-transition.sh`: `SESSION_ID`용 innermost `deep-work.XXXX` 세그먼트 추출로 fork worktree 경로가 올바르게 해석.
+- Receipt 업데이트를 mkdir 기반 spinlock으로 감싸고 crash-safe pending-changes drain 적용; `sensor-trigger.js`와 `file-tracker.sh`가 state lock 공유.
+- `utils.sh write_registry`: lock 타임아웃 시 fail-closed(다른 프로세스 lock을 force-remove하지 않음) + 에러 로깅.
+- `phase-guard-core.js`: 내부 에러는 `exit(3)`(의도적 block과 구분); `phase-guard.sh`는 빈 `decision`에 fail-close.
+- `phase-guard.sh`: frontmatter에서 `slice_files` / `strict_scope` / `exempt_patterns`를 읽어 slice-scope를 실제로 강제; 모든 block-message heredoc이 interpolated 필드를 JSON-escape.
+- `phase-transition.sh` 캐시: `file-tracker.sh`가 phase 기반 early return 전에 stdin을 atomically 캐시하여 모든 phase 전환이 캐시를 refresh.
+- `notify.sh`: YAML-aware `notifications.enabled` 파서, `osascript`/PowerShell-toast escaping, `pipefail` 제거.
 
-**Hooks — race condition**
-- `file-tracker.sh` receipt 업데이트: read-modify-write를 mkdir 기반 spinlock(40회 × 50ms)으로 감쌈. 타임아웃 시 `<receipt>.pending-changes.jsonl`에 큐잉하고 다음 lock 보유자가 crash-safe 패턴(rename → `.draining.<pid>` → merge → canonical rename → `.draining` unlink)으로 드레인. 드레인 중 크래시가 나도 `.draining.*` 파일이 남아 다음 invocation에서 복구. 5+ 동시 PostToolUse 호출에서 `files_modified` 항목이 유실되거나, lock timeout 경로로 큐잉된 후 아무도 드레인하지 않아 조용히 사라지던 문제 해결.
-- `sensor-trigger.js` + `file-tracker.sh` state YAML 업데이트: 동일한 `<state>.lock`을 공유 — `file-tracker.sh`의 marker file `sensor_cache_valid` flip도 포함(초기 v6.2.4에서 누락됐다가 post-review에서 수정). 기존에는 `current_phase`/`active_slice`/`sensor_pending`/`sensor_cache_valid` 변경이 race로 하나가 씹힘.
-- `utils.sh` `write_registry`: lock 타임아웃 시 fail-closed (다른 프로세스의 lock 디렉터리 강제 제거 금지). 호출자(`register_session`, `update_last_activity`, `register_file_ownership`, `update_registry_phase`, `unregister_session`, `register_fork_session`)는 `_try_write_registry`를 통해 실패를 `.claude/deep-work-guard-errors.log`에 기록 (기존 조용히 swallow).
-- `session-end.sh` JSONL append: lock 타임아웃 시 `<jsonl>.pending-append.jsonl`에 큐잉. 다음 append는 receipt와 동일한 rename-first crash-safe 패턴 사용. 재시도 10→20회.
+### Changed
 
-**Hooks — 검증 강건화**
-- `phase-guard-core.js`: 내부 에러(잘못된 입력, 런타임 예외)를 `process.exit(3)`으로 구분, 가드 로그 참조 안내가 포함된 JSON block을 stdout에 출력. 의도적 block은 기존대로 exit 0 + `decision=block`. 기존에는 둘 다 exit 2여서 사용자 메시지에서 구분 불가.
-- `phase-guard.sh`: Node exit 3을 hook exit 2 + 디버그 메시지로 변환. stdout의 `decision`이 비어있으면 fail-closed + 별도 메시지 (기존엔 무음 allow).
-- `phase-guard.sh`: state frontmatter에서 `slice_files` / `strict_scope` / `exempt_patterns`를 읽어 (신규 `read_frontmatter_list` 헬퍼 사용) Node 입력에 전달. 기존엔 이 필드들이 한번도 전달되지 않아 `checkSliceScope`가 `undefined`를 받고 항상 `inScope=true`를 반환 → `deep-implement/SKILL.md`의 slice 범위 계약이 무음 미강제.
-- `phase-guard.sh` block 메시지: 4개 heredoc 모두 보간 필드(파일 경로, worktree 경로, phase 라벨, 다음 단계)를 JSON-escape. 따옴표/개행 포함 메시지가 기존엔 invalid JSON을 만들었음.
+- 문서: 7개 SKILL.md 전반의 깨진 참조 링크 21개 수정; 버전 라벨 refresh; CLAUDE.md 구조 목록 완성.
 
-**Hooks — phase-transition injector (C-1)**
-- `file-tracker.sh`가 stdin을 `$PROJECT_ROOT/.claude/.hook-tool-input.<ppid>`에 **phase early-return 이전에** 캐시, `.tmp.$$` + `mv`로 원자적 쓰기. `phase-transition.sh`는 `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` 환경변수가 unset일 때 (Claude Code 프로덕션의 실제 동작) 이 캐시를 fallback으로 읽음. 초기 v6.2.4 수정 후에도 캐시가 `implement` phase 블록 내부에서만 기록되어 research→plan / plan→implement / test→idle 전환에서는 이전 implement payload가 재사용되거나 no-op. Post-review 수정으로 캐시 쓰기를 hook 최상단으로 이동.
-- `session-end.sh`가 자신의 `.hook-tool-input.$PPID` 및 60분 이상 된 `.hook-tool-input.*` 파일을 정리 — 캐시는 tool call 단위 임시 파일이며 세션 간 축적되면 안 됨.
+### Known limitations
 
-**알림**
-- `notify.sh`: YAML 인식 `notifications.enabled` 파서. 기존 `grep -q "^  enabled: false"`가 관련 없는 `team_mode:\n  enabled: false`를 false-positive로 매칭하여 전 채널 무음 차단.
-- `notify.sh`: `_osascript_escape` 헬퍼를 macOS `osascript` 호출에 적용. 메시지에 따옴표가 포함되면 무음 구문 오류로 알림이 미전달되던 문제 해결.
-- `notify.sh`: `_xml_escape` 헬퍼를 Windows PowerShell toast XML에 적용. `<`, `&`, `"` 문자가 XML을 깨트려 알림이 나타나지 않던 문제 해결.
-- `notify.sh`: `set -euo pipefail`에서 `pipefail` 제거. best-effort 스크립트에서 채널 미설정 시 grep 파이프라인이 비매칭으로 비정상 종료하는 문제 해결.
-
-**문서**
-- 7개 SKILL.md 파일의 `skills/shared/references/` → `../shared/references/` 링크 21건 일괄 수정 (`deep-work-workflow`, `deep-test`, `deep-implement`, `deep-plan`, `deep-research`, `deep-brainstorm`, `deep-work-orchestrator`).
-- `commands/*.md`의 `(v6.2.1)` 라벨 13건을 `(v6.2.4)`로 갱신.
-- `commands/deep-finish.md` 예시: `"deep_work_version": "5.3.0"` → `"6.2.4"` (두 minor 릴리스 동안 고정되어 있었음).
-- `hooks/hooks.json` description: `(v5.6.0 Session Fork)` → `(v6.2.4)`.
-- `skills/deep-work-orchestrator/SKILL.md`: phase 소유권 표의 Test 행 수정 — `/deep-finish` 이후 Test → idle 전환은 Orchestrator가 담당 (Phase Skill 아님).
-- `skills/deep-work-orchestrator/SKILL.md`: `deep-resume.md`가 이미 사용 중이었으나 문서화되지 않았던 `--resume-from=<phase>` 플래그 공식 문서화.
-- `CLAUDE.md`: 누락되었던 디렉터리·파일을 구조에 추가 (`sensors/`, `health/`, `templates/topologies/`, `assumptions.json`, `package.json`).
-
-### 내부
-
-- `hooks/scripts/utils.sh`에 공유 헬퍼 추가, 여러 훅에서 소비:
-  - `_acquire_lock` / `_release_lock`: mkdir 기반 spinlock, 타임아웃 fail-closed (`.claude/deep-work-guard-errors.log`에 기록).
-  - `extract_file_path_from_json`: JSON 파서 기반 file_path 추출. escape된 따옴표를 정확히 처리.
-  - `json_escape`: block 메시지 내 안전한 보간을 위한 JSON 문자열 이스케이프. 인자 필수 — stdin fallback 없음 (훅 hang 방지).
-  - `read_frontmatter_list`: frontmatter의 YAML 리스트 필드(`[a, b]` 또는 `- a` 블록)를 JSON 배열로 반환.
-- `hooks/scripts/utils.sh` `write_registry`: `_acquire_lock` 기반으로 리팩터링, fail-closed 동작으로 변경.
-- 테스트: 329개 (6.2.3의 294개에서), 91 suite. 순증 +35개 — 호환성(3), 입력 파싱 e2e(5), notify YAML/escape(4), receipt race(1, 80 병렬 쓰기 — canonical 완전성 + pending 사이드카 empty + `.draining.*` orphan 없음 검증), phase-guard 강건화(6), phase-transition cache(2), utils 헬퍼(19), post-review 강건화(7: cache-before-phase-check × 4 phase, marker-flip lock × 2, 원자적 캐시 쓰기 × 1).
-- 독립 3-way 리뷰 (Opus + Codex review + Codex adversarial)가 초기 v6.2.4 브랜치에서 critical 3건 + warning 3건을 식별; 모두 merge 전 해결. 리포트: `.deep-review/reports/2026-04-17-implementation-review.md`.
-
-### 알려진 제약
-
-- 크로스 플랫폼 CI matrix는 아직 구성되지 않음. 모든 새 수정은 `node --test` 기반 단위 테스트로 검증되었으나, Linux/Windows 커버리지는 새 portability 로직에 의존 (CI 강제 아님). 다음 릴리스에서 추가 예정.
+- 크로스 플랫폼 CI 매트릭스 미비; 새 portability 수정은 단위 테스트에 의존.
 
 ## [6.2.3] — 2026-04-16
 
-### 변경됨
-- **trigger-eval.json v6.2 업데이트**: 벤치마크 테스트셋을 31개에서 54개로 확장 (true 21 + false 33). v6.2 신규 기능 대응 true 10개 추가 (Session Fork, Mutation Test, Brainstorm, Team Mode, Assumption Engine, Worktree, 영어 쿼리, semantic-only 트리거, Debug). false 13개 추가 (동음이의어, 메타 쿼리, 영어 hard negative, standalone 커맨드). 기존 true 5개를 false로 재분류 (SOLID 리뷰, drift check, deep-status, quality gate 설정, 프리셋 설정) — standalone 커맨드는 full workflow 트리거가 아님.
+### Changed
+
+- `trigger-eval.json` 벤치마크 세트를 31 → 54 샘플로 확장·재조정; standalone 커맨드는 전체 워크플로우 세션을 트리거하지 않도록 재분류.
 
 ## [6.2.2] — 2026-04-16
 
-### 수정됨
-- **크로스 플랫폼 hooks 호환성**: `hooks.json`의 5개 hook command에서 POSIX inline env var assignment(`FOO=bar command`) 문법을 제거. Windows `cmd.exe`에서 이 문법을 파싱하지 못해 모든 hook이 실패하는 문제 해결. 스크립트가 Claude Code의 네이티브 env var(`CLAUDE_TOOL_USE_TOOL_NAME`, `CLAUDE_TOOL_USE_INPUT`)를 직접 읽되 기존 변수명도 fallback으로 유지.
+### Fixed
 
-### 변경됨
-- `hooks/scripts/phase-guard.sh`: `CLAUDE_TOOL_USE_TOOL_NAME` 읽기 + `CLAUDE_TOOL_NAME` fallback
-- `hooks/scripts/file-tracker.sh`: `CLAUDE_TOOL_USE_TOOL_NAME` 읽기 + `CLAUDE_TOOL_NAME` fallback
-- `hooks/scripts/phase-transition.sh`: `CLAUDE_TOOL_USE_INPUT` 읽기 + `CLAUDE_TOOL_INPUT` fallback
+- 5개 hook 커맨드 전부에서 POSIX inline 환경변수 할당 제거(Windows `cmd.exe`가 파싱 불가); 스크립트가 Claude Code의 native 환경변수를 backward-compatible fallback과 함께 직접 읽음.
 
 ## [6.2.1] — 2026-04-15
 
-### 변경됨
-- **커맨드 분류 정리**: `Deprecated in v5.2` 블록을 가진 11개 커맨드와 같은 표에 함께 분류되었던 2개(`deep-brainstorm`, `deep-phase-review`)를 5개 카테고리로 재분류 — Quality Gate(3), Internal(6), Escape hatch(1), Utility(2), Special utility(`/deep-phase-review` 이동).
-- **`/deep-finish` 표현**: "자동 호출이 주 경로이며, test 통과 후 수동 호출도 공식 경로"로 재서술 (deprecated 아님).
-- **Hook/skill 사용자 안내**가 `/deep-status` 플래그로 라우팅:
-  - `hooks/scripts/assumption-engine.js`: `/deep-assumptions` → `/deep-status --assumptions`
-  - `hooks/scripts/session-end.sh`: `/deep-report` → `/deep-status --report`
-  - `skills/deep-test/SKILL.md`: 동일 정렬
-- **Session Report 수동 경로 정책**: `/deep-report`와 `/deep-status --report` **둘 다** 공식 수동 경로로 유지. `skills/deep-work-workflow/SKILL.md` 제목·본문, `commands/deep-report.md` 본문, `commands/deep-resume.md` 본문 3위치 일관 표기.
-- **README**(en/ko): "Deprecated Commands (13)" 단일 표를 5개 카테고리 표로 분리; "What changed" bullets를 재분류 서술로 갱신(deprecated 아님); Worktree Isolation 섹션의 `/deep-cleanup`/`/deep-resume` 본문을 standalone utility로 재서술.
-- **`skills/deep-work-workflow/SKILL.md`** 분류 섹션을 6개 카테고리로 재작성.
+### Changed
 
-### 변경 없음
-- **삭제된 커맨드 없음.** `/deep-cleanup`과 `/deep-resume`은 각각 worktree 스캔/fork 정리, active 세션 선택/worktree 복원/phase dispatch의 유일한 경로로 계속 남습니다. 기능 이관은 follow-up으로 추적.
-- **functional 동작 변경 없음.** 기존 슬래시 커맨드는 모두 이전과 동일하게 동작; 라벨·문구·버전 번호만 변경.
-- 이전 섹션의 `v5.2` deprecated 기록은 역사로 보존.
+- 커맨드 분류 정리: 13개 커맨드를 Quality Gate / Internal / Escape hatch / Utility / Special utility로 재분류; `/deep-finish`를 "자동 호출 우선, 수동 일등급"으로 재구성.
+- Hook/skill 가이드가 `/deep-status` 플래그로 라우팅; README(en/ko)와 워크플로우 문서를 새 카테고리로 업데이트.
+
+### Notes
+
+- 삭제된 커맨드 없음, 기능 동작 변화 없음 — 라벨·문구·버전만 변경.
 
 ## [6.2.0] — 2026-04-14
 
-### 추가
-- **크로스 플러그인 컨텍스트**: Phase 1 Research에서 harnessability-report.json(deep-dashboard)과 evolve-insights.json(deep-evolve)을 참조하여 research context 강화.
+### Added
 
-## v6.1.0
+- Cross-Plugin Context: Phase 1 Research가 `harnessability-report.json`(deep-dashboard)과 `evolve-insights.json`(deep-evolve)을 참조.
 
-### 3-Layer Architecture + Computational Guard
-
-2026-04-12 세션의 Inferential Enforcement 실패 3건(worktree 격리 미적용, team 모드 미적용, codex 미실행)을 구조적으로 해결.
-
-#### 추가
-- **P0 Worktree Path Guard** — PreToolUse hook으로 worktree 외부 Write/Edit/Bash를 hard block. 메타 디렉토리(`.claude/`, `.deep-work/`)는 PROJECT_ROOT 기준으로 예외 처리. 모든 phase에서 session ID 없이도 작동.
-- **P1 Phase Transition Injector** — PostToolUse hook으로 `current_phase` 변경 시 worktree_path, team_mode, cross_model_enabled, tdd_mode를 LLM context에 자동 주입. Cache 파일로 전환 감지, `CLAUDE_TOOL_INPUT` 환경변수로 stdin 안전성 확보.
-- **6개 Phase Skill** — 각 phase별 독립 SKILL.md (brainstorm 120줄, research 183줄, plan 165줄, implement 187줄, test 147줄, orchestrator 230줄). 기존 command 대비 context 로드 45-81% 축소.
-- **Review + Approval Workflow** — Research/Plan 완료 후 6단계 프로토콜: 자동 리뷰 → main 에이전트 판단 → 사용자 승인 → 수정 → 최종 확인. Orchestrator가 current_phase 관리.
-- **`review-approval-workflow.md`** reference — Research/Plan 리뷰 게이트 공유 프로토콜 문서.
-
-#### 변경
-- **Command → Thin Wrapper** — 6개 core phase command를 `Skill()` 호출 1줄로 축소. 모든 wrapper의 `allowed-tools`에 `Skill` 포함.
-- **References 경로 통합** — `skills/deep-work-workflow/references/` → `skills/shared/references/` (14개 파일). 모든 command/skill 경로 업데이트.
-- **`deep-resume` 업데이트** — Research/Plan resume를 orchestrator 경유로 변경 (dead-end 방지). test_passed 시 `/deep-finish`로 라우팅.
-- **`deep-test` phase 전환** — 성공 시 `current_phase: idle` 미설정. Orchestrator/finish가 idle 전환 담당.
-- **Receipt 계약** — `status: "complete"` 필드를 implement receipt에 필수 명시 (deep-test gate 의존).
-- **Drift gate fallback** — `plan_approved_at` fallback 체인: timestamp → plan.md mtime → 24시간 커밋 window.
-- **`cross_model_enabled` 파싱** — nested YAML mapping 지원 (`grep -A3` fallback).
-- **`session-end.sh`** — 세션 종료 시 phase cache 정리 (stale P1 injection 방지).
-
-#### 아키텍처
-```
-Layer 1: Commands (thin wrappers) → Skill dispatch
-Layer 2: Skills (execution logic) → 100-230줄 SKILL.md + 공유 references
-Layer 3: Hooks (enforcement) → P0 hard block + P1 context injection
-```
-
-## v6.0.2
-
-### Phase Review Gate
-- **통합 리뷰 게이트** — 모든 Phase(0-3) 종료 시 셀프 리뷰 + 외부 리뷰 자동 실행. 사용자 확인 후 다음 단계로 전환.
-- **Phase별 Fallback 체인** — Phase 0-2(문서): Structural + Adversarial + Opus 서브에이전트. Phase 3(코드): deep-review → codex/gemini + Opus → 셀프 + Opus.
-- **사용자 확인 UX** — 요약 보기 + 3가지 선택지(자동 수정/현재 진행/상세 보기). 상세 보기에서 항목별 수정/스킵 선택.
-- **Degraded Mode** — 외부 리뷰어 실패 시 자동 fallback.
-- **`/deep-phase-review` 통합** — 수동 리뷰가 자동 게이트와 동일한 Fallback 체인 사용.
-
-### 작업 폴더 이름 변경
-- **세션 폴더 변경** — `deep-work/` → `.deep-work/` (숨김 디렉토리). `.claude/`, `.git/` 등 관례와 일치.
-- **자동 마이그레이션** — 기존 `deep-work/` 폴더는 다음 세션 시작 시 자동 마이그레이션. worktree 안전 체크 포함.
-- **메타데이터 갱신** — state 파일, JSONL 히스토리, fork 메타데이터 경로 일괄 업데이트.
-- **선택적 .gitignore** — 세션 폴더(`.deep-work/20*/`)와 히스토리만 제외, 설정 파일은 유지.
-
-## [6.0.1] - 2026-04-10
-
-### 추가 — Superpowers 강점 통합 (Slice Review, Red Flags, Escalation)
-
-- **Slice Review (Step C-2)**: 센서 파이프라인 이후 슬라이스별 2단계 독립 리뷰. Stage 1 (스펙 준수, required) + Stage 2 (코드 품질, advisory). Subagent 실패 시 graceful degradation.
-- **Red Flags 테이블**: implement (10항목) 및 test (6항목) 단계의 합리화 방지 테이블. Hook 기반 하드 게이트를 소프트 가이던스로 보완.
-- **Pre-flight Check (Step A-2)**: TDD 시작 전 전제조건 검증. `command -v`로 안전한 실행 가능성 확인. 2개 옵션: 계속 진행 (done_with_concerns) 또는 Plan 수정.
-- **Status Reporting**: 슬라이스별 `slice_confidence` (done/done_with_concerns) 및 `concerns` 배열. 리뷰/센서/pre-flight 이력 기반 자동 판정.
-- **Agent delegation prompt 확장**: 위임 에이전트용 규칙 7-10 (self-review, receipt 기록, pre-flight, confidence 판정).
-- **Phase 4 cross-slice + 보완 리뷰**: Section 4-2/4-3을 전체 제어 흐름으로 재작성. Phase 3 FAIL 슬라이스는 필수 보완 대상.
-- **Scope creep 감지**: `git diff --name-only`로 슬라이스 외 파일 변경 탐지.
-- **Per-slice working tree diff**: `git diff $git_before` (커밋이 아닌 working tree 비교).
-- **deep-finish.md concerns 요약**: 세션 리포트에 slice confidence 집계 및 concerns 목록 추가.
-
-### 변경
-
-- Phase 4 Spec Compliance (4-2) 및 Code Quality (4-3) 게이트가 per-slice 검증 대신 cross-slice 일관성 검증으로 전환 (per-slice은 Phase 3에서 수행).
-- Receipt의 `changes.git_diff`가 per-slice baseline (`git diff $git_before -- [files]`)으로 변경.
-- `AskUserQuestion`이 deep-implement.md의 `allowed-tools`에 추가.
-- 버전 참조 6.0.1로 통일 (CLAUDE.md, SKILL.md, package.json, plugin.json).
-
-## [6.0.0] - 2026-04-09
-
-### 추가
-- **Computational Sensor Pipeline (#2)** — 레지스트리 기반 센서 오케스트레이션, TDD 워크플로우 통합:
-  - `sensors/registry.json`: JS, TS, Python, C#, C++ 생태계 정의 (감지 규칙, lint/typecheck/mutation 명령, coverage 플래그)
-  - `sensors/detect.js`: 프로젝트 마커 파일(package.json, tsconfig.json, pyproject.toml 등)에서 자동 생태계 감지
-  - 8개 출력 파서: eslint, tsc, ruff, generic-line, generic-json, stryker, dotnet, clang-tidy
-  - TDD 상태 머신 확장: GREEN 이후 SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN 상태
-  - 자기 교정 루프: GREEN 후 센서 자동 실행, 센서별 최대 3회 수정
-  - `sensor-trigger.js`: Config/마커 파일 변경 시 생태계 전체 센서 재스캔 트리거
-  - `/deep-sensor-scan`: 독립 실행 computational sensor 스캔 커맨드
-  - 감지 결과 캐싱 (`.sensor-detection-cache.json`)
-  - Fail-closed 정책: non-zero exit + 0 진단 항목 = 명시적 실패
-- **Mutation Testing (#1)** — AI 생성 테스트 품질 검증:
-  - Stryker (JS/TS), stryker-net (C#), mutmut (Python) 통합 (registry.json 기반)
-  - `/deep-mutation-test`: git diff 기반 범위, 자동 테스트 재생성 루프 (최대 3회)
-  - Implement phase 복귀 패턴: Phase 4 mutation 실패 → Phase 3 TDD 루프로 테스트 보강
-  - Mutation Score Quality Gate (Advisory) + Session Quality Score 통합 (15% 가중치)
-  - `stryker-parser.js`: NoCoverage + 로깅 변이에 possibly_equivalent 태깅
-  - Receipt `mutation_testing` 필드: score, survived_details, auto_fix_rounds
-- **Health Engine (#3A)** — Phase 1 Research 자동 Health Check (4개 드리프트 센서 병렬 실행):
-  - `dead-export`: JS/TS 미사용 export 감지 (entry point/라이브러리/barrel 제외, health-ignore.json 지원)
-  - `stale-config`: tsconfig.json, package.json, .eslintrc 깨진 경로 참조 감지
-  - `dependency-vuln`: `npm audit --json` 기반 high/critical 취약점 감지 (Required gate)
-  - `coverage-trend`: 이전 세션 baseline 대비 커버리지 퇴화 감지 (5%p 임계값)
-- **아키텍처 Fitness Function (#4)** — `.deep-review/fitness.json` 선언적 아키텍처 규칙:
-  - 4개 rule checker: `file-metric` (줄 수), `forbidden-pattern` (정규식), `structure` (colocated 테스트), `dependency` (순환 의존성, dep-cruiser)
-  - `fitness-validator.js`: JSON 스키마 검증 + 규칙 실행 엔진 (`required_missing` 상태)
-  - `fitness-generator.js`: Ecosystem-aware 자동 생성 (비 JS/TS에서 dependency 규칙 제외)
-  - dep-cruiser 미설치 시 설명 + 설치 제안
-- **Health Check 오케스트레이터** (`health-check.js`) — 병렬 드리프트 스캔 (Promise.allSettled) + 순차 fitness 검증 (센서별 타임아웃, 전체 180초)
-- **Baseline 관리** — `health-baseline.json` commit/branch 스코핑, 브랜치 전환/rebase(git merge-base --is-ancestor)/7일 만료 시 자동 무효화
-- **Phase 4 Quality Gates**:
-  - Fitness Delta Gate (Advisory) — 이번 구현에서 추가된 fitness 위반 감지
-  - Health Required Gate (Required) — Phase 1 required 실패 전파 + 유저 acknowledge 흐름
-  - Phase 4 Baseline 갱신 — 게이트 통과 후 health-baseline.json 자동 업데이트
-- **Receipt 스키마 확장** — `health_report` 필드 + `scan_commit` (deep-review stale 판정용)
-- **deep-review 연동** — fitness.json을 리뷰 에이전트 프롬프트에 주입 + receipt health_report scan_commit 기반 stale 체크
-- **Harness Templates (#5)**: 6개 내장 토폴로지(nextjs-app, react-spa, express-api, python-web, python-lib, generic)를 갖춘 토폴로지 감지 레이어. deep merge 및 custom/ override 지원 템플릿 로더. Phase 1/3에 토폴로지별 가이드 통합. Fitness generator에 template fitness_defaults 확장.
-- **Self-Correction Loop (#6)**: always-on 레이어(토폴로지 가이드)와 fitness 레이어(fitness.json 규칙)를 갖춘 review-check 센서. 센서별 독립 3회 교정 제한. 설정 비활성화 지원. Receipt 스키마 확장.
-
-### 변경
-- 세션 품질 점수 5가지 가중치 (테스트 통과율 25%, 재작업 사이클 20%, Plan Fidelity 25%, 센서 클린율 15%, Mutation Score 15%). Health Check은 점수에서 제외.
-- `sensors/registry.json` — javascript/typescript에 `audit` 필드 추가
-
-## [5.8.1] - 2026-04-08
-
-### 변경
-- **Breaking**: `/deep-review` → `/deep-phase-review`로 리네이밍. deep-review 플러그인(deep-suite)과의 이름 충돌 해소. Phase 문서 리뷰는 `/deep-phase-review`, 코드 diff 리뷰는 deep-review 플러그인 사용.
-- `deep-plan.md`, `deep-resume.md`, `README.md`, `README.ko.md` 참조 업데이트
-- deep-review 플러그인 연동(Sprint Contract, 슬라이스 리뷰, 전체 리뷰)은 변경 없음
-
-## [5.8.0] - 2026-04-08
-
-### 추가
-- **Completeness Policy** (Section 3.3-1) — plan.md의 명시적 금지 패턴 정의 (TBD, TODO, 모호한 지시, 컨텍스트 없는 교차 참조). Claude 자체 재검토 + structural review `code_completeness` 차원으로 강제.
-- **Code sketch 크기별 완성도** — S: 주석 의사코드, M: 실제 함수 시그니처 + 타입 정의, L: 경계면 완전 코드 (인터페이스, API, 테스트). 기존 "의사코드 또는 실제 코드"를 비례 기준으로 대체.
-- **Slice 필드: `expected_output`, `steps`** — `expected_output`: verification_cmd 성공 시 예상 출력. `steps`: M/L slice 내 실행 가이드 (3-12개 번호 액션). 하위 호환성을 위해 모두 optional.
-- **`failing_test` 크기별 상세도** — S: 파일+설명, M: 함수 시그니처+핵심 assertion, L: 경계면 테스트 완전 본문.
-- **"Boundary: Files NOT to Modify"** 섹션 — plan 템플릿에 추가, 구현 중 scope creep 방지.
-- **Research 추적성 태그** — `[RF-NNN]` (Key Findings), `[RA-NNN]` (인터페이스/시그니처). plan Architecture Decision에서 구체적 연구 근거 참조 가능.
-- **Research 태그 Lifecycle 규칙** — 단조 증가 번호, incremental 보존, plan 참조 태그 삭제 경고.
-- **Research `Testing Patterns` 섹션** — 기존 테스트 프레임워크, assertion 스타일, 파일 명명 규칙 문서화.
-- **Brainstorm 맥락 적응형 질문** — Core 2개 + 맥락별 1-3개 (기능/리팩토링/버그/성능/통합) + 마무리 경계 질문.
-- **Brainstorm `Scope Assessment`** — 분해 점검 + 빠른 코드베이스 확인 후 접근법 비교.
-- **Brainstorm `Boundaries` 섹션** — 변경하지 않는 부분 명시, plan Boundary 섹션으로 전달.
-- **Review gate 차원: `code_completeness`, `buildability`** — 4곳 동기화 (structural 테이블, 하드코딩, cross-model Plan Rubric, JSON 스키마).
-- **Review gate 하위 호환성 fallback** — `expected_output`/`steps` 없는 기존 plan은 차원별 완화 기준으로 평가.
-
-### 변경
-- `deep-implement.md` slice 파서가 `expected_output`, `steps`, `contract`, `acceptance_threshold` 인식 (모두 optional).
-- Step B-1 (RED): `failing_test`에 테스트 코드가 있으면 직접 사용 (M/L).
-- Step B-2 (GREEN): `expected_output`이 있으면 verification_cmd 출력과 비교.
-- `deep-work.md` 인라인 plan: `failing_test` 표현 변경 + Completeness Policy 제외 주석.
-- `research-guide.md` quality criteria 4→8개 확장.
-- `plan-templates.md` API Endpoint 템플릿을 v5.8 exemplar로 업그레이드. 레거시 템플릿에 마이그레이션 가이드 추가.
-- `testability` 차원: `expected_output`은 권장, 필수 아님으로 명확화.
-
-## [5.7.0] - 2026-04-08
-
-### 추가
-- **W1: Sprint Contract 생성** — Phase 2 plan 승인 후, deep-review 플러그인이 설치되어 있으면 plan.md의 슬라이스에서 `.deep-review/contracts/SLICE-{NNN}.yaml` 자동 생성
-- **W2-a: 슬라이스 리뷰 제안** — Phase 3에서 슬라이스 GREEN 도달 시 `/deep-review --contract SLICE-{NNN}` 실행 제안
-- **W2-b: 전체 리뷰 제안** — Phase 4 진입 시 `/deep-review` 전체 리뷰 실행 제안
-- **K1: 위키 ingest 제안** — Phase 4 완료 후 `/wiki-ingest report.md` 실행 제안
-
-### 변경
-- Sprint Contract 생성 시점을 plan 작성 직후에서 **plan 승인 후**로 이동 (최종 plan과 contract 일치 보장)
-- 플러그인 감지를 cache + plugins 이중 경로로 통일 (설치 방식 무관)
-
-## [5.6.0] - 2026-04-07
-
-### 추가
-- **`/deep-fork` 커맨드**: deep-work 세션을 fork하여 다른 접근법을 탐색하면서 원래 세션을 보존
-  - Git 환경: worktree 기반 전체 복제, dirty 상태 검증 (`git stash --include-untracked`), session ID 기반 branch suffix (race condition 방지), worktree 컨텍스트 자동 전환 (`FORK_PROJECT_ROOT`)
-  - Non-git 환경: 산출물만 복제, plan phase 제한 (implement/test는 phase guard가 차단)
-  - 부모-자식 관계 추적: 상태 파일의 `fork_info`/`fork_children`
-  - `fork-snapshot.yaml`: fork 시점 상태 스냅샷 (비교 기준점)
-  - Stale 부모 검증 (git: commit 존재 확인, non-git: 작업 디렉토리 존재 확인)
-  - Fork 세대 제한: 최대 3세대, 초과 시 경고
-- **`/deep-status --tree`**: fork 관계 트리 시각화 (UTF-8 트리 문자)
-- **`/deep-status --compare` 자동 감지**: 인자 없이 호출 시 fork 관계 자동 감지 비교
-- **`/deep-status` fork 정보 표시**: 기본 출력에 `fork_info`/`fork_children` 표시
-- **`/deep-cleanup` fork 지원**: idle fork 세션 스캔, 부모+자식 전체 idle 시 일괄 정리 제안
-- **Phase guard**: artifacts-only fork 세션의 implement/test phase 차단
-- **Fork 유틸 함수**: `validate_fork_target`, `get_fork_generation`, `update_parent_fork_children`, `register_fork_session` (원자적 레지스트리 + 부모 업데이트)
-- **`session-end.sh`**: fork 세션 종료 시 부모의 `fork_children` 상태를 idle로 업데이트
-- **Fork 통합 테스트**: 원자적 등록, 다중 fork, phase-guard 통합, edge cases, git worktree fork 등 18개 테스트
-
-### 변경
-- `deep-work-sessions.json` 레지스트리: 세션별 `fork_parent`, `fork_generation` 필드 추가
-- 상태 파일 YAML frontmatter: `fork_info` (부모 관계), `fork_children` (자식 목록) 섹션 추가
-
-## [5.5.2] - 2026-04-06
-
-### 추가
-- **확장된 bash 파일 쓰기 감지**: 20+ 신규 FILE_WRITE_PATTERNS — perl in-place (`perl -pi -e`), 런타임 언어 쓰기 (node -e `fs.writeFileSync`, python -c `open().write()`, ruby -e `File.write`), awk in-place, swift, truncate, sponge, git 파괴 연산 (`reset --hard`, `clean -f`), curl/wget 출력, ln, tar/unzip/cpio 추출, rsync, 범용 `writeFile` 감지.
-- **확장된 safe command 패턴**: docker/kubectl 읽기 전용, cargo build/check/bench, go build/vet, deno test/check, bun run/x, python unittest, tsc --noEmit, stat/du/df/free/uname/hostname, diff/file, env/printenv, rmdir.
-- **확장된 테스트 파일 패턴**: Dart (`.test.dart`, `_test.dart`), Elixir (`_test.exs`), Lua (`.test.lua`), Vue (`.test.vue`), `fixtures/`, `__fixtures__/`, `__mocks__/`, `spec/` 디렉토리.
-- **확장된 TDD exempt 패턴**: `.toml`, `.ini`, `.cfg`, `.lock`, `.editorconfig`, `.svg`, `.png`, `.jpg`, `.gif`.
-- **TDD state 검증**: 알 수 없는 TDD 상태값을 processHook에서 차단하고 안내 메시지 제공.
-- **Backtick 및 subshell 처리**: `splitCommands`가 backtick 인용과 `$()` subshell 깊이를 추적하여 중첩 표현식 내부의 잘못된 분할 방지.
-- **Perl 타겟 파일 추출**: `extractBashTargetFile`이 `perl -pi -e` 명령에서 타겟 파일을 추출하여 정확한 TDD 적용.
-
-### 수정
-- **보안: file-write-first 감지 순서**: FILE_WRITE_PATTERNS를 SAFE_COMMAND_PATTERNS보다 먼저 검사하여, safe 패턴이 파일 쓰기를 은폐하는 것을 방지 (예: `node -e`의 `fs.writeFileSync` 우회 차단).
-- **file-tracker.sh Node.js 25 argv 호환성**: Node.js 25에서 `[eval]` 마커가 제거되어 receipt 생성이 무음 실패하던 문제 수정. `process.argv.filter(a => a !== '[eval]')`로 크로스 버전 호환.
-- **assumption-engine.js quality-timeline CLI**: 파싱된 `parsed` 객체 대신 raw `input` 문자열을 참조하던 버그 수정.
-- **assumption-engine.js evalSignal threshold 전달**: 시그널 평가자의 `threshold` 필드가 `fn()`에 올바르게 전달되도록 수정.
-- **assumption-engine.js readHistory dedup 순서**: `session_id` 중복 시 first→latest로 변경하여 finalized 레코드가 무시되는 문제 해결.
-- **assumption-engine.js 입력 가드**: `isSessionDuplicate`, `detectStaleness`, `detectNewModel`, `generateReport`에 `Array.isArray` 검사 추가.
-- **session-end.sh JSON 검증**: JSONL append 전 JSON 유효성 검증으로 malformed entry 방지.
-- **session-end.sh session ID fallback**: state file에 `started_at` 누락 시 `DEEP_WORK_SESSION_ID` 환경변수로 폴백.
-- **session-end.sh 에러 로깅**: 에러를 `/dev/null` 대신 `.claude/deep-work-guard-errors.log`에 기록.
-- **phase-guard.sh 에러 로깅**: Node.js 에러를 `.claude/deep-work-guard-errors.log`에 기록.
-- **utils.sh matchGlob trailing slash**: 정확한 경로 비교에서 trailing slash 정규화.
-- **utils.sh session pointer 안전성**: 세션 포인터 파일 쓰기 전 `mkdir -p` 추가.
-- **utils.sh session ID 생성**: `/dev/urandom` hex 생성에서 탭 문자 제거.
-
-### 변경
-- **Redirect 감지 범위 확대**: 일반 출력 리다이렉트 패턴을 `(?:^|\|)` 접두사에서 `(?:^|[|;]|\s)`로 변경하여 명령 중간 리다이렉트 감지 (예: `cat << EOF > file`).
-- **`node -e` safe 패턴 제거**: 이전에 safe로 처리되던 `node -e`를 다른 명령과 동일하게 file-write 패턴으로 평가.
-- **모델 이름 살균**: `validateModelName`이 비알파벳 문자 제거; `lookupModel`에 `toString().trim()` 추가.
-- **시그널 평가 threshold 설정 가능**: 평가자 정의의 `threshold` 필드로 설정 가능 (이전: 하드코딩된 기본 파라미터).
-- **광범위 리다이렉트 패턴**: 명령 중간 리다이렉트 (heredoc, 공백 후) 올바르게 감지.
-
-## [5.5.1] - 2026-04-03
-
-### 변경
-- **Plan 단계 team research 교차 검증**: `team_mode: team`일 때 plan 단계에서 부분 리서치 파일(`research-architecture.md`, `research-patterns.md`, `research-dependencies.md`)을 보조 참조로 로드. Claude 자체 재검토(Section 3.4.5)에서 합성 과정 누락 세부 사항을 교차 확인하여 plan 정확도 향상.
-- **TDD state 업데이트 필수화**: `deep-implement.md`의 B-1 (RED_VERIFIED), B-2 (GREEN) state file 업데이트를 필수로 표시하고 phase guard 차단 경고 추가.
-
-### 수정
-- **phase-guard.sh 입력 파싱 안정화**: JSON 입력 빌드를 `process.argv`에서 stdin pipe 방식으로 변경하여 대용량 tool input에서 `set -e` 실패 방지.
-
-## [5.5.0] - 2026-04-02
-
-### 추가
-- **Research Cross-Model Review**: codex/gemini adversarial review가 research 단계에도 적용 (기존: plan만 해당). Research 전용 rubric 사용 (completeness, accuracy, relevance, risk_identification, actionability).
-- **Plan Claude 자체 재검토**: plan 작성 직후 자동 품질 점검 — placeholder, 내부 일관성, research 정합성, scope creep, 누락된 rollback 커버리지 탐색. 명백한 결함은 structural review 전에 자동 수정.
-- **종합 판단 프로토콜**: 개별 conflict AskUserQuestion을 Claude 종합 판단 + 사용자 일괄 확인으로 대체. Research와 plan cross-model review 양쪽에 적용.
-- **Auto-fix 스냅샷 계약**: 매 auto-fix 반복 전 스냅샷 필수, score 하락 시 rollback. Research: `research.v{N}.md`, Plan: `plan.autofix-v{N}.md`.
-- **Degraded Mode**: cross-model 리뷰어 실패 시 `reviewer_status` 필드로 명시적 추적. Consensus/conflict 분류는 2개 이상 성공한 리뷰어 필요; 단독 결과는 "단독 이슈"로만 분류.
-- **State 스키마 마이그레이션 (v5.5)**: 신규 필드 `review_results.{phase}.judgments`, `judgments_timestamp`, `reviewer_status`. 기존 state file 자동 초기화. Resume 시 문서 수정 시각 vs judgments_timestamp 비교 검증.
-
-### 변경
-- **Structural Review 기준 강화**: auto-fix 트리거를 score < 5에서 score < 7로 상향 (research, plan 양쪽). Research max iterations 3으로 증가.
-- **Research 사용자 피드백 게이트**: 종합 판단 단계(Step 4.7)에 통합. Step 5와 auto-flow Step 9-3의 중복 AskUserQuestion 제거.
-- **deep-review.md**: 개별 conflict UX 대신 종합 판단 프로토콜 사용으로 업데이트.
-- **deep-resume.md**: `review_state: in_progress`로 resume 시 judgments_timestamp 검증 기반 새 리뷰 흐름으로 라우팅.
-
-## [5.3.0] - 2026-03-31
-
-### 추가
-- **Document Intelligence**: research.md/plan.md 피드백 적용 시 자동 중복 제거 및 정리. 3단계 프로토콜: Apply → Deduplicate → Prune. Refinement log 추적.
-- **Session Relevance Detection**: 피드백 적용 전 범위 확인 — 현재 세션 범위 밖 요청 감지 시 새 세션 분리 또는 백로그(`deep-work/backlog.md`) 저장 제안.
-- **Plan Fidelity Score**: 구현 vs 플랜 충실도를 0-100 점수로 산출. drift-check 및 deep-test 인라인 검증에 통합.
-- **Session Quality Score**: 세션 완료 시 자동 품질 점수(0-100) 산출. Core 지표: Test Pass Rate(35%), Rework Cycles(30%), Plan Fidelity(35%). 진단 지표(Code Efficiency, Phase Balance)는 참고용으로만 표시.
-- **Assumption Snapshot**: 세션 시작 시 각 assumption의 enforcement level 기록. 정확한 active/inactive cohort 분석 가능.
-- **Assumption Engine 품질 연동**: 품질 점수를 assumption 평가에 반영. Cohort 분석(cohort당 최소 3세션 게이트). `/deep-status --assumptions`에서 Quality Impact 표시.
-- **Cross-Session Quality Trend**: 세션 간 품질 점수 추이를 ASCII 차트로 시각화. `/deep-status --history`에서 확인.
-- **Quality Badge**: README용 shields.io 뱃지 생성. `/deep-status --badge`에서 사용. 뱃지: 품질 점수, 세션 수, 플랜 충실도.
-- **Authoritative JSONL write**: `deep-finish`가 `harness-sessions.jsonl`에 atomic upsert(lock 패턴)로 확정 기록. `session-end.sh`는 provisional 레코드만 기록.
-
-### 수정
-- **JSONL 경로**: `session-end.sh`가 per-session 폴더 대신 공유 `deep-work/harness-history/`에 기록하도록 수정. trend/assumption 커맨드에서 세션 데이터가 보이지 않던 버그 해결.
-
-### 변경
-- **README 개편**: 데모 GIF 삭제. 문제→해결 중심 서술 구조로 전환. 품질 측정 및 자기 진화 규칙 섹션 추가.
-- **exportBadge()**: 단일 뱃지 대신 `{ harness, quality, sessions, fidelity }` 객체 반환. 직접 소비자에 대한 breaking change — 테스트 업데이트 완료.
-- **hooks.json**: 설명을 "v5.3 Precision + Evidence Protocol"로 업데이트.
-
-## [5.2.0] - 2026-03-31
-
-### 추가
-- **Auto-flow 오케스트레이션**: `/deep-work`이 이제 모든 단계를 자동으로 연결 (brainstorm → research → plan → implement → test → finish). Plan 승인만이 유일한 필수 인터랙션
-- **통합 `/deep-status`**: `--receipts`, `--history`, `--report`, `--assumptions`, `--all` 플래그로 5개 개별 커맨드를 하나로 통합
-- **테스트 게이트 자동 실행**: Drift Check (필수), SOLID Review (권고), Insight Analysis가 Quality Gates 테이블 설정 없이 `/deep-test`에서 자동 실행
-
-### 변경
-- 13개 보조 커맨드에 deprecated 표시 추가 (여전히 동작, deprecation notice 추가)
-- `/deep-work` Step 1: 세션 감지 시 이어서/새로/취소 선택지 제공 (기존: 덮어쓰기 경고만)
-- `/deep-test`: plan.md의 Quality Gates 테이블이 이제 선택적 오버라이드 (자동 감지가 기본)
-- `phase-guard-core.js`: TDD 차단 메시지에 auto-flow 대안 안내 추가
-- SKILL.md 461줄 → ~250줄로 축소 (버전별 히스토리 섹션 제거)
-- plugin.json 키워드 36개 → 12개로 축소
-
-### Deprecated
-- `/deep-brainstorm` — `/deep-work` 흐름에서 자동 실행
-- `/deep-review` — `/deep-plan`에서 자동 실행
-- `/deep-receipt` — `/deep-status --receipts` 사용
-- `/deep-slice` — `/deep-implement`에서 자동 관리
-- `/deep-insight` — `/deep-test`에서 자동 실행
-- `/deep-finish` — `/deep-work` 흐름 끝에서 자동 실행
-- `/deep-cleanup` — `/deep-work` init 시 자동 감지
-- `/deep-history` — `/deep-status --history` 사용
-- `/deep-assumptions` — `/deep-status --assumptions` 사용
-- `/deep-resume` — `/deep-work` init 시 자동 감지
-- `/deep-report` — `/deep-status --report` 사용
-- `/drift-check` — `/deep-test`에서 자동 실행
-- `/solid-review` — `/deep-test`에서 자동 실행
-
-## [5.1.2] - 2026-03-30
-
-### 추가
-- **Team 모드 자동 설정**: Team 모드 선택 시 환경변수가 미설정이면 수동 안내 대신 Claude Code가 자동으로 `~/.claude/settings.json` 설정을 제안
-- **Team 모드 런타임 검증**: 모든 단계(research, plan, implement)에서 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` 환경변수를 재검증, 비활성화 시 자동 Solo fallback
-
-### 수정
-- **Team 모드 Solo fallback**: 설정 미완료 시 초기화 단계뿐 아니라 전 단계에서 안정적으로 Solo 모드로 전환
-
-## [5.1.1] - 2026-03-30
-
-### 수정
-- **CRITICAL: Phase guard fail-closed** — `phase-guard-core.js`의 catch 블록이 내부 오류 시 allow 대신 block을 반환하도록 변경, TDD/단계 강제 우회 방지
-- **CRITICAL: Receipt 원자적 쓰기** — Receipt JSON 업데이트가 temp 파일 + rename 패턴을 사용하여 동시 PostToolUse 훅의 데이터 손상 방지
-- **HIGH: 명령어 체인 우회** — `detectBashFileWrite`가 체인된 명령어(`&&`, `||`, `;`, `|`)를 분리하여 각 하위 명령어를 독립 검증; safe prefix가 file-write suffix를 가리지 않음
-- **HIGH: Bash TDD 대상 추출** — 새 `extractBashTargetFile()` 함수가 bash 명령어에서 실제 대상 파일을 추출하여 전체 명령어 문자열 대신 정확한 test/exempt 패턴 매칭
-- **HIGH: Skipped phases 정확한 매칭** — 서브스트링 매칭을 쉼표 구분 정확 매칭으로 교체하여 오탐 방지
-- **HIGH: Write/Edit file_path 미추출 시 차단** — 파일 경로를 추출할 수 없을 때 allow 대신 block으로 변경
-- **MEDIUM: JSONL 히스토리 잠금** — `session-end.sh`가 동시 JSONL append에 mkdir 기반 잠금 사용
-- **MEDIUM: 크로스 플랫폼 타임스탬프 파싱** — 기간 계산을 Node.js `Date.parse`로 교체 (macOS/GNU date 분기 제거)
-- **MEDIUM: 알림 JSON 이스케이프** — 웹훅 페이로드가 `JSON.stringify`로 줄바꿈/유니코드 정상 이스케이프
-- **MEDIUM: 경로 정규화** — `normalize_path`가 `..` 세그먼트를 `path.resolve`로 해결
-- **MEDIUM: YAML 필드 추출** — `read_frontmatter_field`가 regex 인젝션 대신 리터럴 prefix 매칭 사용
-- **MEDIUM: Receipt 초기 생성** — Heredoc을 `JSON.stringify`로 교체하여 slice ID 인젝션 방지
-
-### 변경
-- Assumption engine의 `SIGNAL_EVALUATORS`가 `{ scope, fn }` 형식 사용; session-scoped 신호는 세션당 1회, slice-scoped 신호는 any-true 집계
-- `TEST_FILE_PATTERNS`에 Rust, Java, C#, Kotlin, Swift 패턴 추가
-- phase-guard-core.js에 `splitCommands`, `extractBashTargetFile` 새 export 추가
-
-## [5.1.0] - 2026-03-30
-
-### 추가
-- **자동 루프 검증**: Plan 리뷰와 테스트 단계에서 실패 시 자동 수정 + 재검증 (최대 3회)
-- **계약 협상**: Slice에 테스트 가능한 `contract`와 `acceptance_threshold` 필드 추가
-- **Assumption Engine 자동 적용**: 세션 시작 시 Wilson Score 기반 규칙 자동 조정
-- **적응형 Evaluator 모델**: 모든 검증 subagent가 설정 가능한 모델 사용 (기본: sonnet), Assumption Engine으로 자동 조정
-- **Phase 스킵 유연화**: `--skip-to-implement` 플래그, 인라인 slice 생성
-- **양방향 조정**: Assumption Engine이 증거 기반으로 규칙 강화도 자동 수행
-
-### 변경
-- Structural review가 실패 시 자동으로 수정 루프 실행 (최대 3회)
-- 테스트 단계가 실패 slice만 대상으로 자동 implement 복귀
-- Assumption health 보고서에 현재 세션의 자동 조정 내역 표시
-- Slice 형식에 `contract`와 `acceptance_threshold` 필드 추가
-- 기본 evaluator 모델이 haiku에서 sonnet으로 변경
-
-### 수정
-- Assumption Engine 보고서의 "Auto-application is a Phase 2 feature" 문구 제거
-
-## [5.0.0] - 2026-03-30
-
-### 추가
-- **Self-Evolving Harness (Assumption Engine)**: 모든 enforcement 규칙이 이제 machine-readable evidence signal을 가진 falsifiable hypothesis. deep-work가 세션 데이터로 자체 가설을 검증.
-- **`assumptions.json`**: 5개 핵심 가설 레지스트리 (phase_guard, tdd, research, cross_model_review, receipt_collection). evidence signal, 조절 가능한 enforcement 레벨, 최소 세션 임계값 포함.
-- **`assumption-engine.js`**: Wilson Score confidence, 모델별 분할, staleness 감지, 새 모델 감지, per-slice signal 평가, 리포트 생성, ASCII 타임라인, shields.io 배지 내보내기. 42개 단위 테스트.
-- **`/deep-assumptions` 커맨드**: report (기본 + --verbose), history (ASCII 타임라인), export (--format=badge), --rebuild (receipts에서 JSONL 재생성).
-- **Receipt의 `harness_metadata`**: slice별 메타데이터 (model_id, assumption_overrides, rework_count, tests_passed_first_try 등). 하위 호환.
-- **세션 히스토리 JSONL**: Stop hook에서 `harness-sessions.jsonl` append. per-slice 데이터, 세션 중복 방지, 크로스 플랫폼 날짜 계산.
-- **세션 초기화 시 건강도 요약**: `/deep-work`에서 충분한 히스토리가 있으면 가설 건강도 표시. 새 모델 감지 시 cold start 경고.
-- **리포트의 Assumption Health**: `/deep-report`에 confidence 테이블과 세션별 harness metadata 집계 포함.
-
-## [4.2.1] - 2026-03-26
-
-### 추가
-- **TDD Override**: 구현 중 TDD가 production 파일 수정을 차단하면, Claude가 차단 이유를 설명하고 사용자에게 대화형으로 선택지를 제공 — 테스트 먼저 작성(권장), 또는 사유와 함께 이 slice의 TDD 건너뛰기(config 변경, 테스트 불가, 긴급 수정). Override는 slice 범위로 제한되며 slice 전환 시 자동 해제.
-- **차단 메시지에 탈출구 안내**: strict/coaching 모드의 TDD 차단 메시지에 `/deep-slice spike`, `/deep-slice reset` 대안을 표시하여 사용자가 우회 방법을 즉시 알 수 있도록 개선.
-- **`tdd_override` 상태 필드**: 어떤 slice에 TDD override가 활성화되어 있는지 추적. Hook이 이 필드를 읽어 fast-path 허용 결정.
-- **Receipt에 override 기록**: Override된 slice는 receipt JSON에 `tdd_override: true`와 `tdd_override_reason`으로 기록. Receipt 대시보드에서 `override` 상태를 `spike`와 구분하여 표시 (merge 가능 + 경고).
-- 9개 새 unit test 추가 (총 56개)
-
-### 변경
-- `phase-guard-core.js`: `checkTddEnforcement`에 `tddOverride` 파라미터 추가; `processHook`에서 `state.tdd_override` 전달
-- `phase-guard.sh`: state 파일에서 `tdd_override` 읽기; active slice와 일치하는 override에 대한 fast-path 추가; Node.js에 override 전달
-- `deep-implement.md`: "TDD Override" 섹션 추가 (AskUserQuestion 흐름, main 모델 라우팅만 적용)
-- `deep-receipt.md`: Override 아이콘, 카운트, JSON 스키마 업데이트
-- `deep-finish.md`: `tdd_compliance`에 `override` 카운트 포함
-- `deep-history.md`: `tdd_compliance` 및 TDD 준수율 표시에 `override` 포함
-
-## [4.2.0] - 2026-03-25
-
-### 추가
-- **구조적 리뷰(Structural Review)**: 모든 페이즈 문서(brainstorm, research, plan)가 Claude haiku 서브에이전트를 통해 페이즈별 차원으로 구조적 리뷰를 받음
-- **적대적 크로스 모델 리뷰(Adversarial Review)**: Plan 문서가 codex 및/또는 gemini-cli에 의해 독립적으로 리뷰됨 (아키텍처, 가정, 리스크 커버리지)
-- **갈등 해결 UX**: 모델 간 의견이 다를 때 갈등을 투명하게 표시하고 사용자가 해결 방식을 결정 (수용, 면책, 수동 편집)
-- **리뷰 게이트**: 구조적 리뷰 점수 <5 또는 비판적 합의 이슈가 있으면 자동 구현 전환 차단
-- **`/deep-review` 커맨드**: 구조적 또는 적대적 리뷰를 언제든 수동 트리거
-- **`--skip-review` 플래그**: spike/실험 세션에서 모든 리뷰 건너뛰기
-- **크로스 모델 도구 자동 감지**: 세션 초기화 시 codex/gemini-cli 자동 감지
-- **프로필 `cross_model_preference`**: 프리셋에 크로스 모델 선호 저장 (항상/안함/매번 확인)
-- **리뷰 상태 resume/status 통합**: `/deep-resume`이 리뷰 상태를 인식; `/deep-status`가 리뷰 결과 표시
-- **JSON 스키마 정규화**: 모든 리뷰 결과가 구조화된 JSON으로 저장 (`{phase}-review.json`)
-
-### 변경
-- `deep-brainstorm.md`: 기존 spec review를 review-gate 프로토콜 참조로 교체
-- `deep-research.md`: 리서치 완료 후 구조적 리뷰 추가
-- `deep-plan.md`: 승인 전 구조적 + 적대적 리뷰 추가
-- `phase-guard-core.js`: SAFE_COMMAND_PATTERNS에 codex/gemini/mktemp 추가
-- State 파일: `review_state`, `cross_model_tools`, `cross_model_enabled`, `review_results` 필드 추가
-- 프로필: 프리셋 스키마에 `cross_model_preference` 추가
-
-### 수정
-- `.gitignore`: `deep-work-workflow-workspace/` 추가하여 venv 추적 방지
-
-## [4.1.0] - 2026-03-25
+## [6.1.0]
 
 ### Added
-- **Worktree 격리**: 세션이 기본적으로 격리된 git worktree에서 실행됩니다. `/deep-work` 시 `.worktrees/dw/<slug>/`에 worktree를 생성하여 main 브랜치를 보호합니다. `--no-branch` 또는 프리셋의 `git_branch: false`로 비활성화 가능.
-- **슬라이스 복잡도 기반 모델 자동 선택**: 구현 단계에서 각 슬라이스의 크기(S/M/L/XL)에 따라 최적 모델(haiku/sonnet/opus)을 자동 선택합니다. `/deep-slice model SLICE-NNN <모델>`로 슬라이스별 override 가능. 프리셋에서 routing_table 커스터마이즈 가능.
-- **세션 완료 워크플로우** (`/deep-finish`): 세션 종료 시 4가지 옵션 제공 — 베이스 브랜치로 병합, PR 생성, 브랜치 유지, 삭제. `session-receipt.json`으로 전체 세션 요약 생성.
-- **CI/CD receipt 검증**: `validate-receipt.sh`로 receipt 체인 무결성 검증. `templates/deep-work-ci.yml`로 GitHub Actions 워크플로우 템플릿 제공. `/deep-receipt export --format=ci`로 CI 친화적 번들 내보내기.
-- **세션 이력 대시보드** (`/deep-history`): 과거 세션들의 모델 사용량, TDD 준수율, 완료율, 비용 추적 등 크로스 세션 트렌드 표시.
-- **Worktree 정리** (`/deep-cleanup`): 7일 이상 된 비활성 deep-work worktree를 스캔하고 일괄/개별 삭제 옵션 제공.
-- **Receipt 스키마 v1.0**: 새 필드 — `schema_version`, `model_used`, `model_auto_selected`, `worktree_branch`, `git_before`, `git_after`, `estimated_cost`. Session receipt은 파생 캐시이며 slice receipt이 정본.
-- **Receipt 마이그레이션 헬퍼** (`receipt-migration.js`): v4.1 이전 receipt을 스키마 v1.0으로 자동 변환. atomic write 및 손상 파일 백업 지원.
-- **Worktree 인식 세션 재개** (`/deep-resume`): 세션 재개 시 worktree 경로를 감지하고 작업 디렉토리 컨텍스트를 복원. 삭제된 worktree도 우아하게 처리.
-- **모델 비용 추적**: slice 및 session receipt에 `estimated_cost` 필드로 세션별 AI 모델 사용 비용 가시성 제공.
-- **Shell 유틸리티 추출** (`utils.sh`): 3개 hook 스크립트의 공통 함수를 단일 소스 파일로 추출하여 코드 중복 제거.
-- **모델 라우팅 테스트**: 라우팅 테이블 조회, 모델 이름 검증, 커스텀 테이블 override에 대한 11개 새 유닛 테스트 추가 (총 48개 테스트).
+
+- **P0 Worktree Path Guard** — 활성 worktree 외부의 Write/Edit/Bash를 hard-block하는 PreToolUse hook(meta 디렉토리 예외), 모든 phase에 적용.
+- **P1 Phase Transition Injector** — `current_phase` 변경 시 worktree/team/cross-model/tdd context를 주입하는 PostToolUse hook.
+- 6개 phase skill(phase별 독립 SKILL.md)로 context load 45-81% 감소.
+- Review + Approval workflow — Research/Plan용 6단계 프로토콜, orchestrator가 `current_phase` 소유.
 
 ### Changed
-- 기본 `model_routing.implement`가 `"sonnet"`에서 `"auto"` (크기 기반 라우팅)로 변경
-- 프리셋의 기본 `git_branch`가 `true`로 변경 (worktree 격리 기본 활성화)
-- `session-end.sh`가 worktree 브랜치 정보를 표시하고 `/deep-finish` 사용을 안내
-- `validate-receipt.sh`가 macOS Bash 3.2 호환을 위해 `set -eo pipefail` 사용
 
-## [4.0.1] - 2026-03-25
+- 핵심 phase 커맨드를 thin `Skill()` dispatch wrapper로 축소; 공유 참조를 `skills/shared/references/`로 이전.
+- `deep-resume`이 Research/Plan resume을 orchestrator로 라우팅; `deep-test`가 성공 시 idle을 설정하지 않음.
+- Implement receipt가 `status: "complete"`를 명시적으로 요구; drift gate에 `plan_approved_at` fallback chain.
+
+## [6.0.2]
 
 ### Added
-- **Git 기반 자동 업데이트 체크**: SessionStart 훅에서 GitHub 최신 버전 확인. 자동 업그레이드, 스누즈(24h→48h→1w), 비활성화 지원.
-- **Shell injection 방지**: phase-guard.sh, file-tracker.sh에서 `process.argv`로 안전한 값 전달.
+
+- Unified Phase Review Gate — 모든 phase(0-3)가 전환 전 self-review + external review를 실행(phase별 fallback chain + 사용자 확인); `/deep-phase-review`도 동일 chain 사용.
+
+### Changed
+
+- 세션 폴더를 `deep-work/` → `.deep-work/`(hidden)로 rename, 자동 마이그레이션 + worktree 안전 점검; 세션 폴더와 히스토리만 gitignore.
+
+## [6.0.1] — 2026-04-10
+
+### Added
+
+- Superpowers 통합: per-slice 2단계 리뷰(Spec Compliance required + Code Quality advisory), Red Flags 표, pre-flight check, receipt별 `slice_confidence`/`concerns`.
+- Phase 4 cross-slice + backfill 리뷰(Phase 3에서 FAIL한 slice는 필수 backfill 대상); 전체 변경 파일 기준 scope-creep 감지; per-slice working-tree diff.
+
+### Changed
+
+- Phase 4 Spec Compliance와 Code Quality 게이트가 cross-slice 일관성에 집중; receipt `git_diff`가 per-slice baseline 사용.
+
+## [6.0.0] — 2026-04-09
+
+### Added
+
+- **Computational Sensor Pipeline** — registry 기반 ecosystem 감지(JS/TS/Python/C#/C++), 8개 output 파서, GREEN 이후 SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN 상태 머신 확장, 3-round 자기 교정 루프, `/deep-sensor-scan`, fail-closed 정책.
+- **Mutation Testing** — Stryker / stryker-net / mutmut 통합, git-diff 범위와 테스트 재생성 루프를 갖춘 `/deep-mutation-test`, Mutation Score quality gate(세션 점수의 15%).
+- **Health Engine** — Phase 1 Health Check, 4개 병렬 드리프트 센서(dead-export, stale-config, dependency-vuln, coverage-trend).
+- **Architecture Fitness Functions** — `.deep-review/fitness.json`의 선언적 규칙(file-metric, forbidden-pattern, structure, dependency) + validator + ecosystem-aware generator.
+- Baseline 관리(`health-baseline.json`, commit/branch 스코핑 + 자동 무효화); Phase 4 Fitness Delta(Advisory)와 Health Required(Required) 게이트; deep-review가 소비하는 receipt `health_report` 필드.
+- **Harness Templates** — 6개 내장 토폴로지, deep-merge 로더 + `custom/` override; Phase 1/3 통합.
+- **Self-Correction Loop** — `review-check` 센서(always-on 토폴로지 레이어 + fitness 레이어), 센서별 3-round 제한.
+
+### Changed
+
+- Session Quality Score가 5개 가중치 사용(Test Pass 25%, Rework 20%, Plan Fidelity 25%, Sensor Clean 15%, Mutation 15%); Health Check는 점수에서 제외.
+
+## [5.8.1] — 2026-04-08
+
+### Changed
+
+- **Breaking**: deep-review 플러그인과의 이름 충돌 해결을 위해 `/deep-review` → `/deep-phase-review`; phase-문서 리뷰는 rename된 커맨드, 코드-diff 리뷰는 플러그인 사용.
+
+## [5.8.0] — 2026-04-08
+
+### Added
+
+- Completeness Policy — `plan.md`용 명시적 금지 패턴(TBD, TODO, 모호한 지시, 내용 없는 cross-reference).
+- Code-sketch 계층화(S 주석 의사코드 / M 시그니처 + 타입 / L 완전한 boundary 코드)와 `failing_test` 상세 계층.
+- Slice 필드 `expected_output`과 `steps`; "Boundary: Files NOT to Modify" 섹션; research traceability 태그(`[RF-NNN]`, `[RA-NNN]`)와 lifecycle rule; research Testing Patterns 섹션.
+- Brainstorm context-adaptive 질문, Scope Assessment, Boundaries 섹션; review-gate `code_completeness`와 `buildability` 차원 + legacy-plan 호환 fallback.
+
+### Changed
+
+- Slice 파서가 새(선택) 필드를 인식; RED는 `failing_test` 사용, GREEN은 `expected_output` 비교; planning/research 가이드 업그레이드.
+
+## [5.7.0] — 2026-04-08
+
+### Added
+
+- Plan 승인 후 Sprint Contract 생성(deep-review 설치 시) — `plan.md` slice에서 `.deep-review/contracts/`로.
+- GREEN 시 per-slice 리뷰 제안(`/deep-review --contract SLICE-NNN`), Phase 4 시 전체 리뷰 제안, Phase 4 이후 wiki-ingest 제안.
+
+### Changed
+
+- Contract 생성을 plan 승인 후로 이동하여 contract가 최종 plan과 일치; 플러그인 감지를 설치 방식 무관하게 통일.
+
+## [5.6.0] — 2026-04-07
+
+### Added
+
+- `/deep-fork` — 다른 접근법 탐색을 위한 세션 fork(git worktree 전체 복제, 또는 non-git에서는 artifacts-only이며 implement/test 차단), parent-child 추적, fork-snapshot baseline, stale-parent 검증, 3-generation 제한.
+- `/deep-status --tree`와 `--compare` fork 자동 감지; 기본 status의 fork 정보; `/deep-cleanup` fork 지원; `utils.sh`의 fork 유틸리티 함수.
+
+### Changed
+
+- 세션 registry와 state frontmatter에 fork-relationship 필드 추가.
+
+## [5.5.2] — 2026-04-06
+
+### Added
+
+- 확장된 bash 파일 쓰기 감지(20+ 패턴: perl in-place, `node -e`/`python -c`/`ruby -e` 쓰기, awk, 파괴적 git ops, curl/wget 출력, 아카이브 추출, rsync)와 확장된 safe-command·test-file·TDD-exempt 패턴.
+- TDD state 검증과 backtick/subshell-aware 명령 분할.
 
 ### Fixed
-- macOS 호환성: `timeout` 명령 제거 (macOS 미지원)
-- 버전 일관성: CLAUDE.md, TODOS.md에 올바른 v4.0 버전 반영
 
-## [4.0.0] - 2026-03-25
+- **보안**: 파일 쓰기 패턴을 safe-command 패턴보다 먼저 검사(safe 접두사가 더 이상 파일 쓰기를 가리지 않음, 예: `fs.writeFileSync`가 있는 `node -e`).
+- `file-tracker.sh` Node 25 `process.argv` 호환성; `assumption-engine.js` 다수 수정(quality-timeline CLI, threshold 전달, dedup keep-latest, array 입력 가드); `session-end.sh` JSON 검증, session-id fallback, 에러 로깅.
+
+### Changed
+
+- Redirect 감지를 mid-command redirect까지 확장; `node -e`를 safe 패턴에서 제거; model-name sanitization과 configurable signal threshold.
+
+## [5.5.1] — 2026-04-03
+
+### Changed
+
+- Team 모드에서 plan phase가 부분 research 파일을 보조 참조로 로드하고 plan 결정을 교차 확인.
+- B-1 (RED_VERIFIED)과 B-2 (GREEN) state 업데이트를 phase-guard 차단 경고와 함께 필수로 표시.
+
+### Fixed
+
+- `phase-guard.sh`가 `process.argv` 대신 stdin 파이프로 JSON 입력을 읽어 대용량 입력에서 `set -e` 실패 방지.
+
+## [5.5.0] — 2026-04-02
+
+### Added
+
+- Research Cross-Model Review(codex/gemini)와 전용 research rubric; plan용 Claude self-review; per-conflict 프롬프트를 대체하는 Consolidated Judgment 프로토콜.
+- score-regression rollback을 갖춘 auto-fix snapshot 계약; 실패한 reviewer를 추적하는 degraded mode(`reviewer_status`); resume 검증을 갖춘 v5.5 state-schema 마이그레이션.
+
+### Changed
+
+- Structural-review auto-fix 트리거를 score < 7로 상향(research는 최대 3회); research user-feedback 게이트를 consolidated judgment에 통합.
+
+## [5.3.0] — 2026-03-31
+
+### Added
+
+- Document Intelligence — 피드백 적용 시 `research.md`/`plan.md`를 deduplicate·prune하고 refinement log 기록.
+- 세션 관련성 감지(out-of-scope 요청에 새 세션 또는 backlog 제안); Plan Fidelity Score(0-100); Session Quality Score(0-100); assumption snapshot과 quality 통합; cross-session 품질 트렌드; shields.io 품질 뱃지.
+- `deep-finish`의 authoritative JSONL write(atomic upsert); `session-end.sh`는 provisional 레코드만 기록.
+
+### Fixed
+
+- `session-end.sh`가 공유 `harness-history/`에 기록하여 세션 데이터가 trend/assumption 커맨드에 보임.
+
+### Changed
+
+- README를 problem-solution 내러티브로 재구성(데모 GIF 제거); `exportBadge()`가 구조화된 객체 반환(직접 consumer에 breaking).
+
+## [5.2.0] — 2026-03-31
+
+### Added
+
+- Auto-flow 오케스트레이션 — `/deep-work`가 모든 phase를 자동 체인; plan 승인이 유일한 필수 인터랙션.
+- `--receipts` / `--history` / `--report` / `--assumptions` / `--all`을 갖춘 통합 `/deep-status`; `/deep-test`에서 Drift Check(required), SOLID Review(advisory), Insight Analysis 자동 실행.
+
+### Changed
+
+- 13개 보조 커맨드를 deprecated로 표시(여전히 동작); `/deep-work` Step 1이 resume/new/cancel 제공; plan.md Quality Gates 표가 선택적 override로 변경.
+
+### Deprecated
+
+- `/deep-brainstorm`, `/deep-review`, `/deep-receipt`, `/deep-slice`, `/deep-insight`, `/deep-finish`, `/deep-cleanup`, `/deep-history`, `/deep-assumptions`, `/deep-resume`, `/deep-report`, `/drift-check`, `/solid-review`(기능이 auto-flow 또는 `/deep-status`로 통합).
+
+## [5.1.2] — 2026-03-30
+
+### Added
+
+- Team-mode 자동 설정(`~/.claude/settings.json` 구성 제안)과 런타임 검증, 모든 phase에서 자동 Solo fallback.
+
+### Fixed
+
+- 적절한 설정 없이 Team 모드 선택 시 모든 phase에서 안정적으로 Solo로 fallback.
+
+## [5.1.1] — 2026-03-30
+
+### Fixed
+
+- **Critical**: 내부 에러 시 phase-guard fail-closed(강제 우회 없음); receipt JSON 업데이트가 temp-file + rename 사용(동시 hook으로 인한 손상 없음).
+- 커맨드 체인 우회 차단(`&&`/`||`/`;`/`|` 하위 명령 독립 검사); bash TDD target 추출; comma-delimited 정확 매칭 skipped-phase; Write/Edit가 `file_path` 누락 시 fail-closed.
+- JSONL 히스토리 locking, 크로스 플랫폼 timestamp 파싱, notification JSON escaping, path 정규화, literal YAML 필드 추출, `JSON.stringify` 기반 receipt 초기 생성.
+
+### Changed
+
+- Signal evaluator가 `{ scope, fn }` 형식 사용; `TEST_FILE_PATTERNS` 확장(Rust, Java, C#, Kotlin, Swift).
+
+## [5.1.0] — 2026-03-30
+
+### Added
+
+- Auto-Loop Evaluation(plan-review와 test-phase 자동 재시도 + 에스컬레이션); Contract Negotiation(`contract` / `acceptance_threshold` slice 필드); Wilson Score 기반 Assumption Engine 자동 적용; 적응형 평가자 모델; `--skip-to-implement`.
+
+### Changed
+
+- Structural review가 에스컬레이션 전 최대 3회 auto-loop; 기본 평가자 모델 haiku → sonnet; slice 형식에 contract 필드 추가.
+
+## [5.0.0] — 2026-03-30
+
+### Added
+
+- **Self-Evolving Harness (Assumption Engine)** — 모든 강제 규칙이 machine-readable evidence signal을 갖춘 반증 가능 가설.
+- `assumptions.json`(5개 핵심 가설)과 `assumption-engine.js`(Wilson Score 신뢰도, staleness/new-model 감지, 리포트 + ASCII 타임라인 + 뱃지 export).
+- `/deep-assumptions` 커맨드; receipt의 per-slice `harness_metadata`; 세션 종료 시 append되는 `harness-sessions.jsonl`; 세션 init과 `/deep-report`의 assumption-health 요약.
+
+## [4.2.1] — 2026-03-26
+
+### Added
+
+- TDD Override — TDD가 production 편집을 차단하면 Claude가 테스트 먼저 작성 또는 이 slice에 TDD 건너뛰기를 사유와 함께 제안(slice-scoped, 전환 시 auto-clear); block 메시지의 escape-hatch 가이드; `tdd_override` state 필드와 receipt 필드.
+
+### Changed
+
+- `phase-guard-core.js` / `phase-guard.sh`가 `tdd_override` 반영; `deep-implement`에 TDD Override flow; receipt/finish/history 표면에 override count 표시.
+
+## [4.2.0] — 2026-03-25
+
+### Added
+
+- 모든 phase 문서의 Structural Review(Claude haiku 서브에이전트); plan의 adversarial cross-model 리뷰(codex / gemini-cli)와 투명한 conflict-resolution UX; 낮은 점수에서 auto-implement 차단하는 Review Gate; `/deep-review`; `--skip-review`; cross-model tool 자동 감지; profile `cross_model_preference`; resume/status의 리뷰 상태; JSON 정규화된 리뷰 결과.
+
+### Changed
+
+- Brainstorm/research/plan에 리뷰 단계 추가; `phase-guard-core.js`가 codex/gemini/mktemp를 safe 패턴에 추가; state와 profile 스키마 확장.
+
+### Fixed
+
+- `.gitignore`가 워크플로우 workspace venv를 제외.
+
+## [4.1.0] — 2026-03-25
+
+### Added
+
+- 기본 worktree 격리(`.worktrees/dw/<slug>/`, `--no-branch`로 opt-out); slice 복잡도 기반 모델 auto-routing(S/M/L/XL) + per-slice override; 4가지 완료 옵션을 갖춘 `/deep-finish`; CI/CD receipt 검증(`validate-receipt.sh`, CI 템플릿, `--format=ci` export); `/deep-history`; `/deep-cleanup`.
+- Receipt 스키마 v1.0(slice receipt canonical, session receipt derived) + 마이그레이션 헬퍼; worktree-aware resume; 모델 비용 추적; 공유 `utils.sh`.
+
+### Changed
+
+- 기본 `model_routing.implement` → `"auto"`; 기본 `git_branch` → `true`; `validate-receipt.sh`가 Bash 3.2용 `set -eo pipefail` 사용.
+
+## [4.0.1] — 2026-03-25
+
+### Added
+
+- SessionStart의 Git 기반 auto-update check(자동 업데이트, escalating snooze, opt-out); `phase-guard.sh` / `file-tracker.sh`의 `process.argv`를 통한 shell-injection 방지.
+
+### Fixed
+
+- macOS 호환성(`timeout` 사용 제거); 문서의 버전 일관성.
+
+## [4.0.0] — 2026-03-25
 
 ### BREAKING — Evidence-Driven Development Protocol
 
-deep-work이 **evidence-driven development protocol**로 전환되었습니다. 모든 코드 변경에 증거가 수반됩니다: failing test output, passing test output, git diff, spec compliance check, code review — 모두 JSON receipt으로 수집됩니다.
+deep-work가 evidence-driven development 프로토콜로 전환: 모든 코드 변경이 증거(failing/passing 테스트 출력, git diff, spec check, code review)를 JSON receipt으로 수집.
 
 ### Added
-- **Phase 0: 브레인스톰** (`/deep-brainstorm`): "왜 만드는가"를 먼저 탐색 — 문제 정의, 접근법 비교, spec-reviewer 검증. `--skip-brainstorm`으로 생략 가능.
-- **Slice 기반 실행**: Plan 태스크가 "slice"로 변환 — per-slice TDD 사이클, 파일 범위, 검증 커맨드, 스펙 체크리스트 포함.
-- **TDD 강제**: Hook 기반 상태 머신 (PENDING→RED→RED_VERIFIED→GREEN_ELIGIBLE→GREEN→REFACTOR). failing test 없이 production 코드 수정 차단. 모드: `strict`, `relaxed`, `coaching`, `spike`.
-- **Receipt 시스템**: slice별 JSON 증거 수집 (`receipts/SLICE-NNN.json`) — test output, git diff, lint, spec checklist, code review.
-- **Bash 도구 감시**: PreToolUse 훅이 Bash 커맨드도 감시. `echo >`, `sed -i`, `cp`, `tee` 등 파일 쓰기 패턴 탐지/차단.
-- **체계적 디버깅** (`/deep-debug`): 4단계 root-cause 조사 (investigate→analyze→hypothesize→fix). 예기치 않은 테스트 실패 시 자동 진입. 3회 실패 후 에스컬레이션.
-- **Slice 관리** (`/deep-slice`): ASCII 진행 대시보드, 수동 활성화, spike 모드, slice 리셋.
-- **Receipt 관리** (`/deep-receipt`): 대시보드 뷰, per-slice 상세, JSON/Markdown export.
-- **2단계 코드 리뷰**: Spec Compliance Review (required) + Code Quality Review (advisory) — 서브에이전트 기반.
-- **Receipt Completeness Gate** (required): 모든 slice에 receipt 존재 확인.
-- **Verification Evidence Gate** (required): 실제 테스트 실행 증거 확인.
-- **TDD Coaching 모드**: TDD 초보자를 위한 교육적 메시지 (차단 대신 가이드).
-- **Spike Mode Guard**: spike 종료 시 자동 git stash + slice 리셋.
-- **29개 unit test**: phase-guard-core.js (TDD 상태 머신, Bash 탐지, slice scope, receipt 검증).
+
+- Phase 0 Brainstorm(`/deep-brainstorm`, `--skip-brainstorm`로 생략); slice 기반 실행; hook 강제 TDD 상태 머신(모드: strict/relaxed/coaching/spike); per-slice receipt.
+- Bash tool 모니터링(non-implement phase에서 파일 쓰기 shell 패턴 차단); 체계적 디버깅(`/deep-debug`); `/deep-slice`; `/deep-receipt`; 2단계 code review; Receipt Completeness와 Verification Evidence 게이트; spike-mode guard.
 
 ### Changed
-- Hook 아키텍처: bash+Node.js 하이브리드 — bash fast path (~50ms), Node.js subprocess (~200ms).
-- Plan 포맷: Task Checklist → Slice Checklist (per-slice 메타데이터).
-- `hooks.json`: PreToolUse/PostToolUse에 `Bash` 추가.
-- `phase-guard.sh`: bash+Node 하이브리드로 전면 재작성.
-- `file-tracker.sh`: receipt 수집 및 active slice 매핑 확장.
-- `deep-implement.md`: Slice 단위 TDD 실행으로 전면 재설계.
-- `deep-test.md`: 4개 신규 Quality Gate 추가.
-- `deep-plan.md`: Slice 포맷 도입.
-- `deep-work.md`: Phase 0 옵션, `--tdd=MODE`, `--skip-brainstorm`.
-- `package.json`: 4.0.0 → 4.0.1.
 
-## [3.3.3] - 2026-03-24
+- bash + Node 하이브리드 hook 아키텍처; plan 형식이 slice 체크리스트로; implement/test/plan 전면 재작성; PreToolUse/PostToolUse 매처에 `Bash` 추가.
+
+## [3.3.3] — 2026-03-24
 
 ### Added
-- **멀티 프리셋 Profile System**: 작업 스타일별 Named 프리셋 지원 (예: `dev`, `quick`, `review`).
-  - Profile v2 형식: 단일 YAML 파일에 `presets:` 키로 여러 프리셋 저장
-  - v1 → v2 자동 마이그레이션 (기존 단일 프로필 → `default` 프리셋으로 래핑)
-  - `/deep-work --setup`으로 프리셋 관리 UI (생성, 수정)
-  - `/deep-work --profile=X "작업"` 으로 프리셋 직접 지정 (인터랙티브 스킵)
-  - 프리셋 2개 이상 시 AskUserQuestion으로 선택
-  - 프리셋 1개인 경우 자동 적용
-- **트리거 평가 최적화**: trigger-eval.json 확장 및 SKILL.md description 정제.
-  - trigger-eval.json 20개 → 31개 (16 true + 15 false)
-  - v3.3.2 기능 커버리지 추가: profile, preset, resume, checkpoint 키워드
-  - 동음이의어 false positive 방지 (profile picture, resume template, deep copy 등)
-  - SKILL.md description 최적화: 범용 키워드 제거, preset/프리셋 추가
+
+- 멀티 프리셋 profile 시스템(Profile v2 + `presets:`, v1 → v2 자동 마이그레이션, `--profile=X`, `--setup` 관리 UI, 인터랙티브 선택); false-positive 가드를 갖춘 확장된 trigger-eval 세트.
 
 ### Changed
-- `deep-work.md` Step 1.5 전면 재작성: v2 프로필 버전 체크 (v1 자동 마이그레이션, v2 정상 진행, 그 외 거부), 프리셋 선택 로직, 필드→변수 매핑
-- `deep-work.md` Step 1.5a 플래그 테이블에 `--profile=X` 추가
-- `deep-work.md` Step 1.5b: `--setup` 시 프리셋 관리 UI 표시 (태스크 유무에 따라 분기)
-- `deep-work.md` Step 1.5d: 프리셋 관리 UI 신규 섹션 (편집, 생성)
-- `deep-work.md` Step 7: 상태 파일 템플릿에 `preset` 필드 추가
-- `deep-work.md` Step 7.5: 프로필 저장 형식 v1 (`defaults.*`) → v2 (`presets.default.*`)
-- `deep-work.md` Step 8: 확인 메시지에 프리셋 이름 표시 (🎯 프리셋: [name])
-- `deep-resume.md` Step 1: 상태 파일에서 `preset` 필드 추출
-- `deep-resume.md` Step 3: 재개 상태 표시에 프리셋 이름 포함
-- SKILL.md Profile System 섹션에 멀티 프리셋 문서 추가
-- SKILL.md v3.3.3 Features 섹션 추가
 
-## [3.3.2] - 2026-03-22
+- `/deep-work` profile 로드/저장과 resume을 v2 형식으로 업데이트.
+
+## [3.3.2] — 2026-03-22
 
 ### Added
-- **Profile System**: 질문 없는 세션 초기화를 위한 자동 프로필 저장/로드.
-  - 첫 `/deep-work` 실행 시 설정 답변을 `.claude/deep-work-profile.yaml`에 자동 저장
-  - 이후 실행 시 모든 설정 질문 스킵, 저장된 프로필 즉시 적용
-  - 단일 세션 오버라이드 플래그: `--team`, `--zero-base`, `--skip-research`, `--no-branch`
-  - 프로필 재설정: `/deep-work --setup`
-  - 마이그레이션용 프로필 버전 필드 (`version: 1`)
-- **Session Resume (`/deep-resume`)**: 중단된 세션 복구 및 전체 컨텍스트 복원.
-  - `.claude/deep-work.local.md`에서 활성 세션 자동 감지
-  - 산출물에서 AI 컨텍스트 복원: research.md (요약), plan.md (전문), test-results.md (실패 내역)
-  - Phase별 자동 재개: research → plan 리뷰 → implement 체크포인트 → test
-  - Implement 단계: 체크포인트 기반 재개 (모델 라우팅 재위임 우회)
-- **Checkpoint Verification**: Agent 위임 후 구현 무결성 검증.
-  - `git diff --name-only` 기반 1차 검증
-  - git 변경이 있으나 미표시된 태스크의 plan.md `[x]` 자동 보정
-  - `file-changes.log` 미존재 시 graceful fallback (Agent 위임 모드)
+
+- Profile 시스템 — 첫 실행이 설정 답변을 저장하고 이후 실행이 즉시 적용; override 플래그; `--setup`.
+- Artifact 기반 context 복원과 phase auto-continue를 갖춘 세션 resume(`/deep-resume`); `git diff --name-only` 기반 checkpoint 검증.
 
 ### Changed
-- `deep-work.md` Step 1.5 (프로필 로드/플래그 파싱), Step 7.5 (프로필 저장) 구조 추가
-- `deep-work.md` Step 2-1 (git 브랜치) 프로필 설정에 따라 자동 생성/스킵
-- `deep-implement.md` Section 0-pre Agent 프롬프트에 체크포인트 의무 명시
-- `deep-implement.md` Section 0-pre에 Agent 완료 후 체크포인트 검증 단계 추가
-- SKILL.md description에 resume/profile 트리거 키워드 추가
-- SKILL.md에 Profile System, Session Resume, v3.3.2 Features 섹션 추가
 
-## [3.3.0] - 2026-03-22
+- `/deep-work`를 profile 로드/저장 중심으로 재구성; implement에 checkpoint mandate와 post-agent 검증 추가.
+
+## [3.3.0] — 2026-03-22
 
 ### Added
-- **Insight 계층 Quality Gate**: 3계층 Quality Gate 시스템의 세 번째이자 마지막 계층. 워크플로우 차단 없이 코드 메트릭과 분석 정보를 제공.
-  - `/deep-insight` 커맨드 (standalone/workflow 이중 모드)
-  - 내장 분석: 파일 메트릭, 복잡도 지표, 의존성 그래프, 변경 요약
-  - plan.md Quality Gates 테이블에 커스텀 ℹ️ 게이트 정의 가능
-  - `insight-report.md` 산출물
-  - `/deep-test`에서 Required/Advisory 게이트 이후 자동 실행
-- **PostToolUse 파일 추적**: `file-tracker.sh` 훅이 Implement 단계에서 파일 수정을 자동으로 `$WORK_DIR/file-changes.log`에 타임스탬프와 함께 기록. `/deep-report`와 `/deep-insight`에서 활용.
-- **Stop 훅 — 세션 종료 핸들러**: `session-end.sh` 훅이 CLI 세션 종료 시 실행. Deep Work 세션이 활성 상태이면 알림 메시지 출력 및 설정된 채널로 알림 전송.
-- **insight-guide.md**: Insight 계층 레퍼런스 가이드 — 분석 해석 방법, 커스텀 게이트 정의, 제한 사항
+
+- Insight Tier Quality Gate(`/deep-insight`, 내장 분석, `insight-report.md`, 차단 없음); `file-changes.log`로의 PostToolUse 파일 추적; 세션 종료 리마인더용 Stop hook.
 
 ### Changed
-- `hooks.json`이 PreToolUse 전용에서 PreToolUse + PostToolUse + Stop 3개 이벤트로 확장
-- `/deep-test` Section 2-1에서 ✅(required), ⚠️(advisory)와 함께 ℹ️(insight) 마커 파싱 추가
-- `/deep-test` Section 4에 "4-2. Built-in Insight Analysis" 단계 추가 (Required/Advisory 게이트 이후 실행)
-- `quality-gates.md` 출력에 "Insight Gates" 섹션 및 판정의 insight 카운트 추가
-- `/deep-report`가 `insight-report.md`와 `file-changes.log`를 읽어 리포트 보강
-- `/deep-status` 산출물 목록에 `insight-report.md`, `file-changes.log` 추가
-- `/deep-implement`에 PostToolUse 파일 추적 안내 노트 추가
-- SKILL.md Phase Enforcement 섹션에 3개 훅 유형 전체 문서화
-- SKILL.md description에 insight/metrics/tracking 트리거 키워드 추가
 
-## [3.2.2] - 2026-03-21
+- `hooks.json`을 PreToolUse + PostToolUse + Stop으로 확장; `/deep-test`가 ℹ️ insight 마커를 파싱하고 내장 Insight 단계 추가; 리포트와 status가 새 아티팩트를 읽음.
+
+## [3.2.2] — 2026-03-21
 
 ### Added
-- **다국어 지원 (i18n)**: 9개 커맨드 파일 모두 사용자의 메시지 또는 Claude Code `language` 설정에서 언어를 감지하여 해당 언어로 모든 사용자 대면 메시지를 출력. 한국어 템플릿을 참조 포맷으로 유지하며 Claude가 사용자 언어에 맞게 자연스럽게 번역. 영어, 일본어, 중국어 등 모든 언어 사용자 지원.
-- SKILL.md에 Internationalization 섹션 추가.
 
-## [3.2.1] - 2026-03-21
+- 다국어 지원 — 모든 커맨드 파일이 사용자 언어를 감지하여 메시지를 출력(한국어 템플릿이 참조), 영어/일본어/중국어/기타 사용자가 수정 없이 사용 가능.
+
+## [3.2.1] — 2026-03-21
 
 ### Fixed
-- **SKILL.md description 축소**: ~1,500자 → ~450자 (권장치의 3배 초과 해소). 하위 기능 트리거 키워드 제거하여 매칭 정확도 향상 및 매 대화마다 소모되는 프롬프트 예산 절감.
-- **SKILL.md changelog 중복 제거**: 본문과 중복되던 v3.1.0/v3.2.0 Features 섹션(~400단어) 삭제. 비표준 `compatibility` frontmatter 필드를 본문 Compatibility 섹션으로 이동.
-- **deep-research.md 섹션 번호 정리**: 0, 0-1, 0-2 → 1-1, 1-2, 1-3으로 논리적 실행 순서에 맞게 변경.
-- **deep-test.md allowed-tools 수정**: Phase Guard가 코드 수정을 차단하는 Test phase에서 `Edit` 도구 제거.
-- **커맨드 description 언어 통일**: `drift-check.md`, `solid-review.md`의 description을 한국어에서 영문으로 변경 (나머지 7개 커맨드와 일치).
-- **notify.sh JSON 안전성**: JSON 보간 전 `MESSAGE` 변수의 쌍따옴표/백슬래시 이스케이프 추가하여 잘못된 페이로드 방지.
-- **Phase Guard 경로 참조**: SKILL.md에 `hooks/scripts/phase-guard.sh` 명시적 경로 추가.
 
-### Added
-- `.gitignore` 파일 추가 (`.npmignore` 패턴 반영). 상태 파일 및 세션 아티팩트의 실수 커밋 방지.
-
-## [3.2.0] - 2026-03-18
-
-### Added
-- **3계층 Quality Gate 시스템**: Quality Gate를 3계층으로 분리 — Required (차단), Advisory (경고), Insight (정보, v3.3 예정).
-- **Plan Alignment / Drift Detection**: `/drift-check` 커맨드 및 `/deep-test` 내장 Required 게이트. plan.md 항목과 실제 git diff를 자동 비교하여 미구현 항목, 범위 초과, 설계 이탈을 감지. `drift-report.md` 산출물.
-- **SOLID Design Review**: `/solid-review` 커맨드 및 Advisory Quality Gate. 5가지 SOLID 원칙(SRP, OCP, LSP, ISP, DIP) 기준 코드 설계 품질 리뷰. 파일별 스코어카드, 종합 판정, Top 5 리팩토링 제안. `solid-review.md` 산출물.
-- **solid-guide.md**: 프레임워크 무관 SOLID 리뷰 체크리스트 (심각도 기준 + KISS 균형)
-- **solid-prompt-guide.md**: AI 도구에 SOLID 준수 코드를 요청하고 AI 출력물을 검증하는 가이드
-
-### Changed
-- `/deep-test`에서 plan.md 존재 시 다른 Quality Gate 이전에 Plan Alignment 검사를 자동 실행 (설정 불필요)
-- SKILL.md 구조 개선: Plan Alignment, SOLID Review, Session Report를 "Quality Gates & Utilities" 섹션으로 분리 (기존 "The Four Phases" 하위에서 이동)
-- SKILL.md description 최적화: ~40개 세부 트리거 키워드를 ~10개 대표 키워드로 통합 (신호 대 잡음비 개선)
-- SKILL.md에 v3.2.0 Features 섹션 추가 (영어 일관성 유지)
-- State 스키마에 `plan_approved_at` 필드 추가 (선택적, Drift Detection 비교 기준)
-
-## [3.1.0] - 2026-03-17
-
-### Breaking Changes
-- **저장소 구조 개편**: 루트 플러그인에서 `plugins/deep-work/` 서브디렉토리 패턴으로 전환. 기존 사용자는 재설치 필요.
-
-### Added
-- **모델 라우팅 (F1)**: Phase별 최적 모델 배정 (Research=sonnet, Plan=main, Implement=sonnet, Test=haiku). Agent 위임 패턴으로 토큰 30~40% 절감.
-- **멀티채널 알림 (F2)**: Phase 완료 시 OS 네이티브 + Slack/Discord/Telegram/커스텀 Webhook 알림. Fire-and-forget 패턴.
-- **증분 리서치 (F3)**: `/deep-research --incremental` — git diff 기반 변경 영역만 재분석. 시간 60~80% 절감.
-- **Quality Gate 시스템 (F4)**: plan.md에 Quality Gates 정의 → required/advisory 게이트 실행. `quality-gates.md` 산출물.
-- **Plan Diff 시각화 (F5)**: Plan 재작성 시 구조적 변경 사항 자동 시각화. `plan-diff.md` 산출물.
-- **model-routing-guide.md**: 모델 라우팅 설정 가이드
-- **notification-guide.md**: 알림 채널 설정 가이드
-
-### Changed
-- `/deep-work` 초기화에 모델 라우팅/알림 설정 옵션 추가
-- `/deep-status`에 모델 라우팅, 알림, Quality Gate 상태 표시
-- `/deep-report`에 Quality Gate 결과, Plan Diff 요약 섹션 추가
-- State 스키마에 `model_routing`, `notifications`, `last_research_commit`, `quality_gates_passed` 필드 추가
-- marketplace.json source 경로 `"./"` → `"./plugins/deep-work"` 변경
-
-## [3.0.0] - 2026-03-13
+- SKILL.md description 축소(~1,500 → ~450자)와 changelog bloat 제거; `deep-research.md` 단계 재번호; `deep-test.md`가 allowed-tools에서 `Edit` 제거; 커맨드 description 언어 표준화; `notify.sh` 메시지 escaping; SKILL.md의 명시적 phase-guard 경로.
 
 ### Added
 
-#### Phase 4: Test (`/deep-test`)
-- **P-1**: 새로운 Test phase 추가 (`implement → test → idle`)
-- 프로젝트 설정 파일에서 테스트/린트/타입체크 명령어 자동 감지 (package.json, pyproject.toml, Makefile, Cargo.toml, go.mod)
-- 테스트 실패 시 implement 단계로 자동 복귀, 수정 후 재테스트 루프 (최대 3회)
-- `test-results.md`에 시도별 검증 결과 누적 기록
-- Test phase에서 코드 수정 차단 (Phase Guard)
+- state 파일과 세션 아티팩트의 우발적 커밋을 방지하기 위해 `.npmignore`를 미러링한 `.gitignore`.
 
-#### 제로베이스 모드
-- **P-3**: 새 프로젝트를 처음부터 설계하는 Zero-Base 모드 추가
-- 기술 스택 선정, 코딩 컨벤션, 데이터 모델, API 설계, 스캐폴딩, 의존성 평가 6개 영역 Research
-- Plan에서 "Files to Create" + "Project Structure" + "Setup Instructions" 제공
-- `references/zero-base-guide.md` 신규 가이드 추가
+## [3.2.0] — 2026-03-18
 
-#### 대화형 Plan 리뷰
-- **A-7**: 채팅으로 피드백하면 plan.md 자동 수정 (파일 직접 편집 불필요)
-- 수정 내용 하이라이트 표시 후 재리뷰 대기
+### Added
 
-#### Plan 기능 강화
-- **A-6**: Plan 재작성 시 이전 버전을 `plan.v{N}.md`로 백업, Change Log 섹션 추가
-- **A-11**: 작업 유형별 Plan 템플릿 6종 (API 엔드포인트, UI 컴포넌트, DB 마이그레이션, 리팩토링, 버그 수정, Full Stack 기능)
-- **P-2**: Plan 승인 시 Team↔Solo 모드 전환 자동 제안 (태스크 수, 파일 수 기반)
-
-#### Research 기능 강화
-- **A-8**: 부분 리서치 재실행 — `/deep-research --scope=api,data`로 특정 영역만 재분석
-- **A-9**: Research 캐싱 — 이전 세션의 research.md를 베이스라인으로 활용, git diff 기반 변경 영역만 재분석
-
-#### Git 통합
-- **A-10**: 세션 시작 시 `deep-work/[slug]` 브랜치 생성 제안
-- 세션 완료(테스트 통과) 시 커밋 메시지 자동 생성 및 커밋 제안
-
-#### Phase 스킵
-- **A-1**: 세션 초기화 시 Research를 건너뛰고 Plan부터 시작 가능
-- 익숙한 코드베이스에서 불필요한 Research 생략
-
-#### Implement 체크포인트
-- **A-4**: 구현 중 중단 후 재실행 시 완료된 태스크 자동 스킵, 미완료 태스크부터 재개
-
-#### 시간 추적
-- **A-12**: 모든 Phase의 시작/완료 타임스탬프 기록
-- 세션 리포트에 Phase별 소요 시간 테이블 추가
-
-#### Team 모드 진행 알림
-- **A-13**: Team 모드에서 에이전트 태스크 완료 시 `[2/3] pattern-analyst 완료 ✅` 형식 진행 알림
-
-#### 세션 비교
-- **A-14**: `/deep-status --compare`로 두 세션의 접근법, 수정 파일, 검증 결과 비교
-
-#### 신규 파일
-- `commands/deep-test.md` — Test Phase 커맨드
-- `references/testing-guide.md` — Test Phase 상세 가이드
-- `references/plan-templates.md` — Plan 템플릿 모음
-- `references/zero-base-guide.md` — 제로베이스 Research 가이드
-- `CHANGELOG.md` — 변경 이력 파일
+- 3계층 Quality Gate 시스템(Required / Advisory / Insight); Plan Alignment / Drift Detection(`/drift-check` + 내장 게이트, `drift-report.md`); SOLID Design Review(`/solid-review` + advisory 게이트, `solid-review.md`); SOLID 리뷰 가이드.
 
 ### Changed
 
-#### 출력 형식 개선
-- **P-5**: research.md에 Executive Summary, Key Findings, Risk & Blockers를 최상단에 배치 (피라미드 원칙)
-- **P-5**: plan.md에 Plan Summary (접근법, 변경 범위, 리스크, 핵심 결정)를 최상단에 배치
+- `/deep-test`가 다른 게이트 전에 Plan Alignment를 자동 실행; SKILL.md 재구성; state 스키마에 `plan_approved_at` 추가.
 
-#### Phase Guard 메시지 개선
-- **A-2**: 차단 메시지에 Phase별 "다음 단계" 구체적 안내 추가
-- Research: "→ /deep-plan 또는 /deep-research 실행"
-- Plan: "→ 계획 승인 또는 /deep-plan 재실행"
-- Test: "→ 테스트 통과/실패 시 자동 처리, test-results.md 참조"
+## [3.1.0] — 2026-03-17
 
-#### Phase 흐름 변경
-- `research → plan → implement → idle` → `research → plan → implement → test ⟲ → idle`
-- Implement 완료 후 idle 대신 test phase로 자동 전환
-- Test 실패 시 implement로 복귀하는 재시도 루프
+### Breaking
 
-#### 상태 파일 스키마 확장
-- 신규 필드: `project_type`, `git_branch`, `test_retry_count`, `max_test_retries`, `test_passed`
-- 신규 타임스탬프: `research_started_at/completed_at`, `plan_started_at/completed_at`, `implement_started_at/completed_at`, `test_started_at/completed_at`
-
-#### 버전 통일
-- **A-3**: `plugin.json`과 `package.json`의 버전을 3.0.0으로 통일
-
-#### SKILL.md 업데이트
-- 4-phase 워크플로우 반영
-- 제로베이스 모드 트리거 키워드 추가 ("새 프로젝트 시작", "제로베이스", "zero-base", "from scratch")
-- 신규 기능 설명 추가 (Research 캐싱, 부분 재실행, Plan 템플릿, 대화형 리뷰 등)
-
-#### Reference 가이드 업데이트
-- `research-guide.md` — Executive Summary/Key Findings 출력 형식 추가, 제로베이스 가이드 링크
-- `planning-guide.md` — Plan Summary 출력 형식 추가, 템플릿 가이드 링크
-- `implementation-guide.md` — 완료 후 Test phase 전환으로 Completion Protocol 변경
-
-## [2.0.0] - 2026-03-07
+- 저장소 구조를 `plugins/deep-work/` 서브디렉토리로 마이그레이션 — 기존 사용자는 재설치 필요.
 
 ### Added
-- 작업별 폴더 히스토리 (`deep-work/YYYYMMDD-HHMMSS-slug/`)
-- 승인 시 자동 구현 시작
-- 세션 리포트 자동 생성 (`report.md`)
-- `/deep-report` 커맨드 (리포트 조회/재생성)
-- `/deep-status` 커맨드 (상태, 진행률, 세션 히스토리)
-- Solo/Team 모드 선택
-- Team 모드: 3명 병렬 Research, 파일 소유권 기반 병렬 Implement, 크로스 리뷰
+
+- Model Routing(phase별 모델 배정, 30-40% 토큰 절감); 멀티 채널 알림; 증분 research(`--incremental`, 60-80% 시간 절감); Quality Gate 시스템; Plan Diff 시각화; routing/notification 가이드.
 
 ### Changed
-- 상태 파일에 `work_dir`, `team_mode`, `started_at` 필드 추가
-- Phase Guard가 `deep-work/` 디렉토리 내 문서 수정은 허용
 
-## [1.1.0] - 2026-03-01
+- `/deep-work` init, `/deep-status`, `/deep-report`가 새 옵션 표면화; state 스키마와 marketplace source 경로 업데이트.
+
+## [3.0.0] — 2026-03-13
 
 ### Added
-- Phase Guard (PreToolUse hook) — Research/Plan 단계에서 코드 파일 수정 차단
-- 상태 파일 기반 phase 관리
+
+- 자동 감지 테스트/lint/type-check 명령과 fix-and-retest 루프(최대 3회 재시도), `test-results.md`, Test-phase 편집 차단을 갖춘 Phase 4 Test(`/deep-test`).
+- 새 프로젝트용 Zero-Base 모드; 인터랙티브 plan 리뷰(피드백이 `plan.md` 업데이트); plan 버전 백업과 6개 템플릿; 부분/캐시 research; git 브랜치 + commit 제안; implement checkpoint; phase별 시간 추적; team-mode 진행; `/deep-status --compare`.
 
 ### Changed
-- 기존 단순 프롬프트 기반에서 hook 기반 강제 분리로 전환
 
-## [1.0.0] - 2026-02-15
+- Phase 흐름이 `research → plan → implement → test ⟲ → idle`로; Executive Summary / Plan Summary를 먼저 배치(피라미드 원칙); phase-guard block 메시지에 next-step 가이드; state 스키마와 SKILL.md 확장.
+
+## [2.0.0] — 2026-03-07
 
 ### Added
-- 초기 버전
-- 3단계 워크플로우: Research → Plan → Implement
-- `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement` 커맨드
-- `research.md`, `plan.md` 산출물 생성
-- 반복적 Plan 리뷰 지원
+
+- Per-task 폴더 히스토리(`deep-work/YYYYMMDD-HHMMSS-slug/`); plan 승인 시 implementation 자동 시작; 자동 생성 세션 리포트; `/deep-report`; `/deep-status`; 3-agent 병렬 research와 cross-review를 갖춘 Solo/Team 모드.
+
+### Changed
+
+- State 파일에 `work_dir` / `team_mode` / `started_at` 추가; Phase Guard가 `deep-work/` 내 문서 편집 허용.
+
+## [1.1.0] — 2026-03-01
+
+### Added
+
+- Research/Plan 중 코드 파일 편집을 차단하는 Phase Guard(PreToolUse hook); state 파일 기반 phase 관리.
+
+### Changed
+
+- 프롬프트 기반 접근에서 hook 기반 강제로 마이그레이션.
+
+## [1.0.0] — 2026-02-15
+
+### Added
+
+- 최초 릴리스: 3단계 워크플로우(Research → Plan → Implement); `/deep-work`, `/deep-research`, `/deep-plan`, `/deep-implement`; `research.md` / `plan.md` 아티팩트; 반복적 plan 리뷰.
