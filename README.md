@@ -27,7 +27,7 @@ Via the `claude-deep-suite` marketplace (recommended):
 
 ```bash
 /plugin marketplace add Sungmin-Cho/claude-deep-suite
-/plugin install deep-work@Sungmin-Cho-claude-deep-suite
+/plugin install deep-work@claude-deep-suite
 ```
 
 Standalone, from this repository:

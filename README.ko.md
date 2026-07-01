@@ -27,7 +27,7 @@ deep-work는 [claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suit
 
 ```bash
 /plugin marketplace add Sungmin-Cho/claude-deep-suite
-/plugin install deep-work@Sungmin-Cho-claude-deep-suite
+/plugin install deep-work@claude-deep-suite
 ```
 
 이 저장소에서 단독 설치:
