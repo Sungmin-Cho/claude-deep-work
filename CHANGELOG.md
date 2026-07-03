@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.1] — 2026-07-03 (Windows/Git Bash ghost `.claude` folder fix)
+
+### Fixed
+
+- `file-tracker.sh` no longer materializes a "ghost" `.claude` directory tree on Windows/Git Bash. The PostToolUse tool-input cache write is now guarded behind `[[ -d "$PROJECT_ROOT/.claude" ]]` — it never `mkdir -p`s a fresh tree, so a malformed `$PROJECT_ROOT` (a CRLF `\r`- or backslash-tainted `$PWD`) can no longer create bogus directories such as `pop-studio-suite <CR>/d/NHN/.../.claude/` on every tool call, before any session/state check.
+- `utils.sh` hardens `$PROJECT_ROOT` derivation at its single source: new `sanitize_project_path()` strips stray CR, folds backslashes to forward slashes, and trims trailing whitespace; `find_project_root` sanitizes `$PWD` before walking and adds a drive-root loop-termination guard (never spins on `D:/`); `init_deep_work_state` replaces the `|| echo "$PWD"` double-emit — which produced a multi-line `PROJECT_ROOT` on the not-found path — with `|| true`.
+
+### Added
+
+- `hooks/scripts/file-tracker-ghost-guard.test.js` — pins the sanitizer behavior (CR / backslash / trailing-space) and the ghost-folder guard (no `.claude` created outside a session; cache still written when `.claude` already exists).
+
 ## [6.9.0] — 2026-05-21 (deep-memory v0.1.0 consumer integration — Phase 1 recall + Phase 5 harvest recommendation)
 
 ### Added

@@ -9,6 +9,17 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 
 ## [Unreleased]
 
+## [6.9.1] — 2026-07-03 (Windows/Git Bash 유령 `.claude` 폴더 수정)
+
+### Fixed
+
+- `file-tracker.sh`가 Windows/Git Bash에서 "유령" `.claude` 디렉터리 트리를 더 이상 생성하지 않습니다. PostToolUse tool-input 캐시 기록을 `[[ -d "$PROJECT_ROOT/.claude" ]]` 가드 안으로 이동 — 새 트리를 `mkdir -p` 하지 않으므로, 오염된 `$PROJECT_ROOT`(CRLF `\r` 또는 역슬래시가 섞인 `$PWD`)가 세션·state 확인 이전에 매 도구 호출마다 `pop-studio-suite <CR>/d/NHN/.../.claude/` 같은 잘못된 디렉터리를 만들 수 없습니다.
+- `utils.sh`가 `$PROJECT_ROOT` 유도를 단일 지점에서 견고화합니다: 신규 `sanitize_project_path()`가 CR 제거·역슬래시→슬래시·후행 공백 제거를 수행하고, `find_project_root`는 탐색 전 `$PWD`를 정화하며 드라이브 루트 무한루프 종료 가드를 추가하고(`D:/`에서 무한 반복 안 함), `init_deep_work_state`는 not-found 경로에서 멀티라인 `PROJECT_ROOT`를 유발하던 `|| echo "$PWD"` 이중 emit을 `|| true`로 교체합니다.
+
+### Added
+
+- `hooks/scripts/file-tracker-ghost-guard.test.js` — 정화 동작(CR / 역슬래시 / 후행 공백)과 유령 폴더 가드(세션 밖에서는 `.claude` 미생성; `.claude` 존재 시 캐시는 정상 기록)를 고정합니다.
+
 ## [6.9.0] — 2026-05-21 (deep-memory v0.1.0 consumer 통합 — Phase 1 recall + Phase 5 harvest 추천)
 
 ### Added
