@@ -18,20 +18,43 @@ normalize_path() {
   printf '%s' "$p"
 }
 
+# ─── Project-root path hardening ─────────────────────────────
+# Windows/Git Bash defense: a $PWD (or env-derived path) carrying a stray
+# CR (from a CRLF-tainted source), backslash separators, or trailing
+# whitespace would otherwise flow into PROJECT_ROOT and, downstream, make
+# `mkdir -p "$PROJECT_ROOT/.claude"` materialize a "ghost" directory tree
+# (e.g. `pop-studio-suite <CR>/d/NHN/.../.claude/`). Normalize once, at the
+# single point where PROJECT_ROOT is derived, so every consumer agrees on
+# the same clean value.
+sanitize_project_path() {
+  local p="${1:-}"
+  p="${p//$'\r'/}"                    # strip CR (Windows CRLF artifact)
+  p="${p//\\//}"                      # backslashes → forward slashes
+  p="${p%"${p##*[![:space:]]}"}"      # trim trailing whitespace
+  printf '%s' "$p"
+}
+
 # ─── Project root detection ──────────────────────────────────
 # Walks up from $PWD looking for a .claude directory.
-# Returns the first directory containing .claude, or $PWD if not found.
+# Returns the first directory containing .claude, or the (sanitized) $PWD
+# if not found. Output is always exactly one sanitized line.
 
 find_project_root() {
-  local dir="$PWD"
-  while [[ "$dir" != "/" ]]; do
+  local dir
+  dir="$(sanitize_project_path "$PWD")"
+  local start="$dir"
+  local prev=""
+  # `prev` guard terminates the walk on Windows drive roots (e.g. `D:/`),
+  # which never reach `/` and would otherwise spin (dirname "." == ".").
+  while [[ -n "$dir" && "$dir" != "/" && "$dir" != "$prev" ]]; do
     if [[ -d "$dir/.claude" ]]; then
-      echo "$dir"
+      printf '%s\n' "$dir"
       return 0
     fi
+    prev="$dir"
     dir="$(dirname "$dir")"
   done
-  echo "$PWD"
+  printf '%s\n' "$start"
   return 1
 }
 
@@ -225,7 +248,13 @@ generate_session_id() {
 # After calling: PROJECT_ROOT, STATE_FILE are set.
 
 init_deep_work_state() {
-  PROJECT_ROOT="$(find_project_root 2>/dev/null || echo "$PWD")"
+  # find_project_root already emits a single sanitized line (even on its
+  # not-found path). `|| true` absorbs its exit-1 so `set -e` callers don't
+  # abort here; it replaces the old `|| echo "$PWD"`, which double-emitted on
+  # not-found and produced a multi-line PROJECT_ROOT. `${…:-$PWD}` covers the
+  # (rare) empty-output case.
+  PROJECT_ROOT="$(find_project_root 2>/dev/null || true)"
+  PROJECT_ROOT="$(sanitize_project_path "${PROJECT_ROOT:-$PWD}")"
 
   local session_id=""
 

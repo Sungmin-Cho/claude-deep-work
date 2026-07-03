@@ -23,13 +23,23 @@ STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 TOOL_INPUT="$(cat)"
 TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
-_HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
-mkdir -p "$(dirname "$_HOOK_INPUT_CACHE")" 2>/dev/null
-_HOOK_INPUT_TMP="${_HOOK_INPUT_CACHE}.tmp.$$"
-# Atomic write: truncate+write is non-atomic and a concurrent reader could
-# see a partial JSON. Write to tmp and rename.
-if printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_TMP" 2>/dev/null; then
-  mv "$_HOOK_INPUT_TMP" "$_HOOK_INPUT_CACHE" 2>/dev/null || rm -f "$_HOOK_INPUT_TMP" 2>/dev/null
+# Cache the tool input for phase-transition.sh (the next hook in the array,
+# which can't re-read the already-consumed stdin). GUARD: only write when
+# $PROJECT_ROOT/.claude ALREADY exists — never `mkdir -p` a fresh tree here.
+# A malformed PROJECT_ROOT (e.g. a CRLF-tainted $PWD on Windows/Git Bash)
+# would otherwise materialize a "ghost" .claude tree on every PostToolUse in
+# any directory. When no deep-work session exists, .claude is absent and this
+# cache is pointless anyway (the consumer reads it only mid-session), so
+# skipping is behaviorally equivalent — phase-transition.sh already no-ops on
+# a missing cache file.
+if [[ -d "$PROJECT_ROOT/.claude" ]]; then
+  _HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
+  _HOOK_INPUT_TMP="${_HOOK_INPUT_CACHE}.tmp.$$"
+  # Atomic write: truncate+write is non-atomic and a concurrent reader could
+  # see a partial JSON. Write to tmp and rename.
+  if printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_TMP" 2>/dev/null; then
+    mv "$_HOOK_INPUT_TMP" "$_HOOK_INPUT_CACHE" 2>/dev/null || rm -f "$_HOOK_INPUT_TMP" 2>/dev/null
+  fi
 fi
 
 # 상태 파일이 없으면 즉시 종료
