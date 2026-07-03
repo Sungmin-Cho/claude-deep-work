@@ -170,4 +170,46 @@ describe('file-tracker.sh ghost-folder guard', () => {
     assert.ok(cached.length >= 1,
       'writing a deep-work state file must cache the tool input even before a session pointer resolves');
   });
+
+  it('does not cache when only file CONTENT mentions a state-file path (no session)', () => {
+    // Classification must use the parsed file_path, not a substring of the raw
+    // payload — else a content edit mentioning a state path leaks a cache file.
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+
+    execFileSync('bash', [SCRIPT], {
+      input: JSON.stringify({
+        file_path: path.join(tmpDir, 'README.md'),
+        new_string: 'docs mention .claude/deep-work.s-demo.md here',
+      }),
+      cwd: tmpDir,
+      env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Write' },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+
+    const leaked = fs
+      .readdirSync(path.join(tmpDir, '.claude'))
+      .filter((n) => n.startsWith('.hook-tool-input.'));
+    assert.deepEqual(leaked, [],
+      'a content-only mention of a state path must not cache outside an active session');
+  });
+
+  it('caches a backslash (Windows) state-file target', () => {
+    // normalize_path folds `\` to `/`, so C:\repo\.claude\deep-work.s.md matches.
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+
+    execFileSync('bash', [SCRIPT], {
+      input: JSON.stringify({ file_path: 'C:\\repo\\.claude\\deep-work.s-win.md' }),
+      cwd: tmpDir,
+      env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Write' },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+
+    const cached = fs
+      .readdirSync(path.join(tmpDir, '.claude'))
+      .filter((n) => n.startsWith('.hook-tool-input.'));
+    assert.ok(cached.length >= 1,
+      'a backslash Windows state-file target must still cache (normalize_path folds \\ to /)');
+  });
 });

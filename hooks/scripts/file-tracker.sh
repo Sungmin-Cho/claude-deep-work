@@ -25,12 +25,19 @@ TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
 # Does THIS tool call write a deep-work state file? (phase-transition.sh needs
 # the cache to detect the initial phase even before a session pointer resolves
-# $STATE_FILE.) Mirror phase-transition.sh's own `*".claude/deep-work."*".md"`
-# substring test so both hooks agree on what counts.
+# $STATE_FILE.) Classify from the PARSED target file_path ONLY — never a
+# substring of the raw payload: a Write/Edit to an unrelated file whose *content*
+# merely mentions `.claude/deep-work.s.md` must not trigger caching outside a
+# session (round-2 review finding — that reintroduced the orphan-payload leak).
+# normalize_path folds backslashes so Windows targets like
+# `C:\repo\.claude\deep-work.s.md` also match. The glob mirrors
+# phase-transition.sh's own `*".claude/deep-work."*".md"` test so both hooks
+# agree. (Bash tool inputs have no file_path → empty → no match, matching
+# phase-transition, which likewise ignores Bash writes.)
 _WRITES_STATE_FILE=false
-if printf '%s' "$TOOL_INPUT" | grep -q '\.claude/deep-work\.[^"]*\.md'; then
-  _WRITES_STATE_FILE=true
-fi
+case "$(normalize_path "$(extract_file_path_from_json "$TOOL_INPUT")")" in
+  *".claude/deep-work."*".md") _WRITES_STATE_FILE=true ;;
+esac
 
 # Cache the tool input for phase-transition.sh (the next hook in the array,
 # which can't re-read the already-consumed stdin). GATE: write ONLY within an
