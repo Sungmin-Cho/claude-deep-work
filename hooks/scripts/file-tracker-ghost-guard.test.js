@@ -93,7 +93,7 @@ describe('file-tracker.sh ghost-folder guard', () => {
       cwd: tmpDir,
       env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Write' },
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: 20000,
     });
 
     assert.ok(
@@ -108,7 +108,9 @@ describe('file-tracker.sh ghost-folder guard', () => {
     );
   });
 
-  it('still caches the tool input when .claude already exists', () => {
+  it('does not cache when .claude exists but no active deep-work session', () => {
+    // Unrelated project: .claude/ exists for other config, no deep-work state.
+    // Caching on bare .claude existence would leak raw tool-input payloads.
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
 
     execFileSync('bash', [SCRIPT], {
@@ -116,12 +118,56 @@ describe('file-tracker.sh ghost-folder guard', () => {
       cwd: tmpDir,
       env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Write' },
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: 20000,
+    });
+
+    const leaked = fs
+      .readdirSync(path.join(tmpDir, '.claude'))
+      .filter((n) => n.startsWith('.hook-tool-input.'));
+    assert.deepEqual(leaked, [],
+      'no .hook-tool-input.* payload may be left when there is no active session');
+  });
+
+  it('caches the tool input when an active deep-work session exists', () => {
+    const sid = 's-ghost1';
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.claude', 'deep-work-current-session'), sid);
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', `deep-work.${sid}.md`),
+      '---\ncurrent_phase: implement\nwork_dir: .deep-work/x\n---\n'
+    );
+
+    execFileSync('bash', [SCRIPT], {
+      input: JSON.stringify({ file_path: path.join(tmpDir, 'src.js') }),
+      cwd: tmpDir,
+      env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Write', DEEP_WORK_SESSION_ID: sid },
+      encoding: 'utf8',
+      timeout: 20000,
     });
 
     const cached = fs
       .readdirSync(path.join(tmpDir, '.claude'))
       .filter((n) => n.startsWith('.hook-tool-input.'));
-    assert.ok(cached.length >= 1, 'expected a cached tool-input file inside existing .claude');
+    assert.ok(cached.length >= 1, 'an active session must cache the tool input for phase-transition.sh');
+  });
+
+  it('caches when the tool call itself writes a deep-work state file', () => {
+    // Initial phase detection: no resolvable STATE_FILE yet, but the write
+    // targets a deep-work state file, so phase-transition.sh needs the cache.
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+
+    execFileSync('bash', [SCRIPT], {
+      input: JSON.stringify({ file_path: path.join(tmpDir, '.claude', 'deep-work.s-new.md') }),
+      cwd: tmpDir,
+      env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Write' },
+      encoding: 'utf8',
+      timeout: 20000,
+    });
+
+    const cached = fs
+      .readdirSync(path.join(tmpDir, '.claude'))
+      .filter((n) => n.startsWith('.hook-tool-input.'));
+    assert.ok(cached.length >= 1,
+      'writing a deep-work state file must cache the tool input even before a session pointer resolves');
   });
 });

@@ -23,16 +23,27 @@ STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 TOOL_INPUT="$(cat)"
 TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
+# Does THIS tool call write a deep-work state file? (phase-transition.sh needs
+# the cache to detect the initial phase even before a session pointer resolves
+# $STATE_FILE.) Mirror phase-transition.sh's own `*".claude/deep-work."*".md"`
+# substring test so both hooks agree on what counts.
+_WRITES_STATE_FILE=false
+if printf '%s' "$TOOL_INPUT" | grep -q '\.claude/deep-work\.[^"]*\.md'; then
+  _WRITES_STATE_FILE=true
+fi
+
 # Cache the tool input for phase-transition.sh (the next hook in the array,
-# which can't re-read the already-consumed stdin). GUARD: only write when
-# $PROJECT_ROOT/.claude ALREADY exists — never `mkdir -p` a fresh tree here.
-# A malformed PROJECT_ROOT (e.g. a CRLF-tainted $PWD on Windows/Git Bash)
-# would otherwise materialize a "ghost" .claude tree on every PostToolUse in
-# any directory. When no deep-work session exists, .claude is absent and this
-# cache is pointless anyway (the consumer reads it only mid-session), so
-# skipping is behaviorally equivalent — phase-transition.sh already no-ops on
-# a missing cache file.
-if [[ -d "$PROJECT_ROOT/.claude" ]]; then
+# which can't re-read the already-consumed stdin). GATE: write ONLY within an
+# active deep-work session ($STATE_FILE present) or when this very call writes
+# a state file. Unrelated projects commonly have a .claude/ directory for other
+# config; caching on bare .claude existence would leave .hook-tool-input.*
+# payload files (raw commands/paths/edit contents) on every PostToolUse with no
+# active session, and session-end never cleans them (it exits early with no
+# state) — adversarial review finding. No `mkdir -p` is ever done here, so a
+# malformed PROJECT_ROOT (CRLF-tainted $PWD on Windows/Git Bash) can't
+# materialize a "ghost" .claude tree: if .claude is absent the atomic write
+# below simply fails silently.
+if [[ -f "$STATE_FILE" ]] || $_WRITES_STATE_FILE; then
   _HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
   _HOOK_INPUT_TMP="${_HOOK_INPUT_CACHE}.tmp.$$"
   # Atomic write: truncate+write is non-atomic and a concurrent reader could
