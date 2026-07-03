@@ -211,8 +211,13 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata and docs are bumped to 6.9.0', () => {
-    const version = '6.9.0';
+  it('active release metadata is bumped to 6.9.1 with 6.9.0 feature docs intact', () => {
+    // 6.9.1 is a patch release (Windows ghost .claude folder fix): the three
+    // manifests track the current version, while the README "What's New" and
+    // the deep-memory CHANGELOG attributions stay pinned to the last feature
+    // release (6.9.0), which the patch does not rewrite.
+    const version = '6.9.1';         // current release — manifests
+    const featureVersion = '6.9.0';  // last feature release — README highlight + deep-memory notes
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const claudePlugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -226,10 +231,21 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    const changelogRelease = releaseSection(changelog, version);
-    const changelogKoRelease = releaseSection(changelogKo, version);
-    const changelogUnreleased = releaseSection(changelog, 'Unreleased');
-    const changelogKoUnreleased = releaseSection(changelogKo, 'Unreleased');
+    // Current release (6.9.1) — Windows/Git Bash ghost .claude folder fix.
+    const changelogCurrent = releaseSection(changelog, version);
+    const changelogKoCurrent = releaseSection(changelogKo, version);
+    assert.ok(changelogCurrent.includes('file-tracker-ghost-guard.test.js'),
+      'CHANGELOG.md 6.9.1 section must cite the ghost-folder regression test');
+    assert.ok(changelogKoCurrent.includes('file-tracker-ghost-guard.test.js'),
+      'CHANGELOG.ko.md 6.9.1 section must cite the ghost-folder regression test');
+    assert.equal(releaseSection(changelog, 'Unreleased').includes('file-tracker-ghost-guard.test.js'), false,
+      'CHANGELOG.md Unreleased section must not retain the 6.9.1 ghost-folder note');
+    assert.equal(releaseSection(changelogKo, 'Unreleased').includes('file-tracker-ghost-guard.test.js'), false,
+      'CHANGELOG.ko.md Unreleased section must not retain the 6.9.1 ghost-folder note');
+
+    // Last feature release (6.9.0) — deep-memory integration docs remain intact.
+    const changelogRelease = releaseSection(changelog, featureVersion);
+    const changelogKoRelease = releaseSection(changelogKo, featureVersion);
 
     assert.match(changelogRelease, /deep-memory v0\.1\.0 consumer integration — Phase 1 recall \+ Phase 5 harvest recommendation/);
     assert.match(changelogKoRelease, /deep-memory v0\.1\.0 consumer 통합 — Phase 1 recall \+ Phase 5 harvest 추천/);
@@ -245,10 +261,6 @@ describe('release metadata', () => {
       'CHANGELOG.ko.md 6.9.0 section must cite the detect-plugins TARGETS extension');
     assert.ok(changelogKoRelease.includes('docs/deep-memory-integration-handoff.md'),
       'CHANGELOG.ko.md 6.9.0 section must cite the consumer-integration handoff doc');
-    assert.equal(changelogUnreleased.includes('tests/deep-memory-integration.test.js'), false,
-      'CHANGELOG.md Unreleased section must not retain the 6.9.0 deep-memory integration note');
-    assert.equal(changelogKoUnreleased.includes('tests/deep-memory-integration.test.js'), false,
-      'CHANGELOG.ko.md Unreleased section must not retain the 6.9.0 deep-memory integration note');
     assert.deepEqual({
       'README.md': readme.includes("## What's New in v6.9.0"),
       'README.ko.md': readmeKo.includes('## v6.9.0 새 기능'),

@@ -75,6 +75,26 @@ describe('P1: Phase Transition Injector', () => {
     assert.ok(result.stdout.includes('team_mode: team'));
   });
 
+  it('normalizes a backslash (Windows) state-file path and still injects', () => {
+    // Windows/Git Bash tool inputs can report the target with backslashes.
+    // phase-transition.sh must normalize before its `.claude/deep-work.*.md`
+    // guard, or the injection is silently dropped (round-3 review finding).
+    const sid = 's-ptwin';
+    const stateFile = writeStateFile(sid, {
+      current_phase: 'implement',
+      worktree_path: '"/tmp/wt/win"',
+      team_mode: 'solo',
+    });
+    writePointerFile(sid);
+
+    const backslashPath = stateFile.replace('.claude/deep-work.', '.claude\\deep-work.');
+    const result = runHook({ file_path: backslashPath });
+
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('Phase Transition'),
+      'a backslash Windows state-file path must still trigger phase-transition injection');
+  });
+
   it('does not inject on same phase (no transition)', () => {
     const sid = 's-pt2';
     const stateFile = writeStateFile(sid, {

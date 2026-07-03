@@ -23,13 +23,41 @@ STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 TOOL_INPUT="$(cat)"
 TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
-_HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
-mkdir -p "$(dirname "$_HOOK_INPUT_CACHE")" 2>/dev/null
-_HOOK_INPUT_TMP="${_HOOK_INPUT_CACHE}.tmp.$$"
-# Atomic write: truncate+write is non-atomic and a concurrent reader could
-# see a partial JSON. Write to tmp and rename.
-if printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_TMP" 2>/dev/null; then
-  mv "$_HOOK_INPUT_TMP" "$_HOOK_INPUT_CACHE" 2>/dev/null || rm -f "$_HOOK_INPUT_TMP" 2>/dev/null
+# Does THIS tool call write a deep-work state file? (phase-transition.sh needs
+# the cache to detect the initial phase even before a session pointer resolves
+# $STATE_FILE.) Classify from the PARSED target file_path ONLY — never a
+# substring of the raw payload: a Write/Edit to an unrelated file whose *content*
+# merely mentions `.claude/deep-work.s.md` must not trigger caching outside a
+# session (round-2 review finding — that reintroduced the orphan-payload leak).
+# normalize_path folds backslashes so Windows targets like
+# `C:\repo\.claude\deep-work.s.md` also match. The glob mirrors
+# phase-transition.sh's own `*".claude/deep-work."*".md"` test so both hooks
+# agree. (Bash tool inputs have no file_path → empty → no match, matching
+# phase-transition, which likewise ignores Bash writes.)
+_WRITES_STATE_FILE=false
+case "$(normalize_path "$(extract_file_path_from_json "$TOOL_INPUT")")" in
+  *".claude/deep-work."*".md") _WRITES_STATE_FILE=true ;;
+esac
+
+# Cache the tool input for phase-transition.sh (the next hook in the array,
+# which can't re-read the already-consumed stdin). GATE: write ONLY within an
+# active deep-work session ($STATE_FILE present) or when this very call writes
+# a state file. Unrelated projects commonly have a .claude/ directory for other
+# config; caching on bare .claude existence would leave .hook-tool-input.*
+# payload files (raw commands/paths/edit contents) on every PostToolUse with no
+# active session, and session-end never cleans them (it exits early with no
+# state) — adversarial review finding. No `mkdir -p` is ever done here, so a
+# malformed PROJECT_ROOT (CRLF-tainted $PWD on Windows/Git Bash) can't
+# materialize a "ghost" .claude tree: if .claude is absent the atomic write
+# below simply fails silently.
+if [[ -f "$STATE_FILE" ]] || $_WRITES_STATE_FILE; then
+  _HOOK_INPUT_CACHE="$PROJECT_ROOT/.claude/.hook-tool-input.${PPID}"
+  _HOOK_INPUT_TMP="${_HOOK_INPUT_CACHE}.tmp.$$"
+  # Atomic write: truncate+write is non-atomic and a concurrent reader could
+  # see a partial JSON. Write to tmp and rename.
+  if printf '%s' "$TOOL_INPUT" > "$_HOOK_INPUT_TMP" 2>/dev/null; then
+    mv "$_HOOK_INPUT_TMP" "$_HOOK_INPUT_CACHE" 2>/dev/null || rm -f "$_HOOK_INPUT_TMP" 2>/dev/null
+  fi
 fi
 
 # 상태 파일이 없으면 즉시 종료

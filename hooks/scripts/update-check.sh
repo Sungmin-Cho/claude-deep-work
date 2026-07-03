@@ -11,6 +11,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Reuse the hardened find_project_root / sanitize_project_path from utils.sh
+# instead of a local copy. This SessionStart hook previously carried its own
+# unsanitized root walk that could spin on Windows drive roots (D:/) — the same
+# CRLF/backslash bug class fixed centrally in utils.sh. utils.sh is a pure
+# function library (no top-level side effects), safe to source under set -e.
+source "$SCRIPT_DIR/utils.sh"
 STATE_DIR="$HOME/.claude"
 CACHE_FILE="$STATE_DIR/.deep-work-update-cache"
 MARKER_FILE="$STATE_DIR/.deep-work-just-upgraded"
@@ -29,15 +35,11 @@ fi
 # ─── Read profile for update settings ─────────────────────────
 # Check deep-work-profile.yaml for auto_update and update_check settings
 PROFILE_FILE=""
-find_project_root() {
-  local dir="$PWD"
-  while [ "$dir" != "/" ]; do
-    if [ -d "$dir/.claude" ]; then echo "$dir"; return 0; fi
-    dir="$(dirname "$dir")"
-  done
-  echo "$PWD"; return 1
-}
-PROJECT_ROOT="$(find_project_root 2>/dev/null || echo "$PWD")"
+# find_project_root / sanitize_project_path come from utils.sh (sourced above).
+# `|| true` absorbs the not-found exit 1 under set -e; sanitize covers the
+# $PWD fallback. Mirrors init_deep_work_state's hardened derivation.
+PROJECT_ROOT="$(find_project_root 2>/dev/null || true)"
+PROJECT_ROOT="$(sanitize_project_path "${PROJECT_ROOT:-$PWD}")"
 PROFILE_FILE="$PROJECT_ROOT/.claude/deep-work-profile.yaml"
 
 # Check if updates are disabled

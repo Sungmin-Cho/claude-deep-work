@@ -32,6 +32,13 @@ fi
 FILE_PATH="$(extract_file_path_from_json "$TOOL_INPUT")"
 
 [[ -z "$FILE_PATH" ]] && exit 0
+# Fold backslashes → forward slashes (Windows/Git Bash) BEFORE the state-file
+# guard, the -f existence check, and read_frontmatter_field. Without this a
+# backslash target like `C:\repo\.claude\deep-work.s.md` contains
+# `.claude\deep-work.` (not `.claude/deep-work.`), so this hook exited early and
+# silently dropped worktree/TDD/team-mode injection — while file-tracker.sh
+# normalizes and DID cache it. Keep both hooks' path classification symmetric.
+FILE_PATH="$(normalize_path "$FILE_PATH")"
 [[ "$FILE_PATH" != *".claude/deep-work."*".md" ]] && exit 0
 
 # ─── 2. Session ID 추출 ────────────────────────────────────

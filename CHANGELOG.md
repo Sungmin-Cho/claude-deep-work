@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.9.1] — 2026-07-03 (Windows/Git Bash ghost `.claude` folder fix)
+
+### Fixed
+
+- `file-tracker.sh` no longer materializes a "ghost" `.claude` directory tree on Windows/Git Bash, and no longer leaves orphan `.hook-tool-input.*` payload files in unrelated projects. It never `mkdir -p`s a fresh tree (a malformed `$PROJECT_ROOT` from a CRLF `\r`- or backslash-tainted `$PWD` previously created bogus dirs like `pop-studio-suite <CR>/d/NHN/.../.claude/` on every tool call), and the PostToolUse tool-input cache is now written **only within an active deep-work session** (`$STATE_FILE` present) or when the call itself writes a `.claude/deep-work.*.md` state file — not on bare `.claude` existence.
+- `utils.sh` hardens `$PROJECT_ROOT` derivation at its single source: new `sanitize_project_path()` strips stray CR, folds backslashes to forward slashes, and trims trailing whitespace; `find_project_root` sanitizes `$PWD` before walking and adds a drive-root loop-termination guard (never spins on `D:/`); `init_deep_work_state` replaces the `|| echo "$PWD"` double-emit — which produced a multi-line `PROJECT_ROOT` on the not-found path — with `|| true`.
+- `update-check.sh` (a SessionStart hook) now reuses the hardened `find_project_root` / `sanitize_project_path` from `utils.sh` instead of a duplicated, unsanitized root walk that could spin on Windows drive roots (`D:/`) until the SessionStart timeout — the same bug class fixed centrally.
+- `phase-transition.sh` now `normalize_path`s the extracted `file_path` (folding backslashes) before its `.claude/deep-work.*.md` guard, so Windows/Git Bash backslash state-file writes still fire the phase-transition injection (worktree / TDD / team-mode) instead of being silently dropped — keeping the cache writer (`file-tracker.sh`) and this consumer symmetric.
+
+### Added
+
+- `hooks/scripts/file-tracker-ghost-guard.test.js` — pins the sanitizer behavior (CR / backslash / trailing-space) and the cache gate (no `.claude` tree and no cached payload outside an active session; cache written for an active session or a state-file write).
+
 ## [6.9.0] — 2026-05-21 (deep-memory v0.1.0 consumer integration — Phase 1 recall + Phase 5 harvest recommendation)
 
 ### Added
