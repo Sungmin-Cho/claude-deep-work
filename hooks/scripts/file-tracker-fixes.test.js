@@ -152,3 +152,81 @@ describe('file-tracker.sh v6.2.4 post-review: cache write is atomic (tmp+mv)', (
     assert.deepEqual(stray, [], `stray tmp files: ${JSON.stringify(stray)}`);
   });
 });
+
+// ─── Bash-write ownership registration (require-path + isFileWrite fix) ──
+// Regression guard: a file created via the Bash tool (e.g. `echo … > file`)
+// must land in the cross-session ownership registry. The old node snippet used
+// a bare `require('./phase-guard-core.js')` (resolved against the hook CWD, not
+// the script dir → MODULE_NOT_FOUND) AND truthy-checked the returned OBJECT
+// `if(detectBashFileWrite(d))` (always true). The `2>/dev/null || echo ""`
+// swallowed the module error, so Bash-created files were NEVER registered. The
+// fix mirrors phase-guard.sh:565-572 (absolute require via argv + r.isFileWrite).
+
+describe('file-tracker.sh: Bash-write registers file ownership (cross-session)', () => {
+  let tmpDir;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ft-own-'));
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+  });
+  afterEach(() => { if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  function readOwnership(sid) {
+    const reg = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, '.claude', 'deep-work-sessions.json'), 'utf8'),
+    );
+    return (reg.sessions[sid] && reg.sessions[sid].file_ownership) || [];
+  }
+
+  it('registers the redirect target of a Bash write in implement phase', () => {
+    const sid = 's-own1';
+    // implement phase + work_dir → receipt/ownership path is active.
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', `deep-work.${sid}.md`),
+      '---\ncurrent_phase: implement\nwork_dir: .deep-work/wd\n---\n',
+    );
+    fs.writeFileSync(path.join(tmpDir, '.claude', 'deep-work-current-session'), sid);
+    // Session must exist in the registry for ownership to attach to it.
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
+      JSON.stringify({ version: 1, shared_files: [], sessions: { [sid]: { pid: 1, file_ownership: [] } } }),
+    );
+
+    const result = spawnSync('bash', [SCRIPT], {
+      input: JSON.stringify({ command: 'echo hi > src/newfile.ts' }),
+      cwd: tmpDir,
+      env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Bash', DEEP_WORK_SESSION_ID: sid },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(result.status, 0, `hook failed: ${result.stderr}`);
+
+    const ownership = readOwnership(sid);
+    assert.ok(
+      ownership.includes('src/newfile.ts'),
+      `expected src/newfile.ts in ownership, got ${JSON.stringify(ownership)}`,
+    );
+  });
+
+  it('does not register when the Bash command writes no file (read-only)', () => {
+    const sid = 's-own2';
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', `deep-work.${sid}.md`),
+      '---\ncurrent_phase: implement\nwork_dir: .deep-work/wd\n---\n',
+    );
+    fs.writeFileSync(path.join(tmpDir, '.claude', 'deep-work-current-session'), sid);
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
+      JSON.stringify({ version: 1, shared_files: [], sessions: { [sid]: { pid: 1, file_ownership: [] } } }),
+    );
+
+    const result = spawnSync('bash', [SCRIPT], {
+      input: JSON.stringify({ command: 'grep -r foo src/' }),
+      cwd: tmpDir,
+      env: { ...process.env, CLAUDE_TOOL_USE_TOOL_NAME: 'Bash', DEEP_WORK_SESSION_ID: sid },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(result.status, 0, `hook failed: ${result.stderr}`);
+    assert.deepEqual(readOwnership(sid), [], 'read-only command must not register ownership');
+  });
+});
