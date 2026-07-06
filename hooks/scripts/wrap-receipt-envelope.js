@@ -20,7 +20,7 @@
  *     [--source-artifacts-glob <glob>]   (slice receipts → session-receipt: aggregate intra-plugin chain)
  *     [--source-evolve-insights <path>]  (cross-plugin chain — also fills parent_run_id if not set)
  *     [--source-harnessability <path>]   (cross-plugin chain — adds to source_artifacts only)
- *     [--session-state-file <path>]      (session-receipt: read test_passed marker; demote unverified merge/pr → in-progress)
+ *     [--session-state-file <path>]      (session-receipt: read test_passed marker → stamp x-test-verified; outcome unchanged)
  *
  * Exit codes:
  *   0 — wrote envelope-wrapped receipt
@@ -208,29 +208,30 @@ function main() {
     process.exit(2);
   }
 
-  // Deterministic test-verification gate (session-receipt only). deep-test
+  // Deterministic test-verification signal (session-receipt only). deep-test
   // records `test_passed: true` in the session state's frontmatter as the
-  // precondition for a verified terminal outcome (deep-test SKILL.md §All Pass
-  // / deep-finish SKILL.md §7-Z). We read that marker here rather than trusting
-  // the caller to have honored the contract. When it is not confirmed true we
-  // DEMOTE a success-asserting outcome (merge/pr) to "in-progress" and record
-  // the original outcome plus an unverified flag as forward-compat `x-` fields
-  // (the payload schema pins additionalProperties:false + patternProperties
-  // ^x-, and "in-progress" is in the outcome enum). We do NOT refuse the emit —
-  // discard/keep and non-test finish paths (--skip-integrate) stay intact.
+  // precondition for a verified session (deep-test SKILL.md §All Pass /
+  // deep-finish SKILL.md §7-Z). We read that marker here rather than trusting
+  // the caller to have honored the contract, and stamp the result on the
+  // payload as `x-test-verified` (forward-compat `^x-` namespace — the schema
+  // pins additionalProperties:false + patternProperties ^x-).
+  //
+  // We do NOT rewrite `outcome`. By the time §7-Z runs, a merge/pr outcome is
+  // already physically done (worktree removed + branch -d, or `gh pr create`),
+  // so demoting it to "in-progress" would misreport a completed action to
+  // completion-polling / aggregation consumers. The receipt records the FACT
+  // (outcome) and the verification SIGNAL (x-test-verified) separately;
+  // consumers judge trustworthiness from the pair.
   if (artifactKind === 'session-receipt' && args['session-state-file']) {
     const statePath = path.resolve(process.cwd(), args['session-state-file']);
     if (fs.existsSync(statePath)) {
       const testPassed = readFrontmatterField(statePath, 'test_passed');
       const verified = testPassed === 'true';
       payload['x-test-verified'] = verified;
-      if (!verified && (payload.outcome === 'merge' || payload.outcome === 'pr')) {
-        payload['x-declared-outcome'] = payload.outcome;
-        payload.outcome = 'in-progress';
+      if (!verified) {
         process.stderr.write(
           `note: test_passed not confirmed (test_passed=${JSON.stringify(testPassed)}); ` +
-            `demoted outcome ${JSON.stringify(payload['x-declared-outcome'])} → "in-progress" ` +
-            'and set x-test-verified=false\n',
+            'recorded x-test-verified=false (outcome left as recorded)\n',
         );
       }
     }

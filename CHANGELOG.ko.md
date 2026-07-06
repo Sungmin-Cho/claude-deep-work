@@ -17,7 +17,7 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 
 ### Changed
 
-- `wrap-receipt-envelope.js` + `skills/deep-finish/SKILL.md` §7-Z — session-receipt 증거 체인이 이제 deep-test → deep-finish `test_passed` 계약을 프롬프트 준수에 의존하지 않고 결정론적으로 강제합니다. `--session-state-file`이 전달되면 wrapper가 state의 `test_passed` frontmatter 마커를 읽고, `true`가 아니면 성공-단언 `outcome`(`merge`/`pr`)을 `in-progress`로 강등하고 원래 값을 `x-declared-outcome`에 보존, payload에 `x-test-verified: false`를 기록합니다. emit을 **거부하지 않습니다** — `keep`/`discard` 및 비-test finish 경로(`--skip-integrate`)는 무변경, 검증된 세션은 outcome을 유지한 채 `x-test-verified: true`를 기록합니다. 두 필드 모두 스키마의 `^x-` forward-compat 네임스페이스를 쓰며 `in-progress`는 유효한 `outcome` enum 값입니다.
+- `wrap-receipt-envelope.js` + `skills/deep-finish/SKILL.md` §7-Z — session-receipt 증거 체인이 이제 deep-test → deep-finish `test_passed` 결과를 프롬프트 준수에 의존하지 않고 결정론적으로 담습니다. `--session-state-file`이 전달되면 wrapper가 state의 `test_passed` frontmatter 마커를 읽어 모든 session-receipt payload에 `x-test-verified: true|false`(forward-compat `^x-` 네임스페이스)를 기록합니다. `outcome`은 **기록된 사실 그대로 유지** — §7-Z 시점엔 `merge`/`pr`이 이미 물리적으로 완료(worktree 제거 + `branch -d`, 또는 `gh pr create`)되어 있어 이를 재작성하면 완료 폴링/집계 소비자에게 완료된 동작을 오보하게 되므로, receipt는 사실(`outcome`)과 검증 신호(`x-test-verified`)를 별도 필드로 남겨 소비자가 조합 판단하게 합니다. emit은 절대 거부하지 않으며, 플래그(또는 state 파일)가 없으면 payload는 무변경(하위호환)입니다.
 
 ### Added
 

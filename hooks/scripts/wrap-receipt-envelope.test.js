@@ -7,11 +7,11 @@ const { spawnSync } = require('child_process');
 
 const WRAP = path.resolve(__dirname, 'wrap-receipt-envelope.js');
 
-// Deterministic test-verification gate: for session-receipt kind, the wrapper
-// reads the session state's `test_passed` marker via --session-state-file. When
-// it is not confirmed true, a success-asserting outcome (merge/pr) is demoted
-// to "in-progress" with x-declared-outcome preserved and x-test-verified=false.
-// The emit is NOT refused (normal finish paths stay intact).
+// Deterministic test-verification signal: for session-receipt kind, the wrapper
+// reads the session state's `test_passed` marker via --session-state-file and
+// stamps x-test-verified:true|false on the payload. It does NOT rewrite outcome
+// — merge/pr are already physically complete by §7-Z, so the receipt records
+// the fact (outcome) and the verification signal (x-test-verified) separately.
 
 let dir;
 function setup() { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wrap-gate-')); }
@@ -48,35 +48,36 @@ function runWrap(extraArgs) {
   return { r, payload };
 }
 
-describe('wrap-receipt-envelope.js — test_passed gate', () => {
+describe('wrap-receipt-envelope.js — test_passed verification signal', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('test_passed=false + outcome=merge → demotes to in-progress (emit NOT refused)', () => {
+  it('test_passed=false + outcome=merge → outcome KEPT, x-test-verified=false', () => {
     writePayload('merge');
     const state = writeState('test_passed: false');
     const { r, payload } = runWrap(['--session-state-file', state]);
     assert.equal(r.status, 0, `wrapper failed: ${r.stderr}`);
-    assert.equal(payload.outcome, 'in-progress');
+    assert.equal(payload.outcome, 'merge', 'outcome must record the real (already-done) action');
     assert.equal(payload['x-test-verified'], false);
-    assert.equal(payload['x-declared-outcome'], 'merge');
+    assert.equal('x-declared-outcome' in payload, false, 'no outcome shadow field');
   });
 
-  it('test_passed=false + outcome=pr → demotes to in-progress', () => {
+  it('test_passed=false + outcome=pr → outcome KEPT, x-test-verified=false', () => {
     writePayload('pr');
     const state = writeState('test_passed: false');
     const { r, payload } = runWrap(['--session-state-file', state]);
     assert.equal(r.status, 0, `wrapper failed: ${r.stderr}`);
-    assert.equal(payload.outcome, 'in-progress');
-    assert.equal(payload['x-declared-outcome'], 'pr');
+    assert.equal(payload.outcome, 'pr');
+    assert.equal(payload['x-test-verified'], false);
+    assert.equal('x-declared-outcome' in payload, false);
   });
 
-  it('test_passed missing entirely + outcome=merge → treated as unverified, demoted', () => {
+  it('test_passed missing entirely + outcome=merge → outcome KEPT, x-test-verified=false', () => {
     writePayload('merge');
     const state = writeState('finished_at: 2026-07-06T01:00:00Z'); // no test_passed line
     const { r, payload } = runWrap(['--session-state-file', state]);
     assert.equal(r.status, 0, `wrapper failed: ${r.stderr}`);
-    assert.equal(payload.outcome, 'in-progress');
+    assert.equal(payload.outcome, 'merge');
     assert.equal(payload['x-test-verified'], false);
   });
 
@@ -90,7 +91,7 @@ describe('wrap-receipt-envelope.js — test_passed gate', () => {
     assert.equal('x-declared-outcome' in payload, false);
   });
 
-  it('test_passed=false + outcome=discard → NOT demoted (only marker set)', () => {
+  it('test_passed=false + outcome=discard → outcome KEPT, x-test-verified=false', () => {
     writePayload('discard');
     const state = writeState('test_passed: false');
     const { r, payload } = runWrap(['--session-state-file', state]);

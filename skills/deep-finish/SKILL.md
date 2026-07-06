@@ -558,16 +558,17 @@ The helper:
 - Adds slice receipts' `run_id` (when envelope-wrapped) plus
   `harnessability-report.json`'s `run_id` to `provenance.source_artifacts[]`
   (intra-plugin chain + multi-source aggregation).
-- **Test-verification gate (deterministic)**: when `--session-state-file` is
+- **Test-verification signal (deterministic)**: when `--session-state-file` is
   passed, the helper reads the session state's `test_passed` frontmatter marker
-  (set by deep-test §All Pass). If it is **not** `true`, the helper demotes a
-  success-asserting `outcome` (`merge`/`pr`) to `in-progress`, preserves the
-  original in `x-declared-outcome`, and stamps `x-test-verified: false` on the
-  payload. This makes the evidence chain enforce the deep-test → deep-finish
-  contract in code rather than relying on prompt compliance. The emit is **not**
-  refused — `keep`/`discard` and non-test finish paths (`--skip-integrate`) are
-  untouched, and a verified session records `x-test-verified: true` with its
-  outcome intact.
+  (set by deep-test §All Pass) and stamps `x-test-verified: true|false` on every
+  session-receipt payload. This makes the evidence chain carry the deep-test →
+  deep-finish verification result in code rather than relying on prompt
+  compliance. The helper does **not** rewrite `outcome`: by the time §7-Z runs a
+  `merge`/`pr` is already physically complete (worktree removed + `branch -d`, or
+  `gh pr create`), so demoting it would misreport a done action to
+  completion-polling / aggregation consumers. The receipt records the **fact**
+  (`outcome`) and the **verification signal** (`x-test-verified`) separately —
+  downstream consumers judge trustworthiness from the pair.
 
 ### 7-Z-A. Optional cross-plugin handoff emit (v6.6.0 — M5.7.A)
 
