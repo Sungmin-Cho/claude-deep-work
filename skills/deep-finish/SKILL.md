@@ -517,6 +517,16 @@ if [ -f "$PROJECT_ROOT/.deep-dashboard/harnessability-report.json" ]; then
   HARN_PATH="$PROJECT_ROOT/.deep-dashboard/harnessability-report.json"
 fi
 
+# Resolve the session state file so the wrapper can read the deep-test
+# `test_passed` marker deterministically (see the test-verification gate note
+# below). Same session_id → deep-work.<sid>.md, else the legacy local path.
+STATE_FILE_PATH=""
+if [ -n "$SESSION_ID" ] && [ -f "$PROJECT_ROOT/.claude/deep-work.$SESSION_ID.md" ]; then
+  STATE_FILE_PATH="$PROJECT_ROOT/.claude/deep-work.$SESSION_ID.md"
+elif [ -f "$PROJECT_ROOT/.claude/deep-work.local.md" ]; then  # legacy fallback path
+  STATE_FILE_PATH="$PROJECT_ROOT/.claude/deep-work.local.md"   # legacy fallback
+fi
+
 WRAP_ARGS=(
   --artifact-kind session-receipt
   --payload-file "$WORK_DIR/.session-receipt.payload.json"
@@ -526,6 +536,7 @@ WRAP_ARGS=(
 [ -n "$SESSION_ID" ] && WRAP_ARGS+=(--session-id "$SESSION_ID")
 [ -n "$EVOLVE_PATH" ] && WRAP_ARGS+=(--source-evolve-insights "$EVOLVE_PATH")
 [ -n "$HARN_PATH" ] && WRAP_ARGS+=(--source-harnessability "$HARN_PATH")
+[ -n "$STATE_FILE_PATH" ] && WRAP_ARGS+=(--session-state-file "$STATE_FILE_PATH")
 
 # Cleanup payload temp file ONLY on helper success — preserve on failure for
 # retry (round-1 deep-review C2 lesson). The `set -e` guarantees abort if the
@@ -547,6 +558,16 @@ The helper:
 - Adds slice receipts' `run_id` (when envelope-wrapped) plus
   `harnessability-report.json`'s `run_id` to `provenance.source_artifacts[]`
   (intra-plugin chain + multi-source aggregation).
+- **Test-verification gate (deterministic)**: when `--session-state-file` is
+  passed, the helper reads the session state's `test_passed` frontmatter marker
+  (set by deep-test §All Pass). If it is **not** `true`, the helper demotes a
+  success-asserting `outcome` (`merge`/`pr`) to `in-progress`, preserves the
+  original in `x-declared-outcome`, and stamps `x-test-verified: false` on the
+  payload. This makes the evidence chain enforce the deep-test → deep-finish
+  contract in code rather than relying on prompt compliance. The emit is **not**
+  refused — `keep`/`discard` and non-test finish paths (`--skip-integrate`) are
+  untouched, and a verified session records `x-test-verified: true` with its
+  outcome intact.
 
 ### 7-Z-A. Optional cross-plugin handoff emit (v6.6.0 — M5.7.A)
 
