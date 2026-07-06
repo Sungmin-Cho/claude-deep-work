@@ -7,7 +7,21 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] (silent-failure fixes + deterministic receipt gate)
+
+### Fixed
+
+- `update-check.sh` — the remote version probe pointed at `.../main/plugins/deep-work/package.json`, which 404s (the repo has no `plugins/` subtree). Every fetch failed, and the failure was then cached as `UP_TO_DATE` from an empty response — poisoning the 5-minute cache so the update prompt was suppressed **permanently**. The URL is corrected to the repo-root `package.json`, and a failed/empty/non-version fetch now exits without touching the cache (the next session retries) instead of masquerading as "up to date". Genuine up-to-date / upgrade-available results are still cached (anti-spam preserved).
+- `file-tracker.sh` — files created via the **Bash** tool (`echo … > file`, `tee`, `cp`, redirects) were never added to the cross-session ownership registry. The ownership-extraction snippet used a bare `require('./phase-guard-core.js')` (resolved against the hook CWD, not the script dir → `MODULE_NOT_FOUND`) and truthy-checked the returned **object** `if(detectBashFileWrite(d))` (always true); the `2>/dev/null || echo ""` swallowed the module error. It now mirrors the verified `phase-guard.sh` pattern: absolute `require(process.argv[1])` + `const r = …; if (r.isFileWrite)`.
+- `utils.sh` — registry mutations were **lost-update**-prone: each caller did an *unlocked* `read_registry` → transform → *locked* `write_registry`, so the lock never spanned the read and two concurrent sessions could clobber each other's registry write. The whole read-modify-write cycle is now serialized under one lock. Lock-free inner helpers (`_read_registry_unlocked` / `_write_registry_unlocked`) are split out, and `register_session` / `unregister_session` / `register_file_ownership` / `update_last_activity` / `update_registry_phase` / `register_fork_session` run read+transform+write under a single `_registry_rmw` lock hold. The public `read_registry` / `write_registry` wrappers are unchanged for existing callers (RMW callers must not re-enter them — the lock is not re-entrant), and `read_registry`'s missing-file default-write now also happens under the lock.
+
+### Changed
+
+- `wrap-receipt-envelope.js` + `skills/deep-finish/SKILL.md` §7-Z — the session-receipt evidence chain now enforces the deep-test → deep-finish `test_passed` contract deterministically instead of relying on prompt compliance. When `--session-state-file` is passed, the wrapper reads the state's `test_passed` frontmatter marker; if it is not `true`, a success-asserting `outcome` (`merge`/`pr`) is demoted to `in-progress`, the original is preserved in `x-declared-outcome`, and `x-test-verified: false` is stamped on the payload. The emit is **not** refused — `keep`/`discard` and non-test finish paths (`--skip-integrate`) are untouched, and a verified session records `x-test-verified: true` with its outcome intact. Both fields use the schema's `^x-` forward-compat namespace and `in-progress` is a valid `outcome` enum value.
+
+### Added
+
+- `hooks/scripts/update-check.test.js`, `hooks/scripts/registry-rmw.test.js`, `hooks/scripts/wrap-receipt-envelope.test.js`, and new cases in `hooks/scripts/file-tracker-fixes.test.js` — pin the URL anchor + fetch-failure branch, the RMW re-entrancy guard + concurrent no-lost-update behavior, the Bash-write ownership registration, and the deterministic test-verification gate.
 
 ## [6.9.1] — 2026-07-03 (Windows/Git Bash ghost `.claude` folder fix)
 

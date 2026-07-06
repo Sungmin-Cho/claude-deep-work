@@ -7,7 +7,21 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
-## [Unreleased]
+## [Unreleased] (silent-failure 수정 + 결정론적 receipt 게이트)
+
+### Fixed
+
+- `update-check.sh` — 원격 버전 조회가 `.../main/plugins/deep-work/package.json`(404 — 저장소에 `plugins/` 하위 트리 없음)를 가리켜 매 fetch가 실패했고, 그 실패가 빈 응답 상태에서 `UP_TO_DATE`로 캐시되어 5분 캐시를 오염 → 업데이트 알림이 **영구히** 억제됐습니다. URL을 저장소 루트 `package.json`으로 교정하고, 실패/빈 응답/비-버전 응답 시 캐시를 건드리지 않고 종료(다음 세션에서 재시도)하도록 수정했습니다. 실제 최신/업그레이드 가능 결과는 계속 캐시됩니다(알림 스팸 방지 유지).
+- `file-tracker.sh` — **Bash** 도구로 생성된 파일(`echo … > file`, `tee`, `cp`, 리다이렉트)이 cross-session ownership 레지스트리에 등록되지 않았습니다. ownership 추출 스니펫이 상대경로 `require('./phase-guard-core.js')`(hook CWD 기준 resolve → `MODULE_NOT_FOUND`)를 쓰고 반환 **객체**를 truthy 체크(`if(detectBashFileWrite(d))` — 항상 참)했으며, `2>/dev/null || echo ""`가 모듈 오류를 은폐했습니다. 검증된 `phase-guard.sh` 패턴(절대경로 `require(process.argv[1])` + `const r = …; if (r.isFileWrite)`)으로 교정했습니다.
+- `utils.sh` — 레지스트리 변경이 **lost-update**에 취약했습니다: 각 콜러가 *unlocked* `read_registry` → 변환 → *locked* `write_registry` 순서라 lock이 read를 감싸지 못해 동시 세션이 서로의 write를 덮어썼습니다. 이제 read-modify-write 전체를 단일 lock으로 직렬화합니다. lock-free inner helper(`_read_registry_unlocked` / `_write_registry_unlocked`)를 분리하고, `register_session` / `unregister_session` / `register_file_ownership` / `update_last_activity` / `update_registry_phase` / `register_fork_session`가 단일 `_registry_rmw` lock 안에서 read+변환+write를 수행합니다. 공개 `read_registry` / `write_registry` 래퍼는 기존 콜러를 위해 유지(RMW 콜러는 재진입 금지 — lock은 재진입 불가), `read_registry`의 파일 부재 시 default-write도 lock 안으로 이동했습니다.
+
+### Changed
+
+- `wrap-receipt-envelope.js` + `skills/deep-finish/SKILL.md` §7-Z — session-receipt 증거 체인이 이제 deep-test → deep-finish `test_passed` 계약을 프롬프트 준수에 의존하지 않고 결정론적으로 강제합니다. `--session-state-file`이 전달되면 wrapper가 state의 `test_passed` frontmatter 마커를 읽고, `true`가 아니면 성공-단언 `outcome`(`merge`/`pr`)을 `in-progress`로 강등하고 원래 값을 `x-declared-outcome`에 보존, payload에 `x-test-verified: false`를 기록합니다. emit을 **거부하지 않습니다** — `keep`/`discard` 및 비-test finish 경로(`--skip-integrate`)는 무변경, 검증된 세션은 outcome을 유지한 채 `x-test-verified: true`를 기록합니다. 두 필드 모두 스키마의 `^x-` forward-compat 네임스페이스를 쓰며 `in-progress`는 유효한 `outcome` enum 값입니다.
+
+### Added
+
+- `hooks/scripts/update-check.test.js`, `hooks/scripts/registry-rmw.test.js`, `hooks/scripts/wrap-receipt-envelope.test.js`, `hooks/scripts/file-tracker-fixes.test.js`의 신규 케이스 — URL 앵커 + fetch 실패 분기, RMW 재진입 가드 + 동시 no-lost-update, Bash-write ownership 등록, 결정론적 test-verification 게이트를 고정합니다.
 
 ## [6.9.1] — 2026-07-03 (Windows/Git Bash 유령 `.claude` 폴더 수정)
 
