@@ -293,18 +293,27 @@ if [[ -n "${DEEP_WORK_SESSION_ID:-}" ]]; then
   OWNERSHIP_PATH=""
 
   if [[ "$TOOL_NAME" == "Bash" ]]; then
-    # Extract target file from bash command using phase-guard-core.js helpers
+    # Extract target file from bash command using phase-guard-core.js helpers.
+    # Mirrors the verified pattern in phase-guard.sh:565-572: require the module
+    # by ABSOLUTE path ($SCRIPT_DIR/... via process.argv[1]) — a bare
+    # `require('./phase-guard-core.js')` resolves against the hook's CWD (the
+    # project root), not this script's dir, so it threw MODULE_NOT_FOUND and the
+    # `2>/dev/null || echo ""` swallowed it → Bash-created files were never
+    # registered. detectBashFileWrite returns an OBJECT ({isFileWrite,pattern});
+    # the old `if(detectBashFileWrite(d))` was always truthy — gate on
+    # `r.isFileWrite` instead.
     BASH_CMD="${FILE_PATH#\[bash\] }"
-    OWNERSHIP_PATH="$(echo "$BASH_CMD" | node -e "
-      const {detectBashFileWrite, extractBashTargetFile} = require('./phase-guard-core.js');
+    OWNERSHIP_PATH="$(printf '%s' "$BASH_CMD" | node -e "
+      const {detectBashFileWrite, extractBashTargetFile} = require(process.argv[1]);
       let d=''; process.stdin.on('data',c=>d+=c);
       process.stdin.on('end',()=>{
-        if(detectBashFileWrite(d)){
+        const r=detectBashFileWrite(d);
+        if(r.isFileWrite){
           const f=extractBashTargetFile(d);
           if(f) console.log(f);
         }
       });
-    " 2>/dev/null || echo "")"
+    " "$SCRIPT_DIR/phase-guard-core.js" 2>/dev/null || echo "")"
   else
     # Write/Edit/MultiEdit: use the already-resolved normalized path
     OWNERSHIP_PATH="$RESOLVED_PATH_NORM"

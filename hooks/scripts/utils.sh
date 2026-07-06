@@ -215,6 +215,9 @@ _release_lock() {
 # at least the operator can investigate.
 # Non-fatal: returns 1 on failure, but the caller is expected to keep
 # going — PostToolUse hooks must never block.
+# NOTE: RMW callers no longer use this — pairing it with an unlocked
+# read_registry is exactly the lost-update bug the _registry_rmw helper (below)
+# fixes. Kept only as a lock+log wrapper around a standalone write_registry.
 _try_write_registry() {
   local json="$1" context="${2:-unknown}"
   if ! write_registry "$json"; then
@@ -298,46 +301,140 @@ read_session_pointer() {
 
 # ─── Registry read/write ───────────────────────────────────
 # Central registry: .claude/deep-work-sessions.json
+#
+# Concurrency model (RMW hardening): every registry mutation is a
+# read-modify-write cycle. Previously each RMW caller did an UNLOCKED
+# read_registry → node transform → LOCKED write_registry, so the lock never
+# spanned the read: two concurrent sessions could read the same snapshot and
+# the second write clobbered the first (lost update). The fix serializes the
+# whole cycle under ONE lock hold:
+#
+#   _with_registry_lock <fn> …   — run <fn> while holding the registry lock
+#   _read_registry_unlocked      — read only (NO lock, NO default-write)
+#   _write_registry_unlocked     — atomic-rename write (NO lock)
+#   _registry_rmw <ctx> <node> … — read→transform→write, all under one lock
+#
+# Re-entrancy: RMW callers MUST use the *_unlocked helpers, never the public
+# read_registry/write_registry — those re-acquire the lock and would
+# self-deadlock (the mkdir spinlock is not re-entrant; flock -w 2 would block
+# then time out, silently dropping the mutation). The public wrappers are kept
+# for existing external callers, unchanged.
+
+_registry_default_json() {
+  printf '%s' '{"version":1,"shared_files":["package.json","package-lock.json","tsconfig.json",".eslintrc.*","*.config.js","*.config.ts"],"sessions":{}}'
+}
+
+# Lock-free registry read. Returns the on-disk JSON, or the default when the
+# file is absent — WITHOUT writing it (the default-write is a mutation and
+# belongs under the lock; see read_registry). Callers needing mutual exclusion
+# must already hold the lock (see _registry_rmw).
+_read_registry_unlocked() {
+  local registry_file="$PROJECT_ROOT/.claude/deep-work-sessions.json"
+  if [[ -f "$registry_file" ]]; then
+    cat "$registry_file"
+  else
+    _registry_default_json
+  fi
+}
+
+# Lock-free registry write via atomic temp+rename. Caller MUST hold the lock.
+_write_registry_unlocked() {
+  local json="$1"
+  local registry_file="$PROJECT_ROOT/.claude/deep-work-sessions.json"
+  local tmp_file="${registry_file}.tmp.$$"
+  mkdir -p "$(dirname "$registry_file")" 2>/dev/null
+  printf '%s' "$json" > "$tmp_file" && mv "$tmp_file" "$registry_file"
+}
+
+# _with_registry_lock <fn> [args...]
+# Runs `fn args...` while holding the registry lock, then releases it, and
+# returns fn's exit status (or 1 if the lock can't be acquired). Uses flock
+# when available, else the mkdir spinlock (NFS / macOS without flock).
+# NOTE: on the flock path `fn` runs in a SUBSHELL, so it must persist results
+# to the registry file on disk — not to shell variables.
+_with_registry_lock() {
+  local lock_path="$PROJECT_ROOT/.claude/deep-work-sessions.lock"
+  mkdir -p "$(dirname "$lock_path")" 2>/dev/null
+
+  if command -v flock >/dev/null 2>&1; then
+    local rc=0
+    (
+      flock -w 2 9 || exit 1
+      "$@"
+    ) 9>"$lock_path" || rc=$?
+    return $rc
+  fi
+
+  # mkdir-based spinlock fallback. Fail-closed: do NOT force-remove the lock
+  # directory on timeout — that corrupted the registry under contention in
+  # v6.2.3.
+  if ! _acquire_lock "$lock_path" 20 0.05; then
+    return 1
+  fi
+  local rc=0
+  "$@" || rc=$?
+  _release_lock "$lock_path"
+  return $rc
+}
+
+# _registry_rmw <context> <node_transform> [node_args...]
+# Atomically read-modify-write the registry under a single lock hold. The node
+# transform receives the current registry JSON as argv[1] and node_args as
+# argv[2..], and must print the updated registry JSON to stdout. Non-fatal:
+# logs to the guard error log and returns 1 on failure (callers keep going —
+# PostToolUse hooks must never block). Replaces the old read_registry +
+# _try_write_registry pairing, which left the read outside the lock.
+_registry_rmw() {
+  local context="$1" transform="$2"
+  shift 2
+  if _with_registry_lock _registry_rmw_apply "$transform" "$@"; then
+    return 0
+  fi
+  local err_log="${PROJECT_ROOT:-$PWD}/.claude/deep-work-guard-errors.log"
+  mkdir -p "$(dirname "$err_log")" 2>/dev/null
+  printf '%s registry RMW failed (context: %s)\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)" \
+    "$context" >> "$err_log" 2>/dev/null || true
+  return 1
+}
+
+# Runs UNDER the registry lock (invoked by _with_registry_lock). Reads
+# lock-free, transforms via node, writes lock-free. Never call directly.
+_registry_rmw_apply() {
+  local transform="$1"
+  shift
+  local current updated
+  current="$(_read_registry_unlocked)"
+  updated="$(node -e "$transform" "$current" "$@")" || return 1
+  _write_registry_unlocked "$updated"
+}
 
 read_registry() {
   local registry_file="$PROJECT_ROOT/.claude/deep-work-sessions.json"
   if [[ -f "$registry_file" ]]; then
     cat "$registry_file"
-  else
-    local default_json='{"version":1,"shared_files":["package.json","package-lock.json","tsconfig.json",".eslintrc.*","*.config.js","*.config.ts"],"sessions":{}}'
-    mkdir -p "$(dirname "$registry_file")" 2>/dev/null
-    printf '%s' "$default_json" > "$registry_file"
-    printf '%s' "$default_json"
+    return 0
   fi
+  # Missing file: create the default under the lock (the default-write is a
+  # mutation — doing it lock-free raced concurrent writers and could clobber a
+  # registry another session had just created).
+  _with_registry_lock _registry_create_default_if_absent
+  if [[ -f "$registry_file" ]]; then
+    cat "$registry_file"
+  else
+    _registry_default_json  # lock unavailable — still hand back valid JSON
+  fi
+}
+
+_registry_create_default_if_absent() {
+  local registry_file="$PROJECT_ROOT/.claude/deep-work-sessions.json"
+  [[ -f "$registry_file" ]] && return 0  # double-check under the lock
+  _write_registry_unlocked "$(_registry_default_json)"
 }
 
 write_registry() {
   local json="$1"
-  local registry_file="$PROJECT_ROOT/.claude/deep-work-sessions.json"
-  local lock_path="$PROJECT_ROOT/.claude/deep-work-sessions.lock"
-  local tmp_file="${registry_file}.tmp.$$"
-
-  mkdir -p "$(dirname "$registry_file")" 2>/dev/null
-
-  if command -v flock >/dev/null 2>&1; then
-    (
-      flock -w 2 9 || exit 1
-      printf '%s' "$json" > "$tmp_file" && mv "$tmp_file" "$registry_file"
-    ) 9>"$lock_path"
-    return $?
-  fi
-
-  # mkdir-based spinlock fallback (NFS, macOS without flock). Fail-closed:
-  # do NOT force-remove the lock directory on timeout — that corrupted the
-  # registry under contention in v6.2.3.
-  if ! _acquire_lock "$lock_path" 20 0.05; then
-    rm -f "$tmp_file" 2>/dev/null
-    return 1
-  fi
-  printf '%s' "$json" > "$tmp_file" && mv "$tmp_file" "$registry_file"
-  local rc=$?
-  _release_lock "$lock_path"
-  return $rc
+  _with_registry_lock _write_registry_unlocked "$json"
 }
 
 # ─── Session registration ──────────────────────────────────
@@ -348,11 +445,7 @@ register_session() {
   local task_desc="$3"
   local work_dir="$4"
 
-  local current
-  current="$(read_registry)"
-
-  local updated
-  updated=$(node -e '
+  _registry_rmw "register_session(${session_id})" '
     const data = JSON.parse(process.argv[1]);
     const sid = process.argv[2];
     const now = new Date().toISOString();
@@ -368,25 +461,17 @@ register_session() {
       git_branch: null
     };
     console.log(JSON.stringify(data));
-  ' "$current" "$session_id" "$pid" "$task_desc" "$work_dir")
-
-  _try_write_registry "$updated" "register_session(${session_id})"
+  ' "$session_id" "$pid" "$task_desc" "$work_dir"
 }
 
 unregister_session() {
   local session_id="$1"
 
-  local current
-  current="$(read_registry)"
-
-  local updated
-  updated=$(node -e '
+  _registry_rmw "unregister_session(${session_id})" '
     const data = JSON.parse(process.argv[1]);
     delete data.sessions[process.argv[2]];
     console.log(JSON.stringify(data));
-  ' "$current" "$session_id")
-
-  _try_write_registry "$updated" "unregister_session(${session_id})"
+  ' "$session_id"
 }
 
 # ─── File ownership ────────────────────────────────────────
@@ -445,11 +530,7 @@ register_file_ownership() {
   local session_id="$1"
   local file_path="$2"
 
-  local current
-  current="$(read_registry)"
-
-  local updated
-  updated=$(node -e '
+  _registry_rmw "register_file_ownership(${session_id})" '
     const path = require("path");
     const data = JSON.parse(process.argv[1]);
     const sid = process.argv[2];
@@ -492,9 +573,7 @@ register_file_ownership() {
     }
 
     console.log(JSON.stringify(data));
-  ' "$current" "$session_id" "$file_path")
-
-  _try_write_registry "$updated" "register_file_ownership(${session_id})"
+  ' "$session_id" "$file_path"
 }
 
 # ─── Activity & phase sync ─────────────────────────────────
@@ -502,31 +581,21 @@ register_file_ownership() {
 update_last_activity() {
   local session_id="$1"
 
-  local current
-  current="$(read_registry)"
-
-  local updated
-  updated=$(node -e '
+  _registry_rmw "update_last_activity(${session_id})" '
     const data = JSON.parse(process.argv[1]);
     const sid = process.argv[2];
     if (data.sessions[sid]) {
       data.sessions[sid].last_activity = new Date().toISOString();
     }
     console.log(JSON.stringify(data));
-  ' "$current" "$session_id")
-
-  _try_write_registry "$updated" "update_last_activity(${session_id})"
+  ' "$session_id"
 }
 
 update_registry_phase() {
   local session_id="$1"
   local phase="$2"
 
-  local current
-  current="$(read_registry)"
-
-  local updated
-  updated=$(node -e '
+  _registry_rmw "update_registry_phase(${session_id})" '
     const data = JSON.parse(process.argv[1]);
     const sid = process.argv[2];
     const phase = process.argv[3];
@@ -535,9 +604,7 @@ update_registry_phase() {
       data.sessions[sid].last_activity = new Date().toISOString();
     }
     console.log(JSON.stringify(data));
-  ' "$current" "$session_id" "$phase")
-
-  _try_write_registry "$updated" "update_registry_phase(${session_id})"
+  ' "$session_id" "$phase"
 }
 
 # ─── Stale session detection ───────────────────────────────
@@ -712,13 +779,9 @@ register_fork_session() {
   local work_dir="$5"
   local restart_phase="${6:-plan}"
 
-  # 원자적 등록: 레지스트리 lock 내에서 fork 등록 + 부모 업데이트를 모두 수행
-  # session ID 기반 suffix이므로 번호 할당 race condition 없음
-  local current
-  current="$(read_registry)"
-
-  local updated
-  updated=$(node -e '
+  # 원자적 등록: registry RMW 를 단일 lock 안에서 수행 (read~write lost-update
+  # 방지). session ID 기반 suffix이므로 번호 할당 race condition 없음.
+  _registry_rmw "register_fork_session(${session_id})" '
     const data = JSON.parse(process.argv[1]);
     const sid = process.argv[2];
     const parentId = process.argv[3];
@@ -738,11 +801,9 @@ register_fork_session() {
       git_branch: null
     };
     console.log(JSON.stringify(data));
-  ' "$current" "$session_id" "$parent_id" "$fork_generation" "$task_desc" "$work_dir" "$restart_phase")
+  ' "$session_id" "$parent_id" "$fork_generation" "$task_desc" "$work_dir" "$restart_phase"
 
-  _try_write_registry "$updated" "register_fork_session(${session_id})"
-
-  # 부모 상태 파일 업데이트도 같은 호출 내에서 수행
+  # 부모 상태 파일 업데이트 (registry lock 밖 — 다른 파일이라 contention 없음)
   local parent_state="$PROJECT_ROOT/.claude/deep-work.${parent_id}.md"
   if [[ -f "$parent_state" ]]; then
     update_parent_fork_children "$parent_state" "$session_id" "$restart_phase"

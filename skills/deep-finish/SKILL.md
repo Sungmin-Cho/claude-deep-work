@@ -517,6 +517,16 @@ if [ -f "$PROJECT_ROOT/.deep-dashboard/harnessability-report.json" ]; then
   HARN_PATH="$PROJECT_ROOT/.deep-dashboard/harnessability-report.json"
 fi
 
+# Resolve the session state file so the wrapper can read the deep-test
+# `test_passed` marker deterministically (see the test-verification gate note
+# below). Same session_id → deep-work.<sid>.md, else the legacy local path.
+STATE_FILE_PATH=""
+if [ -n "$SESSION_ID" ] && [ -f "$PROJECT_ROOT/.claude/deep-work.$SESSION_ID.md" ]; then
+  STATE_FILE_PATH="$PROJECT_ROOT/.claude/deep-work.$SESSION_ID.md"
+elif [ -f "$PROJECT_ROOT/.claude/deep-work.local.md" ]; then  # legacy fallback path
+  STATE_FILE_PATH="$PROJECT_ROOT/.claude/deep-work.local.md"   # legacy fallback
+fi
+
 WRAP_ARGS=(
   --artifact-kind session-receipt
   --payload-file "$WORK_DIR/.session-receipt.payload.json"
@@ -526,6 +536,7 @@ WRAP_ARGS=(
 [ -n "$SESSION_ID" ] && WRAP_ARGS+=(--session-id "$SESSION_ID")
 [ -n "$EVOLVE_PATH" ] && WRAP_ARGS+=(--source-evolve-insights "$EVOLVE_PATH")
 [ -n "$HARN_PATH" ] && WRAP_ARGS+=(--source-harnessability "$HARN_PATH")
+[ -n "$STATE_FILE_PATH" ] && WRAP_ARGS+=(--session-state-file "$STATE_FILE_PATH")
 
 # Cleanup payload temp file ONLY on helper success — preserve on failure for
 # retry (round-1 deep-review C2 lesson). The `set -e` guarantees abort if the
@@ -547,6 +558,17 @@ The helper:
 - Adds slice receipts' `run_id` (when envelope-wrapped) plus
   `harnessability-report.json`'s `run_id` to `provenance.source_artifacts[]`
   (intra-plugin chain + multi-source aggregation).
+- **Test-verification signal (deterministic)**: when `--session-state-file` is
+  passed, the helper reads the session state's `test_passed` frontmatter marker
+  (set by deep-test §All Pass) and stamps `x-test-verified: true|false` on every
+  session-receipt payload. This makes the evidence chain carry the deep-test →
+  deep-finish verification result in code rather than relying on prompt
+  compliance. The helper does **not** rewrite `outcome`: by the time §7-Z runs a
+  `merge`/`pr` is already physically complete (worktree removed + `branch -d`, or
+  `gh pr create`), so demoting it would misreport a done action to
+  completion-polling / aggregation consumers. The receipt records the **fact**
+  (`outcome`) and the **verification signal** (`x-test-verified`) separately —
+  downstream consumers judge trustworthiness from the pair.
 
 ### 7-Z-A. Optional cross-plugin handoff emit (v6.6.0 — M5.7.A)
 

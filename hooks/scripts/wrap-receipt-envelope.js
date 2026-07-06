@@ -20,6 +20,7 @@
  *     [--source-artifacts-glob <glob>]   (slice receipts → session-receipt: aggregate intra-plugin chain)
  *     [--source-evolve-insights <path>]  (cross-plugin chain — also fills parent_run_id if not set)
  *     [--source-harnessability <path>]   (cross-plugin chain — adds to source_artifacts only)
+ *     [--session-state-file <path>]      (session-receipt: read test_passed marker → stamp x-test-verified; outcome unchanged)
  *
  * Exit codes:
  *   0 — wrote envelope-wrapped receipt
@@ -44,7 +45,8 @@ function usage(extra) {
       '                                 [--session-id <id>]\n' +
       '                                 [--source-artifacts-glob <glob>]\n' +
       '                                 [--source-evolve-insights <path>]\n' +
-      '                                 [--source-harnessability <path>]\n',
+      '                                 [--source-harnessability <path>]\n' +
+      '                                 [--session-state-file <path>]\n',
   );
   process.exit(2);
 }
@@ -58,7 +60,33 @@ const KNOWN_FLAGS = new Set([
   'source-artifacts-glob',
   'source-evolve-insights',
   'source-harnessability',
+  'session-state-file',
 ]);
+
+// Minimal YAML-frontmatter field reader, mirroring utils.sh:read_frontmatter_field.
+// Reads the value of `field` from the leading `---` … `---` block. Returns the
+// trimmed, quote-stripped value, or null when the file/field is absent.
+function readFrontmatterField(filePath, field) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (_err) {
+    return null;
+  }
+  let inFrontmatter = false;
+  for (const line of raw.split(/\r?\n/)) {
+    if (line === '---') {
+      if (inFrontmatter) break; // closing fence
+      inFrontmatter = true;
+      continue;
+    }
+    if (!inFrontmatter) continue;
+    if (line.startsWith(`${field}:`)) {
+      return line.slice(field.length + 1).trim().replace(/^["']|["']$/g, '');
+    }
+  }
+  return null;
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -180,6 +208,35 @@ function main() {
     process.exit(2);
   }
 
+  // Deterministic test-verification signal (session-receipt only). deep-test
+  // records `test_passed: true` in the session state's frontmatter as the
+  // precondition for a verified session (deep-test SKILL.md §All Pass /
+  // deep-finish SKILL.md §7-Z). We read that marker here rather than trusting
+  // the caller to have honored the contract, and stamp the result on the
+  // payload as `x-test-verified` (forward-compat `^x-` namespace — the schema
+  // pins additionalProperties:false + patternProperties ^x-).
+  //
+  // We do NOT rewrite `outcome`. By the time §7-Z runs, a merge/pr outcome is
+  // already physically done (worktree removed + branch -d, or `gh pr create`),
+  // so demoting it to "in-progress" would misreport a completed action to
+  // completion-polling / aggregation consumers. The receipt records the FACT
+  // (outcome) and the verification SIGNAL (x-test-verified) separately;
+  // consumers judge trustworthiness from the pair.
+  if (artifactKind === 'session-receipt' && args['session-state-file']) {
+    const statePath = path.resolve(process.cwd(), args['session-state-file']);
+    if (fs.existsSync(statePath)) {
+      const testPassed = readFrontmatterField(statePath, 'test_passed');
+      const verified = testPassed === 'true';
+      payload['x-test-verified'] = verified;
+      if (!verified) {
+        process.stderr.write(
+          `note: test_passed not confirmed (test_passed=${JSON.stringify(testPassed)}); ` +
+            'recorded x-test-verified=false (outcome left as recorded)\n',
+        );
+      }
+    }
+  }
+
   // Cross-plugin chain: harvest run_ids from consumed artifacts.
   const sourceArtifacts = [];
 
@@ -275,4 +332,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { expandSourceArtifactsGlob, tryReadEnvelopeRunId };
+module.exports = { expandSourceArtifactsGlob, tryReadEnvelopeRunId, readFrontmatterField };

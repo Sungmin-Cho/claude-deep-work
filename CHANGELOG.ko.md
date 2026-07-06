@@ -7,7 +7,21 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
-## [Unreleased]
+## [6.9.2] — 2026-07-07 (silent-failure 수정 + 결정론적 receipt 게이트)
+
+### Fixed
+
+- `update-check.sh` — 원격 버전 조회가 `.../main/plugins/deep-work/package.json`(404 — 저장소에 `plugins/` 하위 트리 없음)를 가리켜 매 fetch가 실패했고, 그 실패가 빈 응답 상태에서 `UP_TO_DATE`로 캐시되어 5분 캐시를 오염 → 업데이트 알림이 **영구히** 억제됐습니다. URL을 저장소 루트 `package.json`으로 교정하고, 실패/빈 응답/비-버전 응답 시 캐시를 건드리지 않고 종료(다음 세션에서 재시도)하도록 수정했습니다. 실제 최신/업그레이드 가능 결과는 계속 캐시됩니다(알림 스팸 방지 유지).
+- `file-tracker.sh` — **Bash** 도구로 생성된 파일(`echo … > file`, `tee`, `cp`, 리다이렉트)이 cross-session ownership 레지스트리에 등록되지 않았습니다. ownership 추출 스니펫이 상대경로 `require('./phase-guard-core.js')`(hook CWD 기준 resolve → `MODULE_NOT_FOUND`)를 쓰고 반환 **객체**를 truthy 체크(`if(detectBashFileWrite(d))` — 항상 참)했으며, `2>/dev/null || echo ""`가 모듈 오류를 은폐했습니다. 검증된 `phase-guard.sh` 패턴(절대경로 `require(process.argv[1])` + `const r = …; if (r.isFileWrite)`)으로 교정했습니다.
+- `utils.sh` — 레지스트리 변경이 **lost-update**에 취약했습니다: 각 콜러가 *unlocked* `read_registry` → 변환 → *locked* `write_registry` 순서라 lock이 read를 감싸지 못해 동시 세션이 서로의 write를 덮어썼습니다. 이제 read-modify-write 전체를 단일 lock으로 직렬화합니다. lock-free inner helper(`_read_registry_unlocked` / `_write_registry_unlocked`)를 분리하고, `register_session` / `unregister_session` / `register_file_ownership` / `update_last_activity` / `update_registry_phase` / `register_fork_session`가 단일 `_registry_rmw` lock 안에서 read+변환+write를 수행합니다. 공개 `read_registry` / `write_registry` 래퍼는 기존 콜러를 위해 유지(RMW 콜러는 재진입 금지 — lock은 재진입 불가), `read_registry`의 파일 부재 시 default-write도 lock 안으로 이동했습니다.
+
+### Changed
+
+- `wrap-receipt-envelope.js` + `skills/deep-finish/SKILL.md` §7-Z — session-receipt 증거 체인이 이제 deep-test → deep-finish `test_passed` 결과를 프롬프트 준수에 의존하지 않고 결정론적으로 담습니다. `--session-state-file`이 전달되면 wrapper가 state의 `test_passed` frontmatter 마커를 읽어 모든 session-receipt payload에 `x-test-verified: true|false`(forward-compat `^x-` 네임스페이스)를 기록합니다. `outcome`은 **기록된 사실 그대로 유지** — §7-Z 시점엔 `merge`/`pr`이 이미 물리적으로 완료(worktree 제거 + `branch -d`, 또는 `gh pr create`)되어 있어 이를 재작성하면 완료 폴링/집계 소비자에게 완료된 동작을 오보하게 되므로, receipt는 사실(`outcome`)과 검증 신호(`x-test-verified`)를 별도 필드로 남겨 소비자가 조합 판단하게 합니다. emit은 절대 거부하지 않으며, 플래그(또는 state 파일)가 없으면 payload는 무변경(하위호환)입니다.
+
+### Added
+
+- `hooks/scripts/update-check.test.js`, `hooks/scripts/registry-rmw.test.js`, `hooks/scripts/wrap-receipt-envelope.test.js`, `hooks/scripts/file-tracker-fixes.test.js`의 신규 케이스 — URL 앵커 + fetch 실패 분기, RMW 재진입 가드 + 동시 no-lost-update, Bash-write ownership 등록, 결정론적 test-verification 게이트를 고정합니다.
 
 ## [6.9.1] — 2026-07-03 (Windows/Git Bash 유령 `.claude` 폴더 수정)
 

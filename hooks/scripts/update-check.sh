@@ -21,7 +21,11 @@ STATE_DIR="$HOME/.claude"
 CACHE_FILE="$STATE_DIR/.deep-work-update-cache"
 MARKER_FILE="$STATE_DIR/.deep-work-just-upgraded"
 SNOOZE_FILE="$STATE_DIR/.deep-work-update-snoozed"
-REMOTE_URL="https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-work/main/plugins/deep-work/package.json"
+# package.json lives at the repo root (the local version at $PLUGIN_DIR/package.json
+# is read the same way). The previous `.../main/plugins/deep-work/package.json`
+# path 404'd — the repo has no plugins/ subtree — so every fetch failed and the
+# "up to date" cache below was written from an empty response (see Step 4).
+REMOTE_URL="https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-work/main/package.json"
 
 # ─── Read local version from package.json ─────────────────────
 LOCAL=""
@@ -112,17 +116,22 @@ if [ -f "$CACHE_FILE" ]; then
 fi
 
 # ─── Step 4: Fetch remote version ────────────────────────────
-REMOTE_JSON=""
+# A failed fetch (404, network error, empty body) or an unparseable/non-version
+# response must be treated as "check skipped", NOT as "up to date". Writing
+# UP_TO_DATE from an empty REMOTE poisons the 5-minute cache: every subsequent
+# session reads the cached UP_TO_DATE and never re-fetches, so the update prompt
+# is suppressed permanently. On any failure we exit without touching the cache
+# so the next session retries the fetch.
 REMOTE_JSON=$(curl -sf --max-time 5 "$REMOTE_URL" 2>/dev/null || true)
-
-REMOTE=""
-if [ -n "$REMOTE_JSON" ]; then
-  REMOTE=$(echo "$REMOTE_JSON" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).version)}catch(e){}})" 2>/dev/null || true)
+if [ -z "$REMOTE_JSON" ]; then
+  exit 0  # fetch failed / empty body — retry next session, do not cache
 fi
 
-# Validate version format
-if ! echo "$REMOTE" | grep -qE '^[0-9]+\.[0-9.]+$'; then
-  echo "UP_TO_DATE $LOCAL" > "$CACHE_FILE"
+REMOTE=$(printf '%s' "$REMOTE_JSON" | node -e "process.stdin.setEncoding('utf8');let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).version)}catch(e){}})" 2>/dev/null || true)
+
+# A non-version response (HTML error page, truncated JSON) is a fetch failure,
+# not "up to date" — skip without caching.
+if ! printf '%s' "$REMOTE" | grep -qE '^[0-9]+\.[0-9.]+$'; then
   exit 0
 fi
 
