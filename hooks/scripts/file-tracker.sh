@@ -21,7 +21,15 @@ STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 # never got a fresh cache entry — breaking the injector on most phase
 # changes. Move stdin read to the top and cache atomically.
 TOOL_INPUT="$(cat)"
-TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
+# tool_name/tool_input 해석 — env 우선 → stdin wrapper fallback (utils.sh 공유
+# 헬퍼, v6.9.4 — deep-review D-2). env 미설정 하네스가 stdin에 wrapper JSON
+# ({"tool_name":..., "tool_input":{...}})을 실어 보내는 경우에도 tool_name을
+# 복원하고 payload를 unwrap한다. unwrap이 아래 캐시 write보다 먼저 실행되므로
+# phase-transition.sh가 읽는 캐시에는 항상 flat tool_input이 담긴다
+# (wrapper 계약의 전이적 지원).
+resolve_hook_tool_context "$TOOL_INPUT"
+TOOL_NAME="$HOOK_TOOL_NAME"
+TOOL_INPUT="$HOOK_TOOL_INPUT"
 
 # Does THIS tool call write a deep-work state file? (phase-transition.sh needs
 # the cache to detect the initial phase even before a session pointer resolves
