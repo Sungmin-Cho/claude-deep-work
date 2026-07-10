@@ -7,6 +7,21 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.9.4] — 2026-07-10 (hooks stdin wrapper 계약 — 공유 헬퍼)
+
+### Fixed
+
+- `file-tracker.sh` / `phase-transition.sh` — 6.9.3이 `phase-guard.sh`에 대해 고친 stdin wrapper 계약을 두 PostToolUse 훅은 지원하지 않았습니다(deep-review 라운드 2 DEFER **D-2**). `tool_name` / `tool_input`을 stdin JSON 최상위 키로 전달하는 env-미설정 하네스에서 `file-tracker.sh`는 `TOOL_NAME`을 env에서만 읽어(빈 값 → 파일 추적/receipt 수집이 조용히 스킵) **wrapper** JSON을 그대로 캐시했고, 그 결과 `phase-transition.sh`의 `file_path` 추출이 비어 phase 전환 checklist 주입이 소리 없이 누락됐습니다. 이제 `file-tracker.sh`가 캐시 write **이전에** 공유 헬퍼로 두 값을 해석하므로 캐시에는 항상 flat `tool_input`이 담기고, `phase-transition.sh`는 env/캐시 입력 경로로 wrapper 형태가 직접 들어오는 경우까지 방어적으로 unwrap합니다(flat 입력·env-set tool-name 하네스에서는 no-op).
+
+### Changed
+
+- `hooks/scripts/utils.sh` — 공유 헬퍼 `resolve_hook_tool_context` 신설: env 우선(`CLAUDE_TOOL_USE_TOOL_NAME` / `CLAUDE_TOOL_NAME`) → stdin wrapper fallback + 중첩 `tool_input` unwrap을 6.9.3의 인라인 로직에서 추출해 세 훅이 하나의 구현을 공유합니다. 시맨틱 불변: env-set 하네스의 payload는 절대 교체하지 않고(가드-실행 대칭, R1-1), malformed JSON은 fail-open 유지(allowlist + fail-closed 전환은 stdin 계약 1차 승격 시로 유예, DEFER D-1). 기존 2회 node spawn을 **1회**로 통합해 두 값을 동시 추출합니다(`U+001F` unit separator 구분자 — `JSON.stringify`가 제어 문자를 이스케이프하므로 payload 내용과 충돌 불가). `phase-guard.sh`의 메인·Phase 5 경로가 이 헬퍼를 호출합니다.
+
+### Added
+
+- `hooks/scripts/hooks-stdin-contract.test.js` — 10케이스: 공유 헬퍼 단위 계약(wrapper unwrap, env 우선 무교체, flat/malformed fail-open, 비객체 `tool_input`, US 구분자 충돌 안전성), `file-tracker.sh` 캐시 unwrap + env-set flat 무회귀, PreToolUse→PostToolUse env-미설정 e2e 체인(`file-tracker` 캐시 → `phase-transition` checklist 주입) 및 wrapper-via-env defense-in-depth 경로.
+- `hooks/scripts/test-helpers/run-phase-guard.js` — `HOST_LEAK_VARS`에 `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` 추가(`phase-transition.sh`의 env 우선 입력 소스 — 호스트 leak이 테스트 중 file-tracker 캐시 경로를 가리는 것을 봉인).
+
 ## [6.9.3] — 2026-07-10 (phase-guard stdin `tool_name`/`tool_input` fallback)
 
 ### Fixed
