@@ -7,6 +7,17 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.3] — 2026-07-10 (phase-guard stdin `tool_name`/`tool_input` fallback)
+
+### Fixed
+
+- `phase-guard.sh` — the PreToolUse hook read the tool name **only** from the `CLAUDE_TOOL_USE_TOOL_NAME` / `CLAUDE_TOOL_NAME` env vars. Current Claude Code harnesses (and runners such as cmux) do not set those vars and instead deliver `tool_name` / `tool_input` as top-level keys of the hook's stdin JSON payload — so `TOOL_NAME` came up empty, the extracted file path was empty, and `checkTddEnforcement` fail-closed classified every call as a production-file edit: in implement/strict TDD (PENDING) even harmless Bash queries, test-file edits, and exempt-file (`.md`/`.env`) edits were blocked (block message showed `파일: ` with an empty path), and non-implement phases blocked Bash queries too. The hook now falls back to parsing `tool_name` from the stdin payload and unwrapping the nested `tool_input` — strictly gated to when the env vars are absent (env-first): env-set harnesses keep the flat contract untouched, and the guard never swaps its evaluated payload away from what the tool actually executes (4-way review round-1 🔴 finding — an ungated unwrap would have opened a guard-vs-execution asymmetry). Both the main path and the Phase 5 read-only path are covered; with node absent the fallback degrades to the previous behavior. (Ref: `docs/handoff/2026-07-10-phase-guard-toolname-stdin-fallback.md`)
+
+### Added
+
+- `hooks/scripts/phase-guard-stdin-fallback.test.js` — 9 e2e cases pinning the stdin-only contract (Bash query allow / test-file Write allow / production Write **still blocked** / exempt `.md` Edit allow), the Phase 5 read-only boundary under stdin-only payloads (outside-work_dir Write and Bash redirect blocked, inside-work_dir Write allowed), and the no-regression contract for env-set harnesses (flat payload unchanged; env-set + wrapper payload is *not* unwrapped — fail-closed).
+- `hooks/scripts/test-helpers/run-phase-guard.js` — `CLAUDE_TOOL_USE_TOOL_NAME` / `CLAUDE_TOOL_NAME` added to `HOST_LEAK_VARS`, so a tool-name value leaking from the host shell / CI can no longer break the "env unset" premise of hook tests.
+
 ## [6.9.2] — 2026-07-07 (silent-failure fixes + deterministic receipt gate)
 
 ### Fixed

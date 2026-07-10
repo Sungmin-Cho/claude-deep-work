@@ -7,6 +7,17 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.9.3] — 2026-07-10 (phase-guard stdin `tool_name`/`tool_input` fallback)
+
+### Fixed
+
+- `phase-guard.sh` — PreToolUse 훅이 도구 이름을 `CLAUDE_TOOL_USE_TOOL_NAME` / `CLAUDE_TOOL_NAME` 환경변수에서**만** 읽었습니다. 현재 Claude Code 하네스(및 cmux 등 일부 실행 환경)는 이 env를 설정하지 않고 `tool_name` / `tool_input`을 훅 stdin JSON의 최상위 키로 전달하므로 `TOOL_NAME`이 빈 문자열이 되고, 추출된 파일 경로도 비어 `checkTddEnforcement`가 모든 호출을 production 파일 수정으로 fail-closed 분류했습니다: implement/strict TDD(PENDING)에서 무해한 Bash 조회·테스트 파일 편집·exempt 파일(`.md`/`.env`) 편집까지 전부 차단(차단 메시지의 `파일: `이 빈 경로)되고, 비-implement phase에서도 Bash 조회가 차단됐습니다. 이제 env가 없을 때만(env 우선) stdin payload에서 `tool_name`을 fallback 파싱하고 중첩 `tool_input`을 unwrap합니다 — env가 설정된 하네스는 flat 계약을 그대로 유지하며, 가드가 평가하는 payload가 툴이 실제 실행하는 입력과 어긋나지 않습니다(4-way 리뷰 라운드 1 🔴 지적 — 게이트 없는 unwrap은 가드-실행 비대칭을 열었을 것). 메인 경로와 Phase 5 read-only 경로를 모두 커버하며, node 부재 시 기존 동작으로 degrade합니다. (참조: `docs/handoff/2026-07-10-phase-guard-toolname-stdin-fallback.md`)
+
+### Added
+
+- `hooks/scripts/phase-guard-stdin-fallback.test.js` — e2e 9케이스: stdin-only 계약 고정(Bash 조회 허용 / 테스트 파일 Write 허용 / production Write **차단 유지** / exempt `.md` Edit 허용), stdin-only payload에서의 Phase 5 read-only 경계(work_dir 밖 Write·Bash redirect 차단, 안 Write 허용), env-set 하네스 무회귀 계약(flat payload 불변; env-set + wrapper payload는 unwrap하지 *않고* fail-closed).
+- `hooks/scripts/test-helpers/run-phase-guard.js` — `HOST_LEAK_VARS`에 `CLAUDE_TOOL_USE_TOOL_NAME` / `CLAUDE_TOOL_NAME` 추가 — 호스트 셸/CI에서 leak된 tool-name 값이 훅 테스트의 "env 미설정" 전제를 깨지 못하게 봉인.
+
 ## [6.9.2] — 2026-07-07 (silent-failure 수정 + 결정론적 receipt 게이트)
 
 ### Fixed
