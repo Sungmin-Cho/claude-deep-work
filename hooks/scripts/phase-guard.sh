@@ -102,20 +102,21 @@ fi
 if [[ -n "$PHASE5_MODE" ]]; then
   _P5_INPUT="$(cat)"
   _P5_TOOL="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
-  # 메인 경로와 동일한 stdin JSON fallback (env 우선, 중첩 tool_input unwrap).
+  # 메인 경로와 동일한 stdin JSON fallback (env 우선). unwrap도 게이트 안에서만 —
+  # env가 설정된 하네스(flat 계약)에서는 payload를 교체하지 않는다 (가드-실행 입력 일치).
   if [[ -z "$_P5_TOOL" ]]; then
     _P5_TOOL="$(printf '%s' "$_P5_INPUT" | node -e "
       process.stdin.setEncoding('utf8');let d='';
       process.stdin.on('data',c=>d+=c);
       process.stdin.on('end',()=>{try{process.stdout.write(String(JSON.parse(d).tool_name||''))}catch(e){}});
     " 2>/dev/null || echo "")"
+    _P5_INNER="$(printf '%s' "$_P5_INPUT" | node -e "
+      process.stdin.setEncoding('utf8');let d='';
+      process.stdin.on('data',c=>d+=c);
+      process.stdin.on('end',()=>{try{const o=JSON.parse(d);if(o&&o.tool_input&&typeof o.tool_input==='object')process.stdout.write(JSON.stringify(o.tool_input));}catch(e){}});
+    " 2>/dev/null || echo "")"
+    [[ -n "$_P5_INNER" ]] && _P5_INPUT="$_P5_INNER"
   fi
-  _P5_INNER="$(printf '%s' "$_P5_INPUT" | node -e "
-    process.stdin.setEncoding('utf8');let d='';
-    process.stdin.on('data',c=>d+=c);
-    process.stdin.on('end',()=>{try{const o=JSON.parse(d);if(o&&o.tool_input&&typeof o.tool_input==='object')process.stdout.write(JSON.stringify(o.tool_input));}catch(e){}});
-  " 2>/dev/null || echo "")"
-  [[ -n "$_P5_INNER" ]] && _P5_INPUT="$_P5_INNER"
 
   _PROJECT_ROOT_NORM="$(normalize_path "$PROJECT_ROOT")"
   # snapshot 우선 (RC3-1). snapshot 없으면 work_dir로 backward-compat.
@@ -562,21 +563,22 @@ TOOL_INPUT="$(cat)"
 TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
 
 # 하네스가 tool_name/tool_input을 env가 아니라 stdin JSON 최상위 키로 전달하는
-# 경우의 fallback. env 우선 — TOOL_NAME이 빌 때만 payload에서 읽고, 중첩
-# tool_input은 형식 무관하게 unwrap한다(flat 구형식은 tool_input 키가 없어 no-op).
+# 경우의 fallback. env 우선 — TOOL_NAME이 빌 때만 payload에서 읽고 중첩 tool_input을
+# unwrap한다. unwrap도 이 게이트 안에서만 수행 — env가 설정된 하네스는 flat 계약이므로
+# 가드가 평가하는 입력과 툴이 실행하는 입력이 어긋나지 않도록 payload를 교체하지 않는다.
 if [[ -z "$TOOL_NAME" ]]; then
   TOOL_NAME="$(printf '%s' "$TOOL_INPUT" | node -e "
     process.stdin.setEncoding('utf8');let d='';
     process.stdin.on('data',c=>d+=c);
     process.stdin.on('end',()=>{try{process.stdout.write(String(JSON.parse(d).tool_name||''))}catch(e){}});
   " 2>/dev/null || echo "")"
+  _INNER_INPUT="$(printf '%s' "$TOOL_INPUT" | node -e "
+    process.stdin.setEncoding('utf8');let d='';
+    process.stdin.on('data',c=>d+=c);
+    process.stdin.on('end',()=>{try{const o=JSON.parse(d);if(o&&o.tool_input&&typeof o.tool_input==='object')process.stdout.write(JSON.stringify(o.tool_input));}catch(e){}});
+  " 2>/dev/null || echo "")"
+  [[ -n "$_INNER_INPUT" ]] && TOOL_INPUT="$_INNER_INPUT"
 fi
-_INNER_INPUT="$(printf '%s' "$TOOL_INPUT" | node -e "
-  process.stdin.setEncoding('utf8');let d='';
-  process.stdin.on('data',c=>d+=c);
-  process.stdin.on('end',()=>{try{const o=JSON.parse(d);if(o&&o.tool_input&&typeof o.tool_input==='object')process.stdout.write(JSON.stringify(o.tool_input));}catch(e){}});
-" 2>/dev/null || echo "")"
-[[ -n "$_INNER_INPUT" ]] && TOOL_INPUT="$_INNER_INPUT"
 
 # ─── File path extraction (all phases, for worktree guard + ownership) ──
 # NOTE: 파일 경로 추출은 CURRENT_SESSION_ID와 무관하게 실행해야 한다 (F-02).

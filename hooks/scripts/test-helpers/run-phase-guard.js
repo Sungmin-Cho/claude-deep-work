@@ -26,10 +26,19 @@ const path = require('node:path');
 
 const DEFAULT_PHASE_GUARD = path.resolve(__dirname, '..', 'phase-guard.sh');
 
-// Verified consumer list (grep hooks/scripts/ as of v6.6.2). Update this
-// list AND the comment block above when a new consumer of a host-leakable
-// env var is added or removed — a stale list silently weakens isolation.
-const HOST_LEAK_VARS = ['DEEP_WORK_SESSION_ID', 'DEEP_WORK_ROOT', 'CLAUDE_PROJECT_DIR'];
+// Verified consumer list (grep hooks/scripts/ as of v6.6.2; tool-name vars
+// added with the stdin-fallback suite — phase-guard.sh reads them at :548/:104
+// and the "env unset" contract of phase-guard-stdin-fallback.test.js breaks if
+// they leak from the host shell). Update this list AND the comment block above
+// when a new consumer of a host-leakable env var is added or removed — a stale
+// list silently weakens isolation.
+const HOST_LEAK_VARS = [
+  'DEEP_WORK_SESSION_ID',
+  'DEEP_WORK_ROOT',
+  'CLAUDE_PROJECT_DIR',
+  'CLAUDE_TOOL_USE_TOOL_NAME',
+  'CLAUDE_TOOL_NAME',
+];
 
 /**
  * Return a copy of process.env with the known host-leak vars removed,

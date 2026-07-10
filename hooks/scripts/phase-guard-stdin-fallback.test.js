@@ -95,6 +95,61 @@ describe('e2e: stdin JSON tool_name/tool_input fallback (env unset)', () => {
   });
 });
 
+describe('e2e: Phase 5 read-only 경계도 stdin-only 계약에서 유지된다', () => {
+  let tmpDir;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-stdin-p5-'));
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '.deep-work', 'session-x'), { recursive: true });
+    // Phase 5 mode: current_phase=idle + phase5_entered_at (+ completed_at 없음)
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', 'deep-work.local.md'),
+      '---\ncurrent_phase: idle\nwork_dir: .deep-work/session-x\nphase5_work_dir_snapshot: .deep-work/session-x\nphase5_entered_at: "2026-07-10T00:00:00Z"\n---\n'
+    );
+  });
+  afterEach(() => { if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it('stdin-only wrapper: work_dir 밖 Write는 차단된다', () => {
+    const result = runPhaseGuard({
+      cwd: tmpDir,
+      env: { DEEP_WORK_ROOT: tmpDir },
+      toolInput: {
+        tool_name: 'Write',
+        tool_input: { file_path: path.join(tmpDir, 'src', 'app.ts'), content: 'x' },
+      },
+    });
+    assert.equal(result.status, 2, `expected block (exit 2), got ${result.status}: ${result.stdout} ${result.stderr}`);
+    assert.match(result.stdout, /Phase 5 .*쓰기 제한/);
+  });
+
+  it('stdin-only wrapper: work_dir 안 Write는 허용된다', () => {
+    const result = runPhaseGuard({
+      cwd: tmpDir,
+      env: { DEEP_WORK_ROOT: tmpDir },
+      toolInput: {
+        tool_name: 'Write',
+        tool_input: {
+          file_path: path.join(tmpDir, '.deep-work', 'session-x', 'integrate-loop.json'),
+          content: '{}',
+        },
+      },
+    });
+    assert.equal(result.status, 0, `expected allow (exit 0), got ${result.status}: ${result.stdout} ${result.stderr}`);
+  });
+
+  it('stdin-only wrapper: work_dir 밖 Bash write redirect는 차단된다', () => {
+    const result = runPhaseGuard({
+      cwd: tmpDir,
+      env: { DEEP_WORK_ROOT: tmpDir },
+      toolInput: {
+        tool_name: 'Bash',
+        tool_input: { command: `echo x > ${tmpDir}/foo.txt` },
+      },
+    });
+    assert.equal(result.status, 2, `expected block (exit 2), got ${result.status}: ${result.stdout} ${result.stderr}`);
+  });
+});
+
 describe('e2e: env가 설정된 기존 하네스는 회귀 없음', () => {
   let tmpDir;
   beforeEach(() => {
@@ -120,7 +175,11 @@ describe('e2e: env가 설정된 기존 하네스는 회귀 없음', () => {
     assert.ok(parsed.reason.includes('src/pkg/mod.py'), `reason should contain the file path, got:\n${parsed.reason}`);
   });
 
-  it('env 설정 + wrapper payload(신 형식 하이브리드): tool_input이 unwrap되어 파일 경로를 인지한다', () => {
+  it('env 설정 + wrapper payload(합성 시나리오): unwrap하지 않고 fail-closed 차단한다', () => {
+    // env가 설정된 하네스는 flat 계약이다. 인자에 중첩 tool_input 객체가 섞여도
+    // 가드는 payload를 교체하지 않는다 — unwrap하면 가드가 평가하는 입력과 툴이
+    // 실제 실행하는 입력(top-level)이 어긋나는 우회 표면이 된다 (R1-1).
+    // top-level에 file_path가 없으므로 빈 경로 → production fail-closed 차단.
     const sid = 's-env2';
     writeImplementState(tmpDir, sid);
 
@@ -128,12 +187,14 @@ describe('e2e: env가 설정된 기존 하네스는 회귀 없음', () => {
       cwd: tmpDir,
       env: { DEEP_WORK_SESSION_ID: sid },
       toolName: 'Write',
-      toolInput: { tool_name: 'Write', tool_input: { file_path: 'src/pkg/mod.py', content: 'x' } },
+      toolInput: { tool_name: 'Write', tool_input: { file_path: 'tests/unit/test_x.py', content: 'x' } },
     });
 
-    assert.equal(result.status, 2, `expected block (exit 2), got ${result.status}: ${result.stdout} ${result.stderr}`);
+    assert.equal(result.status, 2, `expected fail-closed block (exit 2), got ${result.status}: ${result.stdout} ${result.stderr}`);
     const parsed = parseGuardOutput(result.stdout);
     assert.equal(parsed && parsed.decision, 'block');
-    assert.ok(parsed.reason.includes('src/pkg/mod.py'), `reason should contain the unwrapped file path, got:\n${parsed.reason}`);
+    // 내부 tool_input의 test-file 경로가 평가에 사용되지 않았다는 증거 —
+    // unwrap됐다면 test 파일로 분류되어 allow(exit 0)됐을 것이다.
+    assert.ok(!parsed.reason.includes('tests/unit/test_x.py'), `nested path must NOT be evaluated, got:\n${parsed.reason}`);
   });
 });
