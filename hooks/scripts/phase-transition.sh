@@ -28,6 +28,14 @@ if [[ -z "$TOOL_INPUT" ]]; then
 fi
 [[ -z "$TOOL_INPUT" ]] && exit 0
 
+# v6.9.4 (deep-review D-2): env 미설정(wrapper) 하네스 방어 — 받은 입력이
+# wrapper JSON 형태면 공유 헬퍼로 unwrap한다. 정상 경로에서는 no-op이다:
+# file-tracker.sh가 이미 unwrap해 캐시하므로 캐시 경로는 flat이고, flat 입력은
+# tool_input 키가 없어 그대로 통과하며, tool-name env가 설정된 flat 계약
+# 하네스에서는 헬퍼가 payload를 건드리지 않는다 (defense-in-depth).
+resolve_hook_tool_context "$TOOL_INPUT"
+TOOL_INPUT="$HOOK_TOOL_INPUT"
+
 # ─── 1. State 파일 대상인지 확인 ────────────────────────────
 FILE_PATH="$(extract_file_path_from_json "$TOOL_INPUT")"
 

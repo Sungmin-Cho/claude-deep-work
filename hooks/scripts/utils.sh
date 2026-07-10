@@ -180,6 +180,53 @@ json_escape() {
   ' 2>/dev/null
 }
 
+# resolve_hook_tool_context — hook의 tool_name/tool_input 해석 (env 우선 →
+# stdin wrapper fallback). 하네스는 tool_name을 env(flat 계약)로 주거나, env
+# 미설정 시 stdin payload 최상위 키({"tool_name":..., "tool_input":{...}})로
+# 감싸 전달할 수 있다 (docs/handoff/2026-07-10-phase-guard-toolname-stdin-fallback.md).
+#
+# env 우선 — CLAUDE_TOOL_USE_TOOL_NAME/CLAUDE_TOOL_NAME이 설정된 하네스에서는
+# payload를 절대 교체하지 않는다: unwrap하면 가드가 평가하는 입력과 툴이 실제
+# 실행하는 입력(top-level)이 어긋나는 우회 표면이 된다 (v6.9.3 리뷰 R1-1).
+# env 미설정일 때만 wrapper 키를 읽고 중첩 tool_input을 unwrap한다.
+#
+# node 1회 spawn으로 tool_name과 unwrap된 tool_input을 US(0x1f) 구분자로 동시
+# 추출한다 — JSON.stringify는 제어 문자를 \u001f로 이스케이프하므로 payload
+# 내용과 구분자가 충돌하지 않는다. malformed JSON이면 HOOK_TOOL_NAME은 빈
+# 문자열로 남고 입력은 원본 유지 (fail-open — stdin 계약을 1차로 승격할 때
+# allowlist + fail-closed로 전환 예정, deep-review D-1).
+#
+# 결과는 전역 HOOK_TOOL_NAME / HOOK_TOOL_INPUT에 설정된다.
+# Usage: resolve_hook_tool_context "$RAW_INPUT"
+#        TOOL_NAME="$HOOK_TOOL_NAME"; TOOL_INPUT="$HOOK_TOOL_INPUT"
+
+resolve_hook_tool_context() {
+  local raw="${1-}"
+  HOOK_TOOL_NAME="${CLAUDE_TOOL_USE_TOOL_NAME:-${CLAUDE_TOOL_NAME:-}}"
+  HOOK_TOOL_INPUT="$raw"
+  [[ -n "$HOOK_TOOL_NAME" ]] && return 0
+  local out
+  out="$(printf '%s' "$raw" | node -e '
+    process.stdin.setEncoding("utf8"); let d = "";
+    process.stdin.on("data", c => d += c);
+    process.stdin.on("end", () => {
+      try {
+        const o = JSON.parse(d);
+        const name = typeof o.tool_name === "string" ? o.tool_name : "";
+        const inner = (o && o.tool_input && typeof o.tool_input === "object")
+          ? JSON.stringify(o.tool_input) : "";
+        process.stdout.write(name + "\u001f" + inner);
+      } catch (_) { /* malformed — no output, caller keeps raw (fail-open) */ }
+    });
+  ' 2>/dev/null || printf '')"
+  # 구분자가 없으면 파싱 실패 — env-빈 이름 + 원본 입력 유지.
+  [[ "$out" != *$'\x1f'* ]] && return 0
+  HOOK_TOOL_NAME="${out%%$'\x1f'*}"
+  local inner="${out#*$'\x1f'}"
+  [[ -n "$inner" ]] && HOOK_TOOL_INPUT="$inner"
+  return 0
+}
+
 # ─── Lock primitives ─────────────────────────────────────────
 # mkdir-based advisory spinlock. Fail-closed on timeout (no force-removal —
 # that was the v6.2.3 bug that corrupted the registry under contention).

@@ -7,6 +7,21 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.4] — 2026-07-10 (hooks stdin wrapper contract — shared helper)
+
+### Fixed
+
+- `file-tracker.sh` / `phase-transition.sh` — the two PostToolUse hooks did not support the stdin wrapper contract that 6.9.3 fixed for `phase-guard.sh` (deep-review round-2 DEFER **D-2**). In an env-unset harness that delivers `tool_name` / `tool_input` as top-level stdin JSON keys, `file-tracker.sh` read `TOOL_NAME` from env only (empty → file tracking / receipt collection silently skipped) and cached the **wrapper** JSON verbatim — so `phase-transition.sh`'s `file_path` extraction came up empty and the phase-transition checklist injection was silently dropped. `file-tracker.sh` now resolves both values through the shared helper **before** the cache write, so the cache always carries the flat `tool_input`; `phase-transition.sh` additionally unwraps defensively in case a wrapper-shaped payload arrives via its env/cache input path (a no-op for flat inputs and for env-set tool-name harnesses).
+
+### Changed
+
+- `hooks/scripts/utils.sh` — new shared `resolve_hook_tool_context` helper: env-first (`CLAUDE_TOOL_USE_TOOL_NAME` / `CLAUDE_TOOL_NAME`) → stdin wrapper fallback + nested `tool_input` unwrap, extracted from the 6.9.3 inline logic so all three hooks share one implementation. Semantics are unchanged: env-set harnesses never get their payload swapped (guard-vs-execution symmetry, R1-1), malformed JSON stays fail-open (allowlist + fail-closed is deferred to the stdin-contract promotion, DEFER D-1). The helper extracts both values in a **single** node spawn (`U+001F` unit separator — `JSON.stringify` escapes control characters, so payload content cannot collide) instead of the previous two spawns; `phase-guard.sh`'s main and Phase 5 paths now call it.
+
+### Added
+
+- `hooks/scripts/hooks-stdin-contract.test.js` — 10 cases: shared-helper unit contract (wrapper unwrap, env-first no-swap, flat/malformed fail-open, non-object `tool_input`, unit-separator collision safety), `file-tracker.sh` cache-unwrap + env-set flat regression, and the PreToolUse→PostToolUse env-unset e2e chain (`file-tracker` cache → `phase-transition` checklist injection) plus the wrapper-via-env defense-in-depth path.
+- `hooks/scripts/test-helpers/run-phase-guard.js` — `CLAUDE_TOOL_USE_INPUT` / `CLAUDE_TOOL_INPUT` added to `HOST_LEAK_VARS` (they are `phase-transition.sh`'s env-first input source; a host leak would shadow the file-tracker cache path under test).
+
 ## [6.9.3] — 2026-07-10 (phase-guard stdin `tool_name`/`tool_input` fallback)
 
 ### Fixed

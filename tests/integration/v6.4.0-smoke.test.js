@@ -211,12 +211,12 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 6.9.3 with 6.9.0 feature docs intact', () => {
-    // 6.9.3 is a patch release (phase-guard stdin tool_name/tool_input fallback): the three
+  it('active release metadata is bumped to 6.9.4 with 6.9.0 feature docs intact', () => {
+    // 6.9.4 is a patch release (hooks stdin wrapper contract — shared helper): the three
     // manifests track the current version, while the README "What's New" and
     // the deep-memory CHANGELOG attributions stay pinned to the last feature
     // release (6.9.0), which the patch does not rewrite.
-    const version = '6.9.3';         // current release — manifests
+    const version = '6.9.4';         // current release — manifests
     const featureVersion = '6.9.0';  // last feature release — README highlight + deep-memory notes
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -231,23 +231,23 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (6.9.3) — phase-guard stdin tool_name/tool_input fallback.
+    // Current release (6.9.4) — hooks stdin wrapper contract, shared helper.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.ok(changelogCurrent.includes('phase-guard-stdin-fallback.test.js'),
-      'CHANGELOG.md 6.9.3 section must cite the stdin-fallback regression test');
-    assert.ok(changelogKoCurrent.includes('phase-guard-stdin-fallback.test.js'),
-      'CHANGELOG.ko.md 6.9.3 section must cite the stdin-fallback regression test');
-    // The prior release (6.9.2) section stays intact with its own registry-RMW
-    // regression-test citation; the 6.9.3 promotion must not clobber or absorb it.
-    assert.ok(releaseSection(changelog, '6.9.2').includes('registry-rmw.test.js'),
-      'CHANGELOG.md 6.9.2 section must retain the registry RMW regression test');
-    assert.ok(releaseSection(changelogKo, '6.9.2').includes('registry-rmw.test.js'),
-      'CHANGELOG.ko.md 6.9.2 section must retain the registry RMW regression test');
-    assert.equal(changelogCurrent.includes('registry-rmw.test.js'), false,
-      'CHANGELOG.md 6.9.3 section must not absorb the 6.9.2 registry-RMW note');
-    assert.equal(changelogKoCurrent.includes('registry-rmw.test.js'), false,
-      'CHANGELOG.ko.md 6.9.3 section must not absorb the 6.9.2 registry-RMW note');
+    assert.ok(changelogCurrent.includes('hooks-stdin-contract.test.js'),
+      'CHANGELOG.md 6.9.4 section must cite the stdin-contract regression test');
+    assert.ok(changelogKoCurrent.includes('hooks-stdin-contract.test.js'),
+      'CHANGELOG.ko.md 6.9.4 section must cite the stdin-contract regression test');
+    // The prior release (6.9.3) section stays intact with its own stdin-fallback
+    // regression-test citation; the 6.9.4 promotion must not clobber or absorb it.
+    assert.ok(releaseSection(changelog, '6.9.3').includes('phase-guard-stdin-fallback.test.js'),
+      'CHANGELOG.md 6.9.3 section must retain the stdin-fallback regression test');
+    assert.ok(releaseSection(changelogKo, '6.9.3').includes('phase-guard-stdin-fallback.test.js'),
+      'CHANGELOG.ko.md 6.9.3 section must retain the stdin-fallback regression test');
+    assert.equal(changelogCurrent.includes('phase-guard-stdin-fallback.test.js'), false,
+      'CHANGELOG.md 6.9.4 section must not absorb the 6.9.3 stdin-fallback note');
+    assert.equal(changelogKoCurrent.includes('phase-guard-stdin-fallback.test.js'), false,
+      'CHANGELOG.ko.md 6.9.4 section must not absorb the 6.9.3 stdin-fallback note');
 
     // Last feature release (6.9.0) — deep-memory integration docs remain intact.
     const changelogRelease = releaseSection(changelog, featureVersion);
