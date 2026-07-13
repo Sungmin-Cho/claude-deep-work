@@ -260,14 +260,9 @@ function Assert-ClosedPInvokeRuntimeMethod(
   }
 }
 
-[void](Assert-ClosedPInvokeRuntimeMethod $findFirstStream 'FindFirstStreamW' ([IntPtr])
-  ([Type[]]@([String], [Int32], $streamDataType.MakeByRefType(), [UInt32]))
-  ([System.Runtime.InteropServices.CharSet]::Unicode))
-[void](Assert-ClosedPInvokeRuntimeMethod $findNextStream 'FindNextStreamW' ([Boolean])
-  ([Type[]]@([IntPtr], $streamDataType.MakeByRefType()))
-  ([System.Runtime.InteropServices.CharSet]::Unicode))
-[void](Assert-ClosedPInvokeRuntimeMethod $findClose 'FindClose' ([Boolean])
-  ([Type[]]@([IntPtr])) ([System.Runtime.InteropServices.CharSet]::None))
+[void](Assert-ClosedPInvokeRuntimeMethod $findFirstStream 'FindFirstStreamW' ([IntPtr]) ([Type[]]@([String], [Int32], $streamDataType.MakeByRefType(), [UInt32])) ([System.Runtime.InteropServices.CharSet]::Unicode))
+[void](Assert-ClosedPInvokeRuntimeMethod $findNextStream 'FindNextStreamW' ([Boolean]) ([Type[]]@([IntPtr], $streamDataType.MakeByRefType())) ([System.Runtime.InteropServices.CharSet]::Unicode))
+[void](Assert-ClosedPInvokeRuntimeMethod $findClose 'FindClose' ([Boolean]) ([Type[]]@([IntPtr])) ([System.Runtime.InteropServices.CharSet]::None))
 # DEEP_WORK_TYPE_AUTHENTICATION_END
 # DEEP_WORK_PINVOKE_SOURCE_END
 

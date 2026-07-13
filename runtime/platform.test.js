@@ -147,6 +147,14 @@ function windowsStreamPInvokeSource() {
   return helperSource.slice(lineStart, end);
 }
 
+function windowsStreamRuntimeAttestationLines() {
+  return [
+    "[void](Assert-ClosedPInvokeRuntimeMethod $findFirstStream 'FindFirstStreamW' ([IntPtr]) ([Type[]]@([String], [Int32], $streamDataType.MakeByRefType(), [UInt32])) ([System.Runtime.InteropServices.CharSet]::Unicode))",
+    "[void](Assert-ClosedPInvokeRuntimeMethod $findNextStream 'FindNextStreamW' ([Boolean]) ([Type[]]@([IntPtr], $streamDataType.MakeByRefType())) ([System.Runtime.InteropServices.CharSet]::Unicode))",
+    "[void](Assert-ClosedPInvokeRuntimeMethod $findClose 'FindClose' ([Boolean]) ([Type[]]@([IntPtr])) ([System.Runtime.InteropServices.CharSet]::None))",
+  ];
+}
+
 function assertWindowsStreamTypeResolveSource(source) {
   const handlerBegin = '# DEEP_WORK_TYPE_RESOLVE_HANDLER_BEGIN';
   const handlerEnd = '# DEEP_WORK_TYPE_RESOLVE_HANDLER_END';
@@ -289,6 +297,14 @@ function assertWindowsStreamTypeResolveSource(source) {
   assert.equal(countLiteral(source,
     '[System.Runtime.InteropServices.CallingConvention]::Winapi'), 2,
   'fixed P/Invoke contract: CallingConvention.Winapi definition and authentication');
+  const parserSafeRuntimeAttestations = windowsStreamRuntimeAttestationLines();
+  assert.equal(countLiteral(authentication,
+    '[void](Assert-ClosedPInvokeRuntimeMethod '), parserSafeRuntimeAttestations.length,
+  'PowerShell 5.1 runtime attestation invocation count');
+  assert.deepEqual(authentication.split('\n').filter((line) =>
+    line.startsWith('[void](Assert-ClosedPInvokeRuntimeMethod ')),
+  parserSafeRuntimeAttestations,
+  'PowerShell 5.1 runtime attestation calls must each occupy one physical line');
 }
 
 function replaceWindowsStreamSourceOnce(source, before, after) {
@@ -1712,6 +1728,10 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   assert.match(source, /relative_path/);
   const pinvokeSource = windowsStreamPInvokeSource();
   assertWindowsStreamTypeResolveSource(pinvokeSource);
+  const [parserSafeFindFirstAttestation] = windowsStreamRuntimeAttestationLines();
+  const splitRuntimeAttestation = replaceWindowsStreamSourceOnce(pinvokeSource,
+    parserSafeFindFirstAttestation,
+    parserSafeFindFirstAttestation.replace(' ([Type[]]@', '\n  ([Type[]]@'));
   const movedNestedCreate = replaceWindowsStreamSourceOnce(pinvokeSource,
     '$resolvedStreamDataType = $streamDataBuilder.CreateType()',
     '$resolvedStreamDataType = $null').replace(
@@ -1721,6 +1741,8 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
     '    $resolvedStreamDataType = $streamDataBuilder.CreateType()\n', '').replace(
     '  try {\n', '  try {\n    $resolvedStreamDataType = $streamDataBuilder.CreateType()\n');
   const mutants = [
+    ['PowerShell 5.1 physical-line invocation', splitRuntimeAttestation,
+      /must each occupy one physical line/],
     ['registration', replaceWindowsStreamSourceOnce(pinvokeSource,
       '$currentDomain.add_TypeResolve($typeResolveHandler)', ''),
     /TypeResolve registration count/],
