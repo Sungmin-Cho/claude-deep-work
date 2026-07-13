@@ -341,7 +341,8 @@ function captureRepositoryMarker(root, fsApi) {
   const markerPath = path.join(root, '.git');
   let stat;
   try { stat = fsApi.lstatSync(markerPath); }
-  catch (cause) { fail('path-capability-identity', 'project root has no Git repository marker', {cause}); }
+  catch (cause) { if (cause.code === 'ENOENT') return null;
+    fail('path-capability-identity', 'cannot inspect project Git repository marker', {cause}); }
   if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) {
     fail('path-capability-identity', 'Git repository marker has an unsupported type');
   }
@@ -442,6 +443,18 @@ function createProjectStateIssuer(fsApi) {
 
 const issueProjectStateCapability = createProjectStateIssuer(fs);
 
+function issueExternalTargetLockCapability(target) {
+  const targetPath=path.resolve(sanitizePathInput(target));const parent=path.dirname(targetPath);
+  const parentStat=fs.lstatSync(parent);if(!parentStat.isDirectory()||parentStat.isSymbolicLink())
+    fail('external-target-parent','external target parent must be an ordinary directory');
+  const lockName=`.deep-work-target.${sha256(Buffer.from(targetPath))}.lock`;const physical=inspectPhysical(parent,
+    path.join(parent,lockName),true,fs);const meta={kind:'project-state',role:'lock',physical,fsApi:fs,
+      sessionStateCapability:null,sessionStateDigest:null,repositoryMarker:null};
+  return defineCapability({kind:'project-state',role:'lock',path:physical.path,projectRoot:physical.rootPath,
+    root:physical.rootPath,canonicalProjectRoot:physical.rootRealPath,allowMissingLeaf:true},meta,
+  {deepestExistingParent:()=>meta.physical.deepestExisting,identity:()=>meta.physical.deepestIdentity});
+}
+
 function validateSessionCapability(sessionCapability) {
   const meta = assertCapability(sessionCapability, ['project-state']);
   if (!['session-work-dir','work-dir'].includes(sessionCapability.role)) {
@@ -491,6 +504,22 @@ function issueOwnedTempCapability({sessionCapability, operationId, purpose, allo
   if (terminal) {
     state.value = 'removed';
     state.digest = terminal.contentDigest;
+  } else if (physical.existed) {
+    const targetBytes = readBounded(target, WORKTREE_MANIFEST_MAX_FILE_BYTES, sessionMeta.fsApi,
+      'owned-temp-foreign');
+    const contentDigest = sha256(targetBytes);
+    try {
+      const owner = parseCanonicalJson(readBounded(meta.ownerPath, CLAIM_TICKET_MAX_FILE_BYTES,
+        sessionMeta.fsApi, 'owned-temp-foreign'), 'owned-temp-foreign');
+      if (exactKeys(owner, ['version','sessionId','operationId','purpose','contentDigest']) &&
+          owner.version === 1 && owner.sessionId === sessionId && owner.operationId === operationId &&
+          owner.purpose === purpose && owner.contentDigest === contentDigest) {
+        state.value = 'written';
+        state.digest = contentDigest;
+      }
+    } catch (error) {
+      if (!['ENOENT','owned-temp-foreign'].includes(error.code)) throw error;
+    }
   }
   return defineCapability({
     kind:'project-state', role:'owned-temp', path:target,
@@ -1259,6 +1288,19 @@ function consumeOwnedTemp(capability, {operationId, purpose, expectedDigest}) {
   }
   if (meta.state.value !== 'removed') meta.state.value = 'consumed';
   return capability;
+}
+
+function authenticateOwnedTempConsumer(capability,{operationId,purpose,expectedDigest,allowMissing=false}={}){
+  const meta=assertCapability(capability,['project-state']);if(capability.role!=='owned-temp'||!validOperationId(operationId)||
+      operationId===capability.operationId||purpose!==capability.purpose||expectedDigest!==meta.state.digest)
+    fail('owned-temp-consume','owned temp consumer identity mismatch');validateRecordedComponents(meta,meta.fsApi);let bytes;
+  try{bytes=readBounded(meta.consumerPath,CLAIM_TICKET_MAX_FILE_BYTES,meta.fsApi,'owned-temp-consumer-invalid');}
+  catch(error){if(allowMissing&&error.code==='ENOENT')return null;throw error;}const consumer=parseCanonicalJson(bytes,
+    'owned-temp-consumer-invalid');if(!exactKeys(consumer,['version','sessionId','producerOperationId','consumerOperationId',
+      'purpose','contentDigest'])||consumer.version!==1||consumer.sessionId!==capability.sessionId||
+      consumer.producerOperationId!==capability.operationId||consumer.consumerOperationId!==operationId||
+      consumer.purpose!==purpose||consumer.contentDigest!==expectedDigest)fail('owned-temp-consumer-invalid',
+    'owned-temp consumer record is foreign or malformed');return Object.freeze({...consumer});
 }
 
 function ownedTempCleanupId(capability, contentDigest, consumerOperationId) {
@@ -3129,6 +3171,10 @@ function createPlatformRuntimeForTest(options = {}) {
     issueProjectStateCapability:issuer,
     issueOwnedTempCapability,
     issueFinalizedReceiptPayloadCapability,
+    consumeOwnedTemp,
+    authenticateOwnedTempConsumer,
+    compareRemoveOwnedTemp,
+    consumeFinalizedReceiptPayload,
     issueInitialWorktreeCapability:(input) => managedWorktreeCapability(input, 'initial-session', runtime.fsApi),
     issueForkWorktreeCapability:(input) => managedWorktreeCapability(input, 'fork-session', runtime.fsApi),
     issueTrustedInstallRootCapability:(input) => issueTrustedInstallRootWithFs(input, runtime.fsApi),
@@ -3181,6 +3227,7 @@ module.exports = {
   normalizeForCompare,
   isPathInside,
   issueProjectStateCapability,
+  issueExternalTargetLockCapability,
   issueOwnedTempCapability,
   issueFinalizedReceiptPayloadCapability,
   issueSessionEnvelopeOutputCapability,
@@ -3196,6 +3243,7 @@ module.exports = {
   resolveNodePackageBin,
   atomicWriteFile,
   consumeOwnedTemp,
+  authenticateOwnedTempConsumer,
   compareRemoveOwnedTemp,
   consumeFinalizedReceiptPayload,
   withDirectoryLock,

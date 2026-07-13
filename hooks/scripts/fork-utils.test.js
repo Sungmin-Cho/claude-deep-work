@@ -1,161 +1,48 @@
-#!/usr/bin/env node
-const { describe, it, before, after } = require('node:test');
-const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+'use strict';
 
-let tmpDir;
+const {test,beforeEach,afterEach}=require('node:test');const assert=require('node:assert/strict');
+const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
+const session=require('../../runtime/session-store.js');const git=require('../../runtime/git-runtime.js');const platform=require('../../runtime/platform.js');
 
-function setup() {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-fork-test-'));
-  fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
-}
+let root,project;function setup(){root=fs.mkdtempSync(path.join(os.tmpdir(),'fork-utils-node-'));fs.mkdirSync(path.join(root,'.git'));
+  fs.mkdirSync(path.join(root,'.claude'));project=platform.issueProjectStateCapability(root,root,{role:'project-root'});}
+function cleanup(){if(root)fs.rmSync(root,{recursive:true,force:true});root=null;}
+function registry(sessions){return{version:1,shared_files:[],sessions};}
+beforeEach(setup);afterEach(cleanup);
 
-function cleanup() {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-}
+test('fork validation is a shell-free closed registry operation',()=>{assert.equal(session.NODE_AUTHORITY.shell,false);
+  assert.throws(()=>session.validateForkTarget(registry({'s-aaaaaaaa':{current_phase:'idle',file_ownership:[]}}),'s-aaaaaaaa'),/fork-parent-idle/);
+  assert.throws(()=>session.validateForkTarget(registry({}),'s-aaaaaaaa'),/fork-parent-missing/);
+  assert.equal(session.validateForkTarget(registry({'s-aaaaaaaa':{current_phase:'implement',file_ownership:[]}}),'s-aaaaaaaa').current_phase,'implement');});
 
-function bash(code) {
-  const scriptDir = __dirname;
-  const fullCode = `
-    export PROJECT_ROOT="${tmpDir}"
-    source "${scriptDir}/utils.sh"
-    ${code}
-  `;
-  return execFileSync('bash', ['-c', fullCode], {
-    encoding: 'utf8',
-    timeout: 5000,
-  }).trim();
-}
+test('fork generation preserves zero, child, and three-generation warning data',()=>{assert.equal(session.getForkGeneration(
+  registry({'s-aaaaaaaa':{current_phase:'implement',file_ownership:[]}}),'s-aaaaaaaa'),0);
+  assert.equal(session.getForkGeneration(registry({'s-bbbbbbbb':{current_phase:'plan',fork_parent:'s-aaaaaaaa',fork_generation:1,file_ownership:[]}}),'s-bbbbbbbb'),1);
+  assert.equal(session.getForkGeneration(registry({'s-cccccccc':{current_phase:'plan',fork_generation:3,file_ownership:[]}}),'s-cccccccc'),3);});
 
-function writeRegistryFile(data) {
-  fs.writeFileSync(
-    path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
-    JSON.stringify(data),
-  );
-}
+test('fork registry reducers remain internal lifecycle stages',()=>{assert.equal(session.registerForkSession,undefined);
+  assert.equal(session.removeForkSession,undefined);assert.equal(session.removeSessionOwnership,undefined);});
 
-function readRegistryFile() {
-  return JSON.parse(
-    fs.readFileSync(
-      path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
-      'utf8',
-    ),
-  );
-}
+test('raw-string Git inputs fail before any Git process authority is constructed',async()=>{let calls=0;const original=git.gitCapability;
+  try{git.gitCapability=()=>{calls++;throw new Error('must not run');};await assert.rejects(()=>git.createFork({projectCapability:project,
+    parentSessionId:'s-aaaaaaaa',childSessionId:'s-bbbbbbbb',parentStateCapability:path.join(root,'.claude','deep-work.s-aaaaaaaa.md')}),
+    /fork-parent-capability/);assert.equal(calls,0);}finally{git.gitCapability=original;}});
 
-function writeStateFile(sessionId, frontmatter) {
-  const yaml = Object.entries(frontmatter)
-    .map(([k, v]) => {
-      if (typeof v === 'object' && v !== null) return `${k}: ${JSON.stringify(v)}`;
-      if (v === null) return `${k}: null`;
-      return `${k}: ${v}`;
-    })
-    .join('\n');
-  fs.writeFileSync(
-    path.join(tmpDir, '.claude', `deep-work.${sessionId}.md`),
-    `---\n${yaml}\n---\n`,
-  );
-}
+test('managed fork capability allows only the exact sibling/session/branch tuple',()=>{const parentBranch='main';const sessionId='s-bbbbbbbb';
+  const expected=path.join(path.dirname(root),`${path.basename(root)}-wt-fork-bbbbbbbb`);const branch='main-fork-bbbbbbbb';
+  const cap=platform.issueForkWorktreeCapability({projectRoot:root,candidate:expected,sessionId,parentBranch,branch,allowMissingLeaf:true});
+  assert.equal(cap.path,path.join(fs.realpathSync(path.dirname(root)),path.basename(expected)));assert.equal(cap.purpose,'fork-session');
+  for(const input of [
+    {candidate:`${root}-evil`,sessionId,parentBranch,branch},
+    {candidate:path.join(path.dirname(root),`${path.basename(root)}-wt-fork-aaaaaaaa`),sessionId,parentBranch,branch},
+    {candidate:expected,sessionId,parentBranch,branch:'wrong-fork-bbbbbbbb'},
+    {candidate:expected,sessionId:'s-aaaaaaaa',parentBranch,branch},
+  ])assert.throws(()=>platform.issueForkWorktreeCapability({projectRoot:root,...input,allowMissingLeaf:true}),/managed-worktree-(shape|branch)/);});
 
-// ─── validate_fork_target ───────────────────────────────────
-
-describe('validate_fork_target', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should reject idle sessions', () => {
-    writeStateFile('s-aaa11111', { current_phase: 'idle', task_description: 'test' });
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-aaa11111.md" 2>&1 || true');
-    assert.match(result, /idle/);
-  });
-
-  it('should accept active sessions', () => {
-    writeStateFile('s-bbb22222', { current_phase: 'implement', task_description: 'test' });
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-bbb22222.md"');
-    assert.equal(result, 'valid');
-  });
-
-  it('should reject nonexistent state files', () => {
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-nope.md" 2>&1 || true');
-    assert.match(result, /not found|존재하지/);
-  });
-});
-
-// ─── get_fork_generation ────────────────────────────────────
-
-describe('get_fork_generation', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should return 0 for non-fork sessions', () => {
-    writeRegistryFile({
-      version: 1, shared_files: [], sessions: {
-        's-aaa11111': { current_phase: 'implement', file_ownership: [] },
-      },
-    });
-    const gen = bash('get_fork_generation "s-aaa11111"');
-    assert.equal(gen, '0');
-  });
-
-  it('should return parent generation + 1 for fork sessions', () => {
-    writeRegistryFile({
-      version: 1, shared_files: [], sessions: {
-        's-aaa11111': { current_phase: 'implement', file_ownership: [], fork_generation: 0 },
-        's-bbb22222': { current_phase: 'plan', file_ownership: [], fork_parent: 's-aaa11111', fork_generation: 1 },
-      },
-    });
-    const gen = bash('get_fork_generation "s-bbb22222"');
-    assert.equal(gen, '1');
-  });
-
-  it('should return generation number without rejecting (command handles warning)', () => {
-    writeRegistryFile({
-      version: 1, shared_files: [], sessions: {
-        's-ccc33333': { current_phase: 'plan', file_ownership: [], fork_generation: 3 },
-      },
-    });
-    const gen = bash('get_fork_generation "s-ccc33333"');
-    assert.equal(gen, '3');
-    // Note: generation >= 3 warning is handled by /deep-fork command, not this function
-  });
-});
-
-// ─── update_parent_fork_children ────────────────────────────
-
-describe('update_parent_fork_children', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should add fork_children entry to parent state file', () => {
-    writeStateFile('s-parent01', {
-      current_phase: 'implement',
-      task_description: 'test',
-    });
-    bash('update_parent_fork_children "$PROJECT_ROOT/.claude/deep-work.s-parent01.md" "s-child001" "plan"');
-    const content = fs.readFileSync(
-      path.join(tmpDir, '.claude', 'deep-work.s-parent01.md'), 'utf8',
-    );
-    assert.match(content, /fork_children:/);
-    assert.match(content, /s-child001/);
-  });
-});
-
-// ─── register_fork_session ──────────────────────────────────
-
-describe('register_fork_session', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should register fork session with fork_parent and fork_generation', () => {
-    writeRegistryFile({ version: 1, shared_files: [], sessions: {} });
-    bash('register_fork_session "s-child001" "s-parent01" 1 "test task" ".deep-work/20260407-fork/"');
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-child001'].fork_parent, 's-parent01');
-    assert.equal(reg.sessions['s-child001'].fork_generation, 1);
-    assert.equal(reg.sessions['s-child001'].current_phase, 'plan');
-    assert.deepEqual(reg.sessions['s-child001'].file_ownership, []);
-  });
-});
+test('fork sibling symlink and post-issuance swap are rejected',()=>{const sessionId='s-cccccccc',parentBranch='main',branch='main-fork-cccccccc';
+  const expected=path.join(path.dirname(root),`${path.basename(root)}-wt-fork-cccccccc`);const outside=fs.mkdtempSync(path.join(os.tmpdir(),'fork-outside-'));
+  try{fs.symlinkSync(outside,expected,'dir');assert.throws(()=>platform.issueForkWorktreeCapability({projectRoot:root,candidate:expected,
+      sessionId,parentBranch,branch,allowMissingLeaf:true}),/path-capability|managed-worktree|link/);fs.unlinkSync(expected);
+    const cap=platform.issueForkWorktreeCapability({projectRoot:root,candidate:expected,sessionId,parentBranch,branch,allowMissingLeaf:true});
+    fs.symlinkSync(outside,expected,'dir');assert.throws(()=>platform.revalidatePathCapability(cap,'git-worktree-add'),/path-capability|managed-worktree|link/);
+  }finally{try{fs.unlinkSync(expected);}catch{}fs.rmSync(outside,{recursive:true,force:true});}});

@@ -7,6 +7,21 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { readBaseline, writeBaseline, isBaselineValid } = require('./health-baseline.js');
 
+it('health entrypoints delegate to the cycle-free runtime without direct process execution', () => {
+  const runtime = fs.readFileSync(path.join(__dirname, '..', 'runtime', 'health-runtime.js'), 'utf8');
+  assert.doesNotMatch(runtime, /require\(['"]\.\.\/(?:health|templates)\//);
+  for (const relative of [
+    'health-check.js',
+    'health-baseline.js',
+    'drift/dependency-vuln.js',
+    'fitness/rule-checkers/dependency-checker.js',
+  ]) {
+    const source = fs.readFileSync(path.join(__dirname, relative), 'utf8');
+    assert.match(source, /runtime\/health-runtime\.js/, relative);
+    assert.doesNotMatch(source, /require\(['"]node:child_process['"]\)/, relative);
+  }
+});
+
 describe('health-baseline', () => {
   let tmpDir;
   beforeEach(() => { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hb-')); });

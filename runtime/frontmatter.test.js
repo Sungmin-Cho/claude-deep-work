@@ -44,6 +44,14 @@ test('update adds and deletes scalar and list fields deterministically', () => {
   assert.deepEqual(parseFrontmatter(after).fields, {a:2, tags:['x','two words']});
 });
 
+test('string scalars that look typed remain strings after a round trip', () => {
+  for (const value of ['1111111111111111111111111111111111111111','42','-1',
+    'true','false','null','~']) {
+    const text=updateFrontmatterText('---\nseed: x\n---\n',{value});
+    assert.equal(parseFrontmatter(text).fields.value,value);
+  }
+});
+
 test('text without frontmatter receives a deterministic header', () => {
   assert.equal(updateFrontmatterText('body\n', {phase:'plan'}), '---\nphase: plan\n---\nbody\n');
   assert.deepEqual(parseFrontmatter('body\n'), {

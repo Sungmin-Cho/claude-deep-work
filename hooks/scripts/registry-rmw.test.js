@@ -1,123 +1,47 @@
-const { describe, it, beforeEach, afterEach } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { spawnSync, spawn } = require('child_process');
-const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
+'use strict';
 
-// Registry read-modify-write hardening: the lock must span the WHOLE read →
-// transform → write cycle (previously the read was unlocked, so concurrent
-// sessions clobbered each other — lost update). The fix splits lock-free inner
-// helpers (_read_registry_unlocked / _write_registry_unlocked) from the public
-// locking wrappers, and RMW callers run both under ONE lock via _registry_rmw.
+const {test,beforeEach,afterEach}=require('node:test');const assert=require('node:assert/strict');
+const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {spawn}=require('node:child_process');
+const session=require('../../runtime/session-store.js');const {issueProjectStateCapability}=require('../../runtime/platform.js');
 
-const UTILS = path.resolve(__dirname, 'utils.sh');
+let root,project;const worker=path.resolve(__dirname,'..','..','tests','fixtures','registry-worker.js');
+function setup(){root=fs.mkdtempSync(path.join(os.tmpdir(),'rmw-node-'));fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+  project=issueProjectStateCapability(root,root,{role:'project-root'});seed();}
+function cleanup(){if(root)fs.rmSync(root,{recursive:true,force:true});root=null;}
+function seed(){const sessions={};for(const id of ['s-aaaaaaaa','s-bbbbbbbb']){sessions[id]={pid:process.pid,task_description:id,
+  work_dir:`.deep-work/${id}`,current_phase:'plan',file_ownership:[],last_activity:'2020-01-01T00:00:00Z'};
+  fs.mkdirSync(path.join(root,'.deep-work',id),{recursive:true});fs.writeFileSync(path.join(root,'.claude',`deep-work.${id}.md`),
+    `---\nsession_id: ${id}\nwork_dir: .deep-work/${id}\ncurrent_phase: plan\n---\n`);}fs.writeFileSync(path.join(root,'.claude','deep-work-sessions.json'),
+    `${JSON.stringify({version:1,shared_files:[],sessions})}\n`);}
+function state(id){return issueProjectStateCapability(root,path.join(root,'.claude',`deep-work.${id}.md`),{role:'session-state'});}
+function run(args,env={}){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[worker,root,...args],{env:{...process.env,...env}});let stderr='';
+  child.stderr.on('data',(chunk)=>stderr+=chunk);child.on('close',(code)=>code===0?resolve():reject(Object.assign(new Error(stderr),{code})));});}
+async function waitFor(file){const deadline=Date.now()+5000;while(Date.now()<deadline){if(fs.existsSync(file))return;await new Promise((r)=>setTimeout(r,10));}
+  throw new Error(`timeout waiting for ${file}`);}
 
-let tmpDir;
-function setup() {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rmw-'));
-  fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
-}
-function cleanup() {
-  if (tmpDir) { fs.rmSync(tmpDir, { recursive: true, force: true }); tmpDir = null; }
-}
+beforeEach(setup);afterEach(cleanup);
 
-function run(code) {
-  return spawnSync('bash', ['-c', `source "${UTILS}"\n${code}`], {
-    cwd: tmpDir, encoding: 'utf8', timeout: 15000, env: scrubHostEnv({}),
-  });
-}
-const registryPath = () => path.join(tmpDir, '.claude', 'deep-work-sessions.json');
-function seedRegistry(data) { fs.writeFileSync(registryPath(), JSON.stringify(data)); }
-function readRegistry() { return JSON.parse(fs.readFileSync(registryPath(), 'utf8')); }
+test('registry RMW uses only public typed reducers without self-deadlock',async()=>{assert.equal(session.NODE_AUTHORITY.shell,false);
+  assert.equal(session.mutateRegistry,undefined);const cap=state('s-aaaaaaaa');await session.registerFileOwnership({sessionId:'s-aaaaaaaa',
+    stateCapability:cap,pathCapability:issueProjectStateCapability(root,path.join(root,'.claude','p'),{allowMissingLeaf:true}),portablePath:'src/a.ts'});
+  await session.updateRegistryPhase({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),phase:'implement',at:'2026-07-13T00:00:00Z'});
+  await session.updateLastActivity({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),at:'2026-07-13T00:00:01Z'});
+  const row=session.readRegistry(project).sessions['s-aaaaaaaa'];assert.deepEqual(row.file_ownership,['src/a.ts']);assert.equal(row.current_phase,'implement');});
 
-// ─── Re-entrancy (the reviewer's mandated regression guard) ──
+test('N concurrent ownership writers preserve every path',async()=>{const files=Array.from({length:5},(_,i)=>`dir${i}/공백-${i}.ts`);
+  await Promise.all(files.map((file)=>run(['own','s-aaaaaaaa',file])));assert.deepEqual(session.readRegistry(project).sessions['s-aaaaaaaa'].file_ownership,
+    [...files].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b))));});
 
-describe('registry RMW: re-entrancy (no self-deadlock)', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
+test('concurrent ownership mutations preserve both sessions',async()=>{await Promise.all([
+  run(['own','s-aaaaaaaa','src/공백 a.js']),run(['own','s-bbbbbbbb','src/공백 b.js'])]);const value=session.readRegistry(project);
+  assert.deepEqual(value.sessions['s-aaaaaaaa'].file_ownership,['src/공백 a.js']);assert.deepEqual(value.sessions['s-bbbbbbbb'].file_ownership,['src/공백 b.js']);});
 
-  it('RMW callers use the unlocked helpers, never the public locking wrappers', () => {
-    seedRegistry({ version: 1, shared_files: [], sessions: { 's-x': { pid: 1, current_phase: 'plan', file_ownership: [] } } });
-    // If an RMW caller re-entered read_registry/write_registry while already
-    // holding the lock, it would try to re-acquire the (non-reentrant) lock and
-    // self-deadlock. Shadow both public wrappers so any such call is observable
-    // (stderr marker) AND fatal (return 1). The fixed RMW path calls only the
-    // *_unlocked helpers, so the shadows are never hit and the mutation lands.
-    const r = run(`
-      init_deep_work_state
-      write_registry() { echo "REENTERED_WRITE" >&2; return 1; }
-      read_registry() { echo "REENTERED_READ" >&2; return 1; }
-      register_file_ownership "s-x" "src/a.ts"
-      update_registry_phase "s-x" "implement"
-      update_last_activity "s-x"
-      echo DONE
-    `);
-    assert.equal(r.status, 0, `stderr: ${r.stderr}`);
-    assert.match(r.stdout, /DONE/, 'RMW calls completed (no hang / deadlock)');
-    assert.doesNotMatch(r.stderr, /REENTERED_(WRITE|READ)/,
-      'RMW must not route through the public locking wrappers (would self-deadlock)');
-    const reg = readRegistry();
-    assert.ok(reg.sessions['s-x'].file_ownership.includes('src/a.ts'), 'ownership mutation applied');
-    assert.equal(reg.sessions['s-x'].current_phase, 'implement', 'phase mutation applied');
-  });
-});
+test('registry mutation stays bound to explicit session across pointer drift',async()=>{session.writePointer(project,'s-aaaaaaaa');
+  const pause=fs.mkdtempSync(path.join(os.tmpdir(),'rmw-pause-'));const pending=run(['touch','s-aaaaaaaa','2026-07-13T00:00:00Z'],{REGISTRY_PAUSE_DIR:pause});
+  await waitFor(path.join(pause,'locked'));session.writePointer(project,'s-bbbbbbbb');fs.writeFileSync(path.join(pause,'resume'),'go');
+  await assert.rejects(pending,/registry-pointer-drift/);const value=session.readRegistry(project);assert.equal(value.sessions['s-aaaaaaaa'].last_activity,'2020-01-01T00:00:00Z');
+  assert.equal(value.sessions['s-bbbbbbbb'].last_activity,'2020-01-01T00:00:00Z');fs.rmSync(pause,{recursive:true,force:true});});
 
-// ─── Lost-update fix (the actual concurrency bug) ────────────
-
-describe('registry RMW: concurrent writers do not lose updates', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  function spawnRegister(file) {
-    return new Promise((resolve) => {
-      const cp = spawn(
-        'bash',
-        ['-c', `source "${UTILS}"; init_deep_work_state; register_file_ownership "s-c" "${file}"`],
-        { cwd: tmpDir, env: scrubHostEnv({}) },
-      );
-      let stderr = '';
-      cp.stderr.on('data', (d) => { stderr += d; });
-      cp.on('close', (code) => resolve({ code, stderr }));
-    });
-  }
-
-  it('N concurrent register_file_ownership calls all persist', async () => {
-    seedRegistry({ version: 1, shared_files: [], sessions: { 's-c': { pid: 1, file_ownership: [] } } });
-    const N = 5;
-    // Distinct directories so the 3-files-in-a-dir → dir/** glob promotion never
-    // fires — each path stays individually observable.
-    const files = Array.from({ length: N }, (_, i) => `dir${i}/f.ts`);
-    const results = await Promise.all(files.map(spawnRegister));
-    for (const res of results) {
-      assert.equal(res.code, 0, `child failed: ${res.stderr}`);
-    }
-    const own = readRegistry().sessions['s-c'].file_ownership;
-    for (const f of files) {
-      assert.ok(own.includes(f), `${f} missing — lost update. ownership=${JSON.stringify(own)}`);
-    }
-  });
-});
-
-// ─── Inner helper contract (default-write moved under the lock) ──
-
-describe('registry read helpers', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('_read_registry_unlocked returns the default WITHOUT creating the file', () => {
-    const r = run('init_deep_work_state; _read_registry_unlocked');
-    assert.equal(r.status, 0, r.stderr);
-    assert.equal(JSON.parse(r.stdout).version, 1);
-    assert.equal(fs.existsSync(registryPath()), false,
-      'lock-free read must not write the default file (side-effect moved under the lock)');
-  });
-
-  it('public read_registry creates the default file (default-write now under the lock)', () => {
-    const r = run('init_deep_work_state; read_registry >/dev/null');
-    assert.equal(r.status, 0, r.stderr);
-    assert.equal(fs.existsSync(registryPath()), true);
-    assert.equal(readRegistry().version, 1);
-  });
-});
+test('default registry publication is lock-bounded and private unlocked helpers stay private',()=>{fs.unlinkSync(path.join(root,'.claude','deep-work-sessions.json'));
+  assert.equal(session.readRegistryUnlocked,undefined);assert.equal(session.readRegistry(project).version,1);
+  assert.ok(fs.existsSync(path.join(root,'.claude','deep-work-sessions.json')));});

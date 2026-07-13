@@ -8,6 +8,13 @@ const os = require('node:os');
 
 const REGISTRY_PATH = path.join(__dirname, 'topology-registry.json');
 
+test('topology adapter delegates to a cycle-free health runtime', () => {
+  const adapter = fs.readFileSync(path.join(__dirname, 'topology-detector.js'), 'utf8');
+  const runtime = fs.readFileSync(path.join(__dirname, '..', 'runtime', 'health-runtime.js'), 'utf8');
+  assert.match(adapter, /require\(['"]\.\.\/runtime\/health-runtime\.js['"]\)/);
+  assert.doesNotMatch(runtime, /require\(['"]\.\.\/templates\/topology-detector\.js['"]\)/);
+});
+
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-topology-test-'));
 }

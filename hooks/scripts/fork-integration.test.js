@@ -1,463 +1,154 @@
-#!/usr/bin/env node
-const { describe, it, before, after } = require('node:test');
-const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+'use strict';
 
-const { processHook } = require('./phase-guard-core.js');
+const {test,before,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');
+const os=require('node:os');const path=require('node:path');const {execFileSync}=require('node:child_process');
+const session=require('../../runtime/session-store.js');const git=require('../../runtime/git-runtime.js');const platform=require('../../runtime/platform.js');
+const {beginOperation,resumeOperation}=require('../../runtime/operation-journal.js');
+const {parseFrontmatter,updateFrontmatterText}=require('../../runtime/frontmatter.js');const {processHook}=require('./phase-guard-core.js');
 
-let tmpDir;
+let root,project,branch,head;const parentId='s-11111111';
+function gitExec(args,cwd=root){return execFileSync('git',['-C',cwd,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}
+function statePath(id){return path.join(root,'.claude',`deep-work.${id}.md`);}
+function stateCap(id){return platform.issueProjectStateCapability(root,statePath(id),{role:'session-state'});}
+function readState(id){return parseFrontmatter(fs.readFileSync(statePath(id),'utf8')).fields;}
+function writeParent(){const workDir=`.deep-work/${parentId}`;fs.mkdirSync(path.join(root,...workDir.split('/')),{recursive:true});
+  fs.writeFileSync(statePath(parentId),`---\nschema_version: 2\nsession_id: ${parentId}\ncurrent_phase: implement\nwork_dir: ${workDir}\n`+
+    `task_description: Parent task\nbranch: ${branch}\nhead_oid: ${head}\nworktree_enabled: false\n---\n`);
+  fs.writeFileSync(path.join(root,'.claude','deep-work-sessions.json'),`${JSON.stringify({version:1,shared_files:[],sessions:{
+    [parentId]:{pid:process.pid,task_description:'Parent task',work_dir:workDir,current_phase:'implement',file_ownership:[],
+      last_activity:'2026-07-13T00:00:00Z',branch,head_oid:head,fork_generation:0}}})}\n`);}
+async function fork(childId,parent=parentId,phase='plan'){return session.forkSession({projectCapability:project,parentStateCapability:stateCap(parent),
+  parentSessionId:parent,childSessionId:childId,fromPhase:phase,dirtyResolution:'abort'});}
 
-function setup() {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-fork-integ-'));
-  fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
-}
+before(()=>{root=fs.mkdtempSync(path.join(os.tmpdir(),'fork-integration-node-'));execFileSync('git',['init',root],{stdio:'ignore'});
+  gitExec(['config','user.email','task2@example.test']);gitExec(['config','user.name','Task 2']);fs.writeFileSync(path.join(root,'README.md'),'# fixture\n');
+  fs.writeFileSync(path.join(root,'.gitignore'),'.claude/\n.deep-work/\n');gitExec(['add','README.md','.gitignore']);gitExec(['commit','-m','initial']);
+  branch=gitExec(['branch','--show-current']);head=gitExec(['rev-parse','HEAD']);
+  fs.mkdirSync(path.join(root,'.claude'));writeParent();project=platform.issueProjectStateCapability(root,root,{role:'project-root'});});
+after(()=>{if(!root)return;try{const rows=gitExec(['worktree','list','--porcelain']).split('\n').filter((line)=>line.startsWith('worktree '))
+    .map((line)=>line.slice(9)).filter((candidate)=>fs.realpathSync(candidate)!==fs.realpathSync(root));for(const candidate of rows)
+      execFileSync('git',['-C',root,'worktree','remove','--force',candidate],{stdio:'ignore'});}catch{}fs.rmSync(root,{recursive:true,force:true});});
 
-function cleanup() {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-}
+test('fork lifecycle atomically publishes worktree, child registry, and parent link',async()=>{assert.deepEqual(git.NODE_AUTHORITY,
+  {runtime:'node',shell:false,authority:'git-runtime-v1'});const result=await fork('s-22222222');assert.equal(result.status,'created');
+  assert.ok(fs.existsSync(result.path));const registry=session.readRegistry(project);assert.equal(registry.sessions['s-22222222'].fork_parent,parentId);
+  assert.equal(registry.sessions['s-22222222'].fork_generation,1);const children=JSON.parse(readState(parentId).fork_children);
+  assert.deepEqual(children,[{session_id:'s-22222222',restart_phase:'plan'}]);assert.equal(readState('s-22222222').current_phase,'plan');});
 
-function bash(code) {
-  const scriptDir = __dirname;
-  const fullCode = `
-    export PROJECT_ROOT="${tmpDir}"
-    source "${scriptDir}/utils.sh"
-    ${code}
-  `;
-  return execFileSync('bash', ['-c', fullCode], {
-    encoding: 'utf8',
-    timeout: 5000,
-  }).trim();
-}
+test('multiple forks preserve independent generation and every parent child link',async()=>{await fork('s-33333333',parentId,'research');
+  const value=session.readRegistry(project);assert.equal(value.sessions['s-22222222'].fork_generation,1);
+  assert.equal(value.sessions['s-33333333'].fork_generation,1);const children=JSON.parse(readState(parentId).fork_children);
+  assert.deepEqual(children.map((row)=>row.session_id),['s-22222222','s-33333333']);assert.equal(children[1].restart_phase,'research');});
 
-function writeRegistryFile(data) {
-  fs.writeFileSync(
-    path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
-    JSON.stringify(data),
-  );
-}
+test('fork chain increments generation and keeps exact parent identity',async()=>{const result=await fork('s-44444444','s-22222222','plan');
+  assert.equal(result.generation,2);const row=session.readRegistry(project).sessions['s-44444444'];assert.equal(row.fork_parent,'s-22222222');
+  assert.equal(row.fork_generation,2);});
 
-function readRegistryFile() {
-  return JSON.parse(
-    fs.readFileSync(
-      path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
-      'utf8',
-    ),
-  );
-}
-
-function writeStateFile(sessionId, frontmatter) {
-  const yaml = Object.entries(frontmatter)
-    .map(([k, v]) => {
-      if (typeof v === 'object' && v !== null) return `${k}: ${JSON.stringify(v)}`;
-      if (v === null) return `${k}: null`;
-      return `${k}: ${v}`;
-    })
-    .join('\n');
-  fs.writeFileSync(
-    path.join(tmpDir, '.claude', `deep-work.${sessionId}.md`),
-    `---\n${yaml}\n---\n`,
-  );
-}
-
-function readStateFile(sessionId) {
-  return fs.readFileSync(
-    path.join(tmpDir, '.claude', `deep-work.${sessionId}.md`),
-    'utf8',
-  );
-}
-
-// ─── Atomic fork registration ──────────────────────────────
-
-describe('Atomic fork registration', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should register fork in registry AND update parent state in one call', () => {
-    // Setup parent
-    writeRegistryFile({
-      version: 1, shared_files: [], sessions: {
-        's-parent01': { current_phase: 'implement', file_ownership: [], fork_generation: 0 },
-      },
-    });
-    writeStateFile('s-parent01', {
-      current_phase: 'implement',
-      task_description: 'parent task',
-    });
-
-    // Fork
-    bash('register_fork_session "s-child001" "s-parent01" 1 "child task" ".deep-work/fork-1/"');
-
-    // Verify registry
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-child001'].fork_parent, 's-parent01');
-    assert.equal(reg.sessions['s-child001'].fork_generation, 1);
-    assert.equal(reg.sessions['s-child001'].current_phase, 'plan');
-
-    // Verify parent state file updated
-    const parentState = readStateFile('s-parent01');
-    assert.match(parentState, /fork_children:/);
-    assert.match(parentState, /s-child001/);
-  });
-
-  it('should preserve parent registry entry after fork', () => {
-    const reg = readRegistryFile();
-    assert.ok(reg.sessions['s-parent01'], 'parent session should still exist');
-    assert.equal(reg.sessions['s-parent01'].current_phase, 'implement');
-  });
+test('fork lifecycle adopts every Git and store return-loss seam and prunes artifacts by restart phase',async()=>{
+  const parentWork=path.join(root,'.deep-work',parentId);for(const [name,bytes] of [['brainstorm.md','b'],['research.md','r'],
+    ['plan.md','p'],['test-results.md','t']])fs.writeFileSync(path.join(parentWork,name),bytes);const child='s-77777777';
+  const attempt=(target)=>session.forkSession({projectCapability:project,parentStateCapability:stateCap(parentId),parentSessionId:parentId,
+    childSessionId:child,fromPhase:'plan',dirtyResolution:'abort',seam:(name)=>{if(name===target)throw new Error(`lost:${target}`);}});
+  for(const target of ['after-call-before-stage','after-child-state-write-before-stage','after-artifacts-copy-before-stage',
+    'after-snapshot-write-before-stage','after-registry-write-before-stage','after-parent-link-write-before-stage'])
+    await assert.rejects(()=>attempt(target),new RegExp(`lost:${target}`));const result=await attempt(null);assert.equal(result.status,'created');
+  const childWork=path.join(root,'.deep-work',child);assert.equal(fs.readFileSync(path.join(childWork,'brainstorm.md'),'utf8'),'b');
+  assert.equal(fs.readFileSync(path.join(childWork,'research.md'),'utf8'),'r');assert.equal(fs.existsSync(path.join(childWork,'plan.md')),false);
+  assert.equal(fs.existsSync(path.join(childWork,'test-results.md')),false);assert.ok(fs.existsSync(path.join(childWork,'fork-snapshot.json')));
+  assert.equal(gitExec(['worktree','list','--porcelain']).split('\n').filter((line)=>line.startsWith('worktree ')&&
+    line.includes('-wt-fork-77777777')).length,1);
 });
 
-// ─── Multiple forks from same parent ───────────────────────
+test('cleanup removes one selected idle fork, registry entry, pointer, worktree, and branch',async()=>{const id='s-33333333';
+  const cap=stateCap(id);const text=fs.readFileSync(cap.path,'utf8');platform.atomicWriteFile(cap,updateFrontmatterText(text,{current_phase:'idle'}));
+  await session.updateRegistryPhase({sessionId:id,stateCapability:stateCap(id),phase:'idle',at:'2026-07-13T01:00:00Z'});session.writePointer(project,id);
+  const worktree=git.resolveForkWorktreeCapability({projectCapability:project,stateCapability:stateCap(id),sessionId:id,
+    comparisonPath:readState(id).worktree_path});const removedPath=worktree.path;const removedBranch=worktree.branch;
+  const result=await session.cleanupSession({projectCapability:project,sessionId:id,stateCapability:stateCap(id),worktreeCapability:worktree});
+  assert.equal(result.result.status,'removed');assert.equal(session.readRegistry(project).sessions[id],undefined);assert.equal(session.readPointer(project),null);
+  assert.equal(fs.existsSync(removedPath),false);assert.throws(()=>gitExec(['show-ref','--verify',`refs/heads/${removedBranch}`]));});
 
-describe('Multiple forks from same parent', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should allow multiple children from one parent', () => {
-    writeRegistryFile({
-      version: 1, shared_files: [], sessions: {
-        's-parent02': { current_phase: 'implement', file_ownership: [], fork_generation: 0 },
-      },
-    });
-    writeStateFile('s-parent02', {
-      current_phase: 'implement',
-      task_description: 'multi-fork parent',
-    });
-
-    bash('register_fork_session "s-fork-a01" "s-parent02" 1 "fork A" ".deep-work/fork-a/"');
-    bash('register_fork_session "s-fork-b01" "s-parent02" 1 "fork B" ".deep-work/fork-b/"');
-
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-fork-a01'].fork_parent, 's-parent02');
-    assert.equal(reg.sessions['s-fork-b01'].fork_parent, 's-parent02');
-
-    // Parent state should reference both children
-    const parentState = readStateFile('s-parent02');
-    assert.match(parentState, /s-fork-a01/);
-    assert.match(parentState, /s-fork-b01/);
-  });
-
-  it('should maintain independent fork_generation for each child', () => {
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-fork-a01'].fork_generation, 1);
-    assert.equal(reg.sessions['s-fork-b01'].fork_generation, 1);
-  });
+test('cleanup adopts worktree, branch, registry, parent-link, and pointer return loss',async()=>{const id='s-77777777';
+  const cap=stateCap(id);platform.atomicWriteFile(cap,updateFrontmatterText(fs.readFileSync(cap.path,'utf8'),{current_phase:'idle'}));
+  await session.updateRegistryPhase({sessionId:id,stateCapability:stateCap(id),phase:'idle',at:'2026-07-13T02:00:00Z'});
+  session.writePointer(project,id);const worktree=git.resolveForkWorktreeCapability({projectCapability:project,stateCapability:stateCap(id),
+    sessionId:id,comparisonPath:readState(id).worktree_path});const invoke=(target)=>session.cleanupSession({projectCapability:project,
+    sessionId:id,stateCapability:stateCap(id),worktreeCapability:worktree,seam:(name)=>{if(name===target)throw new Error(`lost:${target}`);}});
+  for(const target of ['worktree-after-call-before-stage','branch-after-call-before-stage','after-branch-delete-before-stage',
+    'after-registry-write-before-stage','after-parent-unlink-write-before-stage','after-pointer-clear-before-stage'])
+    await assert.rejects(()=>invoke(target),new RegExp(`lost:${target}`));const receipt=await invoke(null);assert.equal(receipt.result.status,'removed');
+  assert.equal(session.readRegistry(project).sessions[id],undefined);assert.equal(session.readPointer(project),null);
+  assert.equal(JSON.parse(readState(parentId).fork_children).some((row)=>row.session_id===id),false);
+  assert.equal(fs.existsSync(worktree.path),false);assert.throws(()=>gitExec(['show-ref','--verify',`refs/heads/${worktree.branch}`]));
 });
 
-// ─── Fork chain (grandchild) ──────────────────────────────
-
-describe('Fork chain (grandchild)', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should support fork of a fork with incremented generation', () => {
-    writeRegistryFile({
-      version: 1, shared_files: [], sessions: {
-        's-root0001': { current_phase: 'implement', file_ownership: [], fork_generation: 0 },
-      },
-    });
-    writeStateFile('s-root0001', {
-      current_phase: 'implement',
-      task_description: 'root task',
-    });
-
-    // First fork (gen 1)
-    bash('register_fork_session "s-gen1-001" "s-root0001" 1 "gen 1 task" ".deep-work/gen1/"');
-    writeStateFile('s-gen1-001', {
-      current_phase: 'plan',
-      task_description: 'gen 1 task',
-    });
-
-    // Second fork from gen 1 (gen 2)
-    bash('register_fork_session "s-gen2-001" "s-gen1-001" 2 "gen 2 task" ".deep-work/gen2/"');
-
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-gen1-001'].fork_generation, 1);
-    assert.equal(reg.sessions['s-gen2-001'].fork_generation, 2);
-    assert.equal(reg.sessions['s-gen2-001'].fork_parent, 's-gen1-001');
-  });
-
-  it('should track generation depth via get_fork_generation', () => {
-    const gen = bash('get_fork_generation "s-gen2-001"');
-    assert.equal(gen, '2');
-  });
+test('finish merge adopts the exact merge, worktree removal, and branch deletion',async()=>{const id='s-88888888';const child=await fork(id);
+  fs.writeFileSync(path.join(child.path,'merged.txt'),'merged\n');gitExec(['add','merged.txt'],child.path);gitExec(['commit','-m','child'],child.path);
+  const state=stateCap(id);const operation=await beginOperation({projectCapability:project,sessionId:id,kind:'finish-merge',
+    preconditions:{outcome:'merge',dirtyResolution:'abort'}});let kill=true;await assert.rejects(()=>git.finishMergeWithinOperation({operation,
+    projectCapability:project,stateCapability:state,stateFields:readState(id),dirtyResolution:'abort',seam:(name,context)=>{
+      if(kill&&name==='after-call-before-stage'&&context.kind==='merge'){kill=false;throw new Error('lost-merge-return');}}}),/lost-merge-return/);
+  kill=true;await assert.rejects(()=>git.finishMergeWithinOperation({operation,projectCapability:project,stateCapability:state,
+    stateFields:readState(id),dirtyResolution:'abort',seam:(name)=>{if(kill&&name==='worktree-after-call-before-stage'){
+      kill=false;throw new Error('lost-merge-worktree-return');}}}),/lost-merge-worktree-return/);
+  const adopted=await resumeOperation({projectCapability:project,operationId:operation.operationId,sessionId:id,kind:'finish-merge'});
+  assert.equal(adopted.stages.some((row)=>row.stage==='after-call-before-stage-1'&&row.details.owned.adopted===true),true);
+  assert.equal(adopted.stages.some((row)=>row.stage==='after-stage-1'),true);
+  kill=true;await assert.rejects(()=>git.finishMergeWithinOperation({operation,projectCapability:project,stateCapability:state,
+    stateFields:readState(id),dirtyResolution:'abort',seam:(name)=>{if(kill&&name==='branch-after-call-before-stage'){
+      kill=false;throw new Error('lost-merge-branch-return');}}}),/lost-merge-branch-return/);
+  const result=await git.finishMergeWithinOperation({operation,projectCapability:project,stateCapability:state,stateFields:readState(id),
+    dirtyResolution:'abort'});assert.equal(result.status,'merged');assert.equal(fs.readFileSync(path.join(root,'merged.txt'),'utf8'),'merged\n');
+  assert.equal(fs.existsSync(child.path),false);assert.throws(()=>gitExec(['show-ref','--verify',`refs/heads/${child.branch}`]));
 });
 
-// ─── Phase-guard + fork_mode integration ──────────────────
-
-describe('Phase-guard fork_mode integration', () => {
-  it('should block implement for artifacts-only fork (end-to-end)', () => {
-    const state = {
-      current_phase: 'implement',
-      tdd_mode: 'relaxed',
-      tdd_state: 'RED_VERIFIED',
-      fork_mode: 'artifacts-only',
-      active_slice: 'SLICE-001',
-      slice_files: ['src/main.js'],
-    };
-
-    const writeResult = processHook({
-      action: 'pre', toolName: 'Write',
-      toolInput: { file_path: 'src/main.js' },
-      state,
-    });
-    assert.equal(writeResult.decision, 'block');
-    assert.match(writeResult.reason, /Non-git fork/);
-
-    const editResult = processHook({
-      action: 'pre', toolName: 'Edit',
-      toolInput: { file_path: 'src/main.js', old_string: 'a', new_string: 'b' },
-      state,
-    });
-    assert.equal(editResult.decision, 'block');
-
-    const bashResult = processHook({
-      action: 'pre', toolName: 'Bash',
-      toolInput: { command: "echo 'x' > src/main.js" },
-      state,
-    });
-    assert.equal(bashResult.decision, 'block');
-  });
-
-  it('should block test phase for artifacts-only fork (end-to-end)', () => {
-    const result = processHook({
-      action: 'pre', toolName: 'Bash',
-      toolInput: { command: 'npm test' },
-      state: { current_phase: 'test', fork_mode: 'artifacts-only' },
-    });
-    assert.equal(result.decision, 'block');
-    assert.match(result.reason, /plan/);
-  });
-
-  it('should allow research/plan/brainstorm for artifacts-only fork', () => {
-    for (const phase of ['research', 'plan', 'brainstorm']) {
-      const result = processHook({
-        action: 'pre', toolName: 'Bash',
-        toolInput: { command: 'cat README.md' },
-        state: { current_phase: phase, fork_mode: 'artifacts-only' },
-      });
-      assert.equal(result.decision, 'allow',
-        `Expected allow for ${phase} phase with artifacts-only fork`);
-    }
-  });
-
-  it('should allow all phases for worktree fork', () => {
-    for (const phase of ['research', 'plan', 'implement', 'test']) {
-      const state = {
-        current_phase: phase,
-        fork_mode: 'worktree',
-        tdd_mode: 'relaxed',
-        tdd_state: 'RED_VERIFIED',
-      };
-      const result = processHook({
-        action: 'pre', toolName: 'Bash',
-        toolInput: { command: 'cat README.md' },
-        state,
-      });
-      assert.equal(result.decision, 'allow',
-        `Expected allow for ${phase} phase with worktree fork`);
-    }
-  });
-
-  it('should allow all phases when fork_mode is undefined (non-fork session)', () => {
-    for (const phase of ['research', 'plan', 'implement']) {
-      const state = {
-        current_phase: phase,
-        tdd_mode: 'relaxed',
-        tdd_state: 'RED_VERIFIED',
-      };
-      const result = processHook({
-        action: 'pre', toolName: 'Bash',
-        toolInput: { command: 'cat README.md' },
-        state,
-      });
-      assert.equal(result.decision, 'allow',
-        `Expected allow for ${phase} phase without fork_mode`);
-    }
-  });
+test('finish discard requires force for dirty work and adopts exact removal',async()=>{const id='s-99999999';const child=await fork(id);
+  fs.writeFileSync(path.join(child.path,'dirty.txt'),'dirty\n');const rejected=await beginOperation({projectCapability:project,sessionId:id,
+    kind:'finish-discard',preconditions:{outcome:'discard',force:false}});await assert.rejects(()=>git.finishDiscardWithinOperation({operation:rejected,
+    projectCapability:project,stateCapability:stateCap(id),stateFields:readState(id),force:false}),/finish-discard-dirty/);
+  const operation=await beginOperation({projectCapability:project,sessionId:id,kind:'finish-discard',
+    preconditions:{outcome:'discard',force:true}});let kill=true;await assert.rejects(()=>git.finishDiscardWithinOperation({operation,
+    projectCapability:project,stateCapability:stateCap(id),stateFields:readState(id),force:true,seam:(name)=>{
+      if(kill&&name==='worktree-after-call-before-stage'){kill=false;throw new Error('lost-discard-worktree-return');}}}),
+    /lost-discard-worktree-return/);kill=true;await assert.rejects(()=>git.finishDiscardWithinOperation({operation,projectCapability:project,
+    stateCapability:stateCap(id),stateFields:readState(id),force:true,seam:(name)=>{if(kill&&name==='branch-after-call-before-stage'){
+      kill=false;throw new Error('lost-discard-branch-return');}}}),/lost-discard-branch-return/);const result=await git.finishDiscardWithinOperation({
+    operation,projectCapability:project,stateCapability:stateCap(id),stateFields:readState(id),force:true});assert.equal(result.status,'discarded');
+  assert.equal(fs.existsSync(child.path),false);assert.throws(()=>gitExec(['show-ref','--verify',`refs/heads/${child.branch}`]));
 });
 
-// ─── Edge cases ───────────────────────────────────────────
-
-describe('Fork edge cases', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should reject forking an idle session', () => {
-    writeStateFile('s-idle0001', { current_phase: 'idle', task_description: 'done' });
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-idle0001.md" 2>&1 || true');
-    assert.match(result, /idle/);
-  });
-
-  it('should reject forking a nonexistent session', () => {
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-nope.md" 2>&1 || true');
-    assert.match(result, /not found|존재하지/);
-  });
-
-  it('should handle missing parent state file gracefully during registration', () => {
-    writeRegistryFile({ version: 1, shared_files: [], sessions: {} });
-    // Register fork with no parent state file (parent might have been cleaned up)
-    bash('register_fork_session "s-orphan01" "s-gone0001" 1 "orphan task" ".deep-work/orphan/"');
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-orphan01'].fork_parent, 's-gone0001');
-    assert.equal(reg.sessions['s-orphan01'].fork_generation, 1);
-  });
-
-  it('should accept forking an active plan-phase session', () => {
-    writeStateFile('s-plan0001', { current_phase: 'plan', task_description: 'planning' });
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-plan0001.md"');
-    assert.equal(result, 'valid');
-  });
-
-  it('should accept forking an active implement-phase session', () => {
-    writeStateFile('s-impl0001', { current_phase: 'implement', task_description: 'coding' });
-    const result = bash('validate_fork_target "$PROJECT_ROOT/.claude/deep-work.s-impl0001.md"');
-    assert.equal(result, 'valid');
-  });
+test('finish merge journals and adopts dirty precommit add and commit',async()=>{const id='s-aaaaaaa1';const child=await fork(id);
+  fs.writeFileSync(path.join(child.path,'dirty-merge.txt'),'dirty merge\n');const operation=await beginOperation({projectCapability:project,
+    sessionId:id,kind:'finish-merge',preconditions:{outcome:'merge',dirtyResolution:'commit'}});let target='fork-precommit-add';
+  const invoke=()=>git.finishMergeWithinOperation({operation,projectCapability:project,stateCapability:stateCap(id),stateFields:readState(id),
+    dirtyResolution:'commit',seam:(name,context)=>{if(name==='precommit-after-call-before-stage'&&context.kind===target){
+      const killed=target;target=target==='fork-precommit-add'?'fork-precommit-commit':null;throw new Error(`lost:${killed}`);}}});
+  await assert.rejects(invoke,/lost:fork-precommit-add/);await assert.rejects(invoke,/lost:fork-precommit-commit/);const result=await invoke();
+  assert.equal(result.status,'merged');assert.equal(fs.readFileSync(path.join(root,'dirty-merge.txt'),'utf8'),'dirty merge\n');
 });
 
-// ─── Fork registration with custom restart_phase ──────────
-
-describe('Fork registration with custom restart_phase', () => {
-  before(setup);
-  after(cleanup);
-
-  it('should default to plan phase when no restart_phase given', () => {
-    writeRegistryFile({ version: 1, shared_files: [], sessions: {} });
-    bash('register_fork_session "s-defphase" "s-parent99" 1 "task" "dir/"');
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-defphase'].current_phase, 'plan');
-  });
-
-  it('should use custom restart_phase when provided', () => {
-    writeRegistryFile({ version: 1, shared_files: [], sessions: {} });
-    writeStateFile('s-parent88', { current_phase: 'implement', task_description: 'test' });
-    bash('register_fork_session "s-custom01" "s-parent88" 1 "task" "dir/" "research"');
-    const reg = readRegistryFile();
-    assert.equal(reg.sessions['s-custom01'].current_phase, 'research');
-
-    // Parent state should record the restart_phase
-    const parentState = readStateFile('s-parent88');
-    assert.match(parentState, /restart_phase: research/);
-  });
+test('finish merge aborts an interrupted conflict back to the exact base',async()=>{const id='s-bbbbbbb1';const child=await fork(id);
+  fs.writeFileSync(path.join(child.path,'README.md'),'child conflict\n');gitExec(['add','README.md'],child.path);gitExec(['commit','-m','child conflict'],child.path);
+  fs.writeFileSync(path.join(root,'README.md'),'base conflict\n');gitExec(['add','README.md']);gitExec(['commit','-m','base conflict']);
+  const base=gitExec(['rev-parse','HEAD']);const operation=await beginOperation({projectCapability:project,sessionId:id,kind:'finish-merge',
+    preconditions:{outcome:'merge',dirtyResolution:'abort'}});let kill=true;await assert.rejects(()=>git.finishMergeWithinOperation({operation,
+    projectCapability:project,stateCapability:stateCap(id),stateFields:readState(id),dirtyResolution:'abort',seam:(name,context)=>{
+      if(kill&&name==='after-call-before-stage'&&context.kind==='merge'&&context.ok===false){kill=false;throw new Error('lost-conflict-return');}}}),
+    /lost-conflict-return/);const result=await git.finishMergeWithinOperation({operation,projectCapability:project,stateCapability:stateCap(id),
+    stateFields:readState(id),dirtyResolution:'abort'});assert.equal(result.status,'manual-resolution');assert.equal(result.reason,'merge-conflict');
+  assert.equal(gitExec(['rev-parse','HEAD']),base);assert.equal(fs.existsSync(child.path),true);assert.equal(fs.existsSync(path.join(root,'.git','MERGE_HEAD')),false);
 });
 
-// ─── Git worktree fork ─────────────────────────────────────
+test('artifacts-only fork blocks Implement/Test while worktree and non-fork modes retain access',()=>{for(const toolName of ['Write','Edit','Bash']){
+  const result=processHook({action:'pre',toolName,toolInput:toolName==='Bash'?{command:'echo x > src/main.js'}:{file_path:'src/main.js'},
+    state:{current_phase:'implement',fork_mode:'artifacts-only',tdd_mode:'relaxed',tdd_state:'RED_VERIFIED',active_slice:'SLICE-001',slice_files:['src/main.js']}});
+  assert.equal(result.decision,'block',toolName);}assert.equal(processHook({action:'pre',toolName:'Bash',toolInput:{command:'npm test'},
+    state:{current_phase:'test',fork_mode:'artifacts-only'}}).decision,'block');for(const phase of ['brainstorm','research','plan'])assert.equal(
+      processHook({action:'pre',toolName:'Bash',toolInput:{command:'cat README.md'},state:{current_phase:phase,fork_mode:'artifacts-only'}}).decision,'allow');
+  for(const fork_mode of ['worktree',undefined])assert.equal(processHook({action:'pre',toolName:'Bash',toolInput:{command:'cat README.md'},
+    state:{current_phase:'implement',fork_mode,tdd_mode:'relaxed',tdd_state:'RED_VERIFIED'}}).decision,'allow');});
 
-describe('Git worktree fork', () => {
-  let gitDir;
-
-  before(() => {
-    // Create a real git repo for worktree tests
-    gitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-wt-integ-'));
-    execFileSync('git', ['init', gitDir], { encoding: 'utf8' });
-    execFileSync('git', ['-C', gitDir, 'config', 'user.email', 'test@test.com'], { encoding: 'utf8' });
-    execFileSync('git', ['-C', gitDir, 'config', 'user.name', 'Test'], { encoding: 'utf8' });
-    // Create initial commit
-    fs.writeFileSync(path.join(gitDir, 'README.md'), '# Test\n');
-    execFileSync('git', ['-C', gitDir, 'add', '.'], { encoding: 'utf8' });
-    execFileSync('git', ['-C', gitDir, 'commit', '-m', 'initial'], { encoding: 'utf8' });
-    // Create .claude directory for state files
-    fs.mkdirSync(path.join(gitDir, '.claude'), { recursive: true });
-  });
-
-  after(() => {
-    // Clean up worktrees before removing the directory
-    try {
-      const wtList = execFileSync('git', ['-C', gitDir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
-      const worktrees = wtList.split('\n')
-        .filter(l => l.startsWith('worktree '))
-        .map(l => l.replace('worktree ', ''))
-        .filter(p => p !== gitDir);
-      for (const wt of worktrees) {
-        execFileSync('git', ['-C', gitDir, 'worktree', 'remove', wt, '--force'], { encoding: 'utf8', stdio: 'pipe' });
-      }
-    } catch { /* ignore cleanup errors */ }
-    fs.rmSync(gitDir, { recursive: true, force: true });
-  });
-
-  it('should create worktree with session-based branch at current commit', () => {
-    const currentCommit = execFileSync(
-      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
-      { encoding: 'utf8' },
-    ).trim();
-
-    const forkBranch = 'deep-work/fork/s-wt000001';
-    const worktreePath = path.join(gitDir, '.deep-work-worktrees', 's-wt000001');
-
-    execFileSync('git', [
-      '-C', gitDir, 'worktree', 'add', worktreePath, '-b', forkBranch, currentCommit,
-    ], { encoding: 'utf8' });
-
-    // Verify worktree exists
-    assert.ok(fs.existsSync(worktreePath), 'worktree directory should exist');
-    assert.ok(fs.existsSync(path.join(worktreePath, 'README.md')), 'worktree should contain repo files');
-
-    // Verify branch points to same commit
-    const wtCommit = execFileSync(
-      'git', ['-C', worktreePath, 'rev-parse', 'HEAD'],
-      { encoding: 'utf8' },
-    ).trim();
-    assert.equal(wtCommit, currentCommit, 'worktree branch should point to same commit');
-
-    // Verify branch name
-    const wtBranch = execFileSync(
-      'git', ['-C', worktreePath, 'branch', '--show-current'],
-      { encoding: 'utf8' },
-    ).trim();
-    assert.equal(wtBranch, forkBranch);
-  });
-
-  it('should allow independent commits in worktree without affecting main', () => {
-    const worktreePath = path.join(gitDir, '.deep-work-worktrees', 's-wt000001');
-    const mainCommit = execFileSync(
-      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
-      { encoding: 'utf8' },
-    ).trim();
-
-    // Make a commit in the worktree
-    fs.writeFileSync(path.join(worktreePath, 'new-file.js'), 'console.log("fork");\n');
-    execFileSync('git', ['-C', worktreePath, 'add', 'new-file.js'], { encoding: 'utf8' });
-    execFileSync('git', ['-C', worktreePath, 'commit', '-m', 'fork commit'], { encoding: 'utf8' });
-
-    // Main branch should still be at original commit
-    const mainAfter = execFileSync(
-      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
-      { encoding: 'utf8' },
-    ).trim();
-    assert.equal(mainAfter, mainCommit, 'main branch should not be affected by worktree commit');
-
-    // Worktree should have advanced
-    const wtCommit = execFileSync(
-      'git', ['-C', worktreePath, 'rev-parse', 'HEAD'],
-      { encoding: 'utf8' },
-    ).trim();
-    assert.notEqual(wtCommit, mainCommit, 'worktree should have a new commit');
-  });
-
-  it('should support multiple worktree forks from same repo', () => {
-    const currentCommit = execFileSync(
-      'git', ['-C', gitDir, 'rev-parse', 'HEAD'],
-      { encoding: 'utf8' },
-    ).trim();
-
-    const forkBranch2 = 'deep-work/fork/s-wt000002';
-    const worktreePath2 = path.join(gitDir, '.deep-work-worktrees', 's-wt000002');
-
-    execFileSync('git', [
-      '-C', gitDir, 'worktree', 'add', worktreePath2, '-b', forkBranch2, currentCommit,
-    ], { encoding: 'utf8' });
-
-    assert.ok(fs.existsSync(worktreePath2), 'second worktree should exist');
-
-    // Both worktrees should be independent
-    const wtList = execFileSync(
-      'git', ['-C', gitDir, 'worktree', 'list'],
-      { encoding: 'utf8' },
-    );
-    assert.match(wtList, /s-wt000001/);
-    assert.match(wtList, /s-wt000002/);
-  });
-});
+test('idle and nonexistent parents fail before Git mutation',async()=>{const before=gitExec(['worktree','list','--porcelain']);
+  await assert.rejects(()=>fork('s-55555555','s-33333333'),/registry-session-missing|fork-parent/);
+  await assert.rejects(()=>session.forkSession({projectCapability:project,parentStateCapability:stateCap(parentId),parentSessionId:parentId,
+    childSessionId:'s-66666666',fromPhase:'idle'}),/fork-phase/);assert.equal(gitExec(['worktree','list','--porcelain']),before);});

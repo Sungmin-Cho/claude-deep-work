@@ -6,11 +6,11 @@
  * Ties together the detection engine and parsers to run sensors against
  * changed files and format agent-readable feedback.
  *
- * Commands from registry.json are trusted config -- execSync is intentional.
+ * Process specifications are structured argv and execute through runtime/sensor-runtime.
  */
 
-const { execSync } = require('node:child_process');
 const path = require('node:path');
+const { runSensor: runRuntimeSensor } = require('../runtime/sensor-runtime.js');
 
 // -- Default timeouts (seconds) ------------------------------------------------
 const DEFAULT_TIMEOUTS = {
@@ -87,18 +87,16 @@ function selectSensorsForFiles(changedFiles, ecosystems) {
 // -- runSensor -----------------------------------------------------------------
 
 /**
- * Run a sensor command synchronously and parse its output.
+ * Run a structured sensor process specification and parse its output.
  *
- * Commands from registry.json are trusted config -- execSync is intentional.
- *
- * @param {string} cmd         - Shell command to run
+ * @param {object} processSpec - Structured native-executable or node-package-bin spec
  * @param {string} parserName  - Name of parser to use (e.g. "eslint", "tsc")
  * @param {string} sensorType  - "lint" | "typecheck" | "coverage" | "mutation"
  * @param {string} gateType    - "required" | "advisory"
  * @param {number} [timeoutSec] - Timeout in seconds (default from DEFAULT_TIMEOUTS)
  * @returns {object} Standard sensor result
  */
-function runSensor(cmd, parserName, sensorType, gateType, timeoutSec) {
+async function runSensor(processSpec, parserName, sensorType, gateType, timeoutSec, projectRoot = process.cwd()) {
   const timeout = (timeoutSec ?? DEFAULT_TIMEOUTS[sensorType] ?? 30) * 1000;
 
   const parser = getParserSync(parserName);
@@ -115,48 +113,20 @@ function runSensor(cmd, parserName, sensorType, gateType, timeoutSec) {
     };
   }
 
-  let rawOutput = '';
-  let exitedNonZero = false;
-  let exitCode = 0;
-  try {
-    // Commands are trusted config -- execSync is intentional (not execFileSync)
-    rawOutput = execSync(cmd, { timeout, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (err) {
-    if (err.code === 'ETIMEDOUT' || err.signal === 'SIGTERM') {
-      return {
-        sensor: parserName,
-        type: sensorType,
-        gate: gateType,
-        status: 'timeout',
-        errors: 0,
-        warnings: 0,
-        items: [],
-        summary: 'Sensor timed out after ' + (timeoutSec ?? DEFAULT_TIMEOUTS[sensorType] ?? 30) + 's',
-      };
-    }
-    // Prefer stdout over stderr: many linters (eslint) output valid JSON to stdout even on exit code 1
-    rawOutput = (err.stdout || err.stderr || '').toString();
-    exitedNonZero = true;
-    exitCode = err.status ?? 1;
-  }
-
+  const runtime = await runRuntimeSensor({kind:sensorType,processSpec,parser:parserName,
+    budgetMs:timeout,projectRoot});
+  if (runtime.status === 'timeout') return {sensor:parserName,type:sensorType,gate:gateType,
+    status:'timeout',errors:0,warnings:0,items:[],summary:`Sensor timed out after ${timeout / 1000}s`};
+  if (runtime.status === 'not-installed') return {sensor:parserName,type:sensorType,gate:gateType,
+    status:'not_installed',errors:0,warnings:0,items:[],summary:'Sensor tool is not installed'};
+  const items = runtime.status === 'pass' ? runtime.warnings : runtime.errors;
+  const rawOutput = items.map(item => item.message || JSON.stringify(item)).join('\n');
   const result = parser(rawOutput, sensorType, gateType);
-
-  // Fail-closed: non-zero exit with no diagnostics = failure, not silent pass
-  if (exitedNonZero && result.items && result.items.length === 0) {
-    result.status = 'fail';
-    result.errors = 1;
-    result.items = [{
-      file: '',
-      line: 0,
-      rule: 'SENSOR_EXECUTION_ERROR',
-      severity: 'error',
-      message: `Sensor command exited with code ${exitCode} but produced no diagnostics. Raw output: ${(rawOutput || '').slice(0, 500)}`,
-      fix: 'Check if the sensor tool is properly configured and the command is correct.',
-    }];
-    result.summary = `Sensor execution error (exit code ${exitCode})`;
+  if (runtime.status !== 'pass' && (!result.items || result.items.length === 0)) {
+    result.status='fail';result.errors=1;result.items=[{file:'',line:0,rule:'SENSOR_EXECUTION_ERROR',
+      severity:'error',message:'Structured sensor failed without parseable diagnostics.',fix:'Check the sensor process specification.'}];
+    result.summary='Sensor execution error';
   }
-
   return result;
 }
 
@@ -229,25 +199,25 @@ module.exports.runReviewCheck = runReviewCheck;
 module.exports.formatReviewCheckFeedback = formatReviewCheckFeedback;
 
 // -- CLI -----------------------------------------------------------------------
-// Usage: node run-sensors.js <cmd> <parser> [type] [gate] [timeout]
+// Usage: node run-sensors.js <process-spec-json> <parser> [type] [gate] [timeout]
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const cmd = args[0];
+  const processSpecText = args[0];
   const parserName = args[1];
   const sensorType = args[2] || 'lint';
   const gateType = args[3] || 'required';
   const timeoutArg = args[4];
 
-  if (!cmd || !parserName) {
-    process.stderr.write('Usage: node run-sensors.js <cmd> <parser> [type] [gate] [timeout]\n');
+  if (!processSpecText || !parserName) {
+    process.stderr.write('Usage: node run-sensors.js <process-spec-json> <parser> [type] [gate] [timeout]\n');
     process.exit(1);
   }
 
   const timeoutSec = timeoutArg ? Number(timeoutArg) : undefined;
 
-  getParsers().then(function() {
-    const result = runSensor(cmd, parserName, sensorType, gateType, timeoutSec);
+  getParsers().then(async function() {
+    const result = await runSensor(JSON.parse(processSpecText), parserName, sensorType, gateType, timeoutSec);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   }).catch(function(err) {
     process.stderr.write('Error: ' + err.message + '\n');

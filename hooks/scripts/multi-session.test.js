@@ -1,554 +1,77 @@
-const { describe, it, beforeEach, afterEach } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { execFileSync } = require('child_process');
-const { scrubHostEnv } = require('./test-helpers/run-phase-guard');
+'use strict';
 
-// §9.2 W-R2.2 (M5.5.X): utils.sh consumes DEEP_WORK_SESSION_ID for state-file
-// lookup; without scrubbing, a developer shell that sources another session's
-// env will silently route assertions away from this tmpDir.
+const {describe,it,beforeEach,afterEach}=require('node:test');
+const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
+const session=require('../../runtime/session-store.js');const platform=require('../../runtime/platform.js');
 
-const UTILS_SH = path.resolve(__dirname, 'utils.sh');
+let root,project;
+function setup(){root=fs.mkdtempSync(path.join(os.tmpdir(),'ms-node-'));fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+  project=platform.issueProjectStateCapability(root,root,{role:'project-root'});}
+function cleanup(){if(root)fs.rmSync(root,{recursive:true,force:true});root=null;}
+function registryPath(){return path.join(root,'.claude','deep-work-sessions.json');}
+function statePath(id){return path.join(root,'.claude',`deep-work.${id}.md`);}
+function seed(sessions,shared=[]){fs.writeFileSync(registryPath(),`${JSON.stringify({version:1,shared_files:shared,sessions})}\n`);
+  for(const [id,row] of Object.entries(sessions)){fs.mkdirSync(path.join(root,...(row.work_dir||`.deep-work/${id}`).split('/')),{recursive:true});
+    fs.writeFileSync(statePath(id),`---\nsession_id: ${id}\nwork_dir: ${row.work_dir||`.deep-work/${id}`}\ncurrent_phase: ${row.current_phase||'implement'}\n---\n`);}}
+function state(id){return platform.issueProjectStateCapability(root,statePath(id),{role:'session-state'});}
+function pathCap(name='ownership-path'){return platform.issueProjectStateCapability(root,path.join(root,'.claude',name),{allowMissingLeaf:true});}
 
-// ─── Test Helpers ───────────────────────────────────────────
-
-let tmpDir;
-
-function setup() {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ms-test-'));
-  fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
-}
-
-function cleanup() {
-  if (tmpDir) {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    tmpDir = null;
-  }
-}
-
-/** Executes bash code after sourcing utils.sh in the tmp project dir. */
-function bash(code, env = {}) {
-  const script = `source "${UTILS_SH}"\n${code}`;
-  return execFileSync('bash', ['-c', script], {
-    encoding: 'utf8',
-    cwd: tmpDir,
-    env: scrubHostEnv(env),
-    timeout: 10000,
-  }).trim();
-}
-
-function writeRegistryFile(data) {
-  fs.writeFileSync(
-    path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
-    JSON.stringify(data),
-  );
-}
-
-function readRegistryFile() {
-  return JSON.parse(
-    fs.readFileSync(
-      path.join(tmpDir, '.claude', 'deep-work-sessions.json'),
-      'utf8',
-    ),
-  );
-}
-
-// ─── generate_session_id ──────────────────────────────────
-
-describe('generate_session_id', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('produces s-{8 hex} format', () => {
-    const id = bash('generate_session_id');
-    assert.match(id, /^s-[0-9a-f]{8}$/);
-  });
-
-  it('produces unique IDs on consecutive calls', () => {
-    const ids = bash('generate_session_id; generate_session_id').split('\n');
-    assert.equal(ids.length, 2);
-    assert.notEqual(ids[0], ids[1]);
-  });
+it('declares one shell-free Node authority and keeps internal registry reducers private',()=>{
+  assert.deepEqual(session.NODE_AUTHORITY,{runtime:'node',shell:false,authority:'session-store-v1'});
+  assert.match(session.generateSessionId(),/^s-[0-9a-f]{8}$/);assert.equal(session.registerSession,undefined);
+  assert.equal(session.unregisterSession,undefined);assert.equal(session.mutateRegistry,undefined);
 });
 
-// ─── init_deep_work_state ──────────────────────────────────
-
-describe('init_deep_work_state', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('uses DEEP_WORK_SESSION_ID env var when set', () => {
-    const result = bash('init_deep_work_state; echo "$STATE_FILE"', {
-      DEEP_WORK_SESSION_ID: 's-abc12345',
-    });
-    assert.ok(result.endsWith('/.claude/deep-work.s-abc12345.md'));
-  });
-
-  it('falls back to pointer file when env var not set', () => {
-    fs.writeFileSync(
-      path.join(tmpDir, '.claude', 'deep-work-current-session'),
-      's-def67890\n',
-    );
-    const result = bash('init_deep_work_state; echo "$STATE_FILE"');
-    assert.ok(result.endsWith('/.claude/deep-work.s-def67890.md'));
-  });
-
-  it('falls back to legacy path when no env var or pointer', () => {
-    const result = bash('init_deep_work_state; echo "$STATE_FILE"');
-    assert.ok(result.endsWith('/.claude/deep-work.local.md'));
-  });
+describe('context, pointer, and registry capabilities',()=>{beforeEach(setup);afterEach(cleanup);
+  it('uses explicit/env then pointer then legacy precedence',()=>{seed({'s-aaaaaaaa':{pid:process.pid,file_ownership:[]}});
+    session.writePointer(project,'s-bbbbbbbb');assert.equal(session.resolveSessionContext({cwd:root,env:{DEEP_WORK_SESSION_ID:'s-aaaaaaaa'}}).sessionId,'s-aaaaaaaa');
+    assert.equal(session.resolveSessionContext({cwd:root,env:{}}).sessionId,'s-bbbbbbbb');fs.unlinkSync(path.join(root,'.claude','deep-work-current-session'));
+    assert.equal(session.resolveSessionContext({cwd:root,env:{}}).legacy,true);});
+  it('round-trips a pointer and creates the default registry under the lock',()=>{session.writePointer(project,'s-aabb1122');
+    assert.equal(session.readPointer(project),'s-aabb1122');const value=session.readRegistry(project);assert.equal(value.version,1);
+    assert.ok(value.shared_files.includes('package.json'));assert.deepEqual(value.sessions,{});assert.ok(fs.existsSync(registryPath()));});
 });
 
-// ─── write_session_pointer / read_session_pointer ──────────
-
-describe('session pointer', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('round-trips session ID via write/read', () => {
-    bash('init_deep_work_state; write_session_pointer "s-aabb1122"');
-    const result = bash('init_deep_work_state; read_session_pointer');
-    assert.equal(result, 's-aabb1122');
-  });
-
-  it('returns empty when no pointer file exists', () => {
-    const result = bash('init_deep_work_state; read_session_pointer');
-    assert.equal(result, '');
-  });
+describe('explicit ownership and activity reducers',()=>{beforeEach(()=>{setup();seed({
+  's-aaaaaaaa':{pid:process.pid,task_description:'mine',work_dir:'.deep-work/s-aaaaaaaa',current_phase:'implement',file_ownership:[],last_activity:'2020-01-01T00:00:00Z'},
+  's-bbbbbbbb':{pid:process.pid,task_description:'other',work_dir:'.deep-work/s-bbbbbbbb',current_phase:'plan',file_ownership:['src/db/**','src/models/user.ts'],last_activity:'2020-01-01T00:00:00Z'},
+},['package.json','*.config.js']);});afterEach(cleanup);
+  it('preserves shared/unowned access and reports the blocking owner',()=>{assert.equal(session.checkFileOwnership({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),pathCapability:pathCap(),portablePath:'package.json'}).allowed,true);
+    assert.equal(session.checkFileOwnership({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),pathCapability:pathCap(),portablePath:'jest.config.js'}).allowed,true);
+    assert.equal(session.checkFileOwnership({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),pathCapability:pathCap(),portablePath:'src/free.js'}).allowed,true);
+    const blocked=session.checkFileOwnership({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),pathCapability:pathCap(),portablePath:'src/db/query.js'});
+    assert.deepEqual(blocked,{allowed:false,owner:'s-bbbbbbbb',taskDescription:'other'});});
+  it('deduplicates ownership and promotes three direct siblings to one glob',async()=>{for(const file of ['src/auth/a.js','src/auth/b.js','src/auth/c.js','src/auth/c.js'])
+    await session.registerFileOwnership({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),pathCapability:pathCap(),portablePath:file});
+    assert.deepEqual(session.readRegistry(project).sessions['s-aaaaaaaa'].file_ownership,['src/auth/**']);});
+  it('updates only the explicit session activity and phase',async()=>{await session.updateLastActivity({sessionId:'s-aaaaaaaa',stateCapability:state('s-aaaaaaaa'),at:'2026-07-13T00:00:00Z'});
+    await session.updateRegistryPhase({sessionId:'s-bbbbbbbb',stateCapability:state('s-bbbbbbbb'),phase:'research',at:'2026-07-13T00:00:01Z'});
+    const value=session.readRegistry(project);assert.equal(value.sessions['s-aaaaaaaa'].last_activity,'2026-07-13T00:00:00Z');
+    assert.equal(value.sessions['s-bbbbbbbb'].current_phase,'research');});
 });
 
-// ─── read_registry / write_registry ────────────────────────
-
-describe('registry read/write', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('creates default registry when none exists', () => {
-    const json = bash('init_deep_work_state; read_registry');
-    const data = JSON.parse(json);
-    assert.equal(data.version, 1);
-    assert.ok(Array.isArray(data.shared_files));
-    assert.ok(data.shared_files.length > 0);
-    assert.deepEqual(data.sessions, {});
-  });
-
-  it('reads existing registry data', () => {
-    const testData = {
-      version: 1,
-      shared_files: ['package.json'],
-      sessions: { 's-test1234': { pid: 12345, file_ownership: [] } },
-    };
-    writeRegistryFile(testData);
-    const json = bash('init_deep_work_state; read_registry');
-    const data = JSON.parse(json);
-    assert.equal(data.sessions['s-test1234'].pid, 12345);
-  });
-
-  it('write_registry creates file via atomic rename', () => {
-    const inputFile = path.join(tmpDir, '_test_input.json');
-    const testData = {
-      version: 1,
-      shared_files: [],
-      sessions: { 's-w1': { pid: 1 } },
-    };
-    fs.writeFileSync(inputFile, JSON.stringify(testData));
-    bash(`init_deep_work_state; write_registry "$(cat "${inputFile}")"`);
-    const data = readRegistryFile();
-    assert.equal(data.sessions['s-w1'].pid, 1);
-  });
+describe('stale and legacy behavior',()=>{beforeEach(setup);afterEach(cleanup);
+  it('treats EPERM as alive and ESRCH as stale',()=>{const value={version:1,shared_files:[],sessions:{
+    's-aaaaaaaa':{pid:111,last_activity:'2020-01-01T00:00:00Z',file_ownership:[]},
+    's-bbbbbbbb':{pid:222,last_activity:'2020-01-01T00:00:00Z',file_ownership:[]}}};
+    const rows=session.detectStaleSessions(value,{now:Date.parse('2026-07-13T00:00:00Z'),kill(pid){const error=new Error();error.code=pid===111?'EPERM':'ESRCH';throw error;}});
+    assert.deepEqual(rows.map((row)=>row.sessionId),['s-bbbbbbbb']);});
+  it('migrates an active legacy state, registers it, and leaves idle legacy bytes untouched',()=>{const legacy=path.join(root,'.claude','deep-work.local.md');
+    fs.writeFileSync(legacy,'---\ncurrent_phase: implement\ntask_description: Legacy\n---\n');const id=session.migrateLegacyState(project);
+    assert.match(id,/^s-[0-9a-f]{8}$/);assert.equal(fs.existsSync(legacy),false);assert.ok(session.readRegistry(project).sessions[id]);
+    fs.writeFileSync(legacy,'---\ncurrent_phase: idle\n---\n');assert.equal(session.migrateLegacyState(project),null);assert.ok(fs.existsSync(legacy));});
 });
 
-// ─── register_session / unregister_session ──────────────────
-
-describe('register/unregister session', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('registers a new session in registry', () => {
-    bash(
-      'init_deep_work_state; register_session "s-new12345" "$$" "Test task" "work/dir"',
-    );
-    const data = readRegistryFile();
-    assert.ok(data.sessions['s-new12345']);
-    assert.equal(data.sessions['s-new12345'].task_description, 'Test task');
-    assert.equal(data.sessions['s-new12345'].current_phase, 'plan');
-    assert.ok(Array.isArray(data.sessions['s-new12345'].file_ownership));
-  });
-
-  it('unregisters a session from registry', () => {
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: { 's-rm1': { pid: 1 }, 's-rm2': { pid: 2 } },
-    });
-    bash('init_deep_work_state; unregister_session "s-rm1"');
-    const data = readRegistryFile();
-    assert.equal(data.sessions['s-rm1'], undefined);
-    assert.ok(data.sessions['s-rm2']);
-  });
-});
-
-// ─── check_file_ownership ──────────────────────────────────
-
-describe('check_file_ownership', () => {
-  beforeEach(() => {
-    setup();
-    writeRegistryFile({
-      version: 1,
-      shared_files: ['package.json', 'package-lock.json', '*.config.js'],
-      sessions: {
-        's-me': {
-          pid: process.pid,
-          file_ownership: ['src/auth/**'],
-        },
-        's-other': {
-          pid: 99999,
-          file_ownership: ['src/db/**', 'src/models/user.ts'],
-          task_description: 'DB work',
-        },
-      },
-    });
-  });
-  afterEach(cleanup);
-
-  it('allows own files (not blocked)', () => {
-    bash(
-      'init_deep_work_state; check_file_ownership "s-me" "src/auth/login.ts"',
-    );
-  });
-
-  it('blocks other session files (exit non-zero)', () => {
-    assert.throws(() => {
-      bash(
-        'init_deep_work_state; check_file_ownership "s-me" "src/db/connection.ts"',
-      );
-    });
-  });
-
-  it('allows shared files regardless of ownership', () => {
-    bash('init_deep_work_state; check_file_ownership "s-me" "package.json"');
-  });
-
-  it('allows shared glob patterns (*.config.js)', () => {
-    bash(
-      'init_deep_work_state; check_file_ownership "s-me" "jest.config.js"',
-    );
-  });
-
-  it('allows files not owned by anyone', () => {
-    bash(
-      'init_deep_work_state; check_file_ownership "s-me" "src/utils/helper.ts"',
-    );
-  });
-
-  it('blocks nested files under other session glob', () => {
-    assert.throws(() => {
-      bash(
-        'init_deep_work_state; check_file_ownership "s-me" "src/db/migrations/001.sql"',
-      );
-    });
-  });
-
-  it('blocks exact file match from other session', () => {
-    assert.throws(() => {
-      bash(
-        'init_deep_work_state; check_file_ownership "s-me" "src/models/user.ts"',
-      );
-    });
-  });
-
-  it('outputs blocking session info as JSON on block', () => {
-    try {
-      bash(
-        'init_deep_work_state; check_file_ownership "s-me" "src/db/query.ts"',
-      );
-      assert.fail('should have thrown');
-    } catch (e) {
-      const info = JSON.parse(e.stdout.toString().trim());
-      assert.equal(info.blocked, true);
-      assert.equal(info.owner_session, 's-other');
-      assert.equal(info.task, 'DB work');
-    }
-  });
-});
-
-// ─── register_file_ownership ─────────────────────────────
-
-describe('register_file_ownership', () => {
-  beforeEach(() => {
-    setup();
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-own': { pid: process.pid, file_ownership: [], task_description: 'test' },
-      },
-    });
-  });
-  afterEach(cleanup);
-
-  it('adds a file to session ownership', () => {
-    bash(
-      'init_deep_work_state; register_file_ownership "s-own" "src/auth/login.ts"',
-    );
-    const data = readRegistryFile();
-    assert.ok(data.sessions['s-own'].file_ownership.includes('src/auth/login.ts'));
-  });
-
-  it('does not add duplicate files', () => {
-    bash('init_deep_work_state; register_file_ownership "s-own" "src/foo.ts"');
-    bash('init_deep_work_state; register_file_ownership "s-own" "src/foo.ts"');
-    const data = readRegistryFile();
-    const count = data.sessions['s-own'].file_ownership.filter(
-      (f) => f === 'src/foo.ts',
-    ).length;
-    assert.equal(count, 1);
-  });
-
-  it('promotes to dir/** glob at 3+ files in same directory', () => {
-    bash(
-      'init_deep_work_state; register_file_ownership "s-own" "src/auth/login.ts"',
-    );
-    bash(
-      'init_deep_work_state; register_file_ownership "s-own" "src/auth/logout.ts"',
-    );
-    bash(
-      'init_deep_work_state; register_file_ownership "s-own" "src/auth/register.ts"',
-    );
-    const data = readRegistryFile();
-    assert.ok(
-      data.sessions['s-own'].file_ownership.includes('src/auth/**'),
-      'should contain glob pattern',
-    );
-    assert.ok(
-      !data.sessions['s-own'].file_ownership.includes('src/auth/login.ts'),
-      'individual files should be removed after promotion',
-    );
-  });
-
-  it('skips file already covered by existing glob', () => {
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-own': {
-          pid: process.pid,
-          file_ownership: ['src/auth/**'],
-          task_description: 'test',
-        },
-      },
-    });
-    bash(
-      'init_deep_work_state; register_file_ownership "s-own" "src/auth/newfile.ts"',
-    );
-    const data = readRegistryFile();
-    assert.ok(!data.sessions['s-own'].file_ownership.includes('src/auth/newfile.ts'));
-    assert.equal(data.sessions['s-own'].file_ownership.length, 1);
-  });
-});
-
-// ─── detect_stale_sessions ──────────────────────────────────
-
-describe('detect_stale_sessions', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('detects dead PID as stale', () => {
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-dead': {
-          pid: 99999999,
-          last_activity: new Date().toISOString(),
-          task_description: 'Dead session',
-        },
-      },
-    });
-    const result = bash('init_deep_work_state; detect_stale_sessions');
-    assert.ok(result.includes('s-dead'));
-  });
-
-  it('does not flag live PID as stale', () => {
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-alive': {
-          pid: process.pid,
-          last_activity: new Date().toISOString(),
-          task_description: 'Live session',
-        },
-      },
-    });
-    const result = bash('init_deep_work_state; detect_stale_sessions');
-    assert.ok(!result.includes('s-alive'));
-  });
-
-  it('detects session with old last_activity and no PID as stale', () => {
-    const oldTime = new Date(Date.now() - 120 * 60000).toISOString();
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-old': {
-          last_activity: oldTime,
-          task_description: 'Old session',
-        },
-      },
-    });
-    const result = bash('init_deep_work_state; detect_stale_sessions');
-    assert.ok(result.includes('s-old'));
-  });
-});
-
-// ─── update_last_activity / update_registry_phase ──────────
-
-describe('update_last_activity', () => {
-  beforeEach(() => {
-    setup();
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-upd': {
-          pid: process.pid,
-          last_activity: '2020-01-01T00:00:00.000Z',
-          current_phase: 'plan',
-          task_description: 'test',
-        },
-      },
-    });
-  });
-  afterEach(cleanup);
-
-  it('updates last_activity timestamp', () => {
-    bash('init_deep_work_state; update_last_activity "s-upd"');
-    const data = readRegistryFile();
-    assert.notEqual(
-      data.sessions['s-upd'].last_activity,
-      '2020-01-01T00:00:00.000Z',
-    );
-    const updated = new Date(data.sessions['s-upd'].last_activity);
-    assert.ok(Date.now() - updated.getTime() < 10000);
-  });
-});
-
-describe('update_registry_phase', () => {
-  beforeEach(() => {
-    setup();
-    writeRegistryFile({
-      version: 1,
-      shared_files: [],
-      sessions: {
-        's-ph': {
-          pid: process.pid,
-          current_phase: 'plan',
-          task_description: 'test',
-        },
-      },
-    });
-  });
-  afterEach(cleanup);
-
-  it('updates phase in registry', () => {
-    bash('init_deep_work_state; update_registry_phase "s-ph" "implement"');
-    const data = readRegistryFile();
-    assert.equal(data.sessions['s-ph'].current_phase, 'implement');
-  });
-});
-
-// ─── migrate_legacy_state ──────────────────────────────────
-
-describe('migrate_legacy_state', () => {
-  beforeEach(setup);
-  afterEach(cleanup);
-
-  it('migrates active legacy state file and returns new session ID', () => {
-    fs.writeFileSync(
-      path.join(tmpDir, '.claude', 'deep-work.local.md'),
-      '---\ncurrent_phase: implement\ntask_description: "Legacy task"\n---\n',
-    );
-    const result = bash('init_deep_work_state; migrate_legacy_state');
-    assert.match(result, /^s-[0-9a-f]{8}$/);
-    assert.ok(
-      !fs.existsSync(path.join(tmpDir, '.claude', 'deep-work.local.md')),
-      'legacy file should be removed after migration',
-    );
-    // Verify new state file exists
-    assert.ok(
-      fs.existsSync(path.join(tmpDir, '.claude', `deep-work.${result}.md`)),
-      'new session state file should exist',
-    );
-    // Verify registered in registry
-    const data = readRegistryFile();
-    assert.ok(data.sessions[result], 'session should be registered');
-  });
-
-  it('skips idle legacy state', () => {
-    fs.writeFileSync(
-      path.join(tmpDir, '.claude', 'deep-work.local.md'),
-      '---\ncurrent_phase: idle\ntask_description: "Done task"\n---\n',
-    );
-    const result = bash('init_deep_work_state; migrate_legacy_state');
-    assert.equal(result, '');
-    assert.ok(
-      fs.existsSync(path.join(tmpDir, '.claude', 'deep-work.local.md')),
-      'idle legacy file should not be touched',
-    );
-  });
-
-  it('returns empty when no legacy file exists', () => {
-    const result = bash('init_deep_work_state; migrate_legacy_state');
-    assert.equal(result, '');
-  });
-});
-
-// ─── Lint Guard: No Hardcoded Legacy State Paths ────────────
-
-describe('lint guard: deep-work.local.md references', () => {
-  it('no active code files use deep-work.local.md as sole path', () => {
-    const { execFileSync } = require('child_process');
-    const pluginRoot = path.resolve(__dirname, '../..');
-
-    // grep for deep-work.local.md in active code files
-    let grepOutput = '';
-    try {
-      grepOutput = execFileSync('grep', [
-        '-rn', 'deep-work\\.local\\.md',
-        pluginRoot,
-        '--include=*.md', '--include=*.sh', '--include=*.js',
-      ], { encoding: 'utf8', timeout: 10000 });
-    } catch (e) {
-      // grep exits 1 when no matches — that's ideal
-      if (e.status === 1) {
-        grepOutput = '';
-      } else {
-        throw e;
-      }
-    }
-
-    // Filter out allowed files and contexts
-    const violations = grepOutput.split('\n').filter(line => {
-      if (!line.trim()) return false;
-      // Exclude: CHANGELOG, README, test files
-      if (/CHANGELOG|README|\.test\.js/.test(line)) return false;
-      // Exclude: utils.sh (core fallback implementation + migration)
-      if (/utils\.sh/.test(line)) return false;
-      // Exclude: lines that mention "legacy" or "fallback" or "레거시" (intentional fallback docs)
-      if (/[Ll]egacy|fallback|레거시|auto-migrat/i.test(line)) return false;
-      // Exclude: lines that mention "or legacy" or "또는" (dual-path references)
-      if (/or legacy|또는/.test(line)) return false;
-      // Exclude: migration check context (deep-work.md Step 1a)
-      if (/[Mm]igrat/.test(line)) return false;
-      return true;
-    });
-
-    assert.equal(
-      violations.length, 0,
-      `Found ${violations.length} hardcoded deep-work.local.md reference(s) in active code:\n${violations.join('\n')}`
-    );
-  });
+describe('project-state link defenses',()=>{afterEach(cleanup);
+  for(const target of ['project .claude','pointer','registry','state','lock','snapshot'])it(`rejects a ${target} symlink before mutation`,async()=>{setup();
+    const outside=fs.mkdtempSync(path.join(os.tmpdir(),'ms-outside-'));const outsideFile=path.join(outside,'foreign');fs.writeFileSync(outsideFile,'{}');
+    try{if(target==='project .claude'){fs.rmSync(path.join(root,'.claude'),{recursive:true});fs.symlinkSync(outside,path.join(root,'.claude'),'dir');
+        assert.throws(()=>session.readRegistry(project),/path-capability|link|outside/);return;}
+      const names={pointer:'deep-work-current-session',registry:'deep-work-sessions.json',state:'deep-work.s-aaaaaaaa.md',
+        lock:'deep-work-sessions.json.lock',snapshot:'snapshot.json'};const candidate=path.join(root,'.claude',names[target]);
+      fs.symlinkSync(target==='lock'?outside:outsideFile,candidate,target==='lock'?'dir':'file');
+      if(target==='pointer')assert.throws(()=>session.readPointer(project),/path-capability|link|outside/);
+      else if(target==='registry')assert.throws(()=>session.readRegistry(project),/path-capability|link|outside/);
+      else assert.throws(()=>platform.issueProjectStateCapability(root,candidate,{role:target==='lock'?'lock':target==='state'?'session-state':'state'}),/path-capability|link|outside/);
+    }finally{fs.rmSync(outside,{recursive:true,force:true});}});
 });

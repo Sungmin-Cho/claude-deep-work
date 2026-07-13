@@ -85,7 +85,8 @@ function formatScalar(value) {
   if (value === null) return 'null';
   if (typeof value === 'boolean' || typeof value === 'number') return String(value);
   if (typeof value !== 'string') fail('frontmatter-invalid-value', 'unsupported frontmatter value');
-  if (value === '' || /^[-?:,\[\]{}#&*!|>'"%@`]|\s$|^\s|[\r\n]/.test(value) ||
+  if (value === '' || /^(?:true|false|null|~|-?(?:0|[1-9]\d*)(?:\.\d+)?)$/.test(value) ||
+      /^[-?:,\[\]{}#&*!|>'"%@`]|\s$|^\s|[\r\n]/.test(value) ||
       /\s|:\s|\s#/.test(value)) {
     return JSON.stringify(value);
   }

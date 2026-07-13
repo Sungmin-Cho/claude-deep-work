@@ -1,7 +1,13 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
 const { formatOptions, capabilityToDisabled } = require('./format-ask-options.js');
+
+test('Ask option compatibility API delegates to recommender-runtime', () => {
+  assert.match(fs.readFileSync(require.resolve('./format-ask-options.js'), 'utf8'),
+    /require\(['"]\.\.\/runtime\/recommender-runtime\.js['"]\)/);
+});
 
 test('추천 != default — 추천 첫 옵션 + default 두 번째', () => {
   const opts = formatOptions({
