@@ -133,6 +133,184 @@ function nativeSpawnEvidence(result) {
   };
 }
 
+function countLiteral(value, literal) {
+  return value.split(literal).length - 1;
+}
+
+function pinnedWindowsStreamProbeScripts() {
+  const helperBytes = fs.readFileSync(path.join(__dirname, 'windows-stream-inventory.ps1'));
+  assert.equal(hash(helperBytes), WINDOWS_STREAM_INVENTORY_HELPER_SHA256);
+  const helperSource = helperBytes.toString('utf8');
+  const begin = helperSource.indexOf('# DEEP_WORK_PINVOKE_SOURCE_BEGIN');
+  const end = helperSource.indexOf('# DEEP_WORK_PINVOKE_SOURCE_END');
+  const lineStart = helperSource.indexOf('\n', begin) + 1;
+  assert.equal(begin >= 0 && end > begin && lineStart > begin, true);
+  const pinvokeSource = helperSource.slice(lineStart, end);
+  assert.equal(hash(Buffer.from(pinvokeSource)), WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256);
+
+  const prologue = [
+    "$ErrorActionPreference = 'Stop'",
+    '[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false, $true)',
+    '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)',
+  ].join('\n') + '\n\n';
+  const construct = prologue +
+    `[Console]::Out.WriteLine('{"version":1,"probe":"construct","stage":"started"}')\n` +
+    pinvokeSource + [
+      "if ($nativeType.FullName -cne 'DeepWorkStreamInventoryNative') { throw 'native type mismatch' }",
+      "if ($streamDataType.FullName -cne 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA') { throw 'stream data type mismatch' }",
+      '$methodNames = [String[]]@($findFirstStream.Name, $findNextStream.Name, $findClose.Name)',
+      "if ($methodNames.Length -ne 3 -or $methodNames[0] -cne 'FindFirstStreamW' -or $methodNames[1] -cne 'FindNextStreamW' -or $methodNames[2] -cne 'FindClose') { throw 'native method mismatch' }",
+      `[Console]::Out.WriteLine('{"version":1,"probe":"construct","stage":"completed","native_type":"DeepWorkStreamInventoryNative","stream_data_type":"DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA","methods":["FindFirstStreamW","FindNextStreamW","FindClose"]}')`,
+      '',
+    ].join('\n');
+  const parameterBlock = [
+    'param(',
+    '  [Parameter(Mandatory = $true)]',
+    '  [string]$LiteralPath',
+    ')',
+  ].join('\n') + '\n\n';
+  const invokeOnce = parameterBlock + prologue +
+    `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"started"}')\n` +
+    pinvokeSource + [
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"constructed"}')`,
+      '$data = [Activator]::CreateInstance($streamDataType)',
+      '$firstArguments = [Object[]]@($LiteralPath, [Int32]0, $data, [UInt32]0)',
+      '$handle = [IntPtr]$findFirstStream.Invoke($null, $firstArguments)',
+      '$data = $firstArguments[2]',
+      '$invalidHandle = [IntPtr]::new(-1)',
+      "if ($handle -eq $invalidHandle) { throw 'FindFirstStreamW returned an invalid handle' }",
+      "if ($data.cStreamName -cne '::$DATA') { throw 'FindFirstStreamW returned an unexpected stream name' }",
+      "if ([Int64]$data.StreamSize -ne [Int64]13) { throw 'FindFirstStreamW returned an unexpected stream size' }",
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"completed","method":"FindFirstStreamW","invalid_handle":false,"stream_name":"::$DATA","stream_size":13}')`,
+      '',
+    ].join('\n');
+  return {construct, invokeOnce, parameterBlock, pinvokeSource};
+}
+
+function assertPinnedWindowsStreamProbeScript(script, {
+  firstInvocationCount,
+  literalPathParameter,
+}) {
+  const bytes = Buffer.from(script, 'utf8');
+  assert.equal(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), false);
+  assert.equal(script.includes('\r'), false);
+  assert.equal(countLiteral(script, '$findFirstStream.Invoke('), firstInvocationCount);
+  assert.equal(countLiteral(script, '$findNextStream.Invoke('), 0);
+  assert.equal(countLiteral(script, '$findClose.Invoke('), 0);
+  const forbiddenPatterns = [
+    /\bAdd-Type\b/gi,
+    /\bGet-Item\b/gi,
+    /\bConvertTo-Json\b/gi,
+    /\bInvoke-Expression\b/gi,
+    /\biex\b/gi,
+    /\bInvoke-Command\b/gi,
+    /\bStart-Process\b/gi,
+    /\bScriptBlock\b/gi,
+    /\b(?:cmd|pwsh)(?:\.exe)?\b/gi,
+    /(?:^|\n)\s*&\s*/g,
+  ];
+  assert.equal(forbiddenPatterns.reduce((count, pattern) =>
+    count + (script.match(pattern) || []).length, 0), 0);
+  assert.equal(countLiteral(script, '$args'), 0);
+  assert.equal(countLiteral(script, '[Console]::InputEncoding'), 1);
+  assert.equal(countLiteral(script, '[Console]::In.'), 0);
+  assert.equal(countLiteral(script, 'Read-Host'), 0);
+  assert.equal(countLiteral(script, '[Environment]::'), 0);
+  if (literalPathParameter) {
+    assert.equal(script.startsWith(literalPathParameter), true);
+    assert.equal(countLiteral(script, '[Parameter(Mandatory = $true)]'), 1);
+    assert.equal(countLiteral(script, '[string]$LiteralPath'), 1);
+    assert.equal(countLiteral(script, '$LiteralPath'), 2);
+  } else {
+    assert.equal(countLiteral(script, '[Parameter('), 0);
+    assert.equal(countLiteral(script, '$LiteralPath'), 0);
+  }
+}
+
+function nativeWindowsProbeEvidence(probe, result, elapsedMs, expectedStageNames) {
+  const stdout = result?.stdout == null ? '' : String(result.stdout);
+  const stderr = result?.stderr == null ? '' : String(result.stderr);
+  const boundedStdout = boundedUtf8(stdout);
+  const allowedStages = new Set(expectedStageNames);
+  const stages = [];
+  for (const line of boundedStdout.replace(/\r\n/g, '\n').split('\n')) {
+    let record;
+    try { record = JSON.parse(line); } catch { continue; }
+    if (record?.version === 1 && record?.probe === probe &&
+        allowedStages.has(record?.stage) && !stages.includes(record.stage)) {
+      stages.push(record.stage);
+    }
+  }
+  return {
+    probe,
+    elapsedMs,
+    spawnErrorCode:boundedCode(result?.error?.code),
+    status:Number.isInteger(result?.status) ? result.status : null,
+    signal:boundedCode(result?.signal),
+    stdoutBytes:Buffer.byteLength(stdout),
+    stderrBytes:Buffer.byteLength(stderr),
+    stdout:boundedStdout,
+    stderr:boundedUtf8(stderr),
+    stages,
+  };
+}
+
+function runNativeWindowsStreamProbe({
+  probe,
+  root,
+  script,
+  literalPath = null,
+  expectedRecords,
+  expectedStageNames,
+}) {
+  assert.equal(probe === 'construct' && literalPath === null ||
+    probe === 'invoke-once' && typeof literalPath === 'string', true);
+  const scriptPath = path.join(root, `${probe}.ps1`);
+  const args = literalPath === null ? [] : ['-LiteralPath',literalPath];
+  const scriptBytes = Buffer.from(script, 'utf8');
+  assert.equal(scriptBytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), false);
+  assert.equal(script.includes('\r'), false);
+  fs.writeFileSync(scriptPath, scriptBytes);
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+  const temp = process.env.TEMP || process.env.TMP || os.tmpdir();
+  const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell',
+    'v1.0', 'powershell.exe');
+  const closedEnv = {
+    SystemRoot:systemRoot,
+    WINDIR:systemRoot,
+    TEMP:temp,
+    TMP:temp,
+    PATH:'',
+    PSModulePath:'',
+  };
+  const startedAt = Date.now();
+  const result = spawnSync(executable,
+    ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+      '-File',scriptPath,...args], {
+      cwd:root,
+      env:closedEnv,
+      encoding:'utf8',
+      shell:false,
+      windowsHide:true,
+      timeout:WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
+      maxBuffer:WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
+    });
+  const elapsedMs = Date.now() - startedAt;
+  const diagnostic = JSON.stringify(nativeWindowsProbeEvidence(
+    probe, result, elapsedMs, expectedStageNames));
+  assert.equal(result.error === undefined, true, diagnostic);
+  assert.equal(result.status === 0, true, diagnostic);
+  assert.equal(result.signal === null, true, diagnostic);
+  assert.equal(result.stderr === '', true, diagnostic);
+  assert.equal(typeof result.stdout === 'string', true, diagnostic);
+  const expectedOutput = `${expectedRecords.map(JSON.stringify).join('\n')}\n`;
+  assert.equal(result.stdout.replace(/\r\n/g, '\n'), expectedOutput, diagnostic);
+  const records = result.stdout.replace(/\r\n/g, '\n').trimEnd().split('\n')
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(records, expectedRecords, diagnostic);
+  return {elapsedMs, scriptSha256:hash(scriptBytes)};
+}
+
 function nativeWrapperFailureEvidence(error) {
   const stages = error?.stages && typeof error.stages === 'object' ? {
     started:error.stages.started === true,
@@ -1331,6 +1509,67 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   assert.doesNotMatch(source, /\bAdd-Type\b/i);
   assert.match(source, /Reflection\.Emit/);
   assert.match(source, /relative_path/);
+});
+
+test('native Windows PowerShell 5.1 constructs the pinned stream types without a native invocation', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-pinvoke-construct-'));
+  try {
+    const {construct} = pinnedWindowsStreamProbeScripts();
+    assertPinnedWindowsStreamProbeScript(construct, {
+      firstInvocationCount:0,
+      literalPathParameter:null,
+    });
+    runNativeWindowsStreamProbe({
+      probe:'construct',
+      root,
+      script:construct,
+      expectedStageNames:['started','completed'],
+      expectedRecords:[
+        {version:1, probe:'construct', stage:'started'},
+        {version:1, probe:'construct', stage:'completed',
+          native_type:'DeepWorkStreamInventoryNative',
+          stream_data_type:'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',
+          methods:['FindFirstStreamW','FindNextStreamW','FindClose']},
+      ],
+    });
+  } finally { remove(root); }
+});
+
+test('native Windows PowerShell 5.1 performs one fixed FindFirstStreamW call after pinned construction', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-pinvoke-once-'));
+  try {
+    const {invokeOnce, parameterBlock} = pinnedWindowsStreamProbeScripts();
+    assertPinnedWindowsStreamProbeScript(invokeOnce, {
+      firstInvocationCount:1,
+      literalPathParameter:parameterBlock,
+    });
+    const target = path.join(root, 'target.txt');
+    const payload = Buffer.from('deep-work-s1\n', 'utf8');
+    assert.equal(payload.length, 13);
+    assert.equal(hash(payload), 'c19132bb23e9192a8ceee7166afabb9f57798e26657e9a165c20fcb37a153984');
+    fs.writeFileSync(target, payload);
+    const canonical = fs.realpathSync.native(target);
+    const literalPath = canonical.startsWith('\\\\?\\') ? canonical
+      : canonical.startsWith('\\\\') ? `\\\\?\\UNC\\${canonical.slice(2)}`
+        : `\\\\?\\${canonical}`;
+    runNativeWindowsStreamProbe({
+      probe:'invoke-once',
+      root,
+      script:invokeOnce,
+      literalPath,
+      expectedStageNames:['started','constructed','completed'],
+      expectedRecords:[
+        {version:1, probe:'invoke-once', stage:'started'},
+        {version:1, probe:'invoke-once', stage:'constructed'},
+        {version:1, probe:'invoke-once', stage:'completed', method:'FindFirstStreamW',
+          invalid_handle:false, stream_name:'::$DATA', stream_size:13},
+      ],
+    });
+  } finally { remove(root); }
 });
 
 test('native Windows PowerShell 5.1 executes the fixed helper for exactly one root row', {
