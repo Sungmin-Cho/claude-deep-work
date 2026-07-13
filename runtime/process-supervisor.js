@@ -15,6 +15,17 @@ function typedError(code, message, details = {}) {
   return error;
 }
 
+function supervisionStages(started, toolResult, termination) {
+  return Object.freeze({started:Boolean(started), 'tool-result':Boolean(toolResult), termination});
+}
+
+function attachSupervisionStages(error, stages) {
+  const target = error instanceof Error ? error : typedError('process-supervision-failed', String(error));
+  try { target.stages = stages; return target; }
+  catch { return typedError(target.code || 'process-supervision-failed', target.message,
+    {cause:target, stages}); }
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -238,6 +249,8 @@ async function runWindows(spec, options) {
     let finishing = false;
     let outputOverflow = false;
     let outputBytes = 0;
+    let toolStarted = false;
+    let toolResultSeen = false;
     const knownPids = new Set();
     const startedAt = Date.now();
     const timer = options.timeoutMs > 0 ? setTimeout(() => void finish('timeout', null),
@@ -282,11 +295,13 @@ async function runWindows(spec, options) {
           error:timedOut ? {code:'process-timeout', message:'process timed out'}
             : outputOverflow ? {code:'process-output-overflow',
               message:'process output exceeded the configured limit'} : null,
+          stages:supervisionStages(toolStarted, toolResultSeen, 'complete'),
           durationMs:Date.now() - startedAt,
         });
       } catch (error) {
         settled = true;
-        reject(error);
+        reject(attachSupervisionStages(error,
+          supervisionStages(toolStarted, toolResultSeen, 'failed')));
       }
     }
 
@@ -294,12 +309,22 @@ async function runWindows(spec, options) {
     supervisor.stderr.on('data', (chunk) => append('stderr', chunk));
     supervisor.on('message', (message) => {
       if (message && message.type === 'tool-started' && Number.isSafeInteger(message.pid) &&
-          message.pid > 0) knownPids.add(message.pid);
-      if (message && message.type === 'tool-result') void finish('normal', message);
+          message.pid > 0) {
+        toolStarted = true;
+        knownPids.add(message.pid);
+      }
+      if (message && message.type === 'tool-result') {
+        toolResultSeen = true;
+        void finish('normal', message);
+      }
     });
     supervisor.once('error', (cause) => {
       if (timer) clearTimeout(timer);
-      if (!settled) { settled = true; reject(typedError('process-spawn-failed', cause.message, {cause})); }
+      if (!settled) {
+        settled = true;
+        reject(typedError('process-spawn-failed', cause.message, {cause,
+          stages:supervisionStages(toolStarted, toolResultSeen, 'not-started')}));
+      }
     });
     supervisor.once('close', async (code, signal) => {
       if (!finishing && !settled) {
@@ -310,10 +335,12 @@ async function runWindows(spec, options) {
           settled = true;
           reject(typedError('process-tree-termination-failed',
             `Windows supervisor exited before a tool result (${code}/${signal})`,
-            {knownPids:[...knownPids]}));
+            {knownPids:[...knownPids],
+              stages:supervisionStages(toolStarted, toolResultSeen, 'complete')}));
         } catch (cause) {
           settled = true;
-          reject(cause);
+          reject(attachSupervisionStages(cause,
+            supervisionStages(toolStarted, toolResultSeen, 'failed')));
         }
       }
     });
@@ -398,7 +425,7 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
           specKeys !== 'args,executable' || envKeys !== 'PATH,PSModulePath,SystemRoot,TEMP,TMP,WINDIR' ||
           request.options.platform !== 'win32' || request.options.timeoutMs !== 20_000 ||
           request.options.maxOutputBytes !== 67_108_864 || helperDigest !==
-            '61df8238f329c186307dc68c8767618d29979bb743321765f44a955b006115e3' ||
+            'acb21b2c650b559d4f5b624dbdc4b2b197e55ad9cc33d07fdbd2edcfff850b1e' ||
           typeof request.spec.executable !== 'string' ||
           path.win32.normalize(request.spec.executable).toLowerCase() !==
             path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 9 ||
@@ -415,7 +442,7 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
       process.stdout.write(JSON.stringify({ok:true, result}));
     } catch (error) {
       process.stdout.write(JSON.stringify({ok:false, error:{code:error.code || 'error',
-        message:error.message}}));
+        message:error.message, stages:error.stages || null}}));
       process.exitCode = 1;
     }
   });

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {EventEmitter} = require('node:events');
-const {terminateWindowsTree} = require('./process-supervisor.js');
+const {runSupervisedProcess, terminateWindowsTree} = require('./process-supervisor.js');
 
 function fakeTaskkill(exitCode = 0) {
   const child = new EventEmitter();
@@ -48,4 +48,29 @@ test('a vanished supervisor still triggers cleanup of every recorded child root'
   }), /taskkill failed/);
   assert.deepEqual(calls, [40, 41]);
   assert.equal(alive.has(41), false);
+});
+
+test('Windows supervisor timeout preserves started, tool-result, and termination stages', async () => {
+  const result = await runSupervisedProcess({executable:process.execPath,
+    args:['-e', 'setInterval(() => {}, 1000)']}, {
+    platform:'win32', cwd:process.cwd(), env:{...process.env}, timeoutMs:2_000,
+    maxOutputBytes:4_096,
+    terminationImpl:({pid, child, knownPids}) => new Promise((resolve, reject) => {
+      const closed = child.exitCode === null && child.signalCode === null
+        ? new Promise((done) => child.once('close', done)) : Promise.resolve();
+      try {
+        for (const target of [...new Set([...(knownPids || []), pid])]) {
+          try { process.kill(target, 'SIGKILL'); }
+          catch (error) { if (error?.code !== 'ESRCH') throw error; }
+        }
+      } catch (error) { reject(error); return; }
+      closed.then(resolve, reject);
+    }),
+  });
+  assert.equal(result.timedOut, true);
+  assert.deepEqual(result.stages, {
+    started:true,
+    'tool-result':false,
+    termination:'complete',
+  });
 });

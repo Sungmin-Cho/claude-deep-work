@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { fork } = require('node:child_process');
+const { terminateWindowsTree } = require('./process-supervisor.js');
 
 const platform = require('./platform.js');
 const {
@@ -108,6 +109,45 @@ function canonicalJsonForTest(value) {
 
 function hash(value) {
   return require('node:crypto').createHash('sha256').update(value).digest('hex');
+}
+
+function isProcessAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+async function waitForProcessesToExit(pids, timeoutMs = 3_000) {
+  const identities = [...new Set(pids.filter((pid) => Number.isSafeInteger(pid) && pid > 0))];
+  const deadline = Date.now() + timeoutMs;
+  while (identities.some(isProcessAlive) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return identities.filter(isProcessAlive);
+}
+
+async function independentlyTerminateFailedTestTree(context) {
+  if (!context || !Number.isSafeInteger(context.pid) || context.pid <= 0) return;
+  const closed = context.child && context.child.exitCode === null && context.child.signalCode === null
+    ? new Promise((resolve) => context.child.once('close', resolve)) : Promise.resolve();
+  if (context.platform === 'win32') {
+    await terminateWindowsTree(context.pid, {
+      systemRoot:process.env.SystemRoot || process.env.SYSTEMROOT,
+      knownPids:context.knownPids || [],
+    });
+  } else {
+    try { process.kill(-context.pid, 'SIGKILL'); }
+    catch (error) { if (error?.code !== 'ESRCH') throw error; }
+  }
+  let timeout;
+  try {
+    await Promise.race([closed, new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(
+        `process handle ${context.pid} did not close`)), 3_000);
+    })]);
+  } finally { clearTimeout(timeout); }
 }
 
 async function waitForJsonMarker(file, {timeoutMs = 3_000, pollMs = 10} = {}) {
@@ -438,6 +478,58 @@ test('existing managed worktree revalidation binds the registered path and exact
       /managed-worktree-registration/);
   } finally {
     try { execFileSync('git', ['worktree','remove','--force',candidate], {cwd:root}); } catch {}
+    remove(root);
+  }
+});
+
+test('managed worktree registration uses physical identity across short aliases before exact branch', () => {
+  const root = makeRepo('dw-worktree-physical-');
+  const canonicalRoot = fs.realpathSync(root);
+  const parent = path.dirname(canonicalRoot);
+  const candidate = path.join(parent,
+    `${path.basename(canonicalRoot)}-wt-fork-a1b2c3d4`);
+  const foreign = path.join(parent, `${path.basename(canonicalRoot)}-foreign`);
+  const shortAlias = path.join(parent, 'RUNNER~1');
+  const lexicalSpoof = candidate.toUpperCase();
+  fs.mkdirSync(candidate);
+  fs.mkdirSync(foreign);
+  const fsImpl = {
+    lstatSync(value) {
+      if (value === shortAlias) return fs.lstatSync(candidate);
+      if (value === lexicalSpoof) return fs.lstatSync(foreign);
+      return fs.lstatSync(value);
+    },
+    realpathSync(value) {
+      if (value === shortAlias || value === lexicalSpoof) return value;
+      return fs.realpathSync(value);
+    },
+  };
+  const runtime = createPlatformRuntimeForTest({platform:'win32', fsImpl});
+  const cap = runtime.issueForkWorktreeCapability({projectRoot:root, candidate,
+    sessionId:'s-a1b2c3d4', parentBranch:'main', branch:'main-fork-a1b2c3d4'});
+  const childProcessModule = require('node:child_process');
+  const originalExecFileSync = childProcessModule.execFileSync;
+  let rowPath = shortAlias;
+  let rowBranch = 'refs/heads/main-fork-a1b2c3d4';
+  childProcessModule.execFileSync = function(executable, args, options) {
+    if (args?.join('\0') === ['worktree','list','--porcelain','-z'].join('\0')) {
+      return `worktree ${rowPath}\0HEAD ${'a'.repeat(40)}\0branch ${rowBranch}\0\0`;
+    }
+    return originalExecFileSync.call(this, executable, args, options);
+  };
+  try {
+    assert.doesNotThrow(() => revalidatePathCapability(cap, 'git-worktree-remove'));
+    rowPath = lexicalSpoof;
+    assert.throws(() => revalidatePathCapability(cap, 'git-worktree-remove'),
+      /managed-worktree-registration/);
+    rowPath = shortAlias;
+    rowBranch = 'refs/heads/foreign';
+    assert.throws(() => revalidatePathCapability(cap, 'git-worktree-remove'),
+      /managed-worktree-registration/);
+  } finally {
+    childProcessModule.execFileSync = originalExecFileSync;
+    remove(candidate);
+    remove(foreign);
     remove(root);
   }
 });
@@ -1156,9 +1248,10 @@ test('output overflow removes the process tree and termination failure is fail-c
     await new Promise((resolve) => setTimeout(resolve, 100));
     assert.throws(() => process.kill(pid, 0), {code:'ESRCH'});
 
-    let failedPid;
-    const failing = createPlatformRuntimeForTest({terminationImpl:async ({pid}) => {
-      failedPid = pid;
+    let failedTermination;
+    const failureMarker = path.join(root, '.claude', 'failure.pid');
+    const failing = createPlatformRuntimeForTest({terminationImpl:async (context) => {
+      failedTermination = context;
       const error = new Error('cannot terminate');
       error.code = 'process-tree-termination-failed';
       throw error;
@@ -1166,11 +1259,20 @@ test('output overflow removes the process tree and termination failure is fail-c
     await assert.rejects(() => failing.spawnPortable({kind:'native-executable',
       executable:process.execPath,
       args:[path.join(fixtureRoot, 'process-tree-parent.js'), 'timeout',
-        path.join(root, '.claude', 'failure.pid')]},
+        failureMarker]},
     {cwdCapability:project, timeoutMs:100, maxOutputBytes:1_024}),
     /cannot terminate/);
-    if (failedPid && process.platform !== 'win32') {
-      try { process.kill(-failedPid, 'SIGKILL'); } catch {}
+    const grandchildPid = fs.existsSync(failureMarker)
+      ? Number(fs.readFileSync(failureMarker, 'utf8')) : null;
+    const observedPids = [failedTermination?.pid, ...(failedTermination?.knownPids || []),
+      grandchildPid];
+    try {
+      await independentlyTerminateFailedTestTree(failedTermination);
+      assert.deepEqual(await waitForProcessesToExit(observedPids), []);
+    } finally {
+      if (observedPids.some((pid) => Number.isSafeInteger(pid) && isProcessAlive(pid))) {
+        await independentlyTerminateFailedTestTree(failedTermination).catch(() => {});
+      }
     }
   } finally { remove(root); }
 });
@@ -1188,7 +1290,29 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   }
   assert.doesNotMatch(source, /Get-Item\s+-Stream/i);
   assert.doesNotMatch(source, /Invoke-Expression|\biex\b/i);
+  assert.doesNotMatch(source, /\bAdd-Type\b/i);
+  assert.match(source, /Reflection\.Emit/);
   assert.match(source, /relative_path/);
+});
+
+test('native Windows fixed helper completes a one-row inventory contract within each fixed bound', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, () => {
+  const root = makeRepo('dw-native-win-one-row-');
+  try {
+    const {project, git} = caps(root);
+    const stat = fs.lstatSync(root);
+    const runtime = createPlatformRuntimeForTest({platform:'win32', manifestWalkerImpl:() => ({
+      entries:[], directories:[], typedRows:[{version:1, id:0, kind:'root', relative_path:null,
+        absolutePath:root, identity:{dev:String(stat.dev), ino:String(stat.ino), mode:stat.mode,
+          type:'directory'}}],
+    })});
+    const startedAt = Date.now();
+    const manifest = runtime.captureWorktreeManifest({projectCapability:project,
+      gitCapability:git, runtimeExclusions:[]});
+    assert.match(manifest.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(Date.now() - startedAt < WINDOWS_STREAM_INVENTORY_TIMEOUT_MS * 2, true);
+  } finally { remove(root); }
 });
 
 test('Git attributes preserve exact raw Windows stream helper authority on checkout', () => {
@@ -1275,6 +1399,20 @@ test('Windows stream execution validator rejects the complete helper output/fail
       assert.throws(() => runtime.captureWorktreeManifest({projectCapability:project,
         gitCapability:git, runtimeExclusions:[]}), pattern, name);
     }
+
+    const innerTimeout = createPlatformRuntimeForTest({platform:'win32',
+      manifestWalkerImpl:() => ({entries:[], directories:[], typedRows}),
+      windowsStreamInventoryImpl:() => ({error:null, status:0, signal:null, stderr:'',
+        envelopeError:null, result:{ok:false, stdout:'', stderr:'', timedOut:true,
+          error:{code:'process-timeout', message:'process timed out'},
+          stages:{started:true, 'tool-result':false, termination:'complete'}}}),
+    });
+    assert.throws(() => innerTimeout.captureWorktreeManifest({projectCapability:project,
+      gitCapability:git, runtimeExclusions:[]}), (error) =>
+      error.code === 'worktree-manifest-stream-timeout' &&
+      error.innerError?.code === 'process-timeout' &&
+      error.stages?.started === true && error.stages?.['tool-result'] === false &&
+      error.stages?.termination === 'complete');
 
     let pass = 0;
     const changing = createPlatformRuntimeForTest({platform:'win32',

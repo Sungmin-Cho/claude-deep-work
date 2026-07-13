@@ -170,14 +170,35 @@ test('stash apply preserves staged, unstaged, and untracked groups while retaini
   await stashDrop({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
 });
 
+test('stash suppresses autocrlf and roundtrips raw tracked and untracked bytes with one digest', async () => {
+  const {root,projectCapability}=repository();
+  fs.mkdirSync(path.join(root,'.claude'),{recursive:true});
+  execFileSync('git',['config','core.autocrlf','true'],{cwd:root});
+  const trackedBytes=Buffer.from('tracked\nsecond line\n');
+  const untrackedBytes=Buffer.from('untracked\nmixed raw line\n');
+  fs.writeFileSync(path.join(root,'a.txt'),trackedBytes);
+  fs.writeFileSync(path.join(root,'raw untracked.txt'),untrackedBytes);
+  const published=await stashPublish({projectCapability,sessionId:'s-1234abcd',purpose:'fork',
+    includeUntracked:true});
+  assert.deepEqual(fs.readFileSync(path.join(root,'a.txt')),Buffer.from('a\n'));
+  const applied=await stashApply({projectCapability,sessionId:'s-1234abcd',
+    operationId:published.operationId});
+  assert.deepEqual(fs.readFileSync(path.join(root,'a.txt')),trackedBytes);
+  assert.deepEqual(fs.readFileSync(path.join(root,'raw untracked.txt')),untrackedBytes);
+  assert.equal(applied.workingStateDigest,published.preState.workingStateDigest);
+  await stashDrop({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
+});
+
 test('stash push uses the exact argv and authenticates spaces and Unicode filenames',async()=>{
   const {root,projectCapability}=repository();fs.mkdirSync(path.join(root,'.claude'),{recursive:true});
   const portableName='한 글 name.txt';
   fs.writeFileSync(path.join(root,'a.txt'),'tracked\n');fs.writeFileSync(path.join(root,portableName),'bytes\n');
-  const cap=gitCapability(projectCapability);const calls=[];const gitRunner=async(args)=>{calls.push(args);return cap.run(args);};
+  const cap=gitCapability(projectCapability);const calls=[];const gitRunner=async(args,options)=>{
+    calls.push({args,options});return cap.run(args,options);};
   const published=await stashPublish({projectCapability,sessionId:'s-1234abcd',purpose:'fork',includeUntracked:true,gitRunner});
-  assert.deepEqual(calls.find((args)=>args[0]==='stash'&&args[1]==='push'),
+  assert.deepEqual(calls.find((call)=>call.args[0]==='stash'&&call.args[1]==='push').args,
     ['stash','push','--include-untracked','--message',published.marker]);
+  assert.equal(calls.every((call)=>call.options?.lineEndingConversion==='disabled'),true);
   assert.equal(published.preState.ignoredPolicy,'exclude-standard');assert.match(published.objectManifestSha256,/^[0-9a-f]{64}$/);
   await stashApply({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
   assert.equal(fs.readFileSync(path.join(root,portableName),'utf8'),'bytes\n');

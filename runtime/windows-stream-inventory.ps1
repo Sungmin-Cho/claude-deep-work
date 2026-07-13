@@ -8,46 +8,115 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)
 
 # DEEP_WORK_PINVOKE_SOURCE_BEGIN
-$source = @'
-using System;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-
-internal static class DeepWorkStreamInventoryNative {
-    internal enum STREAM_INFO_LEVELS { FindStreamInfoStandard = 0 }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    internal struct WIN32_FIND_STREAM_DATA {
-        internal long StreamSize;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 296)]
-        internal string cStreamName;
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    internal static extern IntPtr FindFirstStreamW(
-        string lpFileName,
-        STREAM_INFO_LEVELS InfoLevel,
-        out WIN32_FIND_STREAM_DATA lpFindStreamData,
-        uint dwFlags);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool FindNextStreamW(
-        IntPtr hFindStream,
-        out WIN32_FIND_STREAM_DATA lpFindStreamData);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool FindClose(IntPtr hFindFile);
-
-    internal static int GetLastWin32Error() {
-        return Marshal.GetLastWin32Error();
-    }
+$assemblyName = [System.Reflection.AssemblyName]::new('DeepWorkStreamInventoryNativeAssembly')
+$assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run
+$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |
+  Where-Object {
+    $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and
+    $_.GetParameters().Length -eq 2
+  } | Select-Object -First 1
+if ($null -ne $staticFactory) {
+  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))
+} else {
+  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)
 }
-'@
-# DEEP_WORK_PINVOKE_SOURCE_END
+$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkStreamInventoryNativeModule')
+$nativeAttributes = [System.Reflection.TypeAttributes](
+  [System.Reflection.TypeAttributes]::Public -bor
+  [System.Reflection.TypeAttributes]::Sealed -bor
+  [System.Reflection.TypeAttributes]::Abstract -bor
+  [System.Reflection.TypeAttributes]::BeforeFieldInit)
+$nativeBuilder = $moduleBuilder.DefineType('DeepWorkStreamInventoryNative', $nativeAttributes)
+$streamDataAttributes = [System.Reflection.TypeAttributes](
+  [System.Reflection.TypeAttributes]::NestedPublic -bor
+  [System.Reflection.TypeAttributes]::Sealed -bor
+  [System.Reflection.TypeAttributes]::SequentialLayout -bor
+  [System.Reflection.TypeAttributes]::UnicodeClass -bor
+  [System.Reflection.TypeAttributes]::BeforeFieldInit)
+$streamDataBuilder = $nativeBuilder.DefineNestedType('WIN32_FIND_STREAM_DATA',
+  $streamDataAttributes, [ValueType])
+$fieldAttributes = [System.Reflection.FieldAttributes]::Public
+[void]$streamDataBuilder.DefineField('StreamSize', [Int64], $fieldAttributes)
+$streamNameField = $streamDataBuilder.DefineField('cStreamName', [String], $fieldAttributes)
+$marshalConstructor = [System.Runtime.InteropServices.MarshalAsAttribute].GetConstructor(
+  [Type[]]@([System.Runtime.InteropServices.UnmanagedType]))
+$sizeConstField = [System.Runtime.InteropServices.MarshalAsAttribute].GetField('SizeConst')
+$marshalAttribute = [System.Reflection.Emit.CustomAttributeBuilder]::new(
+  $marshalConstructor,
+  [Object[]]@([System.Runtime.InteropServices.UnmanagedType]::ByValTStr),
+  [System.Reflection.FieldInfo[]]@($sizeConstField),
+  [Object[]]@(296))
+$streamNameField.SetCustomAttribute($marshalAttribute)
+$streamDataType = $streamDataBuilder
 
-Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
+function Add-ClosedPInvokeMethod(
+  [System.Reflection.Emit.TypeBuilder]$TypeBuilder,
+  [string]$Name,
+  [Type]$ReturnType,
+  [Type[]]$ParameterTypes,
+  [System.Runtime.InteropServices.CharSet]$CharSet
+) {
+  $methodAttributes = [System.Reflection.MethodAttributes](
+    [System.Reflection.MethodAttributes]::Public -bor
+    [System.Reflection.MethodAttributes]::Static -bor
+    [System.Reflection.MethodAttributes]::PinvokeImpl)
+  $method = $TypeBuilder.DefineMethod($Name, $methodAttributes, $ReturnType, $ParameterTypes)
+  $constructor = [System.Runtime.InteropServices.DllImportAttribute].GetConstructor(
+    [Type[]]@([String]))
+  $namedFields = [System.Reflection.FieldInfo[]]@(
+    [System.Runtime.InteropServices.DllImportAttribute].GetField('EntryPoint'),
+    [System.Runtime.InteropServices.DllImportAttribute].GetField('CharSet'),
+    [System.Runtime.InteropServices.DllImportAttribute].GetField('CallingConvention'),
+    [System.Runtime.InteropServices.DllImportAttribute].GetField('SetLastError'),
+    [System.Runtime.InteropServices.DllImportAttribute].GetField('ExactSpelling'),
+    [System.Runtime.InteropServices.DllImportAttribute].GetField('PreserveSig'))
+  $namedValues = [Object[]]@(
+    $Name,
+    $CharSet,
+    [System.Runtime.InteropServices.CallingConvention]::Winapi,
+    $true,
+    $true,
+    $true)
+  $attribute = [System.Reflection.Emit.CustomAttributeBuilder]::new(
+    $constructor, [Object[]]@('kernel32.dll'), $namedFields, $namedValues)
+  $method.SetCustomAttribute($attribute)
+  $method.SetImplementationFlags(
+    $method.GetMethodImplementationFlags() -bor
+    [System.Reflection.MethodImplAttributes]::PreserveSig)
+  return $method
+}
+
+$streamDataByRef = $streamDataType.MakeByRefType()
+$findFirstDefinition = @{
+  TypeBuilder = $nativeBuilder
+  Name = 'FindFirstStreamW'
+  ReturnType = [IntPtr]
+  ParameterTypes = [Type[]]@([String], [Int32], $streamDataByRef, [UInt32])
+  CharSet = [System.Runtime.InteropServices.CharSet]::Unicode
+}
+$findNextDefinition = @{
+  TypeBuilder = $nativeBuilder
+  Name = 'FindNextStreamW'
+  ReturnType = [Boolean]
+  ParameterTypes = [Type[]]@([IntPtr], $streamDataByRef)
+  CharSet = [System.Runtime.InteropServices.CharSet]::Unicode
+}
+$findCloseDefinition = @{
+  TypeBuilder = $nativeBuilder
+  Name = 'FindClose'
+  ReturnType = [Boolean]
+  ParameterTypes = [Type[]]@([IntPtr])
+  CharSet = [System.Runtime.InteropServices.CharSet]::None
+}
+[void](Add-ClosedPInvokeMethod @findFirstDefinition)
+[void](Add-ClosedPInvokeMethod @findNextDefinition)
+[void](Add-ClosedPInvokeMethod @findCloseDefinition)
+$nativeType = $nativeBuilder.CreateType()
+$streamDataType = $streamDataBuilder.CreateType()
+$findFirstStream = $nativeType.GetMethod('FindFirstStreamW')
+$findNextStream = $nativeType.GetMethod('FindNextStreamW')
+$findClose = $nativeType.GetMethod('FindClose')
+# DEEP_WORK_PINVOKE_SOURCE_END
 
 function Convert-ToExtendedPath([string]$PathValue) {
   if ($PathValue.StartsWith('\\?\')) { return $PathValue }
@@ -81,15 +150,13 @@ function Compare-Utf8([string]$Left, [string]$Right) {
 }
 
 function Get-CompleteStreamSet([string]$LiteralPath) {
-  $data = New-Object DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA
-  $handle = [DeepWorkStreamInventoryNative]::FindFirstStreamW(
-    $LiteralPath,
-    [DeepWorkStreamInventoryNative+STREAM_INFO_LEVELS]::FindStreamInfoStandard,
-    [ref]$data,
-    0)
+  $data = [Activator]::CreateInstance($streamDataType)
+  $firstArguments = [Object[]]@($LiteralPath, [Int32]0, $data, [UInt32]0)
+  $handle = [IntPtr]$findFirstStream.Invoke($null, $firstArguments)
+  $data = $firstArguments[2]
   $invalidHandle = [IntPtr]::new(-1)
   if ($handle -eq $invalidHandle) {
-    $code = [DeepWorkStreamInventoryNative]::GetLastWin32Error()
+    $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
     if ($code -eq 38) { return @() }
     throw "FindFirstStreamW failed with Win32 error $code"
   }
@@ -101,17 +168,20 @@ function Get-CompleteStreamSet([string]$LiteralPath) {
       if ($data.StreamSize -lt 0) { throw 'stream size is negative' }
       if (-not $seen.Add($data.cStreamName)) { throw 'duplicate stream name' }
       $streams.Add([ordered]@{ name = $data.cStreamName; size = [long]$data.StreamSize })
-      $next = New-Object DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA
-      if (-not [DeepWorkStreamInventoryNative]::FindNextStreamW($handle, [ref]$next)) {
-        $code = [DeepWorkStreamInventoryNative]::GetLastWin32Error()
+      $next = [Activator]::CreateInstance($streamDataType)
+      $nextArguments = [Object[]]@($handle, $next)
+      $hasNext = [Boolean]$findNextStream.Invoke($null, $nextArguments)
+      $next = $nextArguments[1]
+      if (-not $hasNext) {
+        $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
         if ($code -ne 38) { throw "FindNextStreamW failed with Win32 error $code" }
         break
       }
       $data = $next
     }
   } finally {
-    if (-not [DeepWorkStreamInventoryNative]::FindClose($handle)) {
-      $code = [DeepWorkStreamInventoryNative]::GetLastWin32Error()
+    if (-not [Boolean]$findClose.Invoke($null, [Object[]]@($handle))) {
+      $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
       throw "FindClose failed with Win32 error $code"
     }
   }

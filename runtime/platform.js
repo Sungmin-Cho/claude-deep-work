@@ -767,7 +767,7 @@ function parseGitWorktreePorcelainZ(output) {
   });
 }
 
-function verifyManagedWorktreeRegistration(capability, meta) {
+function verifyManagedWorktreeRegistration(capability, meta, refreshed) {
   const git = resolveGitExecutable(process.env, meta.fsApi);
   let output;
   try {
@@ -777,15 +777,21 @@ function verifyManagedWorktreeRegistration(capability, meta) {
     });
   } catch (cause) { fail('managed-worktree-registration', 'git worktree list failed', {cause}); }
   const records = parseGitWorktreePorcelainZ(output);
-  const match = records.find((record) => {
-    if (typeof record.path !== 'string') return false;
+  const expectedIdentity = refreshed && refreshed.existed ? refreshed.deepestIdentity : null;
+  const matches = records.filter((record) => {
+    if (typeof record.path !== 'string' || !expectedIdentity) return false;
     try {
-      return normalizeForCompare(meta.fsApi.realpathSync(record.path), meta.platform) ===
-        normalizeForCompare(meta.fsApi.realpathSync(capability.path), meta.platform);
+      const before = meta.fsApi.lstatSync(record.path);
+      if (before.isSymbolicLink() || !before.isDirectory()) return false;
+      meta.fsApi.realpathSync(record.path);
+      const after = meta.fsApi.lstatSync(record.path);
+      return !after.isSymbolicLink() && after.isDirectory() &&
+        identitiesEqual(statIdentity(before), statIdentity(after)) &&
+        identitiesEqual(expectedIdentity, statIdentity(after));
     }
     catch { return false; }
   });
-  if (!match || match.branch !== `refs/heads/${capability.branch}`) {
+  if (matches.length !== 1 || matches[0].branch !== `refs/heads/${capability.branch}`) {
     fail('managed-worktree-registration', 'worktree path/branch is not registered to this capability');
   }
 }
@@ -1132,7 +1138,7 @@ function revalidatePathCapability(capability, operation = 'access') {
       }
       return capability;
     }
-    verifyManagedWorktreeRegistration(capability, meta);
+    verifyManagedWorktreeRegistration(capability, meta, refreshed);
     return capability;
   }
   validateRecordedComponents(meta, meta.fsApi);
@@ -1589,8 +1595,8 @@ function compareRemoveOwnedTemp(capability, expectedDigest) {
   return true;
 }
 
-const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '61df8238f329c186307dc68c8767618d29979bb743321765f44a955b006115e3';
-const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = '3fac5a226d1be4d8d9247187663fa33d59e5605b117ad6c9f5ab36dfd3d5ef0c';
+const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = 'acb21b2c650b559d4f5b624dbdc4b2b197e55ad9cc33d07fdbd2edcfff850b1e';
+const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = 'a1712c09c6b505fe516973f06a1728dc41e013ccc17d933749f0881d5b04c791';
 
 function resolveGitExecutable(environment = process.env, fsApi = fs) {
   const pathValue = typeof environment.PATH === 'string' ? environment.PATH : '';
@@ -1878,14 +1884,21 @@ function enforceNoNamedWindowsStreams(results, typedRows) {
 
 function validateWindowsStreamInventoryExecution(execution, typedRows) {
   const result = execution && execution.result;
+  const innerError = result && result.error;
+  const envelopeError = execution && execution.envelopeError;
+  const stages = result && result.stages || envelopeError && envelopeError.stages || null;
   if (!execution || execution.error || execution.status !== 0 || execution.signal ||
       execution.stderr !== '' || !result || result.ok !== true || result.stderr !== '' ||
       typeof result.stdout !== 'string' ||
       Buffer.byteLength(result.stdout) > WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES) {
-    fail(execution && execution.error && execution.error.code === 'ETIMEDOUT'
+    const timedOut = execution && execution.error && execution.error.code === 'ETIMEDOUT' ||
+      result && result.timedOut === true || innerError && innerError.code === 'process-timeout' ||
+      envelopeError && envelopeError.code === 'process-timeout';
+    fail(timedOut
       ? 'worktree-manifest-stream-timeout' : 'worktree-manifest-stream-helper-failed',
     'Windows stream helper did not complete cleanly',
-    {cause:execution && execution.error, status:execution && execution.status});
+    {cause:execution && execution.error, status:execution && execution.status,
+      signal:execution && execution.signal, envelopeError, innerError, stages});
   }
   return parseStreamInventoryOutput(result.stdout, typedRows);
 }

@@ -35,17 +35,33 @@ function resolveGit(){
   fail('git-unavailable');
 }
 
+function gitEnvironment(lineEndingConversion){
+  const environment={...process.env};
+  if(lineEndingConversion===undefined)return environment;
+  if(lineEndingConversion!=='disabled')fail('git-line-ending-mode');
+  for(const key of Object.keys(environment)){
+    if(/^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+|PARAMETERS)$/i.test(key))delete environment[key];
+  }
+  environment.GIT_CONFIG_COUNT='1';
+  environment.GIT_CONFIG_KEY_0='core.autocrlf';
+  environment.GIT_CONFIG_VALUE_0='false';
+  return environment;
+}
+
 function gitCapability(projectCapability,{spawnPortable:spawnImpl=spawnPortable}={}){
   if(!projectCapability||projectCapability.role!=='project-root')fail('git-project-capability');
   revalidatePathCapability(projectCapability,'git-capability');
   const executable=resolveGit();
   return Object.freeze({kind:'git-capability',projectCapability,executable,
-    async run(args,{timeoutMs=120000,maxOutputBytes=1048576,input}={}){
+    async run(args,options={}){
+      const allowed=new Set(['timeoutMs','maxOutputBytes','input','lineEndingConversion']);
+      if(Object.keys(options).some((key)=>!allowed.has(key)))fail('git-run-option');
+      const {timeoutMs=120000,maxOutputBytes=1048576,input,lineEndingConversion}=options;
       revalidatePathCapability(projectCapability,'git-before-argv');
       if(!Array.isArray(args)||args.some((arg)=>typeof arg!=='string'||/[\0\r\n]/.test(arg)))fail('git-argv');
       if(input!==undefined)fail('git-input-unsupported','portable Git runtime does not accept stdin');
       return spawnImpl({kind:'native-executable',executable,args},{projectCapability,
-        timeoutMs,maxOutputBytes,env:{...process.env}});
+        timeoutMs,maxOutputBytes,env:gitEnvironment(lineEndingConversion)});
     }});
 }
 
@@ -564,6 +580,8 @@ function isRuntimePath(relative){return relative==='.claude/deep-work-sessions.j
   relative==='.claude/deep-work-current-session'||relative.startsWith('.claude/deep-work.')||
   relative==='.deep-work'||relative.startsWith('.deep-work/');}
 async function stashChecked(run,args,code='stash-git'){const result=await run(args);if(!result?.ok)fail(code,result?.stderr);return result;}
+function stashOwnedRunner(projectCapability,gitRunner){const native=gitRunner||((args,options)=>
+  gitCapability(projectCapability).run(args,options));return(args)=>native(args,{lineEndingConversion:'disabled'});}
 async function stashContext(run){const ref=await run(['show-ref','--verify','--hash','refs/stash']);
   if(!ref?.ok)return{stashRefOid:null,reflogSha256:stashDigest(Buffer.alloc(0))};const stashRefOid=String(ref.stdout).trim();
   if(!/^[0-9a-f]{40,64}$/.test(stashRefOid))fail('stash-ref');const reflog=await stashChecked(run,
@@ -620,7 +638,7 @@ function stashRankLocks(projectCapability,sessionId){if(!/^s-[0-9a-f]{8}$/.test(
   {rank:RANKS.journal,capability:issueProjectStateCapability(root,path.join(root,'.claude',`deep-work.${sessionId}.rank-journal.lock`),
     {allowMissingLeaf:true,role:'lock'})}];}
 async function stashPublishLocked({projectCapability,sessionId,purpose,includeUntracked=false,gitRunner,seam,operationId}={}){
-  if(!['fork','slice-reset'].includes(purpose))fail('stash-purpose');const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));
+  if(!['fork','slice-reset'].includes(purpose))fail('stash-purpose');const run=stashOwnedRunner(projectCapability,gitRunner);
   if(operationId){let prior=null;try{prior=await resumeOperation({projectCapability,operationId,sessionId,kind:'stash-publish'});}
     catch(error){if(error.code!=='operation-not-found')throw error;}if(prior?.stage==='completed-ledger')return{...prior.result,
       operationId,operationReceipt:prior};}
@@ -665,7 +683,7 @@ async function stashPublishUnderHeldLocks(options={}){if(!/^op-[0-9a-f]{32,64}$/
 async function stashApplyLocked({projectCapability,sessionId,operationId,gitRunner,seam}={}){
   const source=await resumeOperation({projectCapability,operationId,sessionId,kind:'stash-publish'});
   if(source.stage!=='completed-ledger'||source.result?.result!=='published'||!/^[0-9a-f]{40,64}$/.test(source.result.stashObjectId||''))
-    fail('stash-source');const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));const matches=(await stashRows(run))
+    fail('stash-source');const run=stashOwnedRunner(projectCapability,gitRunner);const matches=(await stashRows(run))
       .filter((row)=>row.objectId===source.result.stashObjectId&&row.subject.includes(source.result.marker));
   if(matches.length!==1)fail('stash-apply-identity');await authenticateStashObject(run,matches[0],source.result.preState,source.result.marker);
   const operation=await beginOperation({projectCapability,sessionId,kind:'stash-apply',preconditions:{source:source.resultSha256,
@@ -676,8 +694,9 @@ async function stashApplyLocked({projectCapability,sessionId,operationId,gitRunn
   const current=await stashSnapshot(projectCapability,run);const intent=pending.stages?.find((row)=>row.stage==='apply-intent');
   if(intent&&current.workingStateDigest===source.result.preState.workingStateDigest){await recordOperationStage(operation,'stash-applied',
       {owned:{stashObjectId:source.result.stashObjectId,destinationPreStateDigest:prepared.digest,
-        postStateDigest:current.digest,adopted:true}});const result={status:'applied',sourceOperationId:operationId,
-      stashObjectId:source.result.stashObjectId,destinationPreStateDigest:prepared.digest,postStateDigest:current.digest,adopted:true};
+        postStateDigest:current.digest,workingStateDigest:current.workingStateDigest,adopted:true}});const result={status:'applied',
+      sourceOperationId:operationId,stashObjectId:source.result.stashObjectId,destinationPreStateDigest:prepared.digest,
+      postStateDigest:current.digest,workingStateDigest:current.workingStateDigest,adopted:true};
     return{...result,operationId:operation.operationId,operationReceipt:await completeOperation(operation,result)};}
   if(current.workingStateDigest!==prepared.workingStateDigest)fail('stash-apply-precondition');const args=['stash','apply','--index',
     source.result.stashObjectId];await recordOperationStage(operation,'apply-intent',{owned:{args,stashObjectId:source.result.stashObjectId,
@@ -695,16 +714,17 @@ async function stashApplyLocked({projectCapability,sessionId,operationId,gitRunn
     {owned:{args,stdout:call.stdout||'',stderr:call.stderr||''}});await recordOperationStage(operation,'after-stage-0',{owned:{args}});
   const post=await stashSnapshot(projectCapability,run);if(post.workingStateDigest!==source.result.preState.workingStateDigest)
     fail('stash-apply-postcondition');await recordOperationStage(operation,'stash-applied',{owned:{stashObjectId:source.result.stashObjectId,
-      destinationPreStateDigest:prepared.digest,postStateDigest:post.digest,adopted:false}});const result={status:'applied',
+      destinationPreStateDigest:prepared.digest,postStateDigest:post.digest,workingStateDigest:post.workingStateDigest,
+      adopted:false}});const result={status:'applied',
     sourceOperationId:operationId,stashObjectId:source.result.stashObjectId,destinationPreStateDigest:prepared.digest,
-    postStateDigest:post.digest,adopted:false};return{...result,operationId:operation.operationId,
+    postStateDigest:post.digest,workingStateDigest:post.workingStateDigest,adopted:false};return{...result,operationId:operation.operationId,
     operationReceipt:await completeOperation(operation,result)};}
 async function stashApply(options={}){return withRankedLocks(stashRankLocks(options.projectCapability,options.sessionId),
   ()=>stashApplyLocked(options));}
 async function stashDropLocked({projectCapability,sessionId,operationId,gitRunner,seam}={}){
   const source=await resumeOperation({projectCapability,operationId,sessionId,kind:'stash-publish'});
   if(source.stage!=='completed-ledger'||source.result?.result!=='published')fail('stash-source');
-  const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));const operation=await beginOperation({projectCapability,
+  const run=stashOwnedRunner(projectCapability,gitRunner);const operation=await beginOperation({projectCapability,
     sessionId,kind:'stash-drop',preconditions:{source:source.resultSha256,sourceOperationId:operationId,
       stashObjectId:source.result.stashObjectId,marker:source.result.marker,stashIndex:source.result.stashIndex}});
   let pending=await resumeOperation({projectCapability,operationId:operation.operationId,sessionId,kind:'stash-drop'});
