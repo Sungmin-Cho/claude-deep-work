@@ -5,8 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
-const { fork } = require('node:child_process');
+const { execFileSync, fork, spawnSync } = require('node:child_process');
 const { terminateWindowsTree } = require('./process-supervisor.js');
 
 const platform = require('./platform.js');
@@ -109,6 +108,45 @@ function canonicalJsonForTest(value) {
 
 function hash(value) {
   return require('node:crypto').createHash('sha256').update(value).digest('hex');
+}
+
+function boundedUtf8(value, maxBytes = 2_048) {
+  const bytes = Buffer.from(value == null ? '' : String(value), 'utf8');
+  return bytes.subarray(0, maxBytes).toString('utf8');
+}
+
+function boundedCode(value) {
+  return value == null ? null : boundedUtf8(value, 128);
+}
+
+function nativeSpawnEvidence(result) {
+  const stdout = result?.stdout == null ? '' : String(result.stdout);
+  const stderr = result?.stderr == null ? '' : String(result.stderr);
+  return {
+    spawnErrorCode:boundedCode(result?.error?.code),
+    status:Number.isInteger(result?.status) ? result.status : null,
+    signal:boundedCode(result?.signal),
+    stdoutBytes:Buffer.byteLength(stdout),
+    stderrBytes:Buffer.byteLength(stderr),
+    stdout:boundedUtf8(stdout),
+    stderr:boundedUtf8(stderr),
+  };
+}
+
+function nativeWrapperFailureEvidence(error) {
+  const stages = error?.stages && typeof error.stages === 'object' ? {
+    started:error.stages.started === true,
+    'tool-result':error.stages['tool-result'] === true,
+    termination:boundedCode(error.stages.termination),
+  } : null;
+  return {
+    code:boundedCode(error?.code),
+    status:Number.isInteger(error?.status) ? error.status : null,
+    signal:boundedCode(error?.signal),
+    innerError:{code:boundedCode(error?.innerError?.code)},
+    envelopeError:{code:boundedCode(error?.envelopeError?.code)},
+    stages,
+  };
 }
 
 function isProcessAlive(pid) {
@@ -1295,6 +1333,67 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   assert.match(source, /relative_path/);
 });
 
+test('native Windows PowerShell 5.1 executes the fixed helper for exactly one root row', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, () => {
+  const root = makeRepo('dw-native-win-direct-helper-');
+  try {
+    const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+    const temp = process.env.TEMP || process.env.TMP || os.tmpdir();
+    const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell',
+      'v1.0', 'powershell.exe');
+    const helper = path.join(__dirname, 'windows-stream-inventory.ps1');
+    const input = `${JSON.stringify({version:1, id:0, kind:'root', relative_path:null})}\n`;
+    const closedEnv = {
+      SystemRoot:systemRoot,
+      WINDIR:systemRoot,
+      TEMP:temp,
+      TMP:temp,
+      PATH:'',
+      PSModulePath:'',
+    };
+    const result = spawnSync(executable,
+      ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+        '-File',helper,'-RootPath',root], {
+        cwd:root,
+        env:closedEnv,
+        input:Buffer.from(input, 'utf8'),
+        encoding:'utf8',
+        shell:false,
+        windowsHide:true,
+        timeout:WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
+        maxBuffer:WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
+      });
+    const diagnostic = JSON.stringify(nativeSpawnEvidence(result));
+    assert.equal(result.error === undefined, true, diagnostic);
+    assert.equal(result.status === 0, true, diagnostic);
+    assert.equal(result.signal === null, true, diagnostic);
+    assert.equal(result.stderr === '', true, diagnostic);
+    assert.equal(typeof result.stdout === 'string' &&
+      /^[^\r\n]+(?:\r?\n)?$/u.test(result.stdout), true, diagnostic);
+    let row;
+    try { row = JSON.parse(result.stdout.trimEnd()); }
+    catch (error) {
+      assert.fail(`native helper returned malformed JSON: ${diagnostic}; parse=${boundedCode(error?.code)}`);
+    }
+    const streamNames = new Set();
+    const validStreams = Array.isArray(row?.streams) && row.streams.every((stream) => {
+      if (!stream || typeof stream !== 'object' || Array.isArray(stream) ||
+          Object.keys(stream).sort().join(',') !== 'name,size' ||
+          typeof stream.name !== 'string' || /[\uD800-\uDFFF]/u.test(stream.name) ||
+          !Number.isSafeInteger(stream.size) || stream.size < 0 || streamNames.has(stream.name)) {
+        return false;
+      }
+      streamNames.add(stream.name);
+      return true;
+    });
+    assert.equal(row && typeof row === 'object' && !Array.isArray(row) &&
+      Object.keys(row).sort().join(',') === 'id,kind,streams,version' &&
+      row.version === 1 && row.id === 0 && row.kind === 'root' && validStreams, true,
+    diagnostic);
+  } finally { remove(root); }
+});
+
 test('native Windows fixed helper completes a one-row inventory contract within each fixed bound', {
   skip:process.platform !== 'win32' ? 'native Windows only' : false,
 }, () => {
@@ -1308,8 +1407,13 @@ test('native Windows fixed helper completes a one-row inventory contract within 
           type:'directory'}}],
     })});
     const startedAt = Date.now();
-    const manifest = runtime.captureWorktreeManifest({projectCapability:project,
-      gitCapability:git, runtimeExclusions:[]});
+    let manifest;
+    try {
+      manifest = runtime.captureWorktreeManifest({projectCapability:project,
+        gitCapability:git, runtimeExclusions:[]});
+    } catch (error) {
+      assert.fail(`native one-row wrapper failed: ${JSON.stringify(nativeWrapperFailureEvidence(error))}`);
+    }
     assert.match(manifest.sha256, /^[0-9a-f]{64}$/);
     assert.equal(Date.now() - startedAt < WINDOWS_STREAM_INVENTORY_TIMEOUT_MS * 2, true);
   } finally { remove(root); }

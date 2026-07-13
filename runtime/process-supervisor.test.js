@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const {EventEmitter} = require('node:events');
 const {runSupervisedProcess, terminateWindowsTree} = require('./process-supervisor.js');
 
@@ -48,6 +49,58 @@ test('a vanished supervisor still triggers cleanup of every recorded child root'
   }), /taskkill failed/);
   assert.deepEqual(calls, [40, 41]);
   assert.equal(alive.has(41), false);
+});
+
+test('native Windows supervisor delivers exact non-null stdin and EOF before tool-result', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, async () => {
+  const input = Buffer.from('alpha\r\n한글🙂\r\nomega', 'utf8');
+  const expectedBytes = 24;
+  const expectedSha256 = '01c20deffb167db1aaea5667d35771bd177cbf2b053e082e9d8774cf69efee91';
+  assert.equal(input.length, expectedBytes);
+  assert.equal(crypto.createHash('sha256').update(input).digest('hex'), expectedSha256);
+  assert.equal(input.toString('utf8').endsWith('\n'), false);
+
+  const childSource = [
+    "'use strict';",
+    "const crypto=require('node:crypto');",
+    'const chunks=[];',
+    "process.stdin.on('data',(chunk)=>chunks.push(chunk));",
+    "process.stdin.once('end',()=>{",
+    'const input=Buffer.concat(chunks);',
+    "process.stdout.write(JSON.stringify({bytes:input.length,sha256:crypto.createHash('sha256').update(input).digest('hex')}));",
+    '});',
+  ].join('');
+  const result = await runSupervisedProcess({executable:process.execPath,
+    args:['-e', childSource]}, {
+    platform:'win32', cwd:process.cwd(), env:{...process.env}, input,
+    timeoutMs:20_000, maxOutputBytes:4_096,
+  });
+  const diagnostic = JSON.stringify({
+    ok:result.ok,
+    exitCode:result.exitCode,
+    signal:result.signal,
+    timedOut:result.timedOut,
+    stdoutBytes:Buffer.byteLength(result.stdout),
+    stderrBytes:Buffer.byteLength(result.stderr),
+    stdout:result.stdout.slice(0, 512),
+    stderr:result.stderr.slice(0, 512),
+    stages:result.stages,
+  });
+  assert.equal(result.ok, true, diagnostic);
+  assert.equal(result.exitCode, 0, diagnostic);
+  assert.equal(result.signal, null, diagnostic);
+  assert.equal(result.stderr, '', diagnostic);
+  assert.equal(result.timedOut, false, diagnostic);
+  assert.deepEqual(result.stages, {
+    started:true,
+    'tool-result':true,
+    termination:'complete',
+  }, diagnostic);
+  let observed;
+  try { observed = JSON.parse(result.stdout); }
+  catch (error) { assert.fail(`stdin observer returned malformed JSON: ${diagnostic}`); }
+  assert.deepEqual(observed, {bytes:expectedBytes, sha256:expectedSha256}, diagnostic);
 });
 
 test('Windows supervisor timeout preserves started, tool-result, and termination stages', async () => {
