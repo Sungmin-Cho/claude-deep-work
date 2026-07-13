@@ -699,6 +699,108 @@ test('claim core, ticket, owner, and heartbeat form an acyclic stable chain', as
   } finally { remove(root); }
 });
 
+test('heartbeat replacement never exposes a staging entry inside the canonical claim', () => {
+  const root = makeRepo('dw-lock-heartbeat-staging-');
+  try {
+    const lockPath = path.join(root, '.claude', 'heartbeat-staging.lock');
+    const heartbeatPath = path.join(lockPath, 'heartbeat.json');
+    let observedReplacement = false;
+    const runtime = createPlatformRuntimeForTest({
+      nonceFactory: () => 'a'.repeat(32),
+      fsImpl: {
+        renameSync(source, destination) {
+          if (!observedReplacement && destination === heartbeatPath) {
+            observedReplacement = true;
+            assert.deepEqual(fs.readdirSync(lockPath).sort(), ['heartbeat.json', 'owner.json']);
+          }
+          return fs.renameSync(source, destination);
+        },
+      },
+    });
+    const lock = runtime.issueProjectStateCapability(root, lockPath,
+      {role:'lock', allowMissingLeaf:true});
+    assert.equal(runtime.withDirectoryLock(lock,
+      {timeoutMs:1_000, staleMs:200, heartbeatMs:25, processIdentity:'b'.repeat(32)},
+      () => 'done'), 'done');
+    assert.equal(observedReplacement, true);
+  } finally { remove(root); }
+});
+
+test('production lock clock survives a wall-clock step before the initial heartbeat', () => {
+  const root = makeRepo('dw-lock-initial-clock-step-');
+  try {
+    const lockPath = path.join(root, '.claude', 'initial-clock-step.lock');
+    const source = `
+      const path = require('node:path');
+      const values = [10_000, 10_000, 10_000, 10_000, 10_000, 9_999];
+      Date.now = () => values.shift() ?? 9_999;
+      const platform = require(${JSON.stringify(path.resolve(__dirname, 'platform.js'))});
+      const root = process.argv[1];
+      const lock = platform.issueProjectStateCapability(root,
+        path.join(root, '.claude', 'initial-clock-step.lock'),
+        {role:'lock', allowMissingLeaf:true});
+      const result = platform.withDirectoryLock(lock,
+        {timeoutMs:1_000, staleMs:200, heartbeatMs:25,
+          processIdentity:'a'.repeat(32)}, () => 'done');
+      process.stdout.write(JSON.stringify({result}));
+    `;
+    const result = JSON.parse(execFileSync(process.execPath, ['-e', source, root],
+      {encoding:'utf8'}));
+    assert.deepEqual(result, {result:'done'});
+    assert.equal(fs.existsSync(lockPath), false);
+  } finally { remove(root); }
+});
+
+test('production lock clock survives a wall-clock step during periodic heartbeat', () => {
+  const root = makeRepo('dw-lock-periodic-clock-step-');
+  try {
+    const lockPath = path.join(root, '.claude', 'periodic-clock-step.lock');
+    const source = `
+      const path = require('node:path');
+      const platform = require(${JSON.stringify(path.resolve(__dirname, 'platform.js'))});
+      let now = 10_000;
+      Date.now = () => now;
+      const root = process.argv[1];
+      const lock = platform.issueProjectStateCapability(root,
+        path.join(root, '.claude', 'periodic-clock-step.lock'),
+        {role:'lock', allowMissingLeaf:true});
+      (async () => {
+        const result = await platform.withDirectoryLock(lock,
+          {timeoutMs:1_000, staleMs:200, heartbeatMs:10,
+            processIdentity:'b'.repeat(32)}, async () => {
+              now = 9_999;
+              await new Promise((resolve) => setTimeout(resolve, 35));
+              return 'done';
+            });
+        process.stdout.write(JSON.stringify({result}));
+      })().catch((error) => {
+        process.stderr.write(error.stack || String(error));
+        process.exitCode = 1;
+      });
+    `;
+    const result = JSON.parse(execFileSync(process.execPath, ['-e', source, root],
+      {encoding:'utf8'}));
+    assert.deepEqual(result, {result:'done'});
+    assert.equal(fs.existsSync(lockPath), false);
+  } finally { remove(root); }
+});
+
+test('routine heartbeat durability does not fsync the sibling staging parent', () => {
+  const root = makeRepo('dw-lock-heartbeat-fsync-');
+  try {
+    const runtime = createPlatformRuntimeForTest();
+    const lock = runtime.issueProjectStateCapability(root,
+      path.join(root, '.claude', 'heartbeat-fsync.lock'),
+      {role:'lock', allowMissingLeaf:true});
+    assert.equal(runtime.withDirectoryLock(lock,
+      {timeoutMs:1_000, staleMs:200, heartbeatMs:25,
+        processIdentity:'c'.repeat(32)}, () => 'done'), 'done');
+    assert.deepEqual(runtime.lockDurability()
+      .filter((record) => record.stage.startsWith('first-heartbeat'))
+      .map((record) => record.stage), ['first-heartbeat']);
+  } finally { remove(root); }
+});
+
 test('expired partial ticket is recovered only from its canonical filename and three ESRCH probes', () => {
   const root = makeRepo();
   try {
@@ -2053,7 +2155,8 @@ test('lock process-death seams recover exact owned claim stages without residue'
   const preCanonical = ['after-ticket-open','after-ticket-fsync','after-private-mkdir',
     'after-owner-write','after-owner-fsync','after-heartbeat-write','after-heartbeat-fsync',
     'before-canonical-rename'];
-  const canonical = ['after-canonical-rename','before-first-heartbeat','after-first-heartbeat'];
+  const canonical = ['after-canonical-rename','before-first-heartbeat','before-heartbeat-replace',
+    'after-first-heartbeat'];
   const release = ['after-release-lock-remove-before-ticket-unlink'];
   for (const seam of [...preCanonical, ...canonical, ...release]) {
     const root = makeRepo(`dw-lock-seam-${seam}-`);
@@ -2090,14 +2193,16 @@ test('lock process-death seams recover exact owned claim stages without residue'
         {timeoutMs:1_000, staleMs:100, heartbeatMs:25,
           processIdentity:hash(`contender-${seam}`).slice(0, 32)}, () => 'recovered'),
       'recovered', seam);
-      assert.equal(probes, canonical.includes(seam) ? 5 : 3, seam);
+      assert.equal(probes, seam === 'before-heartbeat-replace' ? 6 :
+        (canonical.includes(seam) ? 5 : 3), seam);
       assert.equal(fs.existsSync(lockPath), false, seam);
       assert.deepEqual(fs.readdirSync(`${lockPath}.claims`), [], seam);
       const residuePrefix = path.basename(lockPath);
       assert.deepEqual(fs.readdirSync(path.dirname(lockPath))
         .filter((name) => name.startsWith(`${residuePrefix}.claim.`) ||
           name.startsWith(`${residuePrefix}.claim-quarantine.`) ||
-          name.startsWith(`${residuePrefix}.release.`)), [], seam);
+          name.startsWith(`${residuePrefix}.release.`) ||
+          name.startsWith(`.${residuePrefix}.heartbeat.json.tmp.`)), [], seam);
     } finally { remove(root); remove(control); }
   }
 });

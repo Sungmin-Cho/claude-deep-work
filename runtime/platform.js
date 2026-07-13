@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const childProcess = require('node:child_process');
+const { performance } = require('node:perf_hooks');
 const { runSupervisedProcess } = require('./process-supervisor.js');
 
 const WORKTREE_MANIFEST_MAX_ENTRIES = 100_000;
@@ -54,7 +55,7 @@ const LOCK_TEST_SEAMS = new Set([
   'after-ticket-open', 'after-ticket-fsync', 'after-private-mkdir',
   'after-owner-write', 'after-owner-fsync', 'after-heartbeat-write',
   'after-heartbeat-fsync', 'before-canonical-rename', 'after-canonical-rename',
-  'before-first-heartbeat', 'after-first-heartbeat',
+  'before-first-heartbeat', 'before-heartbeat-replace', 'after-first-heartbeat',
   'after-release-lock-remove-before-ticket-unlink',
 ]);
 const FORBIDDEN_SHELL_EXECUTABLES = new Set([
@@ -2310,14 +2311,20 @@ function cleanupPublishedSidecarStaging(file, bytes, fsApi) {
 }
 
 function writeAtomicRaw(file, bytes, runtime, nonce, durabilityStage) {
-  const temporary = `${file}.tmp.${process.pid}.${nonce}`;
+  const targetDirectory = path.dirname(file);
+  const stagingDirectory = path.dirname(targetDirectory);
+  const temporary = path.join(stagingDirectory,
+    `.${path.basename(targetDirectory)}.${path.basename(file)}.tmp.${process.pid}.${nonce}`);
   writeExclusive(temporary, bytes, runtime.fsApi);
-  try { runtime.fsApi.renameSync(temporary, file); }
+  try {
+    reachLockTestSeam(runtime, 'before-heartbeat-replace', {file, temporary});
+    runtime.fsApi.renameSync(temporary, file);
+  }
   catch (error) {
     try { runtime.fsApi.unlinkSync(temporary); } catch {}
     throw error;
   }
-  recordLockDirectoryDurability(runtime, durabilityStage, path.dirname(file));
+  recordLockDirectoryDurability(runtime, durabilityStage, targetDirectory);
 }
 
 function readBounded(file, maxBytes, fsApi, code) {
@@ -2421,6 +2428,41 @@ function readCanonicalClaim(lockPath, claimsDir, targetIdentity, fsApi) {
     'lock-heartbeat-invalid');
   const chain = validClaimChain({core, ticketBytes, ownerBytes, heartbeatBytes});
   return {core, ticketPath, ticketBytes, ownerPath, ownerBytes, heartbeatPath, heartbeatBytes, ...chain};
+}
+
+function cleanupOwnedHeartbeatStaging(lockPath, chain, runtime) {
+  const directory = path.dirname(lockPath);
+  const prefix = `.${path.basename(lockPath)}.heartbeat.json.tmp.${chain.core.pid}.`;
+  const names = runtime.fsApi.readdirSync(directory)
+    .filter((name) => name.startsWith(prefix) && /^[0-9a-f]{32}$/.test(name.slice(prefix.length)))
+    .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  if (names.length === 0) return;
+  if (names.length !== 1 || !livenessDead(runtime, chain.core)) {
+    for (const name of names) recordDiagnostic(runtime,
+      {path:path.join(directory, name), reason:'ambiguous-heartbeat-staging'});
+    return;
+  }
+  const stagingPath = path.join(directory, names[0]);
+  let bytes;
+  try {
+    bytes = readBounded(stagingPath, CLAIM_TICKET_MAX_FILE_BYTES, runtime.fsApi,
+      'lock-heartbeat-staging-invalid');
+    const heartbeat = parseCanonicalJson(bytes, 'lock-heartbeat-staging-invalid');
+    if (!exactKeys(heartbeat, ['version','ownerCoreDigest','sequence','heartbeatAt']) ||
+        heartbeat.version !== 1 || heartbeat.ownerCoreDigest !== chain.ownerCoreDigest ||
+        heartbeat.sequence !== chain.heartbeat.sequence + 1 ||
+        !Number.isSafeInteger(heartbeat.heartbeatAt) ||
+        heartbeat.heartbeatAt < chain.heartbeat.heartbeatAt) {
+      fail('lock-heartbeat-staging-invalid', 'heartbeat staging is not the exact next owned record');
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    recordDiagnostic(runtime, {path:stagingPath, reason:'invalid-heartbeat-staging',
+      digest:bytes ? sha256(bytes) : ''});
+    return;
+  }
+  runtime.fsApi.unlinkSync(stagingPath);
+  recordLockDirectoryDurability(runtime, 'heartbeat-staging-recovery', directory);
 }
 
 function sameBytes(a, b) { return Buffer.compare(a, b) === 0; }
@@ -2714,6 +2756,7 @@ function tryRecoverCanonicalLock(lockCapability, claimsDir, claimsIdentity, opti
   }
   runtime.fsApi.rmSync(quarantine, {recursive:true, force:false});
   runtime.fsApi.unlinkSync(ticketQuarantine);
+  cleanupOwnedHeartbeatStaging(lockCapability.path, second, runtime);
   recordLockDirectoryDurability(runtime, 'canonical-recovery-ticket-directory', claimsDir);
   recordLockDirectoryDurability(runtime, 'canonical-recovery-parent',
     path.dirname(lockCapability.path));
@@ -2738,16 +2781,16 @@ function acquireDirectoryClaim(lockCapability, options, runtime) {
     fail('lock-clock-invalid', 'lock clock must be epoch milliseconds');
   }
   const deadline = startedAt + options.timeoutMs;
-  const wallDeadline = Date.now() + options.timeoutMs;
+  const monotonicDeadline = performance.now() + options.timeoutMs;
   for (;;) {
-    if (runtime.clock() > deadline || Date.now() > wallDeadline) {
+    if (runtime.clock() > deadline || performance.now() > monotonicDeadline) {
       fail('lock-timeout', `timed out acquiring ${lockCapability.path}`);
     }
     scanTicketOnlyClaims(lockCapability, claimsDir, claimsIdentity, runtime);
     if (runtime.fsApi.existsSync(lockCapability.path)) {
       tryRecoverCanonicalLock(lockCapability, claimsDir, claimsIdentity, options, runtime);
       if (runtime.fsApi.existsSync(lockCapability.path)) {
-        if (runtime.clock() >= deadline || Date.now() >= wallDeadline) {
+        if (runtime.clock() >= deadline || performance.now() >= monotonicDeadline) {
           fail('lock-timeout', `timed out acquiring ${lockCapability.path}`);
         }
         sleepSync(Math.min(10, Math.max(1, deadline - runtime.clock())));
@@ -3110,6 +3153,10 @@ function drainPendingOperations(targetCapability, options) {
 }
 
 let defaultRuntimeValue;
+function monotonicEpochNow() {
+  return Math.floor(performance.timeOrigin + performance.now());
+}
+
 function defaultRuntime() {
   if (!defaultRuntimeValue) defaultRuntimeValue = {
     fsApi:fs,
@@ -3117,7 +3164,7 @@ function defaultRuntime() {
     prefixProbeImpl:null,
     spawnImpl:null,
     terminationImpl:null,
-    clock:Date.now,
+    clock:monotonicEpochNow,
     livenessImpl:defaultLiveness,
     nonceFactory:() => crypto.randomBytes(16).toString('hex'),
     manifestWalkerImpl:null,
@@ -3154,7 +3201,7 @@ function createPlatformRuntimeForTest(options = {}) {
     prefixProbeImpl:options.prefixProbeImpl || null,
     spawnImpl:options.spawnImpl || null,
     terminationImpl:options.terminationImpl || null,
-    clock:options.clock || Date.now,
+    clock:options.clock || monotonicEpochNow,
     livenessImpl:options.livenessImpl || defaultLiveness,
     nonceFactory:options.nonceFactory || (() => crypto.randomBytes(16).toString('hex')),
     manifestWalkerImpl:options.manifestWalkerImpl || null,
