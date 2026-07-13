@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { gitCapability, listWorktrees, prepareInitialRepository,
+const { gitCapability, parseWorktreePorcelain, listWorktrees, prepareInitialRepository,
   publishPullRequestWithinOperation,stashPublish,stashApply,stashDrop,delegatedRollback } = require('./git-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const {beginOperation}=require('./operation-journal.js');
@@ -27,12 +27,33 @@ test('git capability executes argv with shell false and parses worktrees', async
   const calls = [];
   const git = gitCapability(projectCapability, {spawnPortable:async (spec, options) => {
     calls.push({spec, options});
-    return {ok:true, exitCode:0, stdout:`worktree ${root}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n\n`, stderr:''};
+    return {ok:true, exitCode:0,
+      stdout:`worktree ${root}\0HEAD ${'a'.repeat(40)}\0branch refs/heads/main\0\0`, stderr:''};
   }});
   const rows = await listWorktrees(git);
   assert.equal(rows[0].path, root);
   assert.equal(calls[0].options.shell, undefined);
-  assert.deepEqual(calls[0].spec.args, ['worktree','list','--porcelain']);
+  assert.deepEqual(calls[0].spec.args, ['worktree','list','--porcelain','-z']);
+});
+
+test('worktree porcelain -z parser preserves path bytes without CRLF trimming', () => {
+  const rawPath = `${path.sep}tmp${path.sep}line\nname\rsegment`;
+  assert.deepEqual(parseWorktreePorcelain(
+    `worktree ${rawPath}\0HEAD ${'b'.repeat(40)}\0branch refs/heads/topic\0\0`), [{
+    path:rawPath,
+    head:'b'.repeat(40),
+    branch:'refs/heads/topic',
+  }]);
+  const windowsRow = parseWorktreePorcelain(
+    `worktree C:\\Repo\\WT\0HEAD ${'c'.repeat(40)}\0branch refs/heads/topic\0\0`)[0];
+  assert.equal(require('./platform.js').normalizeForCompare(windowsRow.path, 'win32'),
+    require('./platform.js').normalizeForCompare('c:\\repo\\wt', 'win32'));
+  assert.throws(() => parseWorktreePorcelain(
+    `worktree ${rawPath}\nHEAD ${'b'.repeat(40)}\nbranch refs/heads/topic\n\n`),
+  /git-worktree-porcelain/);
+  assert.throws(() => parseWorktreePorcelain(
+    `worktree ${rawPath}\0branch refs/heads/topic\0branch refs/heads/other\0\0`),
+  /git-worktree-porcelain/);
 });
 
 test('current-branch startup is zero mutation and authenticated', async () => {
@@ -149,16 +170,30 @@ test('stash apply preserves staged, unstaged, and untracked groups while retaini
   await stashDrop({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
 });
 
-test('stash push uses the exact argv and authenticates spaces, Unicode, and newline filenames',async()=>{
+test('stash push uses the exact argv and authenticates spaces and Unicode filenames',async()=>{
   const {root,projectCapability}=repository();fs.mkdirSync(path.join(root,'.claude'),{recursive:true});
-  fs.writeFileSync(path.join(root,'a.txt'),'tracked\n');fs.writeFileSync(path.join(root,'한 글\nname.txt'),'bytes\n');
+  const portableName='한 글 name.txt';
+  fs.writeFileSync(path.join(root,'a.txt'),'tracked\n');fs.writeFileSync(path.join(root,portableName),'bytes\n');
   const cap=gitCapability(projectCapability);const calls=[];const gitRunner=async(args)=>{calls.push(args);return cap.run(args);};
   const published=await stashPublish({projectCapability,sessionId:'s-1234abcd',purpose:'fork',includeUntracked:true,gitRunner});
   assert.deepEqual(calls.find((args)=>args[0]==='stash'&&args[1]==='push'),
     ['stash','push','--include-untracked','--message',published.marker]);
   assert.equal(published.preState.ignoredPolicy,'exclude-standard');assert.match(published.objectManifestSha256,/^[0-9a-f]{64}$/);
   await stashApply({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
-  assert.equal(fs.readFileSync(path.join(root,'한 글\nname.txt'),'utf8'),'bytes\n');
+  assert.equal(fs.readFileSync(path.join(root,portableName),'utf8'),'bytes\n');
+  await stashDrop({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
+});
+
+test('stash authenticates a newline filename on POSIX', {
+  skip:process.platform==='win32'?'Windows forbids control characters in filenames':false,
+},async()=>{
+  const {root,projectCapability}=repository();fs.mkdirSync(path.join(root,'.claude'),{recursive:true});
+  const newlineName='한 글\nname.txt';fs.writeFileSync(path.join(root,newlineName),'bytes\n');
+  const cap=gitCapability(projectCapability);
+  const published=await stashPublish({projectCapability,sessionId:'s-1234abcd',purpose:'fork',
+    includeUntracked:true,gitRunner:(args)=>cap.run(args)});
+  await stashApply({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
+  assert.equal(fs.readFileSync(path.join(root,newlineName),'utf8'),'bytes\n');
   await stashDrop({projectCapability,sessionId:'s-1234abcd',operationId:published.operationId});
 });
 

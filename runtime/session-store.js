@@ -712,8 +712,8 @@ async function cleanupSession({projectCapability,sessionId,stateCapability,workt
         const fields=sessionFromState(stateCapability,sessionId);if(!force&&(fields.current_phase!=='idle'||row.current_phase!=='idle'))
           fail('cleanup-session-active');if(worktreeCapability&&(row.worktree_path&&path.resolve(row.worktree_path)!==path.resolve(worktreeCapability.path)||
             fields.worktree_path&&path.resolve(fields.worktree_path)!==path.resolve(worktreeCapability.path)))fail('cleanup-worktree-comparison');
-        let head=null;if(worktreeCapability){const git=require('./git-runtime.js').gitCapability(projectCapability);const rows=
-            require('./git-runtime.js').parseWorktreePorcelain((await git.run(['worktree','list','--porcelain'])).stdout);const match=rows.filter(
+        let head=null;if(worktreeCapability){const gitRuntime=require('./git-runtime.js');const git=gitRuntime.gitCapability(projectCapability);
+          const rows=await gitRuntime.listWorktrees(git);const match=rows.filter(
             (item)=>{try{return fs.realpathSync(item.path)===fs.realpathSync(worktreeCapability.path);}catch{return false;}});
           if(match.length!==1||match[0].branch!==`refs/heads/${worktreeCapability.branch}`)fail('cleanup-worktree-identity');head=match[0].head;}
         inspection={sessionId,rowSha256:sha256(canonicalJson(row)),forkParent:row.fork_parent||null,pointerBefore:readPointerUnlocked(caps.pointer),

@@ -679,7 +679,7 @@ function issueProjectHandoffOutputCapability({projectCapability, sessionId, oper
     repositoryMarker:projectMeta.repositoryMarker});
 }
 
-function managedWorktreeCapability(input, purpose, fsApi = fs) {
+function managedWorktreeCapability(input, purpose, fsApi = fs, platformValue = process.platform) {
   const lexicalProjectRoot = path.resolve(sanitizePathInput(input.projectRoot));
   const projectRoot = fsApi.realpathSync(lexicalProjectRoot);
   const projectStat = fsApi.lstatSync(projectRoot);
@@ -721,6 +721,7 @@ function managedWorktreeCapability(input, purpose, fsApi = fs) {
     if (!/^[0-9a-f]{40,64}$/.test(baseOid)) fail('managed-worktree-base', 'base OID is invalid');
   }
   const meta = {kind:'managed-worktree', purpose, physical, parentPhysical, fsApi,
+    platform:platformValue,
     projectRoot, branch:input.branch, sessionId:session};
   return defineCapability({kind:'managed-worktree', purpose, path:candidate, projectRoot,
     siblingParent:parent, sessionId:session, sessionSuffix:suffix, branch:input.branch,
@@ -736,23 +737,52 @@ function issueForkWorktreeCapability(input) {
   return managedWorktreeCapability(input, 'fork-session');
 }
 
+function parseGitWorktreePorcelainZ(output) {
+  const source = Buffer.isBuffer(output) ? output.toString('utf8') : String(output);
+  if (source === '') return [];
+  if (!source.endsWith('\0\0')) {
+    fail('git-worktree-porcelain-invalid', 'worktree porcelain -z output is not record terminated');
+  }
+  return source.slice(0, -2).split('\0\0').map((record) => {
+    const fields = record.split('\0');
+    if (!fields[0].startsWith('worktree ') || fields[0].length === 9) {
+      fail('git-worktree-porcelain-invalid', 'worktree record has no path');
+    }
+    const parsed = {path:fields[0].slice(9)};
+    const seen = new Set(['worktree']);
+    for (const field of fields.slice(1)) {
+      if (!field) fail('git-worktree-porcelain-invalid', 'worktree record has an empty field');
+      const space = field.indexOf(' ');
+      const key = space < 0 ? field : field.slice(0, space);
+      const value = space < 0 ? true : field.slice(space + 1);
+      if (!key || seen.has(key)) {
+        fail('git-worktree-porcelain-invalid', 'worktree record has a duplicate or empty key');
+      }
+      seen.add(key);
+      if (key === 'HEAD') parsed.head = value;
+      else if (key === 'branch') parsed.branch = value;
+      else parsed[key] = value;
+    }
+    return parsed;
+  });
+}
+
 function verifyManagedWorktreeRegistration(capability, meta) {
   const git = resolveGitExecutable(process.env, meta.fsApi);
   let output;
   try {
-    output = childProcess.execFileSync(git, ['worktree','list','--porcelain'], {
+    output = childProcess.execFileSync(git, ['worktree','list','--porcelain','-z'], {
       cwd:capability.projectRoot, encoding:'utf8', stdio:['ignore','pipe','pipe'], windowsHide:true,
       env:safeGitEnvironment(git),
     });
   } catch (cause) { fail('managed-worktree-registration', 'git worktree list failed', {cause}); }
-  const records = output.split(/\n\n+/).map((record) => Object.fromEntries(record.split('\n')
-    .filter(Boolean).map((line) => {
-      const space = line.indexOf(' ');
-      return space < 0 ? [line, true] : [line.slice(0, space), line.slice(space + 1)];
-    })));
+  const records = parseGitWorktreePorcelainZ(output);
   const match = records.find((record) => {
-    if (typeof record.worktree !== 'string') return false;
-    try { return meta.fsApi.realpathSync(record.worktree) === meta.fsApi.realpathSync(capability.path); }
+    if (typeof record.path !== 'string') return false;
+    try {
+      return normalizeForCompare(meta.fsApi.realpathSync(record.path), meta.platform) ===
+        normalizeForCompare(meta.fsApi.realpathSync(capability.path), meta.platform);
+    }
     catch { return false; }
   });
   if (!match || match.branch !== `refs/heads/${capability.branch}`) {
@@ -2082,19 +2112,37 @@ function resolveProjectOrInstallBin(capability, request, fsApi, platformValue) {
   return packageBinFromRoots(roots, request, fsApi, undefined, platformValue);
 }
 
-function sanitizeEnvironment(environment) {
+function sanitizeEnvironment(environment, platformValue = process.platform) {
   const source = environment === undefined ? process.env : environment;
   if (!source || typeof source !== 'object' || Array.isArray(source)) {
     fail('process-env-invalid', 'environment must be an object');
   }
   const output = {};
+  const windowsKeys = new Set();
   for (const [key, value] of Object.entries(source)) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string' || /[\0\r\n]/.test(value)) {
+    const validKey = platformValue === 'win32'
+      ? Boolean(key) && !/[\0\r\n=]/.test(key)
+      : /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+    if (!validKey || typeof value !== 'string' || /[\0\r\n]/.test(value)) {
       fail('process-env-invalid', `invalid environment entry: ${key}`);
+    }
+    if (platformValue === 'win32') {
+      const folded = key.toLowerCase();
+      if (windowsKeys.has(folded)) {
+        fail('process-env-invalid', `case-insensitive duplicate environment entry: ${key}`);
+      }
+      windowsKeys.add(folded);
     }
     output[key] = value;
   }
   return Object.freeze(output);
+}
+
+function environmentValue(environment, key, platformValue) {
+  if (platformValue !== 'win32') return environment[key];
+  const folded = key.toLowerCase();
+  const match = Object.keys(environment).find((candidate) => candidate.toLowerCase() === folded);
+  return match === undefined ? undefined : environment[match];
 }
 
 function nativeExecutable(executable, platformValue, environment, fsApi) {
@@ -2116,7 +2164,7 @@ function nativeExecutable(executable, platformValue, environment, fsApi) {
   } catch (cause) { fail('process-native-executable', 'native executable is unavailable', {cause}); }
   if (real !== fsApi.realpathSync(process.execPath)) {
     const delimiter = platformValue === 'win32' ? ';' : path.delimiter;
-    const pathValue = environment.PATH || '';
+    const pathValue = environmentValue(environment, 'PATH', platformValue) || '';
     const allowed = pathValue.split(delimiter).filter(Boolean).some((directory) => {
       try { return isPathInside(fsApi.realpathSync(directory), real, platformValue); } catch { return false; }
     });
@@ -2140,7 +2188,7 @@ async function spawnWithRuntime(processSpec, options, runtime) {
   for (const key of Object.keys(options || {})) {
     if (!allowedOptions.has(key)) fail('process-option-invalid', `unsupported production option: ${key}`);
   }
-  const env = sanitizeEnvironment(options && options.env);
+  const env = sanitizeEnvironment(options && options.env, runtime.platform);
   validateProcessArgs(processSpec.args);
   let executable;
   let argv;
@@ -2763,6 +2811,50 @@ function tryRecoverCanonicalLock(lockCapability, claimsDir, claimsIdentity, opti
   return true;
 }
 
+function authenticatePrivateDirectoryClaim(privatePath, claim, runtime) {
+  validateClaimsDirectory(claim.claimsDir, claim.claimsIdentity, runtime.fsApi);
+  const entries = privateClaimEntries(privatePath, runtime.fsApi);
+  if (!entries || !entries.valid || entries.names.join(',') !== 'heartbeat.json,owner.json') {
+    fail('lock-chain-invalid', 'private claim directory has missing or foreign entries');
+  }
+  const ticketBytes = readBounded(claim.ticketPath, CLAIM_TICKET_MAX_FILE_BYTES,
+    runtime.fsApi, 'lock-ticket-invalid');
+  const ownerBytes = readBounded(path.join(privatePath, 'owner.json'), CLAIM_TICKET_MAX_FILE_BYTES,
+    runtime.fsApi, 'lock-owner-invalid');
+  const heartbeatBytes = readBounded(path.join(privatePath, 'heartbeat.json'),
+    CLAIM_TICKET_MAX_FILE_BYTES, runtime.fsApi, 'lock-heartbeat-invalid');
+  if (!sameBytes(ticketBytes, claim.ticketBytes)) {
+    fail('lock-ticket-invalid', 'private claim ticket changed before publication');
+  }
+  if (!sameBytes(ownerBytes, claim.ownerBytes)) {
+    fail('lock-owner-invalid', 'private claim owner changed before publication');
+  }
+  if (!sameBytes(heartbeatBytes, claim.heartbeatBytes)) {
+    fail('lock-heartbeat-invalid', 'private claim heartbeat changed before publication');
+  }
+  validClaimChain({core:claim.core, ticketBytes, ownerBytes, heartbeatBytes});
+}
+
+function publishCanonicalDirectoryClaim(privatePath, lockCapability, meta, claim, runtime) {
+  for (let attempt = 0; attempt <= ATOMIC_RENAME_RETRY_MS.length; attempt++) {
+    validateRecordedComponents(meta, runtime.fsApi);
+    authenticatePrivateDirectoryClaim(privatePath, claim, runtime);
+    try {
+      runtime.fsApi.renameSync(privatePath, lockCapability.path);
+      return;
+    } catch (error) {
+      if (runtime.platform !== 'win32' || !['EPERM','EACCES'].includes(error.code) ||
+          attempt === ATOMIC_RENAME_RETRY_MS.length) throw error;
+      if (runtime.fsApi.existsSync(lockCapability.path)) {
+        const occupied = new Error(`canonical lock already exists: ${lockCapability.path}`);
+        occupied.code = 'EEXIST';
+        throw occupied;
+      }
+      sleepSync(ATOMIC_RENAME_RETRY_MS[attempt]);
+    }
+  }
+}
+
 function acquireDirectoryClaim(lockCapability, options, runtime) {
   const meta = assertCapability(lockCapability, ['project-state']);
   if (lockCapability.role !== 'lock') fail('lock-capability-role', 'lock role capability required');
@@ -2859,9 +2951,9 @@ function acquireDirectoryClaim(lockCapability, options, runtime) {
         reachLockTestSeam(runtime, 'after-heartbeat-fsync', {ticketPath, privatePath, core});
       } finally { runtime.fsApi.closeSync(heartbeatFd); }
       recordLockDirectoryDurability(runtime, 'private-claim', privatePath);
-      validateRecordedComponents(meta, runtime.fsApi);
       reachLockTestSeam(runtime, 'before-canonical-rename', {ticketPath, privatePath, core});
-      runtime.fsApi.renameSync(privatePath, lockCapability.path);
+      publishCanonicalDirectoryClaim(privatePath, lockCapability, meta, {core, ticketPath,
+        ticketBytes, ownerBytes, heartbeatBytes, claimsDir, claimsIdentity}, runtime);
       canonicalPublished = true;
       reachLockTestSeam(runtime, 'after-canonical-rename',
         {ticketPath, privatePath, lockPath:lockCapability.path, core});
@@ -3222,8 +3314,10 @@ function createPlatformRuntimeForTest(options = {}) {
     authenticateOwnedTempConsumer,
     compareRemoveOwnedTemp,
     consumeFinalizedReceiptPayload,
-    issueInitialWorktreeCapability:(input) => managedWorktreeCapability(input, 'initial-session', runtime.fsApi),
-    issueForkWorktreeCapability:(input) => managedWorktreeCapability(input, 'fork-session', runtime.fsApi),
+    issueInitialWorktreeCapability:(input) => managedWorktreeCapability(input, 'initial-session',
+      runtime.fsApi, runtime.platform),
+    issueForkWorktreeCapability:(input) => managedWorktreeCapability(input, 'fork-session',
+      runtime.fsApi, runtime.platform),
     issueTrustedInstallRootCapability:(input) => issueTrustedInstallRootWithFs(input, runtime.fsApi),
     issueNodeToolchainCapability:(input) => issueNodeToolchainWithRuntime(input, runtime),
     captureWorktreeManifest:(input) => captureManifestWithRuntime(input, runtime),
@@ -3235,6 +3329,8 @@ function createPlatformRuntimeForTest(options = {}) {
       mutateWithRuntime(capability, mutationOptions, runtime),
     drainPendingOperations:(capability, drainOptions) =>
       drainWithRuntime(capability, drainOptions, runtime),
+    sanitizeEnvironment:(environment) => sanitizeEnvironment(environment, runtime.platform),
+    environmentValue:(environment, key) => environmentValue(environment, key, runtime.platform),
     spawnPortable:(spec, spawnOptions = {}) => spawnWithRuntime(spec, spawnOptions, runtime),
     lockDurability:() => Object.freeze(runtime.lockDurabilityRecords.map((record) =>
       Object.freeze({...record}))),
@@ -3270,6 +3366,7 @@ module.exports = {
   WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256,
   sanitizePathInput,
   canonicalizePortableProjectPathV1,
+  parseGitWorktreePorcelainZ,
   resolveProjectRoot,
   normalizeForCompare,
   isPathInside,

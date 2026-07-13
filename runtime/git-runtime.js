@@ -11,6 +11,7 @@ const {
   issueForkWorktreeCapability,
   spawnPortable,
   canonicalizePortableProjectPathV1,
+  parseGitWorktreePorcelainZ,
   WORKTREE_MANIFEST_MAX_ENTRIES,
   WORKTREE_MANIFEST_MAX_RELATIVE_PATH_BYTES,
   WORKTREE_MANIFEST_MAX_PATH_TOTAL_BYTES,
@@ -22,6 +23,7 @@ const {parseFrontmatter}=require('./frontmatter.js');
 const {withRankedLocks,RANKS}=require('./transaction-runtime.js');
 
 const NODE_AUTHORITY=Object.freeze({runtime:'node',shell:false,authority:'git-runtime-v1'});
+const WORKTREE_LIST_ARGS=Object.freeze(['worktree','list','--porcelain','-z']);
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
 
@@ -47,20 +49,11 @@ function gitCapability(projectCapability,{spawnPortable:spawnImpl=spawnPortable}
     }});
 }
 
-function parseWorktreePorcelain(output){
-  const records=[];let current=null;
-  for(const line of String(output).split('\n')){
-    if(line.startsWith('worktree ')){if(current)records.push(current);current={path:line.slice(9)};continue;}
-    if(!current||!line)continue;
-    const space=line.indexOf(' ');const key=space<0?line:line.slice(0,space);const value=space<0?true:line.slice(space+1);
-    if(key==='HEAD')current.head=value;else if(key==='branch')current.branch=value;else current[key]=value;
-  }
-  if(current)records.push(current);return records;
-}
+const parseWorktreePorcelain=parseGitWorktreePorcelainZ;
 
 async function checkedRun(git,args,options){const result=await git.run(args,options);
   if(!result||result.ok!==true)fail('git-command-failed',result?.stderr||args.join(' '));return result;}
-async function listWorktrees(git){return parseWorktreePorcelain((await checkedRun(git,['worktree','list','--porcelain'])).stdout);}
+async function listWorktrees(git){return parseWorktreePorcelain((await checkedRun(git,WORKTREE_LIST_ARGS)).stdout);}
 
 async function repositoryContext(git){
   const head=(await checkedRun(git,['rev-parse','--verify','HEAD^{commit}'])).stdout.trim();
@@ -147,7 +140,7 @@ async function prepareInitialRepository({projectCapability,sessionId,mode,baseRe
   let capability=null;const adopt=async()=>{if(mode==='new-branch'){const after=await repositoryContext({run});
       if(after.branch!==expected.branch||after.headOid!==expected.baseOid||after.dirty)fail('initial-repository-adoption');
       return{mode,repositoryContext:{...after,repositoryMode:mode,worktreePurpose:'initial-session',worktreePath:projectCapability.path}};}
-    const rows=parseWorktreePorcelain(String((await stashChecked(run,['worktree','list','--porcelain'],'initial-worktree-query')).stdout));
+    const rows=parseWorktreePorcelain(String((await stashChecked(run,WORKTREE_LIST_ARGS,'initial-worktree-query')).stdout));
     const physicalCandidate=fs.realpathSync(candidate);const row=rows.filter((item)=>{try{return fs.realpathSync(item.path)===physicalCandidate;}catch{return false;}});
     if(row.length!==1||row[0].head!==expected.baseOid||
         row[0].branch!==`refs/heads/${expected.branch}`)fail('initial-repository-adoption');const ref=String((await stashChecked(run,
@@ -187,7 +180,7 @@ async function inspectForkRepository({projectCapability,parentSessionId,childSes
   revalidatePathCapability(parentStateCapability,'fork-before-git');
   const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));await stashChecked(run,['check-ref-format','--branch',parentBranch],
     'fork-parent-branch');await stashChecked(run,['check-ref-format','--branch',branch],'fork-child-branch');
-  const rows=parseWorktreePorcelain(String((await stashChecked(run,['worktree','list','--porcelain'],'fork-worktree-query')).stdout));
+  const rows=parseWorktreePorcelain(String((await stashChecked(run,WORKTREE_LIST_ARGS,'fork-worktree-query')).stdout));
   const ref=await run(['show-ref','--verify','--hash',`refs/heads/${branch}`]);return{parentSessionId,childSessionId,parentBranch,
     branch,baseOid,candidate,parentStateSha256:stashDigest(parentBytes),candidateExists:fs.existsSync(candidate),
     branchOid:ref?.ok?String(ref.stdout).trim():null,registered:rows.some((row)=>{try{return fs.realpathSync(row.path)===
@@ -198,7 +191,7 @@ async function createFork({projectCapability,parentSessionId,childSessionId,pare
   const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));let pending=await resumeOperation({projectCapability,
     operationId:operation.operationId,sessionId:childSessionId,kind:'fork-create'});const recorded=pending.stages?.find(
       (row)=>row.stage==='worktree-created')?.details?.owned;const adopt=async()=>{const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      ['worktree','list','--porcelain'],'fork-worktree-query')).stdout));if(!fs.existsSync(expected.candidate))fail('fork-adoption');
+      WORKTREE_LIST_ARGS,'fork-worktree-query')).stdout));if(!fs.existsSync(expected.candidate))fail('fork-adoption');
     const physical=fs.realpathSync(expected.candidate);const matches=rows.filter((row)=>{try{return fs.realpathSync(row.path)===physical;}catch{return false;}});
     if(matches.length!==1||matches[0].head!==expected.baseOid||matches[0].branch!==`refs/heads/${expected.branch}`)fail('fork-adoption');
     const ref=String((await stashChecked(run,['show-ref','--verify','--hash',`refs/heads/${expected.branch}`],'fork-ref')).stdout).trim();
@@ -249,7 +242,7 @@ async function removeWorktree({projectCapability,worktreeCapability,force=false,
   const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));let pending=await resumeOperation({projectCapability,
     operationId:operation.operationId,sessionId:operation.sessionId,kind:operation.kind});const recorded=pending.stages?.find(
       (row)=>row.stage==='worktree-removed')?.details?.owned;const query=async()=>{const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      ['worktree','list','--porcelain'],'cleanup-worktree-query')).stdout));const matches=rows.filter((row)=>{try{return fs.realpathSync(row.path)===
+      WORKTREE_LIST_ARGS,'cleanup-worktree-query')).stdout));const matches=rows.filter((row)=>{try{return fs.realpathSync(row.path)===
         fs.realpathSync(worktreeCapability.path);}catch{return path.resolve(row.path)===path.resolve(worktreeCapability.path);}});return matches;};
   if(recorded){if(recorded.path!==worktreeCapability.path)
       fail('cleanup-worktree-adoption');if(fs.existsSync(worktreeCapability.path)||(await query()).length)fail('cleanup-worktree-adoption');
@@ -299,7 +292,7 @@ async function finishDiscardWithinOperation({operation,projectCapability,stateCa
     return inspection;}
   let worktreeCapability=resolveForkWorktreeCapability({projectCapability,stateCapability,sessionId:operation.sessionId,
     comparisonPath:stateFields.worktree_path});if(!inspection){const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      ['worktree','list','--porcelain'],'finish-discard-query')).stdout));const physical=fs.realpathSync(worktreeCapability.path);const matches=rows.filter(
+      WORKTREE_LIST_ARGS,'finish-discard-query')).stdout));const physical=fs.realpathSync(worktreeCapability.path);const matches=rows.filter(
       (row)=>{try{return fs.realpathSync(row.path)===physical;}catch{return false;}});if(matches.length!==1||
       matches[0].branch!==`refs/heads/${worktreeCapability.branch}`)fail('finish-discard-identity');const status=String((await stashChecked(run,
       ['-C',worktreeCapability.path,'status','--porcelain=v1','-z','--untracked-files=all'],'finish-discard-status')).stdout||'');
@@ -379,7 +372,7 @@ async function finishMergeWithinOperation({operation,projectCapability,stateCapa
     return inspection;}
   const worktreeCapability=resolveForkWorktreeCapability({projectCapability,stateCapability,sessionId:operation.sessionId,
     comparisonPath:stateFields.worktree_path});if(!inspection){const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      ['worktree','list','--porcelain'],'finish-merge-query')).stdout));const physical=fs.realpathSync(worktreeCapability.path);const child=rows.filter(
+      WORKTREE_LIST_ARGS,'finish-merge-query')).stdout));const physical=fs.realpathSync(worktreeCapability.path);const child=rows.filter(
       (row)=>{try{return fs.realpathSync(row.path)===physical;}catch{return false;}});if(child.length!==1||
       child[0].branch!==`refs/heads/${worktreeCapability.branch}`)fail('finish-merge-child-identity');const baseBranch=stateFields.parent_branch;
     if(typeof baseBranch!=='string'||!baseBranch)fail('finish-merge-base-branch');await stashChecked(run,

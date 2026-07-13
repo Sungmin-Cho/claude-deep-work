@@ -31,6 +31,8 @@ const {
   CLAIM_TICKET_REPORT_MAX_ENTRIES,
   WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
   WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
+  WINDOWS_STREAM_INVENTORY_HELPER_SHA256,
+  WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256,
   sanitizePathInput,
   canonicalizePortableProjectPathV1,
   resolveProjectRoot,
@@ -108,14 +110,63 @@ function hash(value) {
   return require('node:crypto').createHash('sha256').update(value).digest('hex');
 }
 
-async function waitForPath(file, timeoutMs = 3_000) {
+async function waitForJsonMarker(file, {timeoutMs = 3_000, pollMs = 10} = {}) {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (fs.existsSync(file)) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
+  let lastCause;
+  while (true) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (cause) {
+      if (cause?.code !== 'ENOENT' && !(cause instanceof SyntaxError)) {
+        const error = new Error(`failed reading JSON marker ${file}: ${cause.message}`, {cause});
+        error.code = 'json-marker-read';
+        throw error;
+      }
+      lastCause = cause;
+    }
+    if (Date.now() >= deadline) {
+      const error = new Error(
+        `timed out waiting for parseable JSON marker ${file}: ${lastCause?.message || 'unavailable'}`,
+        {cause:lastCause});
+      error.code = 'json-marker-timeout';
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve,
+      Math.min(pollMs, Math.max(0, deadline - Date.now()))));
   }
-  throw new Error(`timed out waiting for ${file}`);
 }
+
+test('JSON marker waiter waits for partial bytes to become parseable', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-json-marker-partial-'));
+  const marker = path.join(root, 'marker.json');
+  fs.writeFileSync(marker, '{"ready":');
+  const completion = new Promise((resolve, reject) => setTimeout(() => {
+    try {
+      fs.appendFileSync(marker, 'true}');
+      resolve();
+    } catch (error) { reject(error); }
+  }, 30));
+  try {
+    assert.deepEqual(await waitForJsonMarker(marker, {timeoutMs:500, pollMs:5}), {ready:true});
+    await completion;
+  } finally {
+    await completion.catch(() => {});
+    remove(root);
+  }
+});
+
+test('JSON marker waiter fails loud with path and parse cause after its bound', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-json-marker-invalid-'));
+  const marker = path.join(root, 'marker.json');
+  try {
+    fs.writeFileSync(marker, '{"ready":');
+    const error = await waitForJsonMarker(marker, {timeoutMs:30, pollMs:5})
+      .then(() => null, (cause) => cause);
+    assert.equal(error?.code, 'json-marker-timeout');
+    assert.equal(error?.message.includes(marker), true);
+    assert.equal(error?.cause instanceof SyntaxError, true);
+  } finally { remove(root); }
+});
 
 function windowsFixtureFs(base) {
   function map(value) {
@@ -644,6 +695,46 @@ test('portable launcher uses process.execPath for project package JS bins and re
   } finally { remove(root); }
 });
 
+test('environment sanitizer applies exact POSIX and case-insensitive Windows key contracts', () => {
+  const windows = createPlatformRuntimeForTest({platform:'win32'});
+  const accepted = windows.sanitizeEnvironment({
+    Path:'C:\\Windows\\System32',
+    'CommonProgramFiles(x86)':'C:\\Program Files (x86)\\Common Files',
+  });
+  assert.deepEqual(accepted, {
+    Path:'C:\\Windows\\System32',
+    'CommonProgramFiles(x86)':'C:\\Program Files (x86)\\Common Files',
+  });
+  assert.equal(Object.isFrozen(accepted), true);
+  assert.equal(windows.environmentValue(accepted, 'PATH'), 'C:\\Windows\\System32');
+  assert.equal(windows.environmentValue(accepted, 'commonprogramfiles(X86)'),
+    'C:\\Program Files (x86)\\Common Files');
+  assert.throws(() => windows.sanitizeEnvironment({PATH:'first', Path:'second'}),
+    /process-env-invalid/);
+  for (const key of ['', 'BAD=KEY', 'BAD\nKEY', 'BAD\0KEY']) {
+    assert.throws(() => windows.sanitizeEnvironment({[key]:'value'}), /process-env-invalid/);
+  }
+  const linux = createPlatformRuntimeForTest({platform:'linux'});
+  assert.deepEqual(linux.sanitizeEnvironment({PATH:'/usr/bin', VALID_2:'yes'}),
+    {PATH:'/usr/bin', VALID_2:'yes'});
+  assert.throws(() => linux.sanitizeEnvironment({'CommonProgramFiles(x86)':'foreign'}),
+    /process-env-invalid/);
+});
+
+test('native Windows launcher preserves the inherited parenthesized environment key', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, async () => {
+  const root = makeRepo('dw-process-native-win-env-');
+  try {
+    const {project} = caps(root);
+    const result = await spawnPortable({kind:'native-executable', executable:process.execPath,
+      args:['-e', "process.stdout.write(process.env['CommonProgramFiles(x86)'] || '')"]},
+    {projectCapability:project, env:{...process.env}, timeoutMs:5_000, maxOutputBytes:4_096});
+    assert.equal(result.ok, true);
+    assert.equal(result.stdout, process.env['CommonProgramFiles(x86)']);
+  } finally { remove(root); }
+});
+
 test('atomic write preserves old target when rename never succeeds', () => {
   const root = makeRepo();
   try {
@@ -668,6 +759,103 @@ test('directory lock publishes and releases an authenticated claim without owned
     assert.equal(fs.existsSync(lock.path), false);
     const claims = `${lock.path}.claims`;
     assert.deepEqual(fs.existsSync(claims) ? fs.readdirSync(claims) : [], []);
+  } finally { remove(root); }
+});
+
+test('Windows canonical claim publication retries bounded transient access failures', () => {
+  for (const [index, code] of ['EPERM', 'EACCES'].entries()) {
+    const root = makeRepo(`dw-lock-win-rename-${code.toLowerCase()}-`);
+    try {
+      const lockPath = path.join(root, '.claude', 'rename-retry.lock');
+      const nonce = String(index + 5).repeat(32);
+      let attempts = 0;
+      const runtime = createPlatformRuntimeForTest({platform:'win32', nonceFactory:() => nonce,
+        fsImpl:{renameSync(source, destination) {
+          if (source === `${lockPath}.claim.${nonce}` && destination === lockPath) {
+            attempts += 1;
+            if (attempts < 3) throw Object.assign(new Error(`transient ${code}`), {code});
+          }
+          return fs.renameSync(source, destination);
+        }}});
+      const lock = runtime.issueProjectStateCapability(root, lockPath,
+        {role:'lock', allowMissingLeaf:true});
+      let callbacks = 0;
+      assert.equal(runtime.withDirectoryLock(lock,
+        {timeoutMs:2_000, staleMs:1_000, heartbeatMs:50,
+          processIdentity:String(index + 7).repeat(32)}, () => {
+          callbacks += 1;
+          return 'done';
+        }), 'done');
+      assert.equal(attempts, 3, code);
+      assert.equal(callbacks, 1, code);
+      assert.equal(fs.existsSync(lockPath), false);
+      assert.deepEqual(fs.readdirSync(`${lockPath}.claims`), []);
+    } finally { remove(root); }
+  }
+
+  const root = makeRepo('dw-lock-win-rename-exhausted-');
+  try {
+    const lockPath = path.join(root, '.claude', 'rename-exhausted.lock');
+    const nonce = '9'.repeat(32);
+    let attempts = 0;
+    const runtime = createPlatformRuntimeForTest({platform:'win32', nonceFactory:() => nonce,
+      fsImpl:{renameSync(source, destination) {
+        if (source === `${lockPath}.claim.${nonce}` && destination === lockPath) {
+          attempts += 1;
+          throw Object.assign(new Error('persistent EPERM'), {code:'EPERM'});
+        }
+        return fs.renameSync(source, destination);
+      }}});
+    const lock = runtime.issueProjectStateCapability(root, lockPath,
+      {role:'lock', allowMissingLeaf:true});
+    let callbacks = 0;
+    assert.throws(() => runtime.withDirectoryLock(lock,
+      {timeoutMs:2_000, staleMs:1_000, heartbeatMs:50, processIdentity:'a'.repeat(32)},
+      () => {
+        callbacks += 1;
+        return 'never';
+      }), /persistent EPERM/);
+    assert.equal(attempts, 7);
+    assert.equal(callbacks, 0);
+    assert.equal(fs.existsSync(lockPath), false);
+    assert.deepEqual(fs.readdirSync(`${lockPath}.claims`), []);
+    assert.equal(fs.readdirSync(path.dirname(lockPath))
+      .some((name) => name.startsWith(`${path.basename(lockPath)}.claim.`)), false);
+  } finally { remove(root); }
+});
+
+test('Windows canonical claim retry reauthenticates private and ticket ownership', () => {
+  const root = makeRepo('dw-lock-win-rename-reauth-');
+  try {
+    const lockPath = path.join(root, '.claude', 'rename-reauth.lock');
+    const nonce = 'b'.repeat(32);
+    let attempts = 0;
+    let callbacks = 0;
+    const runtime = createPlatformRuntimeForTest({platform:'win32', nonceFactory:() => nonce,
+      fsImpl:{renameSync(source, destination) {
+        if (source === `${lockPath}.claim.${nonce}` && destination === lockPath) {
+          attempts += 1;
+          if (attempts === 1) {
+            fs.writeFileSync(path.join(source, 'owner.json'), 'foreign-owner\n');
+            throw Object.assign(new Error('transient EPERM after owner drift'), {code:'EPERM'});
+          }
+        }
+        return fs.renameSync(source, destination);
+      }}});
+    const lock = runtime.issueProjectStateCapability(root, lockPath,
+      {role:'lock', allowMissingLeaf:true});
+    assert.throws(() => runtime.withDirectoryLock(lock,
+      {timeoutMs:2_000, staleMs:1_000, heartbeatMs:50, processIdentity:'c'.repeat(32)},
+      () => {
+        callbacks += 1;
+        return 'never';
+      }), /lock-(owner|chain)-invalid/);
+    assert.equal(attempts, 1);
+    assert.equal(callbacks, 0);
+    assert.equal(fs.existsSync(lockPath), false);
+    assert.deepEqual(fs.readdirSync(`${lockPath}.claims`), []);
+    assert.equal(fs.readdirSync(path.dirname(lockPath))
+      .some((name) => name.startsWith(`${path.basename(lockPath)}.claim.`)), false);
   } finally { remove(root); }
 });
 
@@ -1001,6 +1189,24 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   assert.doesNotMatch(source, /Get-Item\s+-Stream/i);
   assert.doesNotMatch(source, /Invoke-Expression|\biex\b/i);
   assert.match(source, /relative_path/);
+});
+
+test('Git attributes preserve exact raw Windows stream helper authority on checkout', () => {
+  const helperRelative = 'runtime/windows-stream-inventory.ps1';
+  const helperPath = path.join(__dirname, 'windows-stream-inventory.ps1');
+  const repositoryRoot = path.resolve(__dirname, '..');
+  const attribute = execFileSync('git', ['check-attr','eol','--',helperRelative],
+    {cwd:repositoryRoot, encoding:'utf8'}).trim();
+  assert.equal(attribute, `${helperRelative}: eol: lf`);
+  const helperBytes = fs.readFileSync(helperPath);
+  assert.equal(hash(helperBytes), WINDOWS_STREAM_INVENTORY_HELPER_SHA256);
+  const source = helperBytes.toString('utf8');
+  const begin = source.indexOf('# DEEP_WORK_PINVOKE_SOURCE_BEGIN');
+  const end = source.indexOf('# DEEP_WORK_PINVOKE_SOURCE_END');
+  const lineStart = source.indexOf('\n', begin) + 1;
+  assert.equal(begin >= 0 && end > begin && lineStart > begin, true);
+  assert.equal(hash(Buffer.from(source.slice(lineStart, end))),
+    WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256);
 });
 
 test('Windows stream execution validator rejects the complete helper output/failure mutant matrix', () => {
@@ -1405,8 +1611,7 @@ test('owned-temp cleanup converges from fresh-process death at every durable sta
         [root, boundary, producerId, consumerId, control],
         {stdio:['ignore','ignore','inherit','ipc']});
       const markerPath = path.join(control, `${boundary}.json`);
-      await waitForPath(markerPath);
-      const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+      const marker = await waitForJsonMarker(markerPath);
       assert.deepEqual({boundary:marker.boundary, pid:marker.pid, producerId:marker.producerId,
         consumerId:marker.consumerId}, {boundary, pid:worker.pid, producerId, consumerId});
       worker.kill('SIGKILL');
@@ -1441,8 +1646,7 @@ test('all crash-resumable sidecars recover fresh-process open and torn-write dea
           [root, sidecarKind, boundary, producerId, consumerId, control],
           {stdio:['ignore','ignore','inherit','ipc']});
         const markerPath = path.join(control, `${sidecarKind}-${boundary}.json`);
-        await waitForPath(markerPath);
-        const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+        const marker = await waitForJsonMarker(markerPath);
         assert.deepEqual({sidecarKind:marker.sidecarKind, boundary:marker.boundary,
           pid:marker.pid, producerId:marker.producerId, consumerId:marker.consumerId},
         {sidecarKind, boundary, pid:worker.pid, producerId, consumerId});
@@ -2168,8 +2372,7 @@ test('lock process-death seams recover exact owned claim stages without residue'
         [root, lockPath, processIdentity, seam, control],
         {stdio:['ignore','ignore','inherit','ipc']});
       const marker = path.join(control, `${seam}.json`);
-      await waitForPath(marker);
-      const reached = JSON.parse(fs.readFileSync(marker, 'utf8'));
+      const reached = await waitForJsonMarker(marker);
       assert.deepEqual({seam:reached.seam, pid:reached.pid, processIdentity:reached.processIdentity},
         {seam, pid:worker.pid, processIdentity});
       worker.kill('SIGKILL');
@@ -2219,7 +2422,7 @@ test('lock recovery preserves foreign live EPERM and corrupt artifacts byte-iden
     worker = fork(path.join(fixtureRoot, 'lock-worker.js'),
       [root, lockPath, processIdentity, seam, control],
       {stdio:['ignore','ignore','inherit','ipc']});
-    await waitForPath(path.join(control, `${seam}.json`));
+    await waitForJsonMarker(path.join(control, `${seam}.json`));
     const claims = `${lockPath}.claims`;
     const ticketPath = path.join(claims, fs.readdirSync(claims)
       .find((name) => name.endsWith('.ticket')));
@@ -2267,7 +2470,18 @@ test('lock recovery preserves foreign live EPERM and corrupt artifacts byte-iden
 test('lock records every supported and native-unsupported directory durability attempt', () => {
   const supportedRoot = makeRepo('dw-lock-durability-supported-');
   try {
-    const runtime = createPlatformRuntimeForTest({nonceFactory:() => '1'.repeat(32)});
+    const durabilityProbe = path.join(supportedRoot, 'tracked.txt');
+    const runtime = createPlatformRuntimeForTest({platform:'win32', nonceFactory:() => '1'.repeat(32),
+      fsImpl:{
+        openSync(value, flags, mode) {
+          if (flags === 'r') {
+            try {
+              if (fs.lstatSync(value).isDirectory()) return fs.openSync(durabilityProbe, 'r+');
+            } catch (error) { if (error.code !== 'ENOENT') throw error; }
+          }
+          return fs.openSync(value, flags, mode);
+        },
+      }});
     const lock = runtime.issueProjectStateCapability(supportedRoot,
       path.join(supportedRoot, '.claude', 'durability.lock'),
       {role:'lock', allowMissingLeaf:true});
