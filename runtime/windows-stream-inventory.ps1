@@ -111,11 +111,164 @@ $findCloseDefinition = @{
 [void](Add-ClosedPInvokeMethod @findFirstDefinition)
 [void](Add-ClosedPInvokeMethod @findNextDefinition)
 [void](Add-ClosedPInvokeMethod @findCloseDefinition)
-$nativeType = $nativeBuilder.CreateType()
-$streamDataType = $streamDataBuilder.CreateType()
-$findFirstStream = $nativeType.GetMethod('FindFirstStreamW')
-$findNextStream = $nativeType.GetMethod('FindNextStreamW')
-$findClose = $nativeType.GetMethod('FindClose')
+
+# DEEP_WORK_TYPE_RESOLVE_HANDLER_BEGIN
+$expectedStreamDataTypeName = 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA'
+$typeResolveState = [PSCustomObject]@{
+  Requests = 0
+  Type = $null
+  Failure = $null
+}
+$typeResolveCallback = {
+  param($sender, $eventArgs)
+  try {
+    $typeResolveState.Requests++
+    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,
+        [System.StringComparison]::Ordinal)) {
+      $typeResolveState.Failure = 'stream type resolve name mismatch'
+      return $null
+    }
+    if ($typeResolveState.Requests -ne 1) {
+      $typeResolveState.Failure = 'stream type resolve duplicate'
+      return $null
+    }
+    $resolvedStreamDataType = $streamDataBuilder.CreateType()
+    if ($null -eq $resolvedStreamDataType -or
+        -not [String]::Equals($resolvedStreamDataType.FullName, $expectedStreamDataTypeName,
+          [System.StringComparison]::Ordinal) -or
+        -not $resolvedStreamDataType.IsValueType -or
+        -not [Object]::ReferenceEquals($resolvedStreamDataType.Assembly, $assemblyBuilder)) {
+      $typeResolveState.Failure = 'stream type resolve result mismatch'
+      return $null
+    }
+    $typeResolveState.Type = $resolvedStreamDataType
+    return $assemblyBuilder
+  } catch {
+    $typeResolveState.Failure = 'stream type resolve failed'
+    return $null
+  }
+}.GetNewClosure()
+$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback
+# DEEP_WORK_TYPE_RESOLVE_HANDLER_END
+
+# DEEP_WORK_TYPE_RESOLVE_SCOPE_BEGIN
+$currentDomain = [AppDomain]::CurrentDomain
+$nativeTypeFailure = $false
+$currentDomain.add_TypeResolve($typeResolveHandler)
+try {
+  $nativeType = $nativeBuilder.CreateType()
+} catch {
+  $nativeTypeFailure = $true
+} finally {
+  $currentDomain.remove_TypeResolve($typeResolveHandler)
+}
+# DEEP_WORK_TYPE_RESOLVE_SCOPE_END
+
+# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN
+if ($nativeTypeFailure) { throw 'stream native type creation failed' }
+if ($typeResolveState.Requests -ne 1 -or $null -ne $typeResolveState.Failure -or
+    $null -eq $typeResolveState.Type) {
+  throw 'stream type resolution state invalid'
+}
+$nestedTypeFlags = [System.Reflection.BindingFlags]::Public -bor
+  [System.Reflection.BindingFlags]::NonPublic
+$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', $nestedTypeFlags)
+if ($null -eq $streamDataType -or
+    -not [String]::Equals($streamDataType.FullName, $expectedStreamDataTypeName,
+      [System.StringComparison]::Ordinal) -or
+    -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or
+    -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or
+    -not [Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder) -or
+    -not [String]::Equals($streamDataType.Module.ScopeName, $moduleBuilder.ScopeName,
+      [System.StringComparison]::Ordinal)) {
+  throw 'stream type identity invalid'
+}
+if (-not $streamDataType.IsValueType -or -not $streamDataType.IsNestedPublic -or
+    -not $streamDataType.IsSealed -or -not $streamDataType.IsLayoutSequential -or
+    -not $streamDataType.IsUnicodeClass -or
+    ($streamDataType.Attributes -band [System.Reflection.TypeAttributes]::BeforeFieldInit) -eq 0) {
+  throw 'stream type layout invalid'
+}
+$streamFieldFlags = [System.Reflection.BindingFlags]::Public -bor
+  [System.Reflection.BindingFlags]::NonPublic -bor
+  [System.Reflection.BindingFlags]::Instance -bor
+  [System.Reflection.BindingFlags]::Static -bor
+  [System.Reflection.BindingFlags]::DeclaredOnly
+$streamFields = @($streamDataType.GetFields($streamFieldFlags))
+$streamSizeField = $streamDataType.GetField('StreamSize', $streamFieldFlags)
+$streamNameRuntimeField = $streamDataType.GetField('cStreamName', $streamFieldFlags)
+if ($streamFields.Length -ne 2 -or $null -eq $streamSizeField -or
+    $streamSizeField.FieldType -ne [Int64] -or -not $streamSizeField.IsPublic -or
+    $streamSizeField.IsStatic -or $null -eq $streamNameRuntimeField -or
+    $streamNameRuntimeField.FieldType -ne [String] -or -not $streamNameRuntimeField.IsPublic -or
+    $streamNameRuntimeField.IsStatic) {
+  throw 'stream type fields invalid'
+}
+$streamNameMarshal = @($streamNameRuntimeField.GetCustomAttributes(
+  [System.Runtime.InteropServices.MarshalAsAttribute], $false))
+if ($streamNameMarshal.Length -ne 1 -or
+    $streamNameMarshal[0].Value -ne [System.Runtime.InteropServices.UnmanagedType]::ByValTStr -or
+    $streamNameMarshal[0].SizeConst -ne 296) {
+  throw 'stream type marshal invalid'
+}
+$nativeMethodFlags = [System.Reflection.BindingFlags]::Public -bor
+  [System.Reflection.BindingFlags]::Static -bor
+  [System.Reflection.BindingFlags]::DeclaredOnly
+$nativeMethods = @($nativeType.GetMethods($nativeMethodFlags))
+$findFirstStream = $nativeType.GetMethod('FindFirstStreamW', $nativeMethodFlags)
+$findNextStream = $nativeType.GetMethod('FindNextStreamW', $nativeMethodFlags)
+$findClose = $nativeType.GetMethod('FindClose', $nativeMethodFlags)
+if ($nativeMethods.Length -ne 3 -or $null -eq $findFirstStream -or
+    $null -eq $findNextStream -or $null -eq $findClose) {
+  throw 'stream native methods invalid'
+}
+
+function Assert-ClosedPInvokeRuntimeMethod(
+  [System.Reflection.MethodInfo]$Method,
+  [string]$Name,
+  [Type]$ReturnType,
+  [Type[]]$ParameterTypes,
+  [System.Runtime.InteropServices.CharSet]$CharSet
+) {
+  if (-not [String]::Equals($Method.Name, $Name, [System.StringComparison]::Ordinal) -or
+      $Method.ReturnType -ne $ReturnType) {
+    throw 'stream native signature invalid'
+  }
+  $actualParameters = @($Method.GetParameters())
+  if ($actualParameters.Length -ne $ParameterTypes.Length) {
+    throw 'stream native signature invalid'
+  }
+  for ($parameterIndex = 0; $parameterIndex -lt $ParameterTypes.Length; $parameterIndex++) {
+    if ($actualParameters[$parameterIndex].ParameterType -ne $ParameterTypes[$parameterIndex]) {
+      throw 'stream native signature invalid'
+    }
+  }
+  $imports = @($Method.GetCustomAttributes(
+    [System.Runtime.InteropServices.DllImportAttribute], $false))
+  if ($imports.Length -ne 1 -or
+      -not [String]::Equals($imports[0].Value, 'kernel32.dll',
+        [System.StringComparison]::Ordinal) -or
+      -not [String]::Equals($imports[0].EntryPoint, $Name,
+        [System.StringComparison]::Ordinal) -or
+      $imports[0].CharSet -ne $CharSet -or
+      $imports[0].CallingConvention -ne [System.Runtime.InteropServices.CallingConvention]::Winapi -or
+      -not $imports[0].SetLastError -or -not $imports[0].ExactSpelling -or
+      -not $imports[0].PreserveSig -or
+      ($Method.GetMethodImplementationFlags() -band
+        [System.Reflection.MethodImplAttributes]::PreserveSig) -eq 0) {
+    throw 'stream native import invalid'
+  }
+}
+
+[void](Assert-ClosedPInvokeRuntimeMethod $findFirstStream 'FindFirstStreamW' ([IntPtr])
+  ([Type[]]@([String], [Int32], $streamDataType.MakeByRefType(), [UInt32]))
+  ([System.Runtime.InteropServices.CharSet]::Unicode))
+[void](Assert-ClosedPInvokeRuntimeMethod $findNextStream 'FindNextStreamW' ([Boolean])
+  ([Type[]]@([IntPtr], $streamDataType.MakeByRefType()))
+  ([System.Runtime.InteropServices.CharSet]::Unicode))
+[void](Assert-ClosedPInvokeRuntimeMethod $findClose 'FindClose' ([Boolean])
+  ([Type[]]@([IntPtr])) ([System.Runtime.InteropServices.CharSet]::None))
+# DEEP_WORK_TYPE_AUTHENTICATION_END
 # DEEP_WORK_PINVOKE_SOURCE_END
 
 function Convert-ToExtendedPath([string]$PathValue) {

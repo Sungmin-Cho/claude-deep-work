@@ -137,16 +137,215 @@ function countLiteral(value, literal) {
   return value.split(literal).length - 1;
 }
 
-function pinnedWindowsStreamProbeScripts() {
+function windowsStreamPInvokeSource() {
   const helperBytes = fs.readFileSync(path.join(__dirname, 'windows-stream-inventory.ps1'));
-  assert.equal(hash(helperBytes), WINDOWS_STREAM_INVENTORY_HELPER_SHA256);
   const helperSource = helperBytes.toString('utf8');
   const begin = helperSource.indexOf('# DEEP_WORK_PINVOKE_SOURCE_BEGIN');
   const end = helperSource.indexOf('# DEEP_WORK_PINVOKE_SOURCE_END');
   const lineStart = helperSource.indexOf('\n', begin) + 1;
   assert.equal(begin >= 0 && end > begin && lineStart > begin, true);
-  const pinvokeSource = helperSource.slice(lineStart, end);
-  assert.equal(hash(Buffer.from(pinvokeSource)), WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256);
+  return helperSource.slice(lineStart, end);
+}
+
+function assertWindowsStreamTypeResolveSource(source) {
+  const handlerBegin = '# DEEP_WORK_TYPE_RESOLVE_HANDLER_BEGIN';
+  const handlerEnd = '# DEEP_WORK_TYPE_RESOLVE_HANDLER_END';
+  const scopeBegin = '# DEEP_WORK_TYPE_RESOLVE_SCOPE_BEGIN';
+  const scopeEnd = '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END';
+  const authenticationBegin = '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN';
+  const authenticationEnd = '# DEEP_WORK_TYPE_AUTHENTICATION_END';
+  for (const marker of [handlerBegin, handlerEnd, scopeBegin, scopeEnd,
+    authenticationBegin, authenticationEnd]) {
+    assert.equal(countLiteral(source, marker), 1, `${marker} count`);
+  }
+  const handlerStart = source.indexOf(handlerBegin);
+  const handlerStop = source.indexOf(handlerEnd);
+  const scopeStart = source.indexOf(scopeBegin);
+  const scopeStop = source.indexOf(scopeEnd);
+  const authenticationStart = source.indexOf(authenticationBegin);
+  const authenticationStop = source.indexOf(authenticationEnd);
+  assert.equal(handlerStart < handlerStop && handlerStop < scopeStart && scopeStart < scopeStop &&
+    scopeStop < authenticationStart && authenticationStart < authenticationStop, true,
+  'TypeResolve section order');
+  const handler = source.slice(handlerStart, handlerStop);
+  const scope = source.slice(scopeStart, scopeStop);
+  const authentication = source.slice(authenticationStart, authenticationStop);
+
+  assert.equal(countLiteral(source,
+    "$expectedStreamDataTypeName = 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA'"),
+  1, 'exact expected nested type name');
+  assert.equal(countLiteral(source, '.add_TypeResolve($typeResolveHandler)'), 1,
+    'TypeResolve registration count');
+  assert.equal(countLiteral(source, '.remove_TypeResolve($typeResolveHandler)'), 1,
+    'TypeResolve removal count');
+  assert.equal(countLiteral(scope, 'try {'), 1, 'TypeResolve scope try count');
+  assert.equal(countLiteral(scope, '} finally {'), 1, 'TypeResolve scope finally count');
+  assert.equal(scope.indexOf('.add_TypeResolve($typeResolveHandler)') < scope.indexOf('try {') &&
+    scope.indexOf('try {') < scope.indexOf('$nativeType = $nativeBuilder.CreateType()') &&
+    scope.indexOf('$nativeType = $nativeBuilder.CreateType()') < scope.indexOf('} finally {') &&
+    scope.indexOf('} finally {') < scope.indexOf('.remove_TypeResolve($typeResolveHandler)'), true,
+  'TypeResolve enclosing CreateType scope');
+  assert.match(scope,
+    /\} finally \{\n  \$currentDomain\.remove_TypeResolve\(\$typeResolveHandler\)\n\}/u,
+    'TypeResolve removal must be inside finally');
+  assert.equal(countLiteral(source, '$nativeBuilder.CreateType()'), 1,
+    'enclosing CreateType count');
+  assert.equal(countLiteral(source, '$streamDataBuilder.CreateType()'), 1,
+    'nested CreateType count');
+  assert.equal(countLiteral(handler, '$streamDataBuilder.CreateType()'), 1,
+    'nested CreateType handler placement');
+  assert.equal(handler.includes('[System.StringComparison]::Ordinal'), true,
+    'ordinal TypeResolve name comparison');
+  assert.equal(handler.includes('$eventArgs.Name, $expectedStreamDataTypeName'), true,
+    'exact TypeResolve event name comparison');
+  assert.equal(handler.includes("'stream type resolve name mismatch'"), true,
+    'foreign TypeResolve rejection');
+  assert.equal(handler.includes('$typeResolveState.Requests -ne 1'), true,
+    'duplicate TypeResolve guard');
+  assert.equal(handler.includes("'stream type resolve duplicate'"), true,
+    'duplicate TypeResolve rejection');
+  assert.equal(handler.includes('[Object]::ReferenceEquals('), true,
+    'resolved type assembly identity check');
+  assert.equal(handler.includes("'stream type resolve result mismatch'"), true,
+    'wrong TypeResolve result rejection');
+  assert.equal(handler.includes("'stream type resolve failed'"), true,
+    'TypeResolve exception rejection');
+  assert.equal(countLiteral(handler, 'return $assemblyBuilder'), 1,
+    'expected TypeResolve assembly return');
+  assert.equal(countLiteral(handler, 'return $null'), 4,
+    'closed TypeResolve null returns');
+  assert.equal(handler.indexOf('$typeResolveState.Requests++') <
+    handler.indexOf('$eventArgs.Name, $expectedStreamDataTypeName') &&
+    handler.indexOf('$eventArgs.Name, $expectedStreamDataTypeName') <
+      handler.indexOf('if ($typeResolveState.Requests -ne 1) {') &&
+    handler.indexOf('if ($typeResolveState.Requests -ne 1) {') <
+      handler.indexOf('$resolvedStreamDataType = $streamDataBuilder.CreateType()') &&
+    handler.indexOf('$resolvedStreamDataType = $streamDataBuilder.CreateType()') <
+      handler.indexOf("'stream type resolve result mismatch'") &&
+    handler.indexOf("'stream type resolve result mismatch'") <
+      handler.indexOf('$typeResolveState.Type = $resolvedStreamDataType') &&
+    handler.indexOf('$typeResolveState.Type = $resolvedStreamDataType') <
+      handler.indexOf('return $assemblyBuilder'), true,
+  'TypeResolve handler fail-closed order');
+
+  assert.equal(authentication.includes('$typeResolveState.Requests -ne 1'), true,
+    'missing TypeResolve request rejection');
+  assert.equal(authentication.includes('$null -ne $typeResolveState.Failure'), true,
+    'recorded TypeResolve failure rejection');
+  assert.equal(authentication.includes('$null -eq $typeResolveState.Type'), true,
+    'missing resolved type rejection');
+  assert.equal(authentication.includes(".GetNestedType('WIN32_FIND_STREAM_DATA',"), true,
+    'canonical nested type lookup');
+  assert.equal(authentication.includes(
+    '$streamDataType.FullName, $expectedStreamDataTypeName'), true,
+  'post-bake exact nested type name');
+  assert.equal(authentication.includes(
+    '[Object]::ReferenceEquals($streamDataType, $typeResolveState.Type)'), true,
+  'post-bake resolved type identity');
+  assert.equal(authentication.includes(
+    '[Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType)'), true,
+  'post-bake declaring type identity');
+  assert.equal(authentication.includes(
+    '[Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder)'), true,
+  'post-bake dynamic assembly identity');
+  for (const marker of ["'stream type identity invalid'", "'stream type layout invalid'",
+    "'stream type fields invalid'", "'stream type marshal invalid'",
+    "'stream native methods invalid'", "'stream native signature invalid'",
+    "'stream native import invalid'"]) {
+    assert.equal(authentication.includes(marker), true, `${marker} authentication`);
+  }
+  for (const contract of ['$streamDataType.Module.ScopeName', '$streamDataType.IsValueType',
+    '$streamDataType.IsNestedPublic', '$streamDataType.IsSealed',
+    '$streamDataType.IsLayoutSequential', '$streamDataType.IsUnicodeClass',
+    '[System.Reflection.TypeAttributes]::BeforeFieldInit', '$streamFields.Length -ne 2',
+    '$streamSizeField.FieldType -ne [Int64]', '$streamNameRuntimeField.FieldType -ne [String]',
+    '[System.Runtime.InteropServices.MarshalAsAttribute]',
+    '[System.Runtime.InteropServices.UnmanagedType]::ByValTStr',
+    '$streamNameMarshal[0].SizeConst -ne 296', '$nativeMethods.Length -ne 3',
+    '$actualParameters[$parameterIndex].ParameterType -ne $ParameterTypes[$parameterIndex]',
+    "$imports[0].Value, 'kernel32.dll'", '$imports[0].EntryPoint, $Name',
+    '$imports[0].CharSet -ne $CharSet', '$imports[0].SetLastError',
+    '$imports[0].ExactSpelling', '$imports[0].PreserveSig']) {
+    assert.equal(authentication.includes(contract), true,
+      `post-bake runtime contract: ${contract}`);
+  }
+
+  const fixedSourceContracts = [
+    "Name = 'FindFirstStreamW'",
+    'ReturnType = [IntPtr]',
+    'ParameterTypes = [Type[]]@([String], [Int32], $streamDataByRef, [UInt32])',
+    "Name = 'FindNextStreamW'",
+    'ParameterTypes = [Type[]]@([IntPtr], $streamDataByRef)',
+    "Name = 'FindClose'",
+    'ParameterTypes = [Type[]]@([IntPtr])',
+    "[System.Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')",
+    "[System.Runtime.InteropServices.DllImportAttribute].GetField('ExactSpelling')",
+    "[System.Runtime.InteropServices.DllImportAttribute].GetField('PreserveSig')",
+    "[Object[]]@('kernel32.dll')",
+  ];
+  for (const contract of fixedSourceContracts) {
+    assert.equal(countLiteral(source, contract), 1, `fixed P/Invoke contract: ${contract}`);
+  }
+  assert.equal(countLiteral(source,
+    '[System.Runtime.InteropServices.CallingConvention]::Winapi'), 2,
+  'fixed P/Invoke contract: CallingConvention.Winapi definition and authentication');
+}
+
+function replaceWindowsStreamSourceOnce(source, before, after) {
+  assert.equal(countLiteral(source, before), 1, `mutant anchor: ${before}`);
+  return source.replace(before, after);
+}
+
+function windowsStreamProbeAttestationLines() {
+  return [
+    "if ($typeResolveState.Requests -ne 1 -or $null -ne $typeResolveState.Failure -or $null -eq $typeResolveState.Type) { throw 'probe resolver state invalid' }",
+    "if (-not [String]::Equals($streamDataType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA', [System.StringComparison]::Ordinal) -or -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or -not [Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder)) { throw 'probe stream type identity invalid' }",
+    "if (-not $streamDataType.IsValueType -or -not $streamDataType.IsNestedPublic -or -not $streamDataType.IsSealed -or -not $streamDataType.IsLayoutSequential -or -not $streamDataType.IsUnicodeClass) { throw 'probe stream type layout invalid' }",
+    '$probeFields = @($streamDataType.GetFields([System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::DeclaredOnly))',
+    "$probeStreamSize = $streamDataType.GetField('StreamSize')",
+    "$probeStreamName = $streamDataType.GetField('cStreamName')",
+    "if ($probeFields.Length -ne 2 -or $null -eq $probeStreamSize -or $probeStreamSize.FieldType -ne [Int64] -or -not $probeStreamSize.IsPublic -or $null -eq $probeStreamName -or $probeStreamName.FieldType -ne [String] -or -not $probeStreamName.IsPublic) { throw 'probe stream fields invalid' }",
+    '$probeMarshal = @($probeStreamName.GetCustomAttributes([System.Runtime.InteropServices.MarshalAsAttribute], $false))',
+    "if ($probeMarshal.Length -ne 1 -or $probeMarshal[0].Value -ne [System.Runtime.InteropServices.UnmanagedType]::ByValTStr -or $probeMarshal[0].SizeConst -ne 296) { throw 'probe stream marshal invalid' }",
+    'function Assert-ProbePInvokeMethod([System.Reflection.MethodInfo]$Method, [string]$Name, [Type]$ReturnType, [Type[]]$ParameterTypes, [System.Runtime.InteropServices.CharSet]$CharSet) {',
+    "  if ($null -eq $Method -or -not [String]::Equals($Method.Name, $Name, [System.StringComparison]::Ordinal) -or $Method.ReturnType -ne $ReturnType) { throw 'probe native signature invalid' }",
+    '  $actualParameters = @($Method.GetParameters())',
+    "  if ($actualParameters.Length -ne $ParameterTypes.Length) { throw 'probe native signature invalid' }",
+    '  for ($probeIndex = 0; $probeIndex -lt $ParameterTypes.Length; $probeIndex++) {',
+    "    if ($actualParameters[$probeIndex].ParameterType -ne $ParameterTypes[$probeIndex]) { throw 'probe native signature invalid' }",
+    '  }',
+    '  $probeImports = @($Method.GetCustomAttributes([System.Runtime.InteropServices.DllImportAttribute], $false))',
+    "  if ($probeImports.Length -ne 1 -or -not [String]::Equals($probeImports[0].Value, 'kernel32.dll', [System.StringComparison]::Ordinal) -or -not [String]::Equals($probeImports[0].EntryPoint, $Name, [System.StringComparison]::Ordinal) -or $probeImports[0].CharSet -ne $CharSet -or $probeImports[0].CallingConvention -ne [System.Runtime.InteropServices.CallingConvention]::Winapi -or -not $probeImports[0].SetLastError -or -not $probeImports[0].ExactSpelling -or -not $probeImports[0].PreserveSig -or ($Method.GetMethodImplementationFlags() -band [System.Reflection.MethodImplAttributes]::PreserveSig) -eq 0) { throw 'probe native import invalid' }",
+    '}',
+    "Assert-ProbePInvokeMethod $findFirstStream 'FindFirstStreamW' ([IntPtr]) ([Type[]]@([String], [Int32], $streamDataType.MakeByRefType(), [UInt32])) ([System.Runtime.InteropServices.CharSet]::Unicode)",
+    "Assert-ProbePInvokeMethod $findNextStream 'FindNextStreamW' ([Boolean]) ([Type[]]@([IntPtr], $streamDataType.MakeByRefType())) ([System.Runtime.InteropServices.CharSet]::Unicode)",
+    "Assert-ProbePInvokeMethod $findClose 'FindClose' ([Boolean]) ([Type[]]@([IntPtr])) ([System.Runtime.InteropServices.CharSet]::None)",
+    '$probeResolverRequests = $typeResolveState.Requests',
+    '$probeResolverType = $typeResolveState.Type',
+    '$probeResolverFailure = $typeResolveState.Failure',
+    "$leakProbeName = 'DeepWorkStreamInventoryLeakProbeMissingType'",
+    '$leakProbeState = [PSCustomObject]@{ Requests = 0 }',
+    '$leakProbeCallback = {',
+    '  param($sender, $eventArgs)',
+    '  if ([String]::Equals($eventArgs.Name, $leakProbeName, [System.StringComparison]::Ordinal)) { $leakProbeState.Requests++ }',
+    '  return $null',
+    '}.GetNewClosure()',
+    '$leakProbeHandler = [System.ResolveEventHandler]$leakProbeCallback',
+    '$leakProbeDomain = [AppDomain]::CurrentDomain',
+    '$leakProbeDomain.add_TypeResolve($leakProbeHandler)',
+    'try {',
+    '  $leakProbeType = [Type]::GetType($leakProbeName, $false)',
+    '} finally {',
+    '  $leakProbeDomain.remove_TypeResolve($leakProbeHandler)',
+    '}',
+    "if ($null -ne $leakProbeType -or $leakProbeState.Requests -ne 1) { throw 'probe sentinel invalid' }",
+    "if ($typeResolveState.Requests -ne $probeResolverRequests -or -not [Object]::ReferenceEquals($typeResolveState.Type, $probeResolverType) -or $typeResolveState.Failure -ne $probeResolverFailure) { throw 'probe resolver leaked' }",
+  ];
+}
+
+function windowsStreamProbeScripts() {
+  const pinvokeSource = windowsStreamPInvokeSource();
+  const attestation = windowsStreamProbeAttestationLines();
 
   const prologue = [
     "$ErrorActionPreference = 'Stop'",
@@ -156,6 +355,7 @@ function pinnedWindowsStreamProbeScripts() {
   const construct = prologue +
     `[Console]::Out.WriteLine('{"version":1,"probe":"construct","stage":"started"}')\n` +
     pinvokeSource + [
+      ...attestation,
       "if ($nativeType.FullName -cne 'DeepWorkStreamInventoryNative') { throw 'native type mismatch' }",
       "if ($streamDataType.FullName -cne 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA') { throw 'stream data type mismatch' }",
       '$methodNames = [String[]]@($findFirstStream.Name, $findNextStream.Name, $findClose.Name)',
@@ -172,6 +372,7 @@ function pinnedWindowsStreamProbeScripts() {
   const invokeOnce = parameterBlock + prologue +
     `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"started"}')\n` +
     pinvokeSource + [
+      ...attestation,
       `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"constructed"}')`,
       '$data = [Activator]::CreateInstance($streamDataType)',
       '$firstArguments = [Object[]]@($LiteralPath, [Int32]0, $data, [UInt32]0)',
@@ -1509,6 +1710,57 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   assert.doesNotMatch(source, /\bAdd-Type\b/i);
   assert.match(source, /Reflection\.Emit/);
   assert.match(source, /relative_path/);
+  const pinvokeSource = windowsStreamPInvokeSource();
+  assertWindowsStreamTypeResolveSource(pinvokeSource);
+  const movedNestedCreate = replaceWindowsStreamSourceOnce(pinvokeSource,
+    '$resolvedStreamDataType = $streamDataBuilder.CreateType()',
+    '$resolvedStreamDataType = $null').replace(
+    '# DEEP_WORK_TYPE_RESOLVE_HANDLER_END',
+    '# DEEP_WORK_TYPE_RESOLVE_HANDLER_END\n$resolvedStreamDataType = $streamDataBuilder.CreateType()');
+  const reorderedNestedCreate = replaceWindowsStreamSourceOnce(pinvokeSource,
+    '    $resolvedStreamDataType = $streamDataBuilder.CreateType()\n', '').replace(
+    '  try {\n', '  try {\n    $resolvedStreamDataType = $streamDataBuilder.CreateType()\n');
+  const mutants = [
+    ['registration', replaceWindowsStreamSourceOnce(pinvokeSource,
+      '$currentDomain.add_TypeResolve($typeResolveHandler)', ''),
+    /TypeResolve registration count/],
+    ['finally removal', replaceWindowsStreamSourceOnce(pinvokeSource,
+      '$currentDomain.remove_TypeResolve($typeResolveHandler)', ''),
+    /TypeResolve removal count/],
+    ['exact name', replaceWindowsStreamSourceOnce(pinvokeSource,
+      "DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA'",
+      "DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA_MUTANT'"),
+    /exact expected nested type name/],
+    ['duplicate guard', replaceWindowsStreamSourceOnce(pinvokeSource,
+      'if ($typeResolveState.Requests -ne 1) {',
+      'if ($typeResolveState.Requests -lt 1) {'),
+    /duplicate TypeResolve guard/],
+    ['nested CreateType placement', movedNestedCreate,
+      /nested CreateType handler placement/],
+    ['nested CreateType guard order', reorderedNestedCreate,
+      /TypeResolve handler fail-closed order/],
+    ['assembly return', replaceWindowsStreamSourceOnce(pinvokeSource,
+      'return $assemblyBuilder', 'return $streamDataType.Assembly'),
+    /expected TypeResolve assembly return/],
+    ['post-bake authentication', replaceWindowsStreamSourceOnce(pinvokeSource,
+      '$streamDataType.FullName, $expectedStreamDataTypeName',
+      '$expectedStreamDataTypeName, $expectedStreamDataTypeName'),
+    /post-bake exact nested type name/],
+    ['parameter signature', replaceWindowsStreamSourceOnce(pinvokeSource,
+      'ParameterTypes = [Type[]]@([IntPtr], $streamDataByRef)',
+      'ParameterTypes = [Type[]]@([IntPtr])'),
+    /fixed P\/Invoke contract: ParameterTypes/],
+    ['return signature', replaceWindowsStreamSourceOnce(pinvokeSource,
+      'ReturnType = [IntPtr]', 'ReturnType = [UIntPtr]'),
+    /fixed P\/Invoke contract: ReturnType/],
+    ['interop attribute', replaceWindowsStreamSourceOnce(pinvokeSource,
+      "[System.Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')",
+      "[System.Runtime.InteropServices.DllImportAttribute].GetField('BestFitMapping')"),
+    /fixed P\/Invoke contract.*SetLastError/],
+  ];
+  for (const [name, mutant, expected] of mutants) {
+    assert.throws(() => assertWindowsStreamTypeResolveSource(mutant), expected, name);
+  }
 });
 
 test('native Windows PowerShell 5.1 constructs the pinned stream types without a native invocation', {
@@ -1516,7 +1768,7 @@ test('native Windows PowerShell 5.1 constructs the pinned stream types without a
 }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-pinvoke-construct-'));
   try {
-    const {construct} = pinnedWindowsStreamProbeScripts();
+    const {construct} = windowsStreamProbeScripts();
     assertPinnedWindowsStreamProbeScript(construct, {
       firstInvocationCount:0,
       literalPathParameter:null,
@@ -1542,7 +1794,7 @@ test('native Windows PowerShell 5.1 performs one fixed FindFirstStreamW call aft
 }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-pinvoke-once-'));
   try {
-    const {invokeOnce, parameterBlock} = pinnedWindowsStreamProbeScripts();
+    const {invokeOnce, parameterBlock} = windowsStreamProbeScripts();
     assertPinnedWindowsStreamProbeScript(invokeOnce, {
       firstInvocationCount:1,
       literalPathParameter:parameterBlock,
