@@ -9,6 +9,21 @@ permissions:
   contents: read
 
 jobs:
+  runtime-windows:
+    runs-on: windows-latest
+    name: runtime contract (windows-latest)
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run native Windows runtime contract
+        run: npm run test:runtime
+
   tests:
     strategy:
       fail-fast: false

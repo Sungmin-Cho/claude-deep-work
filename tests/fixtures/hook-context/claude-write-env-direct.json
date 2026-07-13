@@ -1,0 +1,8 @@
+{
+  "name": "claude-write-env-direct",
+  "raw": {"file_path":"src/한 글.js","content":"ok"},
+  "env": {"CLAUDE_PLUGIN_ROOT":"/plugins/deep-work","CLAUDE_TOOL_USE_TOOL_NAME":"Write"},
+  "canonicalTool": "write",
+  "host": "claude",
+  "targets": ["src/한 글.js"]
+}

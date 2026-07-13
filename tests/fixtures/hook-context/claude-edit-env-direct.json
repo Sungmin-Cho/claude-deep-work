@@ -1,0 +1,8 @@
+{
+  "name": "claude-edit-env-direct",
+  "raw": {"path":"src/edit.js","old_string":"a","new_string":"b"},
+  "env": {"CLAUDE_PLUGIN_ROOT":"/plugins/deep-work","CLAUDE_TOOL_NAME":"Edit"},
+  "canonicalTool": "write",
+  "host": "claude",
+  "targets": ["src/edit.js"]
+}

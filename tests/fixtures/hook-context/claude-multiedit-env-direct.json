@@ -1,0 +1,8 @@
+{
+  "name": "claude-multiedit-env-direct",
+  "raw": {"edits":[{"file_path":"src/a.js"},{"path":"src/b.js"},{"file_path":"src/a.js"}]},
+  "env": {"CLAUDE_PLUGIN_ROOT":"/plugins/deep-work","CLAUDE_TOOL_USE_TOOL_NAME":"MultiEdit"},
+  "canonicalTool": "write",
+  "host": "claude",
+  "targets": ["src/a.js","src/b.js"]
+}

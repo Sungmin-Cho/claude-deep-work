@@ -1,0 +1,8 @@
+{
+  "name": "claude-bash-wrapper",
+  "raw": {"session_id":"claude-1","tool_name":"Bash","tool_input":{"command":"printf ok > src/generated.txt"}},
+  "env": {"CLAUDE_CODE":"1","CLAUDE_PLUGIN_ROOT":"/plugins/deep-work"},
+  "canonicalTool": "shell",
+  "host": "claude",
+  "targets": ["src/generated.txt"]
+}

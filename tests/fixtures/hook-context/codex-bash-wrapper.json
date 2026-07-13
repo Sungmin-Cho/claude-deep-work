@@ -1,0 +1,8 @@
+{
+  "name": "codex-bash-wrapper",
+  "raw": {"session_id":"codex-1","tool_name":"Bash","tool_input":{"command":"node -p \"process.platform\""}},
+  "env": {"PLUGIN_ROOT":"C:\\Users\\codex\\.codex\\plugins\\deep-work","CODEX_HOME":"C:\\Users\\codex\\.codex"},
+  "canonicalTool": "shell",
+  "host": "codex",
+  "targets": []
+}
