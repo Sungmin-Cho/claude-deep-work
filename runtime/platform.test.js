@@ -601,6 +601,17 @@ const TYPE_RESOLVE_PINNED_INSERTED_STAGES = [
 const TYPE_RESOLVE_PINNED_ALLOWED_STAGES = [
   'started',...TYPE_RESOLVE_PINNED_INSERTED_STAGES,'completed',
 ];
+const TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES = [
+  'started',
+  'type-token-enter','type-token-return',
+  'get-methods-enter','get-methods-return',
+  'name-filter-enter','name-filter-return',
+  'static-filter-enter','static-filter-return',
+  'parameter-filter-enter','parameter-filter-return',
+  'select-enter','select-return',
+  'selected-null','selected-present',
+  'completed',
+];
 
 function typeResolveIdentityFixture(probe) {
   return {
@@ -1003,11 +1014,44 @@ function pinnedWindowsTypeResolveDiagnostic() {
   };
 }
 
+function factoryDiscoveryTypeResolveDiagnosticScript() {
+  const probe = 'factory-discovery';
+  return typeResolveIdentityPreamble(probe) + [
+    typeResolveStageLine(probe, 'started'),
+    typeResolveStageLine(probe, 'type-token-enter'),
+    '$factoryType = [System.Reflection.Emit.AssemblyBuilder]',
+    typeResolveStageLine(probe, 'type-token-return'),
+    typeResolveStageLine(probe, 'get-methods-enter'),
+    '$allMethods = @($factoryType.GetMethods())',
+    typeResolveStageLine(probe, 'get-methods-return'),
+    typeResolveStageLine(probe, 'name-filter-enter'),
+    "$namedMethods = @($allMethods | Where-Object { $_.Name -ceq 'DefineDynamicAssembly' })",
+    typeResolveStageLine(probe, 'name-filter-return'),
+    typeResolveStageLine(probe, 'static-filter-enter'),
+    '$staticMethods = @($namedMethods | Where-Object { $_.IsStatic })',
+    typeResolveStageLine(probe, 'static-filter-return'),
+    typeResolveStageLine(probe, 'parameter-filter-enter'),
+    '$twoParameterMethods = @($staticMethods | Where-Object { $_.GetParameters().Length -eq 2 })',
+    typeResolveStageLine(probe, 'parameter-filter-return'),
+    typeResolveStageLine(probe, 'select-enter'),
+    '$staticFactory = $twoParameterMethods | Select-Object -First 1',
+    typeResolveStageLine(probe, 'select-return'),
+    'if ($null -eq $staticFactory) {',
+    typeResolveStageLine(probe, 'selected-null', '  '),
+    '} else {',
+    typeResolveStageLine(probe, 'selected-present', '  '),
+    '}',
+    typeResolveStageLine(probe, 'completed'),
+    '',
+  ].join('\n');
+}
+
 function windowsTypeResolveDiagnosticScripts() {
   return {
     dispatch:dispatchTypeResolveDiagnosticScript(),
     documented:documentedTypeResolveDiagnosticScript(),
     pinned:pinnedWindowsTypeResolveDiagnostic().script,
+    factoryDiscovery:factoryDiscoveryTypeResolveDiagnosticScript(),
   };
 }
 
@@ -1015,7 +1059,7 @@ function assertClosedTypeResolveDiagnosticScript(script, {
   probe,
   requirePinnedSource,
 }) {
-  assert.equal(['dispatch','documented','pinned'].includes(probe), true,
+  assert.equal(['dispatch','documented','pinned','factory-discovery'].includes(probe), true,
     'closed diagnostic probe');
   const bytes = Buffer.from(script, 'utf8');
   assert.equal(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), false,
@@ -1098,7 +1142,8 @@ function assertClosedTypeResolveDiagnosticScript(script, {
     `closed ${probe} identity emitter`);
   const allowedStages = probe === 'dispatch' ? TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES
     : probe === 'documented' ? TYPE_RESOLVE_DOCUMENTED_ALLOWED_STAGES
-      : TYPE_RESOLVE_PINNED_ALLOWED_STAGES;
+      : probe === 'pinned' ? TYPE_RESOLVE_PINNED_ALLOWED_STAGES
+        : TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES;
   const allowedLines = new Set(allowedStages.map((stage) =>
     typeResolveStageLine(probe, stage)));
   for (const line of script.split('\n').map((item) => item.trim()).filter((item) =>
@@ -1232,7 +1277,8 @@ function nativeWindowsLifecycleEvidence(probe, result, elapsedMs, allowedStages)
   const nodeVersion = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/u
     .test(process.versions.node) ? process.versions.node : 'invalid';
   return {
-    probe:['dispatch','documented','pinned'].includes(probe) ? probe : 'invalid',
+    probe:['dispatch','documented','pinned','factory-discovery'].includes(probe)
+      ? probe : 'invalid',
     nodeVersion,
     elapsedMs:Number.isSafeInteger(elapsedMs) && elapsedMs >= 0 ? elapsedMs : null,
     spawnErrorCode:closedSpawnErrorCode(result?.error === undefined
@@ -1340,6 +1386,21 @@ function assertPinnedTypeResolveRecords(records) {
     'pinned oracle stages');
 }
 
+function assertFactoryDiscoveryTypeResolveRecords(records) {
+  const message = 'factory discovery oracle';
+  assert.equal(records[0]?.probe, 'factory-discovery', message);
+  assert.equal(records[0]?.stage, 'runtime-identity', message);
+  const stages = records.slice(1).map((record) => record.stage);
+  const branchIndex = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES
+    .indexOf('selected-null');
+  const prefix = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES.slice(0, branchIndex);
+  assert.deepEqual(stages.slice(0, prefix.length), prefix, message);
+  assert.equal(['selected-null','selected-present'].includes(stages[prefix.length]), true,
+    message);
+  assert.equal(stages[prefix.length + 1], 'completed', message);
+  assert.equal(stages.length, prefix.length + 2, message);
+}
+
 function runNativeWindowsLifecycleProbe({
   probe,
   root,
@@ -1347,7 +1408,7 @@ function runNativeWindowsLifecycleProbe({
   allowedStages,
   assertRecords,
 }) {
-  assert.equal(['dispatch','documented','pinned'].includes(probe), true,
+  assert.equal(['dispatch','documented','pinned','factory-discovery'].includes(probe), true,
     'lifecycle runner probe');
   assert.equal(typeof assertRecords, 'function', 'lifecycle runner oracle');
   const scriptPath = path.join(root, `${probe}-type-resolve.ps1`);
@@ -2657,7 +2718,7 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
 
 test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only contracts', () => {
   const scripts = windowsTypeResolveDiagnosticScripts();
-  assert.deepEqual(Object.keys(scripts), ['dispatch','documented','pinned']);
+  assert.deepEqual(Object.keys(scripts), ['dispatch','documented','pinned','factoryDiscovery']);
   assertClosedTypeResolveDiagnosticScript(scripts.dispatch, {
     probe:'dispatch',
     requirePinnedSource:false,
@@ -2670,6 +2731,105 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
     probe:'pinned',
     requirePinnedSource:true,
   });
+  const expectedFactoryDiscoveryStages = [
+    'started',
+    'type-token-enter','type-token-return',
+    'get-methods-enter','get-methods-return',
+    'name-filter-enter','name-filter-return',
+    'static-filter-enter','static-filter-return',
+    'parameter-filter-enter','parameter-filter-return',
+    'select-enter','select-return',
+    'selected-null','selected-present',
+    'completed',
+  ];
+  assert.deepEqual(TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES,
+    expectedFactoryDiscoveryStages);
+  assertClosedTypeResolveDiagnosticScript(scripts.factoryDiscovery, {
+    probe:'factory-discovery',
+    requirePinnedSource:false,
+  });
+  const factoryDiscoveryMarker = (stage, indent = '') =>
+    typeResolveStageLine('factory-discovery', stage, indent);
+  const factoryDiscoveryOrderedFragments = [
+    factoryDiscoveryMarker('started'),
+    factoryDiscoveryMarker('type-token-enter'),
+    '$factoryType = [System.Reflection.Emit.AssemblyBuilder]',
+    factoryDiscoveryMarker('type-token-return'),
+    factoryDiscoveryMarker('get-methods-enter'),
+    '$allMethods = @($factoryType.GetMethods())',
+    factoryDiscoveryMarker('get-methods-return'),
+    factoryDiscoveryMarker('name-filter-enter'),
+    "$namedMethods = @($allMethods | Where-Object { $_.Name -ceq 'DefineDynamicAssembly' })",
+    factoryDiscoveryMarker('name-filter-return'),
+    factoryDiscoveryMarker('static-filter-enter'),
+    '$staticMethods = @($namedMethods | Where-Object { $_.IsStatic })',
+    factoryDiscoveryMarker('static-filter-return'),
+    factoryDiscoveryMarker('parameter-filter-enter'),
+    '$twoParameterMethods = @($staticMethods | Where-Object { $_.GetParameters().Length -eq 2 })',
+    factoryDiscoveryMarker('parameter-filter-return'),
+    factoryDiscoveryMarker('select-enter'),
+    '$staticFactory = $twoParameterMethods | Select-Object -First 1',
+    factoryDiscoveryMarker('select-return'),
+    'if ($null -eq $staticFactory) {',
+    factoryDiscoveryMarker('selected-null', '  '),
+    '} else {',
+    factoryDiscoveryMarker('selected-present', '  '),
+    '}',
+    factoryDiscoveryMarker('completed'),
+  ];
+  let factoryDiscoveryCursor = -1;
+  for (const fragment of factoryDiscoveryOrderedFragments) {
+    const next = scripts.factoryDiscovery.indexOf(fragment, factoryDiscoveryCursor + 1);
+    assert.equal(next > factoryDiscoveryCursor, true,
+      `factory discovery source order: ${fragment}`);
+    factoryDiscoveryCursor = next;
+  }
+  for (const stage of expectedFactoryDiscoveryStages) {
+    assert.equal(countLiteral(scripts.factoryDiscovery,
+      factoryDiscoveryMarker(stage)), 1, `factory discovery stage ${stage}`);
+  }
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$factoryType'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$allMethods'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$namedMethods'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$staticMethods'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$twoParameterMethods'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$staticFactory'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, 'DefineDynamicAssembly'), 1,
+    'factory discovery may contain only the exact public method-name literal');
+  for (const forbidden of [
+    /\.DefineDynamicAssembly\s*\(/iu,
+    /\.DefineDynamicModule\s*\(/iu,
+    /\.DefineType\s*\(/iu,
+    /\.DefineNestedType\s*\(/iu,
+    /\.CreateType\s*\(/iu,
+    /\.add_TypeResolve\s*\(/iu,
+    /\.remove_TypeResolve\s*\(/iu,
+    /System\.ResolveEventHandler/iu,
+    /FindFirstStreamW/iu,
+    /FindNextStreamW/iu,
+    /FindClose/iu,
+    /DefinePInvokeMethod/iu,
+    /DllImport/iu,
+    /windows-stream-inventory/iu,
+    /captureWorktreeManifest/iu,
+    /\bgit(?:\.exe)?\b/iu,
+    /\bpowershell(?:\.exe)?\b/iu,
+    /\$LiteralPath/iu,
+    /\$args\b/iu,
+    /\$env:/iu,
+    /\[System\.Environment\]/iu,
+    /\$stream/iu,
+    /RequestingAssembly/iu,
+  ]) {
+    assert.doesNotMatch(scripts.factoryDiscovery, forbidden,
+      `factory discovery forbidden surface ${forbidden}`);
+  }
+  assert.equal(scripts.factoryDiscovery.split('\n').map((line) => line.trim())
+    .filter((line) => line.startsWith('[Console]::Out.WriteLine('))
+    .every((line) => line === '[Console]::Out.WriteLine($identityLine)' ||
+      expectedFactoryDiscoveryStages.some((stage) =>
+        line === factoryDiscoveryMarker(stage))), true,
+  'factory discovery output is identity plus fixed markers only');
   assertDocumentedSetupMarkerPlacements(scripts.documented);
   const strippedDocumented = stripDocumentedSetupDiagnosticMarkers(scripts.documented);
   assert.equal(Buffer.byteLength(strippedDocumented),
@@ -2871,6 +3031,165 @@ test('fixed Windows stream helper TypeResolve evidence rejects mutants without l
   assert.equal(privacy.invalidLineCount > 0, true);
   assert.equal(privacy.spawnErrorCode, 'other');
   assert.equal(privacy.signal, 'other');
+});
+
+test('factory discovery control evidence rejects grammar, order, branch, and process mutants',
+  () => {
+    const allowedStages = [
+      'started',
+      'type-token-enter','type-token-return',
+      'get-methods-enter','get-methods-return',
+      'name-filter-enter','name-filter-return',
+      'static-filter-enter','static-filter-return',
+      'parameter-filter-enter','parameter-filter-return',
+      'select-enter','select-return',
+      'selected-null','selected-present',
+      'completed',
+    ];
+    const prefixStages = allowedStages.slice(0, allowedStages.indexOf('selected-null'));
+    const recordsFor = (branch) => [
+      typeResolveIdentityFixture('factory-discovery'),
+      ...prefixStages.map((stage) => ({version:1, probe:'factory-discovery', stage})),
+      {version:1, probe:'factory-discovery', stage:branch},
+      {version:1, probe:'factory-discovery', stage:'completed'},
+    ];
+    const resultFor = (stdout, stderr = Buffer.alloc(0), extra = {}) => ({
+      error:undefined,
+      status:0,
+      signal:null,
+      stdout:Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout, 'utf8'),
+      stderr:Buffer.isBuffer(stderr) ? stderr : Buffer.from(stderr, 'utf8'),
+      ...extra,
+    });
+    const evidenceFor = (stdout, stderr, extra) => nativeWindowsLifecycleEvidence(
+      'factory-discovery', resultFor(stdout, stderr, extra), 11, allowedStages);
+    const serialize = (records) => `${records.map(JSON.stringify).join('\n')}\n`;
+
+    const selectedPresent = recordsFor('selected-present');
+    assert.equal(selectedPresent.length, 16, 'factory discovery maximum runtime records');
+    assert.equal(selectedPresent.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
+      'factory discovery record cap');
+    const cleanPresent = evidenceFor(serialize(selectedPresent));
+    assert.equal(cleanPresent.probe, 'factory-discovery',
+      'factory discovery parser probe allowlist');
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(cleanPresent));
+    assert.doesNotThrow(() => assertFactoryDiscoveryTypeResolveRecords(
+      cleanPresent.records));
+    const cleanNull = evidenceFor(serialize(recordsFor('selected-null')));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(cleanNull));
+    assert.doesNotThrow(() => assertFactoryDiscoveryTypeResolveRecords(cleanNull.records));
+    const missingIdentityEvidence = evidenceFor(serialize(selectedPresent.slice(1)));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(
+      missingIdentityEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      missingIdentityEvidence.records), /factory discovery oracle/);
+
+    const foreign = [...selectedPresent];
+    foreign[3] = {...foreign[3], probe:'dispatch'};
+    const foreignEvidence = evidenceFor(serialize(foreign));
+    assert.equal(foreignEvidence.foreignRecordCount, 1, 'foreign probe record');
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(foreignEvidence));
+
+    const duplicate = [...selectedPresent];
+    duplicate.splice(6, 0, duplicate[5]);
+    const duplicateEvidence = evidenceFor(serialize(duplicate));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(duplicateEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      duplicateEvidence.records), /factory discovery oracle/);
+
+    const outOfOrder = [...selectedPresent];
+    [outOfOrder[7], outOfOrder[8]] = [outOfOrder[8], outOfOrder[7]];
+    const outOfOrderEvidence = evidenceFor(serialize(outOfOrder));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(outOfOrderEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      outOfOrderEvidence.records), /factory discovery oracle/);
+
+    const bothBranches = [...selectedPresent];
+    bothBranches.splice(-1, 0,
+      {version:1, probe:'factory-discovery', stage:'selected-null'});
+    const bothBranchesEvidence = evidenceFor(serialize(bothBranches));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(bothBranchesEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      bothBranchesEvidence.records), /factory discovery oracle/);
+
+    const missingBranch = selectedPresent.filter((record) =>
+      record.stage !== 'selected-present');
+    const missingBranchEvidence = evidenceFor(serialize(missingBranch));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(missingBranchEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      missingBranchEvidence.records), /factory discovery oracle/);
+
+    const malformedEvidence = evidenceFor('{bad\n');
+    assert.equal(malformedEvidence.invalidLineCount, 1, 'malformed JSON');
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(malformedEvidence));
+
+    const privateStdout = 'C:\\private\\factory-source.ps1 raw method signature\n';
+    const privateStderr = 'C:\\Users\\private\\factory-source.ps1: secret exception';
+    const privateEvidence = evidenceFor(privateStdout,
+      Buffer.from(privateStderr, 'utf8'), {
+        error:Object.assign(new Error('secret exception'), {code:'PRIVATE_FACTORY_CODE'}),
+        signal:'PRIVATE_FACTORY_SIGNAL',
+      });
+    const privateSerialized = JSON.stringify(privateEvidence);
+    for (const secret of ['C:\\private\\factory-source.ps1',
+      'C:\\Users\\private\\factory-source.ps1', 'raw method signature',
+      'secret exception', 'PRIVATE_FACTORY_CODE', 'PRIVATE_FACTORY_SIGNAL']) {
+      assert.equal(privateSerialized.includes(secret), false,
+        'factory discovery privacy evidence');
+    }
+    assert.equal(privateEvidence.spawnErrorCode, 'other',
+      'non-timeout process error is closed');
+    assert.equal(privateEvidence.signal, 'other', 'foreign signal is closed');
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(privateEvidence));
+
+    const nonTimeoutEvidence = evidenceFor(serialize(selectedPresent), Buffer.alloc(0), {
+      error:Object.assign(new Error('private access failure'), {code:'EACCES'}),
+    });
+    assert.equal(nonTimeoutEvidence.spawnErrorCode, 'other',
+      'non-timeout process errors are inadmissible');
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(nonTimeoutEvidence));
+
+    const truncatedEvidence = evidenceFor(
+      `${JSON.stringify(typeResolveIdentityFixture('factory-discovery'))}\n${'x'.repeat(8_193)}`);
+    assert.equal(truncatedEvidence.stdoutTruncated, true, 'truncated prefix');
+    assert.equal(truncatedEvidence.stdoutTruncatedBytes > 0, true,
+      'truncated byte count');
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(truncatedEvidence));
+
+    const overflowRecords = [
+      typeResolveIdentityFixture('factory-discovery'),
+      ...Array.from({length:64}, () =>
+        ({version:1, probe:'factory-discovery', stage:'started'})),
+    ];
+    const overflowEvidence = evidenceFor(serialize(overflowRecords));
+    assert.equal(overflowEvidence.recordOverflowCount, 1, 'record overflow');
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(overflowEvidence));
+  });
+
+test('native Windows PowerShell 5.1 factory discovery control is closed and bounded', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-factory-discovery-'));
+  try {
+    const {factoryDiscovery} = windowsTypeResolveDiagnosticScripts();
+    assertClosedTypeResolveDiagnosticScript(factoryDiscovery, {
+      probe:'factory-discovery',
+      requirePinnedSource:false,
+    });
+    const result = runNativeWindowsLifecycleProbe({
+      probe:'factory-discovery',
+      root,
+      script:factoryDiscovery,
+      allowedStages:TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES,
+      assertRecords:assertFactoryDiscoveryTypeResolveRecords,
+    });
+    t.diagnostic(JSON.stringify({
+      kind:'native-type-resolve-runtime-identity',
+      node_version:result.nodeVersion,
+      probe:'factory-discovery',
+      runtime_identity:result.runtimeIdentity,
+    }));
+  } finally { remove(root); }
 });
 
 test('native Windows PowerShell 5.1 TypeResolve dispatch control is synchronous and closed', {
