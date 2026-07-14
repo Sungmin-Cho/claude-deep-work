@@ -10,11 +10,14 @@ $ErrorActionPreference = 'Stop'
 # DEEP_WORK_PINVOKE_SOURCE_BEGIN
 $assemblyName = [System.Reflection.AssemblyName]::new('DeepWorkStreamInventoryNativeAssembly')
 $assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run
-$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |
-  Where-Object {
-    $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and
-    $_.GetParameters().Length -eq 2
-  } | Select-Object -First 1
+$staticFactoryCandidates = @(
+  [System.Reflection.Emit.AssemblyBuilder].GetMethods() |
+    Where-Object {
+      $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and
+      $_.GetParameters().Length -eq 2
+    }
+)
+$staticFactory = $staticFactoryCandidates[0]
 if ($null -ne $staticFactory) {
   $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))
 } else {

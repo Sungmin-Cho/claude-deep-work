@@ -425,7 +425,7 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
           specKeys !== 'args,executable' || envKeys !== 'PATH,PSModulePath,SystemRoot,TEMP,TMP,WINDIR' ||
           request.options.platform !== 'win32' || request.options.timeoutMs !== 20_000 ||
           request.options.maxOutputBytes !== 67_108_864 || helperDigest !==
-            '94b7ba5a7689d0df80ac7d8f78fa838a8b89779de68c928de82d39fd5cedfb32' ||
+            'e4ed70e6ae183c178bb48309f53af133bcd91e26c522969d454b5cd5f387e1d7' ||
           typeof request.spec.executable !== 'string' ||
           path.win32.normalize(request.spec.executable).toLowerCase() !==
             path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 9 ||
