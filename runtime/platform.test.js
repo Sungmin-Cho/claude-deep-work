@@ -646,6 +646,27 @@ const TYPE_RESOLVE_PINNED_INSERTED_STAGES = [
   'scope-exited','resolver-state-authenticated','nested-type-authenticated',
   'methods-reflected','methods-authenticated',
 ];
+const TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES = [
+  'state-native-create-succeeded','state-native-create-failed',
+  'state-requests-zero','state-requests-one','state-requests-other',
+  'state-failure-null','state-failure-name-mismatch','state-failure-duplicate',
+  'state-failure-result-mismatch','state-failure-catch','state-failure-other',
+  'state-type-null','state-type-present',
+];
+const TYPE_RESOLVE_PINNED_CALLBACK_OUTPUT_GUARDS = [
+  ['resolver-entered','before-increment'],
+  ['resolver-request-incremented','after-increment'],
+  ['resolver-name-foreign','after-increment'],
+  ['resolver-reject-name','after-increment'],
+  ['resolver-name-exact','after-increment'],
+  ['resolver-reject-duplicate','after-increment'],
+  ['resolver-request-1','after-increment'],
+  ['resolver-nested-create-enter','after-increment'],
+  ['resolver-nested-create-return','after-increment'],
+  ['resolver-result-authenticated','after-increment'],
+  ['resolver-return-assembly','after-increment'],
+  ['resolver-catch','after-increment'],
+];
 const EXPECTED_TYPE_RESOLVE_PINNED_FACTORY_STAGES = [
   'factory-candidates-ready','factory-index-enter','factory-index-return',
   'factory-branch-enter','factory-invoke-enter','factory-invoke-return',
@@ -665,7 +686,12 @@ const EXPECTED_TYPE_RESOLVE_PINNED_INSERTED_STAGES = [
   'methods-reflected','methods-authenticated',
 ];
 const TYPE_RESOLVE_PINNED_ALLOWED_STAGES = [
-  'started',...TYPE_RESOLVE_PINNED_INSERTED_STAGES,'completed',
+  'started',
+  ...TYPE_RESOLVE_PINNED_INSERTED_STAGES.flatMap((stage) =>
+    stage === 'scope-exited'
+      ? [stage, ...TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES]
+      : [stage]),
+  'completed',
 ];
 const TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES = [
   'started',
@@ -714,6 +740,500 @@ function typeResolveIdentityFixture(probe) {
 
 function typeResolveStageLine(probe, stage, indent = '') {
   return `${indent}[Console]::Out.WriteLine('${JSON.stringify({version:1, probe, stage})}')`;
+}
+
+const EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES = [
+  'state-native-create-succeeded','state-native-create-failed',
+  'state-requests-zero','state-requests-one','state-requests-other',
+  'state-failure-null','state-failure-name-mismatch','state-failure-duplicate',
+  'state-failure-result-mismatch','state-failure-catch','state-failure-other',
+  'state-type-null','state-type-present',
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS = [
+  ['resolver-entered','-lt'],
+  ['resolver-request-incremented','-le'],
+  ['resolver-name-foreign','-le'],
+  ['resolver-reject-name','-le'],
+  ['resolver-name-exact','-le'],
+  ['resolver-reject-duplicate','-le'],
+  ['resolver-request-1','-le'],
+  ['resolver-nested-create-enter','-le'],
+  ['resolver-nested-create-return','-le'],
+  ['resolver-result-authenticated','-le'],
+  ['resolver-return-assembly','-le'],
+  ['resolver-catch','-le'],
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_PRE_GREEN_INSERTED_STAGES = [
+  'factory-candidates-ready','factory-index-enter','factory-index-return',
+  'factory-branch-enter','factory-invoke-enter','factory-invoke-return',
+  'factory-fallback-enter','factory-fallback-return',
+  'assembly-ready','module-ready','native-builder-ready','stream-builder-ready',
+  'stream-fields-ready','byref-ready','methods-defined','callback-build-enter',
+  'resolver-entered','resolver-request-incremented','resolver-name-foreign',
+  'resolver-reject-name','resolver-name-exact','resolver-reject-duplicate',
+  'resolver-request-1','resolver-nested-create-enter','resolver-nested-create-return',
+  'resolver-result-authenticated','resolver-return-assembly','resolver-catch',
+  'callback-closure-ready','delegate-ready','handler-registered','enclosing-create-enter',
+  'enclosing-create-return','enclosing-create-catch','handler-remove-enter','handler-removed',
+  'scope-exited','resolver-state-authenticated','nested-type-authenticated',
+  'methods-reflected','methods-authenticated',
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_FIRST_GROUPS = {
+  success:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-request-1','resolver-nested-create-enter','resolver-nested-create-return',
+    'resolver-result-authenticated','resolver-return-assembly',
+  ],
+  foreign:[
+    'resolver-entered','resolver-request-incremented','resolver-name-foreign',
+    'resolver-reject-name',
+  ],
+  result:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-request-1','resolver-nested-create-enter','resolver-nested-create-return',
+  ],
+  catch:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-request-1','resolver-nested-create-enter','resolver-catch',
+  ],
+};
+const EXPECTED_TYPE_RESOLVE_PINNED_SECOND_GROUPS = {
+  foreign:[
+    'resolver-entered','resolver-request-incremented','resolver-name-foreign',
+    'resolver-reject-name',
+  ],
+  duplicate:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-reject-duplicate',
+  ],
+};
+const EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT = {
+  firstGroups:['success','foreign','result','catch'],
+  secondGroups:['foreign','duplicate'],
+  finalFailures:['name-mismatch','duplicate'],
+  otherCombinationCount:16,
+  coupleFinalFailureToSecondGroup:false,
+};
+const EXPECTED_TYPE_RESOLVE_PINNED_RECORD_PREFIX = [
+  'runtime-identity','started','factory-candidates-ready','factory-index-enter',
+  'factory-index-return','factory-branch-enter','factory-invoke-enter',
+  'factory-invoke-return','assembly-ready','module-ready','native-builder-ready',
+  'stream-builder-ready','stream-fields-ready','byref-ready','methods-defined',
+  'callback-build-enter','callback-closure-ready','delegate-ready','handler-registered',
+  'enclosing-create-enter',
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_SUCCESS_SUFFIX = [
+  'resolver-state-authenticated','nested-type-authenticated','methods-reflected',
+  'methods-authenticated','completed',
+];
+
+function expectedTypeResolvePinnedStateDiagnosticBlock() {
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  return [
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_BEGIN',
+    'if ($nativeTypeFailure) {',
+    marker('state-native-create-failed', '  '),
+    '} else {',
+    marker('state-native-create-succeeded', '  '),
+    '}',
+    'if ($typeResolveState.Requests -eq 0) {',
+    marker('state-requests-zero', '  '),
+    '} elseif ($typeResolveState.Requests -eq 1) {',
+    marker('state-requests-one', '  '),
+    '} else {',
+    marker('state-requests-other', '  '),
+    '}',
+    'if ($null -eq $typeResolveState.Failure) {',
+    marker('state-failure-null', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve name mismatch') {",
+    marker('state-failure-name-mismatch', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve duplicate') {",
+    marker('state-failure-duplicate', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve result mismatch') {",
+    marker('state-failure-result-mismatch', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve failed') {",
+    marker('state-failure-catch', '  '),
+    '} else {',
+    marker('state-failure-other', '  '),
+    '}',
+    'if ($null -eq $typeResolveState.Type) {',
+    marker('state-type-null', '  '),
+    '} else {',
+    marker('state-type-present', '  '),
+    '}',
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+  ].join('\n');
+}
+
+function expectedTypeResolvePinnedGuardedMarker(stage, comparison) {
+  return [
+    `if ($typeResolveState.Requests ${comparison} 2) {`,
+    typeResolveStageLine('pinned', stage),
+    '}',
+  ].join('\n');
+}
+
+function expectedPinnedPreGreenDiagnosticBaseline() {
+  const original = windowsStreamPInvokeSource();
+  const specifications = [
+    {id:'factory-candidates-ready', anchor:EXPECTED_WINDOWS_FACTORY_CANDIDATE_MATERIALIZATION},
+    {id:'factory-index-enter', anchor:EXPECTED_WINDOWS_FACTORY_DIRECT_INDEX, placement:'before'},
+    {id:'factory-index-return', anchor:EXPECTED_WINDOWS_FACTORY_DIRECT_INDEX},
+    {id:'factory-branch-enter', anchor:'if ($null -ne $staticFactory) {', placement:'before'},
+    {id:'factory-invoke-enter', anchor:'  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))', placement:'before'},
+    {id:'factory-invoke-return', anchor:'  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))'},
+    {id:'factory-fallback-enter', anchor:'  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)', placement:'before'},
+    {id:'factory-fallback-return', anchor:'  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)'},
+    {id:'assembly-ready', anchor:`  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)\n${typeResolveStageLine('pinned', 'factory-fallback-return')}\n}`},
+    {id:'module-ready', anchor:"$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkStreamInventoryNativeModule')"},
+    {id:'native-builder-ready', anchor:"$nativeBuilder = $moduleBuilder.DefineType('DeepWorkStreamInventoryNative', $nativeAttributes)"},
+    {id:'stream-builder-ready', anchor:"$streamDataBuilder = $nativeBuilder.DefineNestedType('WIN32_FIND_STREAM_DATA',\n  $streamDataAttributes, [ValueType])"},
+    {id:'stream-fields-ready', anchor:'$streamNameField.SetCustomAttribute($marshalAttribute)'},
+    {id:'byref-ready', anchor:'$streamDataByRef = $streamDataType.MakeByRefType()'},
+    {id:'methods-defined', anchor:'[void](Add-ClosedPInvokeMethod @findCloseDefinition)'},
+    {id:'callback-build-enter', anchor:'$typeResolveCallback = {', placement:'before'},
+    {id:'resolver-entered', anchor:'  param($sender, $eventArgs)'},
+    {id:'resolver-request-incremented', anchor:'    $typeResolveState.Requests++'},
+    {id:'resolver-name-foreign', anchor:'    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,\n        [System.StringComparison]::Ordinal)) {'},
+    {id:'resolver-reject-name', anchor:"      $typeResolveState.Failure = 'stream type resolve name mismatch'"},
+    {id:'resolver-name-exact', anchor:'    if ($typeResolveState.Requests -ne 1) {', placement:'before'},
+    {id:'resolver-reject-duplicate', anchor:'    if ($typeResolveState.Requests -ne 1) {'},
+    {id:'resolver-request-1', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()', placement:'before'},
+    {id:'resolver-nested-create-enter', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()', placement:'before'},
+    {id:'resolver-nested-create-return', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()'},
+    {id:'resolver-result-authenticated', anchor:'    $typeResolveState.Type = $resolvedStreamDataType', placement:'before'},
+    {id:'resolver-return-assembly', anchor:'    return $assemblyBuilder', placement:'before'},
+    {id:'resolver-catch', anchor:'  } catch {'},
+    {id:'callback-closure-ready', anchor:'}.GetNewClosure()'},
+    {id:'delegate-ready', anchor:'$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback'},
+    {id:'handler-registered', anchor:'$currentDomain.add_TypeResolve($typeResolveHandler)'},
+    {id:'enclosing-create-enter', anchor:'  $nativeType = $nativeBuilder.CreateType()', placement:'before'},
+    {id:'enclosing-create-return', anchor:'  $nativeType = $nativeBuilder.CreateType()'},
+    {id:'enclosing-create-catch', anchor:'  $nativeTypeFailure = $true', placement:'before'},
+    {id:'handler-remove-enter', anchor:'} finally {'},
+    {id:'handler-removed', anchor:'  $currentDomain.remove_TypeResolve($typeResolveHandler)'},
+    {id:'scope-exited', anchor:'# DEEP_WORK_TYPE_RESOLVE_SCOPE_END', placement:'before'},
+    {id:'resolver-state-authenticated', anchor:'$nestedTypeFlags = [System.Reflection.BindingFlags]::Public -bor', placement:'before'},
+    {id:'nested-type-authenticated', anchor:'$nativeMethodFlags = [System.Reflection.BindingFlags]::Public -bor', placement:'before'},
+    {id:'methods-reflected', anchor:"$findClose = $nativeType.GetMethod('FindClose', $nativeMethodFlags)"},
+    {id:'methods-authenticated', anchor:windowsStreamRuntimeAttestationLines()[2]},
+  ];
+  assert.deepEqual(specifications.map(({id}) => id),
+    EXPECTED_TYPE_RESOLVE_PINNED_PRE_GREEN_INSERTED_STAGES,
+  'expected pinned frozen pre-GREEN marker specification order');
+  let transformed = original;
+  for (const specification of specifications) {
+    transformed = applyPinnedTypeResolveMarker(transformed, specification).source;
+  }
+  return {original, transformed};
+}
+
+function expectedPinnedPostScopeResolverStateFixture() {
+  const base = expectedPinnedPreGreenDiagnosticBaseline();
+  let transformed = base.transformed;
+  for (const [stage, comparison] of EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS) {
+    const marker = typeResolveStageLine('pinned', stage);
+    assert.equal(countLiteral(transformed, marker), 1,
+      `expected pinned fixture callback marker ${stage}`);
+    transformed = transformed.replace(marker,
+      expectedTypeResolvePinnedGuardedMarker(stage, comparison));
+  }
+  const insertionAnchor = '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN\n';
+  assert.equal(countLiteral(transformed, insertionAnchor), 1,
+    'expected pinned fixture classifier anchor');
+  transformed = transformed.replace(insertionAnchor,
+    `${insertionAnchor}${expectedTypeResolvePinnedStateDiagnosticBlock()}\n`);
+  return {original:base.original, transformed};
+}
+
+function expectedTypeResolvePinnedGuardedCallbackBlock() {
+  const comparisons = Object.fromEntries(EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS);
+  const guard = (stage) => expectedTypeResolvePinnedGuardedMarker(
+    stage, comparisons[stage]);
+  return [
+    '$typeResolveCallback = {',
+    '  param($sender, $eventArgs)',
+    guard('resolver-entered'),
+    '  try {',
+    '    $typeResolveState.Requests++',
+    guard('resolver-request-incremented'),
+    '    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,',
+    '        [System.StringComparison]::Ordinal)) {',
+    guard('resolver-name-foreign'),
+    "      $typeResolveState.Failure = 'stream type resolve name mismatch'",
+    guard('resolver-reject-name'),
+    '      return $null',
+    '    }',
+    guard('resolver-name-exact'),
+    '    if ($typeResolveState.Requests -ne 1) {',
+    guard('resolver-reject-duplicate'),
+    "      $typeResolveState.Failure = 'stream type resolve duplicate'",
+    '      return $null',
+    '    }',
+    guard('resolver-request-1'),
+    guard('resolver-nested-create-enter'),
+    '    $resolvedStreamDataType = $streamDataBuilder.CreateType()',
+    guard('resolver-nested-create-return'),
+    '    if ($null -eq $resolvedStreamDataType -or',
+    '        -not [String]::Equals($resolvedStreamDataType.FullName, $expectedStreamDataTypeName,',
+    '          [System.StringComparison]::Ordinal) -or',
+    '        -not $resolvedStreamDataType.IsValueType -or',
+    '        -not [Object]::ReferenceEquals($resolvedStreamDataType.Assembly, $assemblyBuilder)) {',
+    "      $typeResolveState.Failure = 'stream type resolve result mismatch'",
+    '      return $null',
+    '    }',
+    guard('resolver-result-authenticated'),
+    '    $typeResolveState.Type = $resolvedStreamDataType',
+    guard('resolver-return-assembly'),
+    '    return $assemblyBuilder',
+    '  } catch {',
+    guard('resolver-catch'),
+    "    $typeResolveState.Failure = 'stream type resolve failed'",
+    '    return $null',
+    '  }',
+    '}.GetNewClosure()',
+  ].join('\n');
+}
+
+function expectedTypeResolvePinnedIncrementGuardAnchor() {
+  return [
+    '  try {',
+    '    $typeResolveState.Requests++',
+    expectedTypeResolvePinnedGuardedMarker('resolver-request-incremented', '-le'),
+    '    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,',
+  ].join('\n');
+}
+
+function assertExpectedPinnedAdmissibilityContract(contract) {
+  assert.deepEqual(contract, EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT,
+    'expected pinned post-scope resolver-state admissibility contract');
+  assert.equal(contract.firstGroups.length * contract.secondGroups.length *
+    contract.finalFailures.length, contract.otherCombinationCount,
+  'expected pinned post-scope resolver-state 4 x 2 x 2 cross product');
+  assert.equal(contract.coupleFinalFailureToSecondGroup, false,
+    'expected pinned post-scope resolver-state final failure independence');
+}
+
+function assertExpectedPinnedStateTuple(tuple) {
+  assert.equal(['succeeded','failed'].includes(tuple.native), true,
+    'expected pinned post-scope resolver-state native category');
+  if (tuple.request === 'zero') {
+    assert.deepEqual({failure:tuple.failure, type:tuple.type, groups:tuple.groups},
+      {failure:'null', type:'null', groups:[]},
+    'expected pinned post-scope resolver-state zero tuple');
+    return;
+  }
+  if (tuple.request === 'one') {
+    const outcomes = {
+      success:{failure:'null', type:'present'},
+      foreign:{failure:'name-mismatch', type:'null'},
+      result:{failure:'result-mismatch', type:'null'},
+      catch:{failure:'catch', type:'null'},
+    };
+    assert.equal(tuple.groups.length, 1,
+      'expected pinned post-scope resolver-state one group');
+    assert.deepEqual({failure:tuple.failure, type:tuple.type}, outcomes[tuple.groups[0]],
+      'expected pinned post-scope resolver-state one tuple');
+    return;
+  }
+  assert.equal(tuple.request, 'other',
+    'expected pinned post-scope resolver-state request category');
+  assert.equal(tuple.groups.length, 2,
+    'expected pinned post-scope resolver-state two visible groups');
+  assert.equal(EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT.firstGroups
+    .includes(tuple.groups[0]), true,
+  'expected pinned post-scope resolver-state valid first group');
+  assert.equal(EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT.secondGroups
+    .includes(tuple.groups[1]), true,
+  'expected pinned post-scope resolver-state valid second group');
+  assert.equal(EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT.finalFailures
+    .includes(tuple.failure), true,
+  'expected pinned post-scope resolver-state final failure');
+  assert.equal(tuple.type, tuple.groups[0] === 'success' ? 'present' : 'null',
+    'expected pinned post-scope resolver-state first-group Type consistency');
+}
+
+function expectedPinnedStateTupleStages(tuple) {
+  assertExpectedPinnedStateTuple(tuple);
+  const callbackStages = tuple.groups.length === 0 ? []
+    : tuple.request === 'one' ? EXPECTED_TYPE_RESOLVE_PINNED_FIRST_GROUPS[tuple.groups[0]]
+      : [
+        ...EXPECTED_TYPE_RESOLVE_PINNED_FIRST_GROUPS[tuple.groups[0]],
+        ...EXPECTED_TYPE_RESOLVE_PINNED_SECOND_GROUPS[tuple.groups[1]],
+      ];
+  const scopeStages = [
+    tuple.native === 'failed' ? 'enclosing-create-catch' : 'enclosing-create-return',
+    'handler-remove-enter','handler-removed','scope-exited',
+  ];
+  const stateStages = [
+    `state-native-create-${tuple.native}`,
+    `state-requests-${tuple.request}`,
+    `state-failure-${tuple.failure}`,
+    `state-type-${tuple.type}`,
+  ];
+  const success = tuple.native === 'succeeded' && tuple.request === 'one' &&
+    tuple.groups[0] === 'success';
+  return [
+    ...EXPECTED_TYPE_RESOLVE_PINNED_RECORD_PREFIX,
+    ...callbackStages,
+    ...scopeStages,
+    ...stateStages,
+    ...(success ? EXPECTED_TYPE_RESOLVE_PINNED_SUCCESS_SUFFIX : []),
+  ];
+}
+
+function expectedPinnedStateRecordFixture(tuple) {
+  return {
+    ...tuple,
+    records:expectedPinnedStateTupleStages(tuple).map((stage) =>
+      stage === 'runtime-identity' ? typeResolveIdentityFixture('pinned')
+        : {version:1, probe:'pinned', stage}),
+  };
+}
+
+function assertExpectedPinnedStateRecordFixture(fixture) {
+  assertExpectedPinnedStateTuple(fixture);
+  assert.equal(fixture.records.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
+    'expected pinned post-scope resolver-state parser cap');
+  assert.equal(fixture.records.length <= 41, true,
+    'expected pinned post-scope resolver-state maximum path');
+  assert.deepEqual(fixture.records.map((record) => record.stage),
+    expectedPinnedStateTupleStages(fixture),
+  'expected pinned post-scope resolver-state record path');
+}
+
+function expectedPinnedStateRecordFixtures() {
+  const fixtures = [];
+  for (const native of ['succeeded','failed']) {
+    fixtures.push(expectedPinnedStateRecordFixture({
+      native, request:'zero', failure:'null', type:'null', groups:[],
+    }));
+    for (const first of EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT.firstGroups) {
+      const oneOutcome = {
+        success:{failure:'null', type:'present'},
+        foreign:{failure:'name-mismatch', type:'null'},
+        result:{failure:'result-mismatch', type:'null'},
+        catch:{failure:'catch', type:'null'},
+      }[first];
+      fixtures.push(expectedPinnedStateRecordFixture({
+        native, request:'one', ...oneOutcome, groups:[first],
+      }));
+      for (const second of EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT.secondGroups) {
+        for (const failure of EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT
+          .finalFailures) {
+          fixtures.push(expectedPinnedStateRecordFixture({
+            native,
+            request:'other',
+            failure,
+            type:first === 'success' ? 'present' : 'null',
+            groups:[first,second],
+          }));
+        }
+      }
+    }
+  }
+  return fixtures;
+}
+
+function stripExpectedPinnedPostScopeResolverStateDiagnostic(diagnostic) {
+  let stripped = diagnostic.transformed;
+  const classifier = expectedTypeResolvePinnedStateDiagnosticBlock();
+  assert.equal(countLiteral(stripped, `${classifier}\n`), 1,
+    'expected pinned post-scope resolver-state classifier strip');
+  stripped = stripped.replace(`${classifier}\n`, '');
+  for (const [stage, comparison] of [...EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS]
+    .reverse()) {
+    const wrapper = expectedTypeResolvePinnedGuardedMarker(stage, comparison);
+    assert.equal(countLiteral(stripped, wrapper), 1,
+      `expected pinned post-scope resolver-state wrapper strip ${stage}`);
+    stripped = stripped.replace(wrapper, typeResolveStageLine('pinned', stage));
+  }
+  const markerLines = new Set(TYPE_RESOLVE_PINNED_INSERTED_STAGES.map((stage) =>
+    typeResolveStageLine('pinned', stage)));
+  return stripped.split('\n').filter((line) => !markerLines.has(line.trim())).join('\n');
+}
+
+function expectedPinnedPostScopeResolverStateDiscrepancies(diagnostic) {
+  const discrepancies = [];
+  const requireExactCount = (value, expected, id) => {
+    const actual = countLiteral(diagnostic.transformed, value);
+    if (actual !== expected) discrepancies.push(`${id}: expected ${expected}, actual ${actual}`);
+  };
+  const {transformed} = diagnostic;
+  const classifier = expectedTypeResolvePinnedStateDiagnosticBlock();
+  requireExactCount(classifier, 1, 'classifier');
+  const placement = [
+    '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
+    '',
+    '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN',
+    classifier,
+    "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+  ].join('\n');
+  requireExactCount(placement, 1, 'post-scope classifier placement');
+  for (const stage of EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES) {
+    requireExactCount(typeResolveStageLine('pinned', stage), 1, `state stage ${stage}`);
+  }
+  for (const [stage, comparison] of EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS) {
+    requireExactCount(expectedTypeResolvePinnedGuardedMarker(stage, comparison), 1,
+      `callback guard ${stage}`);
+  }
+  requireExactCount(expectedTypeResolvePinnedGuardedCallbackBlock(), 1,
+    'exact guarded callback semantic placement');
+  requireExactCount(expectedTypeResolvePinnedIncrementGuardAnchor(), 1,
+    'request increment before post-increment guard');
+  requireExactCount('if ($typeResolveState.Requests -lt 2) {', 1,
+    'pre-increment guard count');
+  requireExactCount('if ($typeResolveState.Requests -le 2) {', 11,
+    'post-increment guard count');
+  const classifierStart = transformed.indexOf(
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_BEGIN');
+  const classifierEndStart = transformed.indexOf(
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END');
+  if (classifierStart < 0 || classifierEndStart < classifierStart) {
+    discrepancies.push('classifier boundaries absent or reversed');
+  } else {
+    const classifierEnd = classifierEndStart +
+      '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END'.length;
+    const classifierSource = transformed.slice(classifierStart, classifierEnd);
+    if (/\$typeResolveState\.(?:Requests|Failure|Type)\s*(?:=|\+\+|--)/u
+      .test(classifierSource)) {
+      discrepancies.push('classifier mutates resolver state');
+    }
+    if (/GetNestedType|DefineNestedType|CreateType|Invoke\(|RequestingAssembly/u
+      .test(classifierSource)) {
+      discrepancies.push('classifier exceeds closed observation surface');
+    }
+  }
+  const allowedOutputLines = new Set([
+    ...TYPE_RESOLVE_PINNED_INSERTED_STAGES,
+    ...EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES,
+  ].map((stage) => typeResolveStageLine('pinned', stage)));
+  const fixedOutputOnly = transformed.split('\n').map((line) => line.trim())
+    .filter((line) => line.startsWith('[Console]::Out.WriteLine('))
+    .every((line) => allowedOutputLines.has(line));
+  if (!fixedOutputOnly) discrepancies.push('output exceeds fixed marker vocabulary');
+  try {
+    if (stripExpectedPinnedPostScopeResolverStateDiagnostic(diagnostic) !==
+        diagnostic.original) {
+      discrepancies.push('source reconstruction differs from original');
+    }
+  } catch (error) {
+    discrepancies.push(`source reconstruction rejected: ${error.message}`);
+  }
+  return discrepancies;
+}
+
+function assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(diagnostic) {
+  assertExpectedPinnedAdmissibilityContract(
+    EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT);
+  const pathFixtures = expectedPinnedStateRecordFixtures();
+  for (const fixture of pathFixtures) assertExpectedPinnedStateRecordFixture(fixture);
+  assert.equal(Math.max(...pathFixtures.map((fixture) => fixture.records.length)), 41,
+    'expected pinned post-scope resolver-state exact maximum path');
+  assert.equal(TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, 64,
+    'expected pinned post-scope resolver-state fixed parser cap');
+  assert.deepEqual(expectedPinnedPostScopeResolverStateDiscrepancies(diagnostic), [],
+    'expected pinned post-scope resolver-state aggregated actual-script discrepancies');
 }
 
 function stripDocumentedSetupDiagnosticMarkers(script) {
@@ -1015,6 +1535,114 @@ function applyPinnedTypeResolveMarker(source, {id, anchor, placement = 'after'})
   };
 }
 
+function pinnedTypeResolveStateDiagnosticBlock() {
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  return [
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_BEGIN',
+    'if ($nativeTypeFailure) {',
+    marker('state-native-create-failed', '  '),
+    '} else {',
+    marker('state-native-create-succeeded', '  '),
+    '}',
+    'if ($typeResolveState.Requests -eq 0) {',
+    marker('state-requests-zero', '  '),
+    '} elseif ($typeResolveState.Requests -eq 1) {',
+    marker('state-requests-one', '  '),
+    '} else {',
+    marker('state-requests-other', '  '),
+    '}',
+    'if ($null -eq $typeResolveState.Failure) {',
+    marker('state-failure-null', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve name mismatch') {",
+    marker('state-failure-name-mismatch', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve duplicate') {",
+    marker('state-failure-duplicate', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve result mismatch') {",
+    marker('state-failure-result-mismatch', '  '),
+    "} elseif ($typeResolveState.Failure -ceq 'stream type resolve failed') {",
+    marker('state-failure-catch', '  '),
+    '} else {',
+    marker('state-failure-other', '  '),
+    '}',
+    'if ($null -eq $typeResolveState.Type) {',
+    marker('state-type-null', '  '),
+    '} else {',
+    marker('state-type-present', '  '),
+    '}',
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+  ].join('\n');
+}
+
+function pinnedTypeResolveGuardedMarker(stage, outputGuard) {
+  assert.equal(['before-increment','after-increment'].includes(outputGuard), true,
+    `pinned output guard class ${stage}`);
+  const comparison = outputGuard === 'before-increment' ? '-lt' : '-le';
+  return [
+    `if ($typeResolveState.Requests ${comparison} 2) {`,
+    typeResolveStageLine('pinned', stage),
+    '}',
+  ].join('\n');
+}
+
+function applyPinnedTypeResolveOutputGuard(source, {id, outputGuard}) {
+  const before = typeResolveStageLine('pinned', id);
+  const after = pinnedTypeResolveGuardedMarker(id, outputGuard);
+  assert.equal(countLiteral(source, before), 1, `pinned output guard marker ${id}`);
+  return {source:source.replace(before, after), transform:{id, before, after, outputGuard}};
+}
+
+function applyPinnedTypeResolveStateClassifier(source) {
+  const before = [
+    '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
+    '',
+    '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN',
+    '',
+  ].join('\n');
+  const classifier = pinnedTypeResolveStateDiagnosticBlock();
+  const after = `${before}${classifier}\n`;
+  assert.equal(countLiteral(source, before), 1, 'pinned state classifier anchor');
+  return {
+    source:source.replace(before, after),
+    transform:{id:'post-scope-state-classifier', before, after},
+  };
+}
+
+function reversePinnedTypeResolveDiagnosticTransforms(diagnostic) {
+  let reconstructed = diagnostic.transformed;
+  assert.equal(countLiteral(reconstructed, diagnostic.classifierTransform.after), 1,
+    'pinned reverse state classifier');
+  reconstructed = reconstructed.replace(diagnostic.classifierTransform.after,
+    diagnostic.classifierTransform.before);
+  for (const transform of [...diagnostic.guardTransforms].reverse()) {
+    assert.equal(countLiteral(reconstructed, transform.after), 1,
+      `pinned reverse output guard ${transform.id}`);
+    reconstructed = reconstructed.replace(transform.after, transform.before);
+  }
+  for (const transform of [...diagnostic.transforms].reverse()) {
+    assert.equal(countLiteral(reconstructed, transform.after), 1,
+      `pinned reverse anchor ${transform.id}`);
+    reconstructed = reconstructed.replace(transform.after, transform.before);
+  }
+  return reconstructed;
+}
+
+function stripPinnedTypeResolveDiagnostic(source) {
+  let stripped = source;
+  const classifier = `${pinnedTypeResolveStateDiagnosticBlock()}\n`;
+  assert.equal(countLiteral(stripped, classifier), 1, 'pinned classifier strip');
+  stripped = stripped.replace(classifier, '');
+  for (const [stage, outputGuard] of [...TYPE_RESOLVE_PINNED_CALLBACK_OUTPUT_GUARDS]
+    .reverse()) {
+    const wrapper = pinnedTypeResolveGuardedMarker(stage, outputGuard);
+    assert.equal(countLiteral(stripped, wrapper), 1,
+      `pinned output guard strip ${stage}`);
+    stripped = stripped.replace(wrapper, typeResolveStageLine('pinned', stage));
+  }
+  const markerLines = new Set(TYPE_RESOLVE_PINNED_INSERTED_STAGES.map((stage) =>
+    typeResolveStageLine('pinned', stage)));
+  return stripped.split('\n').filter((line) => !markerLines.has(line.trim())).join('\n');
+}
+
 function pinnedWindowsTypeResolveDiagnostic() {
   const helperBytes = fs.readFileSync(path.join(__dirname, 'windows-stream-inventory.ps1'));
   assert.equal(hash(helperBytes), WINDOWS_STREAM_INVENTORY_HELPER_SHA256,
@@ -1040,18 +1668,29 @@ function pinnedWindowsTypeResolveDiagnostic() {
     {id:'byref-ready', anchor:'$streamDataByRef = $streamDataType.MakeByRefType()'},
     {id:'methods-defined', anchor:'[void](Add-ClosedPInvokeMethod @findCloseDefinition)'},
     {id:'callback-build-enter', anchor:'$typeResolveCallback = {', placement:'before'},
-    {id:'resolver-entered', anchor:'  param($sender, $eventArgs)'},
-    {id:'resolver-request-incremented', anchor:'    $typeResolveState.Requests++'},
-    {id:'resolver-name-foreign', anchor:'    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,\n        [System.StringComparison]::Ordinal)) {'},
-    {id:'resolver-reject-name', anchor:"      $typeResolveState.Failure = 'stream type resolve name mismatch'"},
-    {id:'resolver-name-exact', anchor:'    if ($typeResolveState.Requests -ne 1) {', placement:'before'},
-    {id:'resolver-reject-duplicate', anchor:'    if ($typeResolveState.Requests -ne 1) {'},
-    {id:'resolver-request-1', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()', placement:'before'},
-    {id:'resolver-nested-create-enter', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()', placement:'before'},
-    {id:'resolver-nested-create-return', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()'},
-    {id:'resolver-result-authenticated', anchor:'    $typeResolveState.Type = $resolvedStreamDataType', placement:'before'},
-    {id:'resolver-return-assembly', anchor:'    return $assemblyBuilder', placement:'before'},
-    {id:'resolver-catch', anchor:'  } catch {'},
+    {id:'resolver-entered', anchor:'  param($sender, $eventArgs)',
+      outputGuard:'before-increment'},
+    {id:'resolver-request-incremented', anchor:'    $typeResolveState.Requests++',
+      outputGuard:'after-increment'},
+    {id:'resolver-name-foreign', anchor:'    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,\n        [System.StringComparison]::Ordinal)) {',
+      outputGuard:'after-increment'},
+    {id:'resolver-reject-name', anchor:"      $typeResolveState.Failure = 'stream type resolve name mismatch'",
+      outputGuard:'after-increment'},
+    {id:'resolver-name-exact', anchor:'    if ($typeResolveState.Requests -ne 1) {',
+      placement:'before', outputGuard:'after-increment'},
+    {id:'resolver-reject-duplicate', anchor:'    if ($typeResolveState.Requests -ne 1) {',
+      outputGuard:'after-increment'},
+    {id:'resolver-request-1', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()',
+      placement:'before', outputGuard:'after-increment'},
+    {id:'resolver-nested-create-enter', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()',
+      placement:'before', outputGuard:'after-increment'},
+    {id:'resolver-nested-create-return', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()',
+      outputGuard:'after-increment'},
+    {id:'resolver-result-authenticated', anchor:'    $typeResolveState.Type = $resolvedStreamDataType',
+      placement:'before', outputGuard:'after-increment'},
+    {id:'resolver-return-assembly', anchor:'    return $assemblyBuilder',
+      placement:'before', outputGuard:'after-increment'},
+    {id:'resolver-catch', anchor:'  } catch {', outputGuard:'after-increment'},
     {id:'callback-closure-ready', anchor:'}.GetNewClosure()'},
     {id:'delegate-ready', anchor:'$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback'},
     {id:'handler-registered', anchor:'$currentDomain.add_TypeResolve($typeResolveHandler)'},
@@ -1068,6 +1707,10 @@ function pinnedWindowsTypeResolveDiagnostic() {
   ];
   assert.deepEqual(specifications.map(({id}) => id), TYPE_RESOLVE_PINNED_INSERTED_STAGES,
     'pinned marker specification order');
+  assert.deepEqual(specifications.filter(({outputGuard}) => outputGuard)
+    .map(({id, outputGuard}) => [id, outputGuard]),
+  TYPE_RESOLVE_PINNED_CALLBACK_OUTPUT_GUARDS,
+  'pinned callback output guard specification order');
   let transformed = original;
   const transforms = [];
   const markerLines = new Set();
@@ -1077,15 +1720,25 @@ function pinnedWindowsTypeResolveDiagnostic() {
     transforms.push(applied.transform);
     markerLines.add(applied.marker);
   }
-  let reconstructed = transformed;
-  for (const transform of [...transforms].reverse()) {
-    assert.equal(countLiteral(reconstructed, transform.after), 1,
-      `pinned reverse anchor ${transform.id}`);
-    reconstructed = reconstructed.replace(transform.after, transform.before);
+  const guardTransforms = [];
+  for (const specification of specifications.filter(({outputGuard}) => outputGuard)) {
+    const applied = applyPinnedTypeResolveOutputGuard(transformed, specification);
+    transformed = applied.source;
+    guardTransforms.push(applied.transform);
   }
+  const classifier = applyPinnedTypeResolveStateClassifier(transformed);
+  transformed = classifier.source;
+  const diagnostic = {
+    original,
+    transformed,
+    transforms,
+    guardTransforms,
+    classifierTransform:classifier.transform,
+  };
+  const reconstructed = reversePinnedTypeResolveDiagnosticTransforms(diagnostic);
   assert.equal(reconstructed, original, 'pinned reverse reconstruction');
-  assert.equal(transformed.split('\n').filter((line) =>
-    !markerLines.has(line.trim())).join('\n'), original, 'pinned marker stripping');
+  assert.equal(stripPinnedTypeResolveDiagnostic(transformed), original,
+    'pinned independent diagnostic stripping');
   assert.equal(transformed.includes('RequestingAssembly'), false,
     'pinned requester observation absent');
   return {
@@ -1095,6 +1748,8 @@ function pinnedWindowsTypeResolveDiagnostic() {
     original,
     transformed,
     transforms,
+    guardTransforms,
+    classifierTransform:classifier.transform,
     markerLines,
   };
 }
@@ -1248,10 +1903,46 @@ function assertClosedTypeResolveDiagnosticScript(script, {
     `closed ${probe} close invocation`);
   if (requirePinnedSource) {
     assert.equal(probe, 'pinned', 'closed pinned probe');
-    assert.equal(script, pinnedWindowsTypeResolveDiagnostic().script,
+    const pinned = pinnedWindowsTypeResolveDiagnostic();
+    assert.equal(script, pinned.script,
       'closed pinned generated source');
     assert.equal(script.includes('RequestingAssembly'), false,
       'closed pinned requester observation');
+    const classifier = pinnedTypeResolveStateDiagnosticBlock();
+    const placement = [
+      '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
+      '',
+      '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN',
+      classifier,
+      "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+    ].join('\n');
+    assert.equal(countLiteral(pinned.transformed, placement), 1,
+      'closed pinned state classifier placement');
+    assert.equal(countLiteral(pinned.transformed, classifier), 1,
+      'closed pinned state classifier count');
+    for (const [stage, outputGuard] of TYPE_RESOLVE_PINNED_CALLBACK_OUTPUT_GUARDS) {
+      assert.equal(countLiteral(pinned.transformed,
+        pinnedTypeResolveGuardedMarker(stage, outputGuard)), 1,
+      `closed pinned callback output guard ${stage}`);
+    }
+    assert.equal(countLiteral(pinned.transformed,
+      'if ($typeResolveState.Requests -lt 2) {'), 1,
+    'closed pinned pre-increment output guard count');
+    assert.equal(countLiteral(pinned.transformed,
+      'if ($typeResolveState.Requests -le 2) {'), 11,
+    'closed pinned post-increment output guard count');
+    const classifierSource = pinned.transformed.slice(
+      pinned.transformed.indexOf('# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_BEGIN'),
+      pinned.transformed.indexOf('# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END') +
+        '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END'.length);
+    assert.doesNotMatch(classifierSource,
+      /\$typeResolveState\.(?:Requests|Failure|Type)\s*(?:=|\+\+|--)/u,
+    'closed pinned classifier read-only');
+    assert.doesNotMatch(classifierSource,
+      /GetNestedType|DefineNestedType|CreateType|Invoke\(|RequestingAssembly/u,
+    'closed pinned classifier observation-only');
+    assert.equal(stripPinnedTypeResolveDiagnostic(pinned.transformed), pinned.original,
+      'closed pinned independent source reconstruction');
   }
 }
 
@@ -1451,8 +2142,50 @@ function assertDocumentedTypeResolveRecords(records) {
     'documented oracle outer suffix');
 }
 
+const TYPE_RESOLVE_PINNED_RECORD_PREFIX = [
+  'runtime-identity','started','factory-candidates-ready','factory-index-enter',
+  'factory-index-return','factory-branch-enter','factory-invoke-enter',
+  'factory-invoke-return','assembly-ready','module-ready','native-builder-ready',
+  'stream-builder-ready','stream-fields-ready','byref-ready','methods-defined',
+  'callback-build-enter','callback-closure-ready','delegate-ready','handler-registered',
+  'enclosing-create-enter',
+];
+const TYPE_RESOLVE_PINNED_FIRST_CALLBACK_GROUPS = {
+  success:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-request-1','resolver-nested-create-enter','resolver-nested-create-return',
+    'resolver-result-authenticated','resolver-return-assembly',
+  ],
+  foreign:[
+    'resolver-entered','resolver-request-incremented','resolver-name-foreign',
+    'resolver-reject-name',
+  ],
+  result:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-request-1','resolver-nested-create-enter','resolver-nested-create-return',
+  ],
+  catch:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-request-1','resolver-nested-create-enter','resolver-catch',
+  ],
+};
+const TYPE_RESOLVE_PINNED_SECOND_CALLBACK_GROUPS = {
+  foreign:[
+    'resolver-entered','resolver-request-incremented','resolver-name-foreign',
+    'resolver-reject-name',
+  ],
+  duplicate:[
+    'resolver-entered','resolver-request-incremented','resolver-name-exact',
+    'resolver-reject-duplicate',
+  ],
+};
+const TYPE_RESOLVE_PINNED_SUCCESS_SUFFIX = [
+  'resolver-state-authenticated','nested-type-authenticated','methods-reflected',
+  'methods-authenticated','completed',
+];
+
 function typeResolvePinnedGreenStages() {
-  return [
+  const stages = [
     'runtime-identity','started','factory-candidates-ready','factory-index-enter',
     'factory-index-return','factory-branch-enter','factory-invoke-enter',
     'factory-invoke-return','assembly-ready','module-ready','native-builder-ready',
@@ -1462,15 +2195,117 @@ function typeResolvePinnedGreenStages() {
     'resolver-name-exact','resolver-request-1','resolver-nested-create-enter',
     'resolver-nested-create-return','resolver-result-authenticated',
     'resolver-return-assembly','enclosing-create-return','handler-remove-enter',
-    'handler-removed','scope-exited','resolver-state-authenticated',
-    'nested-type-authenticated','methods-reflected','methods-authenticated','completed',
+    'handler-removed','scope-exited','state-native-create-succeeded',
+    'state-requests-one','state-failure-null','state-type-present',
+    'resolver-state-authenticated','nested-type-authenticated','methods-reflected',
+    'methods-authenticated','completed',
   ];
+  assert.equal(stages.length, 41, 'pinned GREEN exact maximum record count');
+  return stages;
+}
+
+function pinnedCallbackGroupAt(stages, index, groups, terminators, label) {
+  const matches = Object.entries(groups).filter(([, candidate]) =>
+    candidate.every((stage, offset) => stages[index + offset] === stage) &&
+    terminators.has(stages[index + candidate.length]));
+  assert.equal(matches.length, 1, `pinned oracle ${label} callback group`);
+  const [name, group] = matches[0];
+  return {name, next:index + group.length};
 }
 
 function assertPinnedTypeResolveRecords(records) {
+  assert.equal(records.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
+    'pinned oracle parser cap');
   assert.equal(records[0]?.probe, 'pinned', 'pinned oracle identity probe');
-  assert.deepEqual(records.map((record) => record.stage), typeResolvePinnedGreenStages(),
-    'pinned oracle stages');
+  assert.equal(records[0]?.stage, 'runtime-identity', 'pinned oracle identity stage');
+  const stages = records.map((record) => record.stage);
+  assert.deepEqual(stages.slice(0, TYPE_RESOLVE_PINNED_RECORD_PREFIX.length),
+    TYPE_RESOLVE_PINNED_RECORD_PREFIX, 'pinned oracle fixed prefix');
+  let index = TYPE_RESOLVE_PINNED_RECORD_PREFIX.length;
+  const groups = [];
+  if (stages[index] === 'resolver-entered') {
+    const first = pinnedCallbackGroupAt(stages, index,
+      TYPE_RESOLVE_PINNED_FIRST_CALLBACK_GROUPS,
+      new Set(['resolver-entered','enclosing-create-return','enclosing-create-catch']),
+      'first');
+    groups.push(first.name);
+    index = first.next;
+    if (stages[index] === 'resolver-entered') {
+      const second = pinnedCallbackGroupAt(stages, index,
+        TYPE_RESOLVE_PINNED_SECOND_CALLBACK_GROUPS,
+        new Set(['enclosing-create-return','enclosing-create-catch']), 'second');
+      groups.push(second.name);
+      index = second.next;
+    }
+  }
+  assert.equal(['enclosing-create-return','enclosing-create-catch'].includes(stages[index]),
+    true, 'pinned oracle enclosing result');
+  const native = stages[index] === 'enclosing-create-return' ? 'succeeded' : 'failed';
+  index += 1;
+  assert.deepEqual(stages.slice(index, index + 3),
+    ['handler-remove-enter','handler-removed','scope-exited'],
+  'pinned oracle post-create scope suffix');
+  index += 3;
+
+  const nativeStages = {
+    'state-native-create-succeeded':'succeeded',
+    'state-native-create-failed':'failed',
+  };
+  const requestStages = {
+    'state-requests-zero':'zero',
+    'state-requests-one':'one',
+    'state-requests-other':'other',
+  };
+  const failureStages = {
+    'state-failure-null':'null',
+    'state-failure-name-mismatch':'name-mismatch',
+    'state-failure-duplicate':'duplicate',
+    'state-failure-result-mismatch':'result-mismatch',
+    'state-failure-catch':'catch',
+    'state-failure-other':'other',
+  };
+  const typeStages = {
+    'state-type-null':'null',
+    'state-type-present':'present',
+  };
+  const stateNative = nativeStages[stages[index]];
+  const request = requestStages[stages[index + 1]];
+  const failure = failureStages[stages[index + 2]];
+  const type = typeStages[stages[index + 3]];
+  assert.notEqual(stateNative, undefined, 'pinned oracle native state category');
+  assert.notEqual(request, undefined, 'pinned oracle request state category');
+  assert.notEqual(failure, undefined, 'pinned oracle failure state category');
+  assert.notEqual(type, undefined, 'pinned oracle type state category');
+  assert.equal(stateNative, native, 'pinned oracle enclosing/state consistency');
+  index += 4;
+
+  let successfulState = false;
+  if (groups.length === 0) {
+    assert.deepEqual({request, failure, type},
+      {request:'zero', failure:'null', type:'null'},
+    'pinned oracle zero-request tuple');
+  } else if (groups.length === 1) {
+    const outcomes = {
+      success:{failure:'null', type:'present'},
+      foreign:{failure:'name-mismatch', type:'null'},
+      result:{failure:'result-mismatch', type:'null'},
+      catch:{failure:'catch', type:'null'},
+    };
+    assert.equal(request, 'one', 'pinned oracle one-request category');
+    assert.deepEqual({failure, type}, outcomes[groups[0]],
+      'pinned oracle one-request tuple');
+    successfulState = native === 'succeeded' && groups[0] === 'success';
+  } else {
+    assert.equal(groups.length, 2, 'pinned oracle visible callback group bound');
+    assert.equal(request, 'other', 'pinned oracle other-request category');
+    assert.equal(['name-mismatch','duplicate'].includes(failure), true,
+      'pinned oracle other final failure');
+    assert.equal(type, groups[0] === 'success' ? 'present' : 'null',
+      'pinned oracle other first-group Type consistency');
+  }
+  const suffix = successfulState ? TYPE_RESOLVE_PINNED_SUCCESS_SUFFIX : [];
+  assert.deepEqual(stages.slice(index), suffix, 'pinned oracle terminal suffix');
+  return {native, request, failure, type, groups};
 }
 
 function assertFactoryDiscoveryTypeResolveRecords(records) {
@@ -2841,8 +3676,16 @@ test('expected Windows pinned factory-boundary diagnostic contract', () => {
   assert.deepEqual({
     insertedStagesExact:JSON.stringify(TYPE_RESOLVE_PINNED_INSERTED_STAGES) ===
       JSON.stringify(EXPECTED_TYPE_RESOLVE_PINNED_INSERTED_STAGES),
+    stateStagesExact:JSON.stringify(TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES) ===
+      JSON.stringify(EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES),
     allowedStagesExact:JSON.stringify(TYPE_RESOLVE_PINNED_ALLOWED_STAGES) ===
-      JSON.stringify(['started', ...EXPECTED_TYPE_RESOLVE_PINNED_INSERTED_STAGES, 'completed']),
+      JSON.stringify([
+        'started',
+        ...EXPECTED_TYPE_RESOLVE_PINNED_INSERTED_STAGES.flatMap((stage) =>
+          stage === 'scope-exited'
+            ? [stage, ...EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES] : [stage]),
+        'completed',
+      ]),
     factoryMarkerCounts:EXPECTED_TYPE_RESOLVE_PINNED_FACTORY_STAGES.every(
       (stage) => countLiteral(script, marker(stage)) === 1),
     candidateBoundaryCount:countLiteral(script, candidateBoundary),
@@ -2851,6 +3694,7 @@ test('expected Windows pinned factory-boundary diagnostic contract', () => {
       EXPECTED_TYPE_RESOLVE_PINNED_FACTORY_STAGES.map(marker)),
   }, {
     insertedStagesExact:true,
+    stateStagesExact:true,
     allowedStagesExact:true,
     factoryMarkerCounts:true,
     candidateBoundaryCount:1,
@@ -2926,6 +3770,126 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   for (const [name, mutant, expected] of mutants) {
     assert.throws(() => assertWindowsStreamTypeResolveSource(mutant), expected, name);
   }
+});
+
+test('expected Windows pinned post-scope resolver-state diagnostic contract', () => {
+  assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(
+    pinnedWindowsTypeResolveDiagnostic());
+});
+
+test('Windows pinned post-scope resolver-state detector rejects closed-surface mutants', () => {
+  const intended = expectedPinnedPostScopeResolverStateFixture();
+  assert.doesNotThrow(() =>
+    assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(intended));
+
+  const marker = (stage) => typeResolveStageLine('pinned', stage);
+  const mutate = (before, after) => {
+    assert.equal(countLiteral(intended.transformed, before), 1,
+      `expected pinned detector mutant anchor ${before}`);
+    return {...intended, transformed:intended.transformed.replace(before, after)};
+  };
+  const reorderedAxes = intended.transformed
+    .replace(marker('state-native-create-failed'), 'STATE_AXIS_SWAP_SENTINEL')
+    .replace(marker('state-requests-zero'), marker('state-native-create-failed'))
+    .replace('STATE_AXIS_SWAP_SENTINEL', marker('state-requests-zero'));
+  const resolverEnteredWrapper = expectedTypeResolvePinnedGuardedMarker(
+    'resolver-entered', '-lt');
+  const requestIncrementedWrapper = expectedTypeResolvePinnedGuardedMarker(
+    'resolver-request-incremented', '-le');
+  const incrementGuardAnchor = [
+    '    $typeResolveState.Requests++',
+    requestIncrementedWrapper,
+  ].join('\n');
+  const scriptMutants = [
+    mutate(marker('state-requests-zero'),
+      '[Console]::Out.WriteLine($typeResolveState.Requests)'),
+    mutate(marker('state-failure-null'),
+      '[Console]::Out.WriteLine($typeResolveState.Failure)'),
+    mutate(marker('state-failure-other'), ''),
+    mutate(marker('state-type-present'),
+      `${marker('state-type-present')}\n${marker('state-type-present')}`),
+    {...intended, transformed:reorderedAxes},
+    mutate('# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+      '$typeResolveState.Failure = $null\n# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END'),
+    mutate('# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+      "$nativeType.GetNestedType('WIN32_FIND_STREAM_DATA')\n" +
+      '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END'),
+    mutate(resolverEnteredWrapper, marker('resolver-entered')),
+    mutate(requestIncrementedWrapper,
+      requestIncrementedWrapper.replace(marker('resolver-request-incremented'),
+        `$typeResolveState.Requests = 2\n${marker('resolver-request-incremented')}`)),
+    mutate(requestIncrementedWrapper,
+      requestIncrementedWrapper.replace('-le 2', '-le 3')),
+    mutate(incrementGuardAnchor, [
+      requestIncrementedWrapper,
+      '    $typeResolveState.Requests++',
+    ].join('\n')),
+  ];
+  for (const mutant of scriptMutants) {
+    assert.throws(() =>
+      assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(mutant));
+  }
+
+  const fixtures = expectedPinnedStateRecordFixtures();
+  assert.equal(fixtures.length, 42,
+    'expected pinned resolver-state native/path fixture count');
+  for (const fixture of fixtures) {
+    assert.doesNotThrow(() => assertExpectedPinnedStateRecordFixture(fixture));
+    assert.doesNotThrow(() => assertPinnedTypeResolveRecords(fixture.records));
+  }
+  assert.equal(Math.max(...fixtures.map((fixture) => fixture.records.length)), 41);
+  assert.equal(TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, 64);
+  const duplicateThenHiddenForeign = fixtures.find((fixture) =>
+    fixture.native === 'succeeded' && fixture.request === 'other' &&
+    fixture.groups[0] === 'success' && fixture.groups[1] === 'duplicate' &&
+    fixture.failure === 'name-mismatch');
+  const foreignThenHiddenExact = fixtures.find((fixture) =>
+    fixture.native === 'succeeded' && fixture.request === 'other' &&
+    fixture.groups[0] === 'success' && fixture.groups[1] === 'foreign' &&
+    fixture.failure === 'duplicate');
+  assert.doesNotThrow(() =>
+    assertExpectedPinnedStateRecordFixture(duplicateThenHiddenForeign));
+  assert.doesNotThrow(() =>
+    assertExpectedPinnedStateRecordFixture(foreignThenHiddenExact));
+
+  assert.throws(() => assertExpectedPinnedStateTuple({
+    native:'succeeded', request:'one', failure:'duplicate', type:'null',
+    groups:['duplicate'],
+  }));
+  assert.throws(() => assertExpectedPinnedStateTuple({
+    native:'succeeded', request:'other', failure:'duplicate', type:'null',
+    groups:['success','foreign'],
+  }));
+  assert.throws(() => assertExpectedPinnedStateTuple({
+    native:'succeeded', request:'other', failure:'name-mismatch', type:'null',
+    groups:['foreign','catch'],
+  }));
+  assert.throws(() => assertExpectedPinnedAdmissibilityContract({
+    ...EXPECTED_TYPE_RESOLVE_PINNED_ADMISSIBILITY_CONTRACT,
+    coupleFinalFailureToSecondGroup:true,
+  }));
+  assert.throws(() => assertExpectedPinnedStateRecordFixture({
+    ...duplicateThenHiddenForeign,
+    records:[
+      ...duplicateThenHiddenForeign.records,
+      ...Array.from({length:65 - duplicateThenHiddenForeign.records.length}, () =>
+        ({version:1, probe:'pinned', stage:'completed'})),
+    ],
+  }));
+  const successfulOne = fixtures.find((fixture) =>
+    fixture.native === 'succeeded' && fixture.request === 'one' &&
+    fixture.groups[0] === 'success');
+  assert.throws(() => assertPinnedTypeResolveRecords(successfulOne.records.map((record) =>
+    record.stage === 'state-failure-null'
+      ? {...record, stage:'state-failure-duplicate'} : record)));
+  assert.throws(() => assertPinnedTypeResolveRecords(duplicateThenHiddenForeign.records
+    .map((record) => record.stage === 'state-type-present'
+      ? {...record, stage:'state-type-null'} : record)));
+  assert.throws(() => assertPinnedTypeResolveRecords([
+    ...duplicateThenHiddenForeign.records,
+    ...Array.from({length:65 - duplicateThenHiddenForeign.records.length}, () =>
+      ({version:1, probe:'pinned', stage:'completed'})),
+  ]));
 });
 
 test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only contracts', () => {
@@ -3056,7 +4020,7 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(hash(Buffer.from(scripts.dispatch, 'utf8')),
     '2f212bdb6ae76e75f32c9ab4956be457116f8bfb7df1a8a1184d6082aea3d8f8');
   assert.equal(hash(Buffer.from(scripts.pinned, 'utf8')),
-    'bb1368e7eaf48801c513a4b7e150e59e41208adb74591bacad3f11e9c2012b2b');
+    '88b9f0a10a0df67f6c4695a156e78127db147b5fbaefb58716afcfaa2194c5db');
   assert.equal(scripts.dispatch.includes(
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
       'handler-entered', '  ')}`), true);
@@ -3064,8 +4028,8 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('documented',
       'resolver-entered', '  ')}`), true);
   assert.equal(scripts.pinned.includes(
-    `$typeResolveCallback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('pinned',
-      'resolver-entered')}`), true);
+    `$typeResolveCallback = {\n  param($sender, $eventArgs)\n${pinnedTypeResolveGuardedMarker(
+      'resolver-entered', 'before-increment')}`), true);
   assert.equal(countLiteral(scripts.dispatch, '.add_TypeResolve($handler)'), 1);
   assert.equal(countLiteral(scripts.dispatch, '.remove_TypeResolve($handler)'), 1);
   assert.equal(countLiteral(scripts.dispatch, '[Type]::GetType($expectedName, $false)'), 1);
@@ -3079,15 +4043,11 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(hash(Buffer.from(pinned.original, 'utf8')),
     WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256);
   assert.equal(pinned.transforms.length, TYPE_RESOLVE_PINNED_INSERTED_STAGES.length);
-  let reconstructed = pinned.transformed;
-  for (const transform of [...pinned.transforms].reverse()) {
-    assert.equal(countLiteral(reconstructed, transform.after), 1,
-      `pinned reconstruction ${transform.id}`);
-    reconstructed = reconstructed.replace(transform.after, transform.before);
-  }
-  assert.equal(reconstructed, pinned.original);
-  assert.equal(pinned.transformed.split('\n').filter((line) =>
-    !pinned.markerLines.has(line.trim())).join('\n'), pinned.original);
+  assert.equal(pinned.guardTransforms.length,
+    TYPE_RESOLVE_PINNED_CALLBACK_OUTPUT_GUARDS.length);
+  assert.equal(pinned.classifierTransform.id, 'post-scope-state-classifier');
+  assert.equal(reversePinnedTypeResolveDiagnosticTransforms(pinned), pinned.original);
+  assert.equal(stripPinnedTypeResolveDiagnostic(pinned.transformed), pinned.original);
   assert.equal(pinned.transformed.includes('RequestingAssembly'), false);
   assert.equal(countLiteral(scripts.pinned, '$findFirstStream.Invoke('), 0);
   assert.equal(countLiteral(scripts.pinned, '$findNextStream.Invoke('), 0);
