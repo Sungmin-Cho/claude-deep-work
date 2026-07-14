@@ -4,6 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const {EventEmitter} = require('node:events');
+const fs = require('node:fs');
+const path = require('node:path');
 const {runSupervisedProcess, terminateWindowsTree} = require('./process-supervisor.js');
 
 function fakeTaskkill(exitCode = 0) {
@@ -12,6 +14,15 @@ function fakeTaskkill(exitCode = 0) {
   queueMicrotask(() => child.emit('close', exitCode));
   return child;
 }
+
+test('closed Windows stream supervisor pins the exact helper bytes', () => {
+  const helper = fs.readFileSync(path.join(__dirname, 'windows-stream-inventory.ps1'));
+  const supervisor = fs.readFileSync(path.join(__dirname, 'process-supervisor.js'), 'utf8');
+  const matches = [...supervisor.matchAll(/helperDigest !==\s*'([0-9a-f]{64})'/gu)];
+  assert.equal(matches.length, 1, 'closed helper digest guard count');
+  assert.equal(matches[0][1], crypto.createHash('sha256').update(helper).digest('hex'),
+    'closed supervisor helper digest must match the exact helper bytes');
+});
 
 test('Windows termination confirms the supervisor and every recorded descendant', async () => {
   const alive = new Set([41]);
