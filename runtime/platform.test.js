@@ -528,6 +528,750 @@ function runNativeWindowsStreamProbe({
   return {elapsedMs, scriptSha256:hash(scriptBytes)};
 }
 
+const TYPE_RESOLVE_DIAGNOSTIC_MAX_STDOUT_BYTES = 8_192;
+const TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS = 64;
+const TYPE_RESOLVE_IDENTITY_KEYS = [
+  'version','probe','stage','ps_edition','ps_major','ps_minor','ps_build','ps_revision',
+  'clr_major','clr_minor','clr_build','clr_revision','framework_release',
+  'os_major','os_minor','os_build','os_revision',
+];
+const TYPE_RESOLVE_STAGE_KEYS = ['version','probe','stage'];
+const TYPE_RESOLVE_DISPATCH_GREEN_STAGES = [
+  'started','delegate-created','handler-registered','lookup-enter','handler-entered',
+  'name-exact','request-1','handler-return-null','lookup-returned','handler-removed','completed',
+];
+const TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES = [
+  ...TYPE_RESOLVE_DISPATCH_GREEN_STAGES,'name-foreign','request-duplicate',
+];
+const TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX = [
+  'started','builders-ready','delegate-created','handler-registered','enclosing-create-enter',
+];
+const TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX = [
+  'enclosing-create-return','handler-removed','completed',
+];
+const TYPE_RESOLVE_DOCUMENTED_ALLOWED_STAGES = [
+  ...TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX,
+  'resolver-entered','request-1','request-2','request-3plus','name-exact','name-other',
+  'nested-create-enter','nested-create-return','nested-already-created','return-assembly',
+  ...TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX,
+];
+const TYPE_RESOLVE_PINNED_INSERTED_STAGES = [
+  'assembly-ready','module-ready','native-builder-ready','stream-builder-ready',
+  'stream-fields-ready','byref-ready','methods-defined','callback-build-enter',
+  'resolver-entered','resolver-request-incremented','resolver-name-foreign',
+  'resolver-reject-name','resolver-name-exact','resolver-reject-duplicate',
+  'resolver-request-1','resolver-nested-create-enter','resolver-nested-create-return',
+  'resolver-result-authenticated','resolver-return-assembly','resolver-catch',
+  'callback-closure-ready','delegate-ready','handler-registered','enclosing-create-enter',
+  'enclosing-create-return','enclosing-create-catch','handler-remove-enter','handler-removed',
+  'scope-exited','resolver-state-authenticated','nested-type-authenticated',
+  'methods-reflected','methods-authenticated',
+];
+const TYPE_RESOLVE_PINNED_ALLOWED_STAGES = [
+  'started',...TYPE_RESOLVE_PINNED_INSERTED_STAGES,'completed',
+];
+
+function typeResolveIdentityFixture(probe) {
+  return {
+    version:1,
+    probe,
+    stage:'runtime-identity',
+    ps_edition:'Desktop',
+    ps_major:5,
+    ps_minor:1,
+    ps_build:19_041,
+    ps_revision:1,
+    clr_major:4,
+    clr_minor:0,
+    clr_build:30_319,
+    clr_revision:4_200,
+    framework_release:533_320,
+    os_major:10,
+    os_minor:0,
+    os_build:26_100,
+    os_revision:4_349,
+  };
+}
+
+function typeResolveStageLine(probe, stage, indent = '') {
+  return `${indent}[Console]::Out.WriteLine('${JSON.stringify({version:1, probe, stage})}')`;
+}
+
+function typeResolveIdentityPreamble(probe) {
+  const template = String.raw`$ErrorActionPreference = 'Stop'
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false, $true)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)
+
+$psVersion = $PSVersionTable.PSVersion
+$clrVersion = $PSVersionTable.CLRVersion
+if ($PSVersionTable.PSEdition -cne 'Desktop' -or
+    $null -eq $psVersion -or $psVersion.Major -ne 5 -or $psVersion.Minor -ne 1 -or
+    $psVersion.Build -lt 0 -or $psVersion.Revision -lt 0 -or
+    $null -eq $clrVersion -or $clrVersion.Major -ne 4 -or $clrVersion.Minor -lt 0 -or
+    $clrVersion.Build -lt 0 -or $clrVersion.Revision -lt 0) {
+  throw 'runtime identity invalid'
+}
+$registryBase = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+  [Microsoft.Win32.RegistryHive]::LocalMachine,
+  [Microsoft.Win32.RegistryView]::Default)
+$frameworkKey = $null
+$windowsKey = $null
+try {
+  $frameworkKey = $registryBase.OpenSubKey(
+    'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', $false)
+  $windowsKey = $registryBase.OpenSubKey(
+    'SOFTWARE\Microsoft\Windows NT\CurrentVersion', $false)
+  if ($null -eq $frameworkKey -or $null -eq $windowsKey -or
+      $frameworkKey.GetValueKind('Release') -ne [Microsoft.Win32.RegistryValueKind]::DWord -or
+      $windowsKey.GetValueKind('CurrentMajorVersionNumber') -ne [Microsoft.Win32.RegistryValueKind]::DWord -or
+      $windowsKey.GetValueKind('CurrentMinorVersionNumber') -ne [Microsoft.Win32.RegistryValueKind]::DWord -or
+      $windowsKey.GetValueKind('CurrentBuildNumber') -ne [Microsoft.Win32.RegistryValueKind]::String -or
+      $windowsKey.GetValueKind('UBR') -ne [Microsoft.Win32.RegistryValueKind]::DWord) {
+    throw 'runtime identity invalid'
+  }
+  $frameworkRelease = [int]($frameworkKey.GetValue('Release'))
+  $osMajor = [int]($windowsKey.GetValue('CurrentMajorVersionNumber'))
+  $osMinor = [int]($windowsKey.GetValue('CurrentMinorVersionNumber'))
+  $osBuildText = [string]($windowsKey.GetValue('CurrentBuildNumber'))
+  $osRevision = [int]($windowsKey.GetValue('UBR'))
+} finally {
+  if ($null -ne $windowsKey) { $windowsKey.Close() }
+  if ($null -ne $frameworkKey) { $frameworkKey.Close() }
+  if ($null -ne $registryBase) { $registryBase.Close() }
+}
+$osBuild = 0
+if ($frameworkRelease -lt 533320 -or $osMajor -lt 10 -or $osMinor -lt 0 -or
+    $osRevision -lt 0 -or -not [int]::TryParse($osBuildText,
+      [System.Globalization.NumberStyles]::None,
+      [System.Globalization.CultureInfo]::InvariantCulture, [ref]$osBuild) -or $osBuild -lt 0) {
+  throw 'runtime identity invalid'
+}
+$identityLine = [string]::Format(
+  [System.Globalization.CultureInfo]::InvariantCulture,
+  '{{"version":1,"probe":"PROBE_LITERAL","stage":"runtime-identity","ps_edition":"Desktop","ps_major":{0},"ps_minor":{1},"ps_build":{2},"ps_revision":{3},"clr_major":{4},"clr_minor":{5},"clr_build":{6},"clr_revision":{7},"framework_release":{8},"os_major":{9},"os_minor":{10},"os_build":{11},"os_revision":{12}}}',
+  [Object[]]@($psVersion.Major, $psVersion.Minor, $psVersion.Build, $psVersion.Revision,
+    $clrVersion.Major, $clrVersion.Minor, $clrVersion.Build, $clrVersion.Revision,
+    $frameworkRelease, $osMajor, $osMinor, $osBuild, $osRevision))
+[Console]::Out.WriteLine($identityLine)
+`;
+  assert.equal(countLiteral(template, 'PROBE_LITERAL'), 1, 'identity probe sentinel count');
+  const preamble = template.replace('PROBE_LITERAL', probe);
+  assert.equal(countLiteral(preamble, 'PROBE_LITERAL'), 0, 'identity probe sentinel resolved');
+  return preamble;
+}
+
+function dispatchTypeResolveDiagnosticScript() {
+  const probe = 'dispatch';
+  return typeResolveIdentityPreamble(probe) + [
+    typeResolveStageLine(probe, 'started'),
+    "$expectedName = 'DeepWorkTypeResolveDispatchMissingType'",
+    '$state = [PSCustomObject]@{ Requests = 0; Exact = $false }',
+    '$callback = {',
+    '  param($sender, $eventArgs)',
+    typeResolveStageLine(probe, 'handler-entered', '  '),
+    '  $state.Requests++',
+    '  if ([String]::Equals($eventArgs.Name, $expectedName,',
+    '      [System.StringComparison]::Ordinal)) {',
+    '    $state.Exact = $true',
+    typeResolveStageLine(probe, 'name-exact', '    '),
+    '  } else {',
+    typeResolveStageLine(probe, 'name-foreign', '    '),
+    '  }',
+    '  if ($state.Requests -eq 1) {',
+    typeResolveStageLine(probe, 'request-1', '    '),
+    '  } else {',
+    typeResolveStageLine(probe, 'request-duplicate', '    '),
+    '  }',
+    typeResolveStageLine(probe, 'handler-return-null', '  '),
+    '  return $null',
+    '}.GetNewClosure()',
+    '$handler = [System.ResolveEventHandler]$callback',
+    typeResolveStageLine(probe, 'delegate-created'),
+    '$domain = [AppDomain]::CurrentDomain',
+    '$domain.add_TypeResolve($handler)',
+    typeResolveStageLine(probe, 'handler-registered'),
+    'try {',
+    typeResolveStageLine(probe, 'lookup-enter', '  '),
+    '  $resolved = [Type]::GetType($expectedName, $false)',
+    typeResolveStageLine(probe, 'lookup-returned', '  '),
+    '} finally {',
+    '  $domain.remove_TypeResolve($handler)',
+    typeResolveStageLine(probe, 'handler-removed', '  '),
+    '}',
+    'if ($null -ne $resolved -or $state.Requests -ne 1 -or -not $state.Exact) {',
+    "  throw 'dispatch control invalid'",
+    '}',
+    typeResolveStageLine(probe, 'completed'),
+    '',
+  ].join('\n');
+}
+
+function documentedTypeResolveDiagnosticScript() {
+  const probe = 'documented';
+  return typeResolveIdentityPreamble(probe) + [
+    typeResolveStageLine(probe, 'started'),
+    "$assemblyName = [System.Reflection.AssemblyName]::new('DeepWorkTypeResolveDocumentedAssembly')",
+    '$assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run',
+    '$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |',
+    '  Where-Object {',
+    "    $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and",
+    '    $_.GetParameters().Length -eq 2',
+    '  } | Select-Object -First 1',
+    'if ($null -ne $staticFactory) {',
+    '  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))',
+    '} else {',
+    '  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)',
+    '}',
+    "$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkTypeResolveDocumentedModule')",
+    '$outerAttributes = [System.Reflection.TypeAttributes]::Public',
+    "$outerBuilder = $moduleBuilder.DefineType('DeepWorkTypeResolveDocumentedOuter', $outerAttributes)",
+    '$nestedAttributes = [System.Reflection.TypeAttributes](',
+    '  [System.Reflection.TypeAttributes]::NestedPublic -bor',
+    '  [System.Reflection.TypeAttributes]::Sealed -bor',
+    '  [System.Reflection.TypeAttributes]::SequentialLayout -bor',
+    '  [System.Reflection.TypeAttributes]::BeforeFieldInit)',
+    "$nestedBuilder = $outerBuilder.DefineNestedType('NestedValue', $nestedAttributes, [ValueType])",
+    "$nestedField = $nestedBuilder.DefineField('Value', [Int32], [System.Reflection.FieldAttributes]::Public)",
+    "$outerField = $outerBuilder.DefineField('Nested', $nestedBuilder, [System.Reflection.FieldAttributes]::Public)",
+    typeResolveStageLine(probe, 'builders-ready'),
+    "$expectedName = 'DeepWorkTypeResolveDocumentedOuter+NestedValue'",
+    '$state = [PSCustomObject]@{ Requests = 0; Type = $null }',
+    '$callback = {',
+    '  param($sender, $eventArgs)',
+    typeResolveStageLine(probe, 'resolver-entered', '  '),
+    '  $state.Requests++',
+    '  if ($state.Requests -eq 1) {',
+    typeResolveStageLine(probe, 'request-1', '    '),
+    '  } elseif ($state.Requests -eq 2) {',
+    typeResolveStageLine(probe, 'request-2', '    '),
+    '  } else {',
+    typeResolveStageLine(probe, 'request-3plus', '    '),
+    "    if ($state.Requests -gt 3) { throw 'documented resolver request bound' }",
+    '  }',
+    '  if ([String]::Equals($eventArgs.Name, $expectedName,',
+    '      [System.StringComparison]::Ordinal)) {',
+    typeResolveStageLine(probe, 'name-exact', '    '),
+    '  } else {',
+    typeResolveStageLine(probe, 'name-other', '    '),
+    '  }',
+    '  try {',
+    typeResolveStageLine(probe, 'nested-create-enter', '    '),
+    '    $state.Type = $nestedBuilder.CreateType()',
+    typeResolveStageLine(probe, 'nested-create-return', '    '),
+    '  } catch [System.InvalidOperationException] {',
+    typeResolveStageLine(probe, 'nested-already-created', '    '),
+    '  }',
+    typeResolveStageLine(probe, 'return-assembly', '  '),
+    '  return $assemblyBuilder',
+    '}.GetNewClosure()',
+    '$handler = [System.ResolveEventHandler]$callback',
+    typeResolveStageLine(probe, 'delegate-created'),
+    '$domain = [AppDomain]::CurrentDomain',
+    '$domain.add_TypeResolve($handler)',
+    typeResolveStageLine(probe, 'handler-registered'),
+    'try {',
+    typeResolveStageLine(probe, 'enclosing-create-enter', '  '),
+    '  $outerType = $outerBuilder.CreateType()',
+    typeResolveStageLine(probe, 'enclosing-create-return', '  '),
+    '} finally {',
+    '  $domain.remove_TypeResolve($handler)',
+    typeResolveStageLine(probe, 'handler-removed', '  '),
+    '}',
+    "if ($null -eq $outerType) { throw 'documented control invalid' }",
+    '$nestedFlags = [System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic',
+    "$nestedType = $outerType.GetNestedType('NestedValue', $nestedFlags)",
+    "if ($null -eq $nestedType) { throw 'documented control invalid' }",
+    '$outerFields = @($outerType.GetFields([System.Reflection.BindingFlags]::Public -bor',
+    '  [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::DeclaredOnly))',
+    '$nestedFields = @($nestedType.GetFields([System.Reflection.BindingFlags]::Public -bor',
+    '  [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::DeclaredOnly))',
+    "if ($outerType.FullName -cne 'DeepWorkTypeResolveDocumentedOuter' -or",
+    '    $nestedType.FullName -cne $expectedName -or',
+    '    -not [Object]::ReferenceEquals($nestedType.DeclaringType, $outerType) -or',
+    '    -not [Object]::ReferenceEquals($nestedType.Assembly, $assemblyBuilder) -or',
+    "    $outerFields.Length -ne 1 -or $outerFields[0].Name -cne 'Nested' -or",
+    '    -not [Object]::ReferenceEquals($outerFields[0].FieldType, $nestedType) -or',
+    "    $nestedFields.Length -ne 1 -or $nestedFields[0].Name -cne 'Value' -or",
+    '    $nestedFields[0].FieldType -ne [Int32]) {',
+    "  throw 'documented control invalid'",
+    '}',
+    typeResolveStageLine(probe, 'completed'),
+    '',
+  ].join('\n');
+}
+
+function applyPinnedTypeResolveMarker(source, {id, anchor, placement = 'after'}) {
+  assert.equal(countLiteral(source, anchor), 1, `pinned anchor ${id}`);
+  const marker = typeResolveStageLine('pinned', id);
+  const after = placement === 'before' ? `${marker}\n${anchor}` : `${anchor}\n${marker}`;
+  return {
+    source:source.replace(anchor, after),
+    transform:{id, before:anchor, after},
+    marker,
+  };
+}
+
+function pinnedWindowsTypeResolveDiagnostic() {
+  const helperBytes = fs.readFileSync(path.join(__dirname, 'windows-stream-inventory.ps1'));
+  assert.equal(hash(helperBytes), WINDOWS_STREAM_INVENTORY_HELPER_SHA256,
+    'pinned helper digest');
+  const original = windowsStreamPInvokeSource();
+  assert.equal(hash(Buffer.from(original, 'utf8')), WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256,
+    'pinned source digest');
+  assertWindowsStreamTypeResolveSource(original);
+  const specifications = [
+    {id:'assembly-ready', anchor:'  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)\n}'},
+    {id:'module-ready', anchor:"$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkStreamInventoryNativeModule')"},
+    {id:'native-builder-ready', anchor:"$nativeBuilder = $moduleBuilder.DefineType('DeepWorkStreamInventoryNative', $nativeAttributes)"},
+    {id:'stream-builder-ready', anchor:"$streamDataBuilder = $nativeBuilder.DefineNestedType('WIN32_FIND_STREAM_DATA',\n  $streamDataAttributes, [ValueType])"},
+    {id:'stream-fields-ready', anchor:'$streamNameField.SetCustomAttribute($marshalAttribute)'},
+    {id:'byref-ready', anchor:'$streamDataByRef = $streamDataType.MakeByRefType()'},
+    {id:'methods-defined', anchor:'[void](Add-ClosedPInvokeMethod @findCloseDefinition)'},
+    {id:'callback-build-enter', anchor:'$typeResolveCallback = {', placement:'before'},
+    {id:'resolver-entered', anchor:'  param($sender, $eventArgs)'},
+    {id:'resolver-request-incremented', anchor:'    $typeResolveState.Requests++'},
+    {id:'resolver-name-foreign', anchor:'    if (-not [String]::Equals($eventArgs.Name, $expectedStreamDataTypeName,\n        [System.StringComparison]::Ordinal)) {'},
+    {id:'resolver-reject-name', anchor:"      $typeResolveState.Failure = 'stream type resolve name mismatch'"},
+    {id:'resolver-name-exact', anchor:'    if ($typeResolveState.Requests -ne 1) {', placement:'before'},
+    {id:'resolver-reject-duplicate', anchor:'    if ($typeResolveState.Requests -ne 1) {'},
+    {id:'resolver-request-1', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()', placement:'before'},
+    {id:'resolver-nested-create-enter', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()', placement:'before'},
+    {id:'resolver-nested-create-return', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()'},
+    {id:'resolver-result-authenticated', anchor:'    $typeResolveState.Type = $resolvedStreamDataType', placement:'before'},
+    {id:'resolver-return-assembly', anchor:'    return $assemblyBuilder', placement:'before'},
+    {id:'resolver-catch', anchor:'  } catch {'},
+    {id:'callback-closure-ready', anchor:'}.GetNewClosure()'},
+    {id:'delegate-ready', anchor:'$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback'},
+    {id:'handler-registered', anchor:'$currentDomain.add_TypeResolve($typeResolveHandler)'},
+    {id:'enclosing-create-enter', anchor:'  $nativeType = $nativeBuilder.CreateType()', placement:'before'},
+    {id:'enclosing-create-return', anchor:'  $nativeType = $nativeBuilder.CreateType()'},
+    {id:'enclosing-create-catch', anchor:'  $nativeTypeFailure = $true', placement:'before'},
+    {id:'handler-remove-enter', anchor:'} finally {'},
+    {id:'handler-removed', anchor:'  $currentDomain.remove_TypeResolve($typeResolveHandler)'},
+    {id:'scope-exited', anchor:'# DEEP_WORK_TYPE_RESOLVE_SCOPE_END', placement:'before'},
+    {id:'resolver-state-authenticated', anchor:'$nestedTypeFlags = [System.Reflection.BindingFlags]::Public -bor', placement:'before'},
+    {id:'nested-type-authenticated', anchor:'$nativeMethodFlags = [System.Reflection.BindingFlags]::Public -bor', placement:'before'},
+    {id:'methods-reflected', anchor:"$findClose = $nativeType.GetMethod('FindClose', $nativeMethodFlags)"},
+    {id:'methods-authenticated', anchor:windowsStreamRuntimeAttestationLines()[2]},
+  ];
+  assert.deepEqual(specifications.map(({id}) => id), TYPE_RESOLVE_PINNED_INSERTED_STAGES,
+    'pinned marker specification order');
+  let transformed = original;
+  const transforms = [];
+  const markerLines = new Set();
+  for (const specification of specifications) {
+    const applied = applyPinnedTypeResolveMarker(transformed, specification);
+    transformed = applied.source;
+    transforms.push(applied.transform);
+    markerLines.add(applied.marker);
+  }
+  let reconstructed = transformed;
+  for (const transform of [...transforms].reverse()) {
+    assert.equal(countLiteral(reconstructed, transform.after), 1,
+      `pinned reverse anchor ${transform.id}`);
+    reconstructed = reconstructed.replace(transform.after, transform.before);
+  }
+  assert.equal(reconstructed, original, 'pinned reverse reconstruction');
+  assert.equal(transformed.split('\n').filter((line) =>
+    !markerLines.has(line.trim())).join('\n'), original, 'pinned marker stripping');
+  assert.equal(transformed.includes('RequestingAssembly'), false,
+    'pinned requester observation absent');
+  return {
+    script:typeResolveIdentityPreamble('pinned') +
+      `${typeResolveStageLine('pinned', 'started')}\n${transformed}` +
+      `${typeResolveStageLine('pinned', 'completed')}\n`,
+    original,
+    transformed,
+    transforms,
+    markerLines,
+  };
+}
+
+function windowsTypeResolveDiagnosticScripts() {
+  return {
+    dispatch:dispatchTypeResolveDiagnosticScript(),
+    documented:documentedTypeResolveDiagnosticScript(),
+    pinned:pinnedWindowsTypeResolveDiagnostic().script,
+  };
+}
+
+function assertClosedTypeResolveDiagnosticScript(script, {
+  probe,
+  requirePinnedSource,
+}) {
+  assert.equal(['dispatch','documented','pinned'].includes(probe), true,
+    'closed diagnostic probe');
+  const bytes = Buffer.from(script, 'utf8');
+  assert.equal(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), false,
+    `closed ${probe} bom`);
+  assert.equal(script.includes('\r'), false, `closed ${probe} line endings`);
+  assert.equal(script.startsWith("$ErrorActionPreference = 'Stop'\n"), true,
+    `closed ${probe} prologue`);
+  assert.equal(countLiteral(script, '[Console]::InputEncoding'), 1,
+    `closed ${probe} input encoding`);
+  assert.equal(countLiteral(script, '[Console]::OutputEncoding'), 1,
+    `closed ${probe} output encoding`);
+  assert.equal(countLiteral(script, '[Console]::In.'), 0, `closed ${probe} stdin`);
+  assert.equal(countLiteral(script, '[Parameter('), 0, `closed ${probe} caller parameter`);
+  assert.equal(countLiteral(script, '$LiteralPath'), 0, `closed ${probe} caller path`);
+  assert.equal(countLiteral(script, '$args'), 0, `closed ${probe} args`);
+  assert.equal(countLiteral(script, 'PROBE_LITERAL'), 0, `closed ${probe} sentinel`);
+  const forbiddenPatterns = [
+    /\bAdd-Type\b/giu,
+    /\bGet-Item\b/giu,
+    /\bConvertTo-Json\b/giu,
+    /\bInvoke-Expression\b/giu,
+    /\bInvoke-Command\b/giu,
+    /\bStart-Process\b/giu,
+    /\b(?:cmd|pwsh)(?:\.exe)?\b/giu,
+    /\bRead-Host\b/giu,
+    /\[Environment\]::OSVersion/giu,
+    /\bGet-CimInstance\b/giu,
+    /\bGet-ComputerInfo\b/giu,
+  ];
+  for (const pattern of forbiddenPatterns) {
+    assert.equal(pattern.test(script), false, `closed ${probe} forbidden surface`);
+  }
+  assert.equal(countLiteral(script, '[Microsoft.Win32.RegistryKey]::OpenBaseKey('), 1,
+    `closed ${probe} registry base`);
+  assert.equal(countLiteral(script, '[Microsoft.Win32.RegistryView]::Default'), 1,
+    `closed ${probe} registry view`);
+  assert.equal(countLiteral(script,
+    "'SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full'"), 1,
+  `closed ${probe} framework key`);
+  assert.equal(countLiteral(script,
+    "'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion'"), 1,
+  `closed ${probe} windows key`);
+  assert.equal(countLiteral(script, '.OpenSubKey('), 2, `closed ${probe} registry keys`);
+  assert.equal(countLiteral(script, '.GetValueKind('), 5,
+    `closed ${probe} registry value kinds`);
+  assert.equal(countLiteral(script, '.GetValue('), 5, `closed ${probe} registry values`);
+  for (const valueName of ['Release','CurrentMajorVersionNumber',
+    'CurrentMinorVersionNumber','CurrentBuildNumber','UBR']) {
+    assert.equal(countLiteral(script, `'${valueName}'`), 2,
+      `closed ${probe} registry value ${valueName}`);
+  }
+  for (const closure of ['$windowsKey.Close()','$frameworkKey.Close()',
+    '$registryBase.Close()']) {
+    assert.equal(countLiteral(script, closure), 1, `closed ${probe} registry closure`);
+  }
+  assert.equal(countLiteral(script, '[string]::Format('), 1,
+    `closed ${probe} identity format`);
+  assert.equal(countLiteral(script, '[System.Globalization.NumberStyles]::None'), 1,
+    `closed ${probe} numeric parse`);
+  assert.equal(countLiteral(script, '[System.Globalization.CultureInfo]::InvariantCulture'), 2,
+    `closed ${probe} invariant culture`);
+  for (const guard of [
+    "$PSVersionTable.PSEdition -cne 'Desktop'",
+    '$psVersion.Major -ne 5',
+    '$psVersion.Minor -ne 1',
+    '$clrVersion.Major -ne 4',
+    '$frameworkRelease -lt 533320',
+    '$osMajor -lt 10',
+  ]) {
+    assert.equal(countLiteral(script, guard), 1, `closed ${probe} identity guard`);
+  }
+  const identityFormat = `{{"version":1,"probe":"${probe}","stage":"runtime-identity",` +
+    '"ps_edition":"Desktop","ps_major":{0},"ps_minor":{1},"ps_build":{2},' +
+    '"ps_revision":{3},"clr_major":{4},"clr_minor":{5},"clr_build":{6},' +
+    '"clr_revision":{7},"framework_release":{8},"os_major":{9},"os_minor":{10},' +
+    '"os_build":{11},"os_revision":{12}}}';
+  assert.equal(countLiteral(script, identityFormat), 1,
+    `closed ${probe} identity schema`);
+  assert.equal(countLiteral(script, '[Console]::Out.WriteLine($identityLine)'), 1,
+    `closed ${probe} identity emitter`);
+  const allowedStages = probe === 'dispatch' ? TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES
+    : probe === 'documented' ? TYPE_RESOLVE_DOCUMENTED_ALLOWED_STAGES
+      : TYPE_RESOLVE_PINNED_ALLOWED_STAGES;
+  const allowedLines = new Set(allowedStages.map((stage) =>
+    typeResolveStageLine(probe, stage)));
+  for (const line of script.split('\n').map((item) => item.trim()).filter((item) =>
+    item.startsWith('[Console]::Out.WriteLine('))) {
+    assert.equal(line === '[Console]::Out.WriteLine($identityLine)' || allowedLines.has(line), true,
+      `closed ${probe} output surface`);
+  }
+  for (const stage of allowedStages) {
+    assert.equal(countLiteral(script, typeResolveStageLine(probe, stage)), 1,
+      `closed ${probe} stage ${stage}`);
+  }
+  assert.equal(countLiteral(script, '$findFirstStream.Invoke('), 0,
+    `closed ${probe} first invocation`);
+  assert.equal(countLiteral(script, '$findNextStream.Invoke('), 0,
+    `closed ${probe} next invocation`);
+  assert.equal(countLiteral(script, '$findClose.Invoke('), 0,
+    `closed ${probe} close invocation`);
+  if (requirePinnedSource) {
+    assert.equal(probe, 'pinned', 'closed pinned probe');
+    assert.equal(script, pinnedWindowsTypeResolveDiagnostic().script,
+      'closed pinned generated source');
+    assert.equal(script.includes('RequestingAssembly'), false,
+      'closed pinned requester observation');
+  }
+}
+
+function typeResolveRecordShape(record, keys) {
+  return record && typeof record === 'object' && !Array.isArray(record) &&
+    Object.keys(record).length === keys.length &&
+    Object.keys(record).every((key, index) => key === keys[index]);
+}
+
+function validNonNegativeIdentityInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function classifyTypeResolveRecord(line, record, probe, allowedStages) {
+  if (JSON.stringify(record) !== line) return 'invalid';
+  if (typeResolveRecordShape(record, TYPE_RESOLVE_IDENTITY_KEYS)) {
+    if (record.version !== 1 || typeof record.probe !== 'string' ||
+        typeof record.stage !== 'string' || record.ps_edition !== 'Desktop' ||
+        record.ps_major !== 5 || record.ps_minor !== 1 ||
+        !validNonNegativeIdentityInteger(record.ps_build) ||
+        !validNonNegativeIdentityInteger(record.ps_revision) ||
+        record.clr_major !== 4 || !validNonNegativeIdentityInteger(record.clr_minor) ||
+        !validNonNegativeIdentityInteger(record.clr_build) ||
+        !validNonNegativeIdentityInteger(record.clr_revision) ||
+        !Number.isSafeInteger(record.framework_release) || record.framework_release < 533_320 ||
+        !Number.isSafeInteger(record.os_major) || record.os_major < 10 ||
+        !validNonNegativeIdentityInteger(record.os_minor) ||
+        !validNonNegativeIdentityInteger(record.os_build) ||
+        !validNonNegativeIdentityInteger(record.os_revision)) {
+      return 'invalid';
+    }
+    return record.probe === probe && record.stage === 'runtime-identity' ? 'exact' : 'foreign';
+  }
+  if (typeResolveRecordShape(record, TYPE_RESOLVE_STAGE_KEYS)) {
+    if (record.version !== 1 || typeof record.probe !== 'string' ||
+        typeof record.stage !== 'string') return 'invalid';
+    return record.probe === probe && allowedStages.has(record.stage) ? 'exact' : 'foreign';
+  }
+  return 'invalid';
+}
+
+function closedSpawnErrorCode(value) {
+  if (value == null) return null;
+  return value === 'ETIMEDOUT' || value === 'ENOBUFS' ? value : 'other';
+}
+
+function closedSpawnSignal(value) {
+  if (value == null) return null;
+  return value === 'SIGTERM' ? value : 'other';
+}
+
+function lifecycleBuffer(value) {
+  if (Buffer.isBuffer(value)) return value;
+  return value == null ? Buffer.alloc(0) : Buffer.from(String(value), 'utf8');
+}
+
+function nativeWindowsLifecycleEvidence(probe, result, elapsedMs, allowedStages) {
+  const stdout = lifecycleBuffer(result?.stdout);
+  const stderr = lifecycleBuffer(result?.stderr);
+  const stdoutBytes = stdout.length;
+  const stdoutTruncatedBytes = Math.max(0,
+    stdoutBytes - TYPE_RESOLVE_DIAGNOSTIC_MAX_STDOUT_BYTES);
+  const stdoutTruncated = stdoutTruncatedBytes !== 0;
+  const prefix = stdout.subarray(0, TYPE_RESOLVE_DIAGNOSTIC_MAX_STDOUT_BYTES);
+  let stdoutGrammarErrorCount = 0;
+  if (stdout.some((byte) => byte > 0x7f)) stdoutGrammarErrorCount += 1;
+  let bareCr = false;
+  for (let index = 0; index < stdout.length; index += 1) {
+    if (stdout[index] === 0x0d && stdout[index + 1] !== 0x0a) {
+      bareCr = true;
+      break;
+    }
+  }
+  if (bareCr) stdoutGrammarErrorCount += 1;
+  const normalized = prefix.toString('ascii').replace(/\r\n/gu, '\n');
+  if (!stdoutTruncated && (!normalized.endsWith('\n') || normalized.endsWith('\n\n'))) {
+    stdoutGrammarErrorCount += 1;
+  }
+  let body = normalized;
+  if (body.endsWith('\n')) body = body.slice(0, -1);
+  const lines = body.length === 0 ? [] : body.split('\n');
+  const cutPartialLine = stdoutTruncated && prefix.length > 0 &&
+    prefix[prefix.length - 1] !== 0x0a;
+  if (lines.some((line) => line.length === 0)) stdoutGrammarErrorCount += 1;
+  let invalidLineCount = 0;
+  let foreignRecordCount = 0;
+  let recordOverflowCount = 0;
+  const records = [];
+  const allowed = new Set(allowedStages);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (cutPartialLine && index === lines.length - 1) {
+      invalidLineCount += 1;
+      continue;
+    }
+    let record;
+    try { record = JSON.parse(line); }
+    catch {
+      invalidLineCount += 1;
+      continue;
+    }
+    const classification = classifyTypeResolveRecord(line, record, probe, allowed);
+    if (classification === 'invalid') invalidLineCount += 1;
+    else if (classification === 'foreign') foreignRecordCount += 1;
+    else if (records.length < TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS) records.push(record);
+    else recordOverflowCount += 1;
+  }
+  const nodeVersion = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/u
+    .test(process.versions.node) ? process.versions.node : 'invalid';
+  return {
+    probe:['dispatch','documented','pinned'].includes(probe) ? probe : 'invalid',
+    nodeVersion,
+    elapsedMs:Number.isSafeInteger(elapsedMs) && elapsedMs >= 0 ? elapsedMs : null,
+    spawnErrorCode:closedSpawnErrorCode(result?.error === undefined
+      ? null : result?.error?.code ?? 'other'),
+    status:Number.isInteger(result?.status) ? result.status : null,
+    signal:closedSpawnSignal(result?.signal),
+    stdoutBytes,
+    stderrBytes:stderr.length,
+    stdoutSha256:hash(stdout),
+    stderrSha256:hash(stderr),
+    stdoutTruncated,
+    stdoutTruncatedBytes,
+    stdoutGrammarErrorCount,
+    invalidLineCount,
+    foreignRecordCount,
+    recordOverflowCount,
+    totalLineCount:lines.length,
+    records,
+  };
+}
+
+function assertNativeWindowsLifecyclePreOracle(evidence, diagnostic = null) {
+  const message = diagnostic || 'lifecycle pre-oracle';
+  assert.equal(evidence.spawnErrorCode, null, message);
+  assert.equal(evidence.status, 0, message);
+  assert.equal(evidence.signal, null, message);
+  assert.equal(evidence.stderrBytes, 0, message);
+  assert.notEqual(evidence.nodeVersion, 'invalid', message);
+  assert.equal(evidence.stdoutTruncated, false, message);
+  assert.equal(evidence.stdoutTruncatedBytes, 0, message);
+  assert.equal(evidence.stdoutGrammarErrorCount, 0, message);
+  assert.equal(evidence.invalidLineCount, 0, message);
+  assert.equal(evidence.foreignRecordCount, 0, message);
+  assert.equal(evidence.recordOverflowCount, 0, message);
+  assert.equal(evidence.totalLineCount, evidence.records.length,
+    message);
+}
+
+function assertDispatchTypeResolveRecords(records) {
+  assert.equal(records.length, TYPE_RESOLVE_DISPATCH_GREEN_STAGES.length + 1,
+    'dispatch oracle length');
+  assert.equal(records[0]?.probe, 'dispatch', 'dispatch oracle identity probe');
+  assert.equal(records[0]?.stage, 'runtime-identity', 'dispatch oracle identity stage');
+  assert.deepEqual(records.slice(1).map((record) => record.stage),
+    TYPE_RESOLVE_DISPATCH_GREEN_STAGES, 'dispatch oracle stages');
+}
+
+function assertDocumentedTypeResolveRecords(records) {
+  assert.equal(records[0]?.probe, 'documented', 'documented oracle identity probe');
+  assert.equal(records[0]?.stage, 'runtime-identity', 'documented oracle identity stage');
+  const stages = records.slice(1).map((record) => record.stage);
+  assert.deepEqual(stages.slice(0, TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX.length),
+    TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX, 'documented oracle outer prefix');
+  let index = TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX.length;
+  let requests = 0;
+  while (stages[index] === 'resolver-entered') {
+    requests += 1;
+    assert.equal(requests <= 3, true, 'documented oracle request bound');
+    assert.equal(stages[index], 'resolver-entered', 'documented oracle resolver entry');
+    const expectedRequest = requests === 1 ? 'request-1'
+      : requests === 2 ? 'request-2' : 'request-3plus';
+    assert.equal(stages[index + 1], expectedRequest, 'documented oracle request class');
+    assert.equal(['name-exact','name-other'].includes(stages[index + 2]), true,
+      'documented oracle name class');
+    assert.equal(stages[index + 3], 'nested-create-enter',
+      'documented oracle nested entry');
+    assert.equal(['nested-create-return','nested-already-created'].includes(stages[index + 4]),
+      true, 'documented oracle nested result');
+    assert.equal(stages[index + 5], 'return-assembly',
+      'documented oracle assembly return');
+    index += 6;
+  }
+  assert.equal(requests >= 1 && requests <= 3, true, 'documented oracle request count');
+  assert.deepEqual(stages.slice(index), TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX,
+    'documented oracle outer suffix');
+}
+
+function typeResolvePinnedGreenStages() {
+  return [
+    'runtime-identity','started','assembly-ready','module-ready','native-builder-ready',
+    'stream-builder-ready','stream-fields-ready','byref-ready','methods-defined',
+    'callback-build-enter','callback-closure-ready','delegate-ready','handler-registered',
+    'enclosing-create-enter','resolver-entered','resolver-request-incremented',
+    'resolver-name-exact','resolver-request-1','resolver-nested-create-enter',
+    'resolver-nested-create-return','resolver-result-authenticated',
+    'resolver-return-assembly','enclosing-create-return','handler-remove-enter',
+    'handler-removed','scope-exited','resolver-state-authenticated',
+    'nested-type-authenticated','methods-reflected','methods-authenticated','completed',
+  ];
+}
+
+function assertPinnedTypeResolveRecords(records) {
+  assert.equal(records[0]?.probe, 'pinned', 'pinned oracle identity probe');
+  assert.deepEqual(records.map((record) => record.stage), typeResolvePinnedGreenStages(),
+    'pinned oracle stages');
+}
+
+function runNativeWindowsLifecycleProbe({
+  probe,
+  root,
+  script,
+  allowedStages,
+  assertRecords,
+}) {
+  assert.equal(['dispatch','documented','pinned'].includes(probe), true,
+    'lifecycle runner probe');
+  assert.equal(typeof assertRecords, 'function', 'lifecycle runner oracle');
+  const scriptPath = path.join(root, `${probe}-type-resolve.ps1`);
+  const scriptBytes = Buffer.from(script, 'utf8');
+  assert.equal(scriptBytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), false,
+    'lifecycle runner bom');
+  assert.equal(script.includes('\r'), false, 'lifecycle runner line endings');
+  fs.writeFileSync(scriptPath, scriptBytes);
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+  const temp = process.env.TEMP || process.env.TMP || os.tmpdir();
+  const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell',
+    'v1.0', 'powershell.exe');
+  const startedAt = Date.now();
+  const result = spawnSync(executable,
+    ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+      '-File',scriptPath], {
+      cwd:root,
+      env:{
+        SystemRoot:systemRoot,
+        WINDIR:systemRoot,
+        TEMP:temp,
+        TMP:temp,
+        PATH:'',
+        PSModulePath:'',
+      },
+      encoding:null,
+      shell:false,
+      windowsHide:true,
+      timeout:WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
+      maxBuffer:WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
+    });
+  const elapsedMs = Date.now() - startedAt;
+  const evidence = nativeWindowsLifecycleEvidence(probe, result, elapsedMs, allowedStages);
+  const diagnostic = JSON.stringify(evidence);
+  assertNativeWindowsLifecyclePreOracle(evidence, diagnostic);
+  assert.equal(evidence.records[0]?.probe, probe, diagnostic);
+  assert.equal(evidence.records[0]?.stage, 'runtime-identity', diagnostic);
+  try { assertRecords(evidence.records); }
+  catch { assert.fail(diagnostic); }
+  const identity = evidence.records[0];
+  const runtimeIdentity = Object.fromEntries(TYPE_RESOLVE_IDENTITY_KEYS.slice(3)
+    .map((key) => [key, identity[key]]));
+  return {
+    elapsedMs,
+    scriptSha256:hash(scriptBytes),
+    nodeVersion:evidence.nodeVersion,
+    runtimeIdentity,
+  };
+}
+
 function nativeWrapperFailureEvidence(error) {
   const stages = error?.stages && typeof error.stages === 'object' ? {
     started:error.stages.started === true,
@@ -1783,6 +2527,274 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   for (const [name, mutant, expected] of mutants) {
     assert.throws(() => assertWindowsStreamTypeResolveSource(mutant), expected, name);
   }
+});
+
+test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only contracts', () => {
+  const scripts = windowsTypeResolveDiagnosticScripts();
+  assert.deepEqual(Object.keys(scripts), ['dispatch','documented','pinned']);
+  assertClosedTypeResolveDiagnosticScript(scripts.dispatch, {
+    probe:'dispatch',
+    requirePinnedSource:false,
+  });
+  assertClosedTypeResolveDiagnosticScript(scripts.documented, {
+    probe:'documented',
+    requirePinnedSource:false,
+  });
+  assertClosedTypeResolveDiagnosticScript(scripts.pinned, {
+    probe:'pinned',
+    requirePinnedSource:true,
+  });
+  assert.equal(scripts.dispatch.includes(
+    `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
+      'handler-entered', '  ')}`), true);
+  assert.equal(scripts.documented.includes(
+    `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('documented',
+      'resolver-entered', '  ')}`), true);
+  assert.equal(scripts.pinned.includes(
+    `$typeResolveCallback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('pinned',
+      'resolver-entered')}`), true);
+  assert.equal(countLiteral(scripts.dispatch, '.add_TypeResolve($handler)'), 1);
+  assert.equal(countLiteral(scripts.dispatch, '.remove_TypeResolve($handler)'), 1);
+  assert.equal(countLiteral(scripts.dispatch, '[Type]::GetType($expectedName, $false)'), 1);
+  assert.equal(countLiteral(scripts.documented, '$outerBuilder.CreateType()'), 1);
+  assert.equal(countLiteral(scripts.documented, '$nestedBuilder.CreateType()'), 1);
+  assert.equal(countLiteral(scripts.documented, "throw 'documented resolver request bound'"), 1);
+  assert.equal(countLiteral(scripts.documented, 'DefinePInvokeMethod'), 0);
+
+  const pinned = pinnedWindowsTypeResolveDiagnostic();
+  assert.equal(pinned.original, windowsStreamPInvokeSource());
+  assert.equal(hash(Buffer.from(pinned.original, 'utf8')),
+    WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256);
+  assert.equal(pinned.transforms.length, TYPE_RESOLVE_PINNED_INSERTED_STAGES.length);
+  let reconstructed = pinned.transformed;
+  for (const transform of [...pinned.transforms].reverse()) {
+    assert.equal(countLiteral(reconstructed, transform.after), 1,
+      `pinned reconstruction ${transform.id}`);
+    reconstructed = reconstructed.replace(transform.after, transform.before);
+  }
+  assert.equal(reconstructed, pinned.original);
+  assert.equal(pinned.transformed.split('\n').filter((line) =>
+    !pinned.markerLines.has(line.trim())).join('\n'), pinned.original);
+  assert.equal(pinned.transformed.includes('RequestingAssembly'), false);
+  assert.equal(countLiteral(scripts.pinned, '$findFirstStream.Invoke('), 0);
+  assert.equal(countLiteral(scripts.pinned, '$findNextStream.Invoke('), 0);
+  assert.equal(countLiteral(scripts.pinned, '$findClose.Invoke('), 0);
+  assert.throws(() => assertClosedTypeResolveDiagnosticScript(
+    scripts.dispatch.replace('$frameworkRelease -lt 533320',
+      '$frameworkRelease -lt 533319'), {
+      probe:'dispatch',
+      requirePinnedSource:false,
+    }));
+  assert.throws(() => assertClosedTypeResolveDiagnosticScript(
+    `${scripts.documented}PROBE_LITERAL\n`, {
+      probe:'documented',
+      requirePinnedSource:false,
+    }));
+  assert.throws(() => assertClosedTypeResolveDiagnosticScript(
+    scripts.pinned.replace(typeResolveStageLine('pinned', 'completed'),
+      `$null = $eventArgs.RequestingAssembly\n${typeResolveStageLine('pinned', 'completed')}`), {
+      probe:'pinned',
+      requirePinnedSource:true,
+    }));
+
+  const identity = typeResolveIdentityFixture('documented');
+  const documentedRecords = [
+    identity,
+    ...TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX.map((stage) =>
+      ({version:1, probe:'documented', stage})),
+    ...['request-1','request-2'].flatMap((request) => [
+      'resolver-entered', request, 'name-exact', 'nested-create-enter',
+      request === 'request-1' ? 'nested-create-return' : 'nested-already-created',
+      'return-assembly',
+    ].map((stage) => ({version:1, probe:'documented', stage}))),
+    ...TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX.map((stage) =>
+      ({version:1, probe:'documented', stage})),
+  ];
+  assert.doesNotThrow(() => assertDocumentedTypeResolveRecords(documentedRecords));
+  assert.throws(() => assertDocumentedTypeResolveRecords([
+    ...documentedRecords.slice(0, -3),
+    {version:1, probe:'documented', stage:'resolver-entered'},
+    ...documentedRecords.slice(-3),
+  ]), /documented oracle/);
+
+  const pinnedRecords = typeResolvePinnedGreenStages().map((stage) =>
+    stage === 'runtime-identity' ? typeResolveIdentityFixture('pinned')
+      : {version:1, probe:'pinned', stage});
+  assert.doesNotThrow(() => assertPinnedTypeResolveRecords(pinnedRecords));
+  const bothNameBranches = [...pinnedRecords];
+  const exactIndex = bothNameBranches.findIndex((record) => record.stage === 'resolver-name-exact');
+  bothNameBranches.splice(exactIndex, 0,
+    {version:1, probe:'pinned', stage:'resolver-name-foreign'});
+  assert.throws(() => assertPinnedTypeResolveRecords(bothNameBranches), /pinned oracle/);
+});
+
+test('fixed Windows stream helper TypeResolve evidence rejects mutants without leaking bytes', () => {
+  const identity = typeResolveIdentityFixture('dispatch');
+  const expectedRecords = [
+    identity,
+    ...TYPE_RESOLVE_DISPATCH_GREEN_STAGES.map((stage) =>
+      ({version:1, probe:'dispatch', stage})),
+  ];
+  const allowedStages = TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES;
+  const resultFor = (stdout, stderr = Buffer.alloc(0), extra = {}) => ({
+    error:undefined,
+    status:0,
+    signal:null,
+    stdout:Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout, 'utf8'),
+    stderr:Buffer.isBuffer(stderr) ? stderr : Buffer.from(stderr, 'utf8'),
+    ...extra,
+  });
+  const evidenceFor = (stdout, stderr, extra) => nativeWindowsLifecycleEvidence(
+    'dispatch', resultFor(stdout, stderr, extra), 7, allowedStages);
+  const canonical = `${expectedRecords.map(JSON.stringify).join('\n')}\n`;
+  const clean = evidenceFor(canonical);
+  assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(clean));
+  assert.doesNotThrow(() => assertDispatchTypeResolveRecords(clean.records));
+  const cleanCrlf = evidenceFor(canonical.replace(/\n/gu, '\r\n'));
+  assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(cleanCrlf));
+  assert.doesNotThrow(() => assertDispatchTypeResolveRecords(cleanCrlf.records));
+
+  const extraKey = {...expectedRecords[1], extra:true};
+  const foreignProbe = {...expectedRecords[1], probe:'documented'};
+  const foreignStage = {...expectedRecords[1], stage:'foreign-stage'};
+  const invalidEdition = {...identity, ps_edition:'Core'};
+  const invalidFramework = {...identity, framework_release:533_319};
+  const invalidWindows = {...identity, os_major:9};
+  const invalidNumericType = {...identity, ps_build:'19041'};
+  const {version, probe, stage, ...identityRest} = identity;
+  const reorderedIdentity = {probe, version, stage, ...identityRest};
+  const mutants = [
+    ['malformed-json', '{bad\n', 'invalidLineCount'],
+    ['non-json', 'not-json\n', 'invalidLineCount'],
+    ['non-ascii', `${JSON.stringify(identity)}\n\u00e9\n`, 'stdoutGrammarErrorCount'],
+    ['extra-key', `${JSON.stringify(extraKey)}\n`, 'invalidLineCount'],
+    ['foreign-probe', `${JSON.stringify(foreignProbe)}\n`, 'foreignRecordCount'],
+    ['foreign-stage', `${JSON.stringify(foreignStage)}\n`, 'foreignRecordCount'],
+    ['identity-edition', `${JSON.stringify(invalidEdition)}\n`, 'invalidLineCount'],
+    ['identity-framework', `${JSON.stringify(invalidFramework)}\n`, 'invalidLineCount'],
+    ['identity-windows', `${JSON.stringify(invalidWindows)}\n`, 'invalidLineCount'],
+    ['identity-numeric-type', `${JSON.stringify(invalidNumericType)}\n`, 'invalidLineCount'],
+    ['identity-key-order', `${JSON.stringify(reorderedIdentity)}\n`, 'invalidLineCount'],
+    ['interior-blank', `${JSON.stringify(identity)}\n\n${JSON.stringify(expectedRecords[1])}\n`,
+      'stdoutGrammarErrorCount'],
+    ['bare-cr', `${JSON.stringify(identity)}\r${JSON.stringify(expectedRecords[1])}\n`,
+      'stdoutGrammarErrorCount'],
+    ['missing-terminal-lf', JSON.stringify(identity), 'stdoutGrammarErrorCount'],
+    ['truncated-8193', `${JSON.stringify(identity)}\n${'x'.repeat(8_193)}`, 'stdoutTruncatedBytes'],
+    ['record-overflow', `${[identity, ...Array.from({length:64}, () => expectedRecords[1])]
+      .map(JSON.stringify).join('\n')}\n`, 'recordOverflowCount'],
+  ];
+  for (const [name, stdout, field] of mutants) {
+    const evidence = evidenceFor(stdout);
+    assert.equal(evidence[field] > 0, true, name);
+    assert.throws(() => assertNativeWindowsLifecyclePreOracle(evidence), undefined, name);
+  }
+
+  const duplicate = evidenceFor(`${[
+    identity,
+    expectedRecords[1],
+    expectedRecords[1],
+    ...expectedRecords.slice(2),
+  ].map(JSON.stringify).join('\n')}\n`);
+  assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(duplicate));
+  assert.throws(() => assertDispatchTypeResolveRecords(duplicate.records), /dispatch oracle/);
+
+  const privateStdout = 'foreign source C:\\private\\helper.ps1\n';
+  const privateStderr = 'C:\\Users\\private\\source.ps1: exception secret';
+  const privacy = evidenceFor(privateStdout, Buffer.from(privateStderr, 'utf8'), {
+    error:Object.assign(new Error('private exception secret'), {code:'PRIVATE_CODE'}),
+    signal:'PRIVATE_SIGNAL',
+  });
+  const serialized = JSON.stringify(privacy);
+  for (const secret of ['C:\\private\\helper.ps1', 'C:\\Users\\private\\source.ps1',
+    'exception secret', 'PRIVATE_CODE', 'PRIVATE_SIGNAL']) {
+    assert.equal(serialized.includes(secret), false, 'privacy evidence');
+  }
+  assert.equal(privacy.stdoutBytes, Buffer.byteLength(privateStdout));
+  assert.equal(privacy.stderrBytes, Buffer.byteLength(privateStderr));
+  assert.equal(privacy.stdoutSha256, hash(Buffer.from(privateStdout, 'utf8')));
+  assert.equal(privacy.stderrSha256, hash(Buffer.from(privateStderr, 'utf8')));
+  assert.equal(privacy.invalidLineCount > 0, true);
+  assert.equal(privacy.spawnErrorCode, 'other');
+  assert.equal(privacy.signal, 'other');
+});
+
+test('native Windows PowerShell 5.1 TypeResolve dispatch control is synchronous and closed', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-type-resolve-dispatch-'));
+  try {
+    const {dispatch} = windowsTypeResolveDiagnosticScripts();
+    assertClosedTypeResolveDiagnosticScript(dispatch, {
+      probe:'dispatch',
+      requirePinnedSource:false,
+    });
+    const result = runNativeWindowsLifecycleProbe({
+      probe:'dispatch',
+      root,
+      script:dispatch,
+      allowedStages:TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES,
+      assertRecords:assertDispatchTypeResolveRecords,
+    });
+    t.diagnostic(JSON.stringify({
+      kind:'native-type-resolve-runtime-identity',
+      node_version:result.nodeVersion,
+      probe:'dispatch',
+      runtime_identity:result.runtimeIdentity,
+    }));
+  } finally { remove(root); }
+});
+
+test('native Windows PowerShell 5.1 TypeResolve documented nested-value control completes', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-type-resolve-documented-'));
+  try {
+    const {documented} = windowsTypeResolveDiagnosticScripts();
+    assertClosedTypeResolveDiagnosticScript(documented, {
+      probe:'documented',
+      requirePinnedSource:false,
+    });
+    const result = runNativeWindowsLifecycleProbe({
+      probe:'documented',
+      root,
+      script:documented,
+      allowedStages:TYPE_RESOLVE_DOCUMENTED_ALLOWED_STAGES,
+      assertRecords:assertDocumentedTypeResolveRecords,
+    });
+    t.diagnostic(JSON.stringify({
+      kind:'native-type-resolve-runtime-identity',
+      node_version:result.nodeVersion,
+      probe:'documented',
+      runtime_identity:result.runtimeIdentity,
+    }));
+  } finally { remove(root); }
+});
+
+test('native Windows PowerShell 5.1 TypeResolve pinned construction lifecycle is localized', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-type-resolve-pinned-'));
+  try {
+    const {pinned} = windowsTypeResolveDiagnosticScripts();
+    assertClosedTypeResolveDiagnosticScript(pinned, {
+      probe:'pinned',
+      requirePinnedSource:true,
+    });
+    const result = runNativeWindowsLifecycleProbe({
+      probe:'pinned',
+      root,
+      script:pinned,
+      allowedStages:TYPE_RESOLVE_PINNED_ALLOWED_STAGES,
+      assertRecords:assertPinnedTypeResolveRecords,
+    });
+    t.diagnostic(JSON.stringify({
+      kind:'native-type-resolve-runtime-identity',
+      node_version:result.nodeVersion,
+      probe:'pinned',
+      runtime_identity:result.runtimeIdentity,
+    }));
+  } finally { remove(root); }
 });
 
 test('native Windows PowerShell 5.1 constructs the pinned stream types without a native invocation', {
