@@ -543,14 +543,45 @@ const TYPE_RESOLVE_DISPATCH_GREEN_STAGES = [
 const TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES = [
   ...TYPE_RESOLVE_DISPATCH_GREEN_STAGES,'name-foreign','request-duplicate',
 ];
-const TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX = [
-  'started','builders-ready','delegate-created','handler-registered','enclosing-create-enter',
+const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_SHA256 =
+  '6ba1802bee9087546b8ada8c52cc2d03dc1585da9d464f1e1e8b3cae1ac6d3b7';
+const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_BYTES = 8_363;
+const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_LINES = 142;
+const TYPE_RESOLVE_DOCUMENTED_SETUP_INSERTED_STAGES = [
+  'assembly-name-ready','assembly-access-ready',
+  'factory-search-enter','factory-search-return',
+  'assembly-create-enter','assembly-create-static','assembly-create-appdomain',
+  'assembly-create-return','module-create-enter','module-create-return',
+  'outer-builder-enter','outer-builder-return',
+  'nested-builder-enter','nested-builder-return',
+  'nested-field-enter','nested-field-return',
+  'outer-field-enter','outer-field-return',
+  'callback-build-enter','callback-closure-ready','delegate-create-enter',
+  'domain-ready','handler-register-enter',
+];
+const TYPE_RESOLVE_DOCUMENTED_PREFIX_BEFORE_ASSEMBLY_BRANCH = [
+  'started','assembly-name-ready','assembly-access-ready',
+  'factory-search-enter','factory-search-return','assembly-create-enter',
+];
+const TYPE_RESOLVE_DOCUMENTED_ASSEMBLY_BRANCH_STAGES = [
+  'assembly-create-static','assembly-create-appdomain',
+];
+const TYPE_RESOLVE_DOCUMENTED_PREFIX_AFTER_ASSEMBLY_BRANCH = [
+  'assembly-create-return','module-create-enter','module-create-return',
+  'outer-builder-enter','outer-builder-return',
+  'nested-builder-enter','nested-builder-return',
+  'nested-field-enter','nested-field-return',
+  'outer-field-enter','outer-field-return','builders-ready',
+  'callback-build-enter','callback-closure-ready','delegate-create-enter','delegate-created',
+  'domain-ready','handler-register-enter','handler-registered','enclosing-create-enter',
 ];
 const TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX = [
   'enclosing-create-return','handler-removed','completed',
 ];
 const TYPE_RESOLVE_DOCUMENTED_ALLOWED_STAGES = [
-  ...TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX,
+  ...TYPE_RESOLVE_DOCUMENTED_PREFIX_BEFORE_ASSEMBLY_BRANCH,
+  ...TYPE_RESOLVE_DOCUMENTED_ASSEMBLY_BRANCH_STAGES,
+  ...TYPE_RESOLVE_DOCUMENTED_PREFIX_AFTER_ASSEMBLY_BRANCH,
   'resolver-entered','request-1','request-2','request-3plus','name-exact','name-other',
   'nested-create-enter','nested-create-return','nested-already-created','return-assembly',
   ...TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX,
@@ -595,6 +626,68 @@ function typeResolveIdentityFixture(probe) {
 
 function typeResolveStageLine(probe, stage, indent = '') {
   return `${indent}[Console]::Out.WriteLine('${JSON.stringify({version:1, probe, stage})}')`;
+}
+
+function stripDocumentedSetupDiagnosticMarkers(script) {
+  const inserted = new Set(TYPE_RESOLVE_DOCUMENTED_SETUP_INSERTED_STAGES.map((stage) =>
+    typeResolveStageLine('documented', stage).trim()));
+  return script.split('\n').filter((line) => !inserted.has(line.trim())).join('\n');
+}
+
+function assertDocumentedSetupMarkerPlacements(script) {
+  const marker = (stage, indent = '') => typeResolveStageLine('documented', stage, indent);
+  const placements = [
+    ['assembly-name-ready',
+      `$assemblyName = [System.Reflection.AssemblyName]::new('DeepWorkTypeResolveDocumentedAssembly')\n${marker('assembly-name-ready')}`],
+    ['assembly-access-ready',
+      `$assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run\n${marker('assembly-access-ready')}`],
+    ['factory-search-enter',
+      `${marker('factory-search-enter')}\n$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |`],
+    ['factory-search-return',
+      `  } | Select-Object -First 1\n${marker('factory-search-return')}`],
+    ['assembly-create-enter',
+      `${marker('assembly-create-enter')}\nif ($null -ne $staticFactory) {`],
+    ['assembly-create-static',
+      `if ($null -ne $staticFactory) {\n${marker('assembly-create-static', '  ')}\n  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))`],
+    ['assembly-create-appdomain',
+      `} else {\n${marker('assembly-create-appdomain', '  ')}\n  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)`],
+    ['assembly-create-return', `}\n${marker('assembly-create-return')}`],
+    ['module-create-enter',
+      `${marker('module-create-enter')}\n$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkTypeResolveDocumentedModule')`],
+    ['module-create-return',
+      `$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkTypeResolveDocumentedModule')\n${marker('module-create-return')}`],
+    ['outer-builder-enter',
+      `${marker('outer-builder-enter')}\n$outerAttributes = [System.Reflection.TypeAttributes]::Public`],
+    ['outer-builder-return',
+      `$outerBuilder = $moduleBuilder.DefineType('DeepWorkTypeResolveDocumentedOuter', $outerAttributes)\n${marker('outer-builder-return')}`],
+    ['nested-builder-enter',
+      `${marker('nested-builder-enter')}\n$nestedAttributes = [System.Reflection.TypeAttributes](`],
+    ['nested-builder-return',
+      `$nestedBuilder = $outerBuilder.DefineNestedType('NestedValue', $nestedAttributes, [ValueType])\n${marker('nested-builder-return')}`],
+    ['nested-field-enter',
+      `${marker('nested-field-enter')}\n$nestedField = $nestedBuilder.DefineField('Value', [Int32], [System.Reflection.FieldAttributes]::Public)`],
+    ['nested-field-return',
+      `$nestedField = $nestedBuilder.DefineField('Value', [Int32], [System.Reflection.FieldAttributes]::Public)\n${marker('nested-field-return')}`],
+    ['outer-field-enter',
+      `${marker('outer-field-enter')}\n$outerField = $outerBuilder.DefineField('Nested', $nestedBuilder, [System.Reflection.FieldAttributes]::Public)`],
+    ['outer-field-return',
+      `$outerField = $outerBuilder.DefineField('Nested', $nestedBuilder, [System.Reflection.FieldAttributes]::Public)\n${marker('outer-field-return')}`],
+    ['callback-build-enter',
+      `$state = [PSCustomObject]@{ Requests = 0; Type = $null }\n${marker('callback-build-enter')}\n$callback = {`],
+    ['callback-closure-ready', `}.GetNewClosure()\n${marker('callback-closure-ready')}`],
+    ['delegate-create-enter',
+      `${marker('delegate-create-enter')}\n$handler = [System.ResolveEventHandler]$callback`],
+    ['domain-ready', `$domain = [AppDomain]::CurrentDomain\n${marker('domain-ready')}`],
+    ['handler-register-enter',
+      `${marker('handler-register-enter')}\n$domain.add_TypeResolve($handler)`],
+  ];
+  assert.deepEqual(placements.map(([stage]) => stage),
+    TYPE_RESOLVE_DOCUMENTED_SETUP_INSERTED_STAGES,
+    'documented marker placement order');
+  for (const [stage, fragment] of placements) {
+    assert.equal(countLiteral(script, fragment), 1,
+      `documented marker placement ${stage}`);
+  }
 }
 
 function typeResolveIdentityPreamble(probe) {
@@ -711,31 +804,50 @@ function documentedTypeResolveDiagnosticScript() {
   return typeResolveIdentityPreamble(probe) + [
     typeResolveStageLine(probe, 'started'),
     "$assemblyName = [System.Reflection.AssemblyName]::new('DeepWorkTypeResolveDocumentedAssembly')",
+    typeResolveStageLine(probe, 'assembly-name-ready'),
     '$assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run',
+    typeResolveStageLine(probe, 'assembly-access-ready'),
+    typeResolveStageLine(probe, 'factory-search-enter'),
     '$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |',
     '  Where-Object {',
     "    $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and",
     '    $_.GetParameters().Length -eq 2',
     '  } | Select-Object -First 1',
+    typeResolveStageLine(probe, 'factory-search-return'),
+    typeResolveStageLine(probe, 'assembly-create-enter'),
     'if ($null -ne $staticFactory) {',
+    typeResolveStageLine(probe, 'assembly-create-static', '  '),
     '  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))',
     '} else {',
+    typeResolveStageLine(probe, 'assembly-create-appdomain', '  '),
     '  $assemblyBuilder = [AppDomain]::CurrentDomain.DefineDynamicAssembly($assemblyName, $assemblyAccess)',
     '}',
+    typeResolveStageLine(probe, 'assembly-create-return'),
+    typeResolveStageLine(probe, 'module-create-enter'),
     "$moduleBuilder = $assemblyBuilder.DefineDynamicModule('DeepWorkTypeResolveDocumentedModule')",
+    typeResolveStageLine(probe, 'module-create-return'),
+    typeResolveStageLine(probe, 'outer-builder-enter'),
     '$outerAttributes = [System.Reflection.TypeAttributes]::Public',
     "$outerBuilder = $moduleBuilder.DefineType('DeepWorkTypeResolveDocumentedOuter', $outerAttributes)",
+    typeResolveStageLine(probe, 'outer-builder-return'),
+    typeResolveStageLine(probe, 'nested-builder-enter'),
     '$nestedAttributes = [System.Reflection.TypeAttributes](',
     '  [System.Reflection.TypeAttributes]::NestedPublic -bor',
     '  [System.Reflection.TypeAttributes]::Sealed -bor',
     '  [System.Reflection.TypeAttributes]::SequentialLayout -bor',
     '  [System.Reflection.TypeAttributes]::BeforeFieldInit)',
     "$nestedBuilder = $outerBuilder.DefineNestedType('NestedValue', $nestedAttributes, [ValueType])",
+    typeResolveStageLine(probe, 'nested-builder-return'),
+    typeResolveStageLine(probe, 'nested-field-enter'),
     "$nestedField = $nestedBuilder.DefineField('Value', [Int32], [System.Reflection.FieldAttributes]::Public)",
+    typeResolveStageLine(probe, 'nested-field-return'),
+    typeResolveStageLine(probe, 'outer-field-enter'),
     "$outerField = $outerBuilder.DefineField('Nested', $nestedBuilder, [System.Reflection.FieldAttributes]::Public)",
+    typeResolveStageLine(probe, 'outer-field-return'),
     typeResolveStageLine(probe, 'builders-ready'),
     "$expectedName = 'DeepWorkTypeResolveDocumentedOuter+NestedValue'",
     '$state = [PSCustomObject]@{ Requests = 0; Type = $null }',
+    typeResolveStageLine(probe, 'callback-build-enter'),
     '$callback = {',
     '  param($sender, $eventArgs)',
     typeResolveStageLine(probe, 'resolver-entered', '  '),
@@ -764,9 +876,13 @@ function documentedTypeResolveDiagnosticScript() {
     typeResolveStageLine(probe, 'return-assembly', '  '),
     '  return $assemblyBuilder',
     '}.GetNewClosure()',
+    typeResolveStageLine(probe, 'callback-closure-ready'),
+    typeResolveStageLine(probe, 'delegate-create-enter'),
     '$handler = [System.ResolveEventHandler]$callback',
     typeResolveStageLine(probe, 'delegate-created'),
     '$domain = [AppDomain]::CurrentDomain',
+    typeResolveStageLine(probe, 'domain-ready'),
+    typeResolveStageLine(probe, 'handler-register-enter'),
     '$domain.add_TypeResolve($handler)',
     typeResolveStageLine(probe, 'handler-registered'),
     'try {',
@@ -1168,9 +1284,19 @@ function assertDocumentedTypeResolveRecords(records) {
   assert.equal(records[0]?.probe, 'documented', 'documented oracle identity probe');
   assert.equal(records[0]?.stage, 'runtime-identity', 'documented oracle identity stage');
   const stages = records.slice(1).map((record) => record.stage);
-  assert.deepEqual(stages.slice(0, TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX.length),
-    TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX, 'documented oracle outer prefix');
-  let index = TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX.length;
+  assert.deepEqual(stages.slice(0,
+    TYPE_RESOLVE_DOCUMENTED_PREFIX_BEFORE_ASSEMBLY_BRANCH.length),
+  TYPE_RESOLVE_DOCUMENTED_PREFIX_BEFORE_ASSEMBLY_BRANCH,
+  'documented oracle prefix before assembly branch');
+  let index = TYPE_RESOLVE_DOCUMENTED_PREFIX_BEFORE_ASSEMBLY_BRANCH.length;
+  assert.equal(TYPE_RESOLVE_DOCUMENTED_ASSEMBLY_BRANCH_STAGES.includes(stages[index]), true,
+    'documented oracle assembly branch');
+  index += 1;
+  assert.deepEqual(stages.slice(index,
+    index + TYPE_RESOLVE_DOCUMENTED_PREFIX_AFTER_ASSEMBLY_BRANCH.length),
+  TYPE_RESOLVE_DOCUMENTED_PREFIX_AFTER_ASSEMBLY_BRANCH,
+  'documented oracle prefix after assembly branch');
+  index += TYPE_RESOLVE_DOCUMENTED_PREFIX_AFTER_ASSEMBLY_BRANCH.length;
   let requests = 0;
   while (stages[index] === 'resolver-entered') {
     requests += 1;
@@ -2544,6 +2670,18 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
     probe:'pinned',
     requirePinnedSource:true,
   });
+  assertDocumentedSetupMarkerPlacements(scripts.documented);
+  const strippedDocumented = stripDocumentedSetupDiagnosticMarkers(scripts.documented);
+  assert.equal(Buffer.byteLength(strippedDocumented),
+    TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_BYTES);
+  assert.equal(strippedDocumented.split('\n').length - 1,
+    TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_LINES);
+  assert.equal(hash(Buffer.from(strippedDocumented, 'utf8')),
+    TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_SHA256);
+  assert.equal(hash(Buffer.from(scripts.dispatch, 'utf8')),
+    '2f212bdb6ae76e75f32c9ab4956be457116f8bfb7df1a8a1184d6082aea3d8f8');
+  assert.equal(hash(Buffer.from(scripts.pinned, 'utf8')),
+    'fecebee5d4711b167725d9e6722c798cf5010dda00e26ca5596b2a20e90bf9ce');
   assert.equal(scripts.dispatch.includes(
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
       'handler-entered', '  ')}`), true);
@@ -2600,9 +2738,12 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   const identity = typeResolveIdentityFixture('documented');
   const documentedRecords = [
     identity,
-    ...TYPE_RESOLVE_DOCUMENTED_OUTER_PREFIX.map((stage) =>
+    ...TYPE_RESOLVE_DOCUMENTED_PREFIX_BEFORE_ASSEMBLY_BRANCH.map((stage) =>
       ({version:1, probe:'documented', stage})),
-    ...['request-1','request-2'].flatMap((request) => [
+    {version:1, probe:'documented', stage:'assembly-create-appdomain'},
+    ...TYPE_RESOLVE_DOCUMENTED_PREFIX_AFTER_ASSEMBLY_BRANCH.map((stage) =>
+      ({version:1, probe:'documented', stage})),
+    ...['request-1','request-2','request-3plus'].flatMap((request) => [
       'resolver-entered', request, 'name-exact', 'nested-create-enter',
       request === 'request-1' ? 'nested-create-return' : 'nested-already-created',
       'return-assembly',
@@ -2610,7 +2751,20 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
     ...TYPE_RESOLVE_DOCUMENTED_OUTER_SUFFIX.map((stage) =>
       ({version:1, probe:'documented', stage})),
   ];
+  assert.equal(documentedRecords.length, 49, 'documented maximum record count');
+  assert.equal(documentedRecords.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
+    'documented record cap');
   assert.doesNotThrow(() => assertDocumentedTypeResolveRecords(documentedRecords));
+  assert.throws(() => assertDocumentedTypeResolveRecords(
+    documentedRecords.filter((record) => record.stage !== 'factory-search-return')),
+  /documented oracle/);
+  const bothAssemblyBranches = [...documentedRecords];
+  const assemblyBranchIndex = bothAssemblyBranches.findIndex((record) =>
+    record.stage === 'assembly-create-appdomain');
+  bothAssemblyBranches.splice(assemblyBranchIndex, 0,
+    {version:1, probe:'documented', stage:'assembly-create-static'});
+  assert.throws(() => assertDocumentedTypeResolveRecords(bothAssemblyBranches),
+    /documented oracle/);
   assert.throws(() => assertDocumentedTypeResolveRecords([
     ...documentedRecords.slice(0, -3),
     {version:1, probe:'documented', stage:'resolver-entered'},
