@@ -608,6 +608,8 @@ const TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES = [
   'name-filter-enter','name-filter-return',
   'static-filter-enter','static-filter-return',
   'parameter-filter-enter','parameter-filter-return',
+  'index-enter','index-return',
+  'indexed-null','indexed-present',
   'select-enter','select-return',
   'selected-null','selected-present',
   'completed',
@@ -1033,6 +1035,14 @@ function factoryDiscoveryTypeResolveDiagnosticScript() {
     typeResolveStageLine(probe, 'parameter-filter-enter'),
     '$twoParameterMethods = @($staticMethods | Where-Object { $_.GetParameters().Length -eq 2 })',
     typeResolveStageLine(probe, 'parameter-filter-return'),
+    typeResolveStageLine(probe, 'index-enter'),
+    '$indexedFactory = $twoParameterMethods[0]',
+    typeResolveStageLine(probe, 'index-return'),
+    'if ($null -eq $indexedFactory) {',
+    typeResolveStageLine(probe, 'indexed-null', '  '),
+    '} else {',
+    typeResolveStageLine(probe, 'indexed-present', '  '),
+    '}',
     typeResolveStageLine(probe, 'select-enter'),
     '$staticFactory = $twoParameterMethods | Select-Object -First 1',
     typeResolveStageLine(probe, 'select-return'),
@@ -1391,14 +1401,26 @@ function assertFactoryDiscoveryTypeResolveRecords(records) {
   assert.equal(records[0]?.probe, 'factory-discovery', message);
   assert.equal(records[0]?.stage, 'runtime-identity', message);
   const stages = records.slice(1).map((record) => record.stage);
-  const branchIndex = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES
+  const indexedBranchIndex = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES
+    .indexOf('indexed-null');
+  const selectedBranchIndex = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES
     .indexOf('selected-null');
-  const prefix = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES.slice(0, branchIndex);
+  const prefix = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES.slice(0,
+    indexedBranchIndex);
   assert.deepEqual(stages.slice(0, prefix.length), prefix, message);
-  assert.equal(['selected-null','selected-present'].includes(stages[prefix.length]), true,
+  let index = prefix.length;
+  assert.equal(['indexed-null','indexed-present'].includes(stages[index]), true,
     message);
-  assert.equal(stages[prefix.length + 1], 'completed', message);
-  assert.equal(stages.length, prefix.length + 2, message);
+  index += 1;
+  const selection = TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES.slice(
+    TYPE_RESOLVE_FACTORY_DISCOVERY_ALLOWED_STAGES.indexOf('indexed-present') + 1,
+    selectedBranchIndex);
+  assert.deepEqual(stages.slice(index, index + selection.length), selection, message);
+  index += selection.length;
+  assert.equal(['selected-null','selected-present'].includes(stages[index]), true, message);
+  index += 1;
+  assert.equal(stages[index], 'completed', message);
+  assert.equal(stages.length, index + 1, message);
 }
 
 function runNativeWindowsLifecycleProbe({
@@ -2738,6 +2760,8 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
     'name-filter-enter','name-filter-return',
     'static-filter-enter','static-filter-return',
     'parameter-filter-enter','parameter-filter-return',
+    'index-enter','index-return',
+    'indexed-null','indexed-present',
     'select-enter','select-return',
     'selected-null','selected-present',
     'completed',
@@ -2767,6 +2791,14 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
     factoryDiscoveryMarker('parameter-filter-enter'),
     '$twoParameterMethods = @($staticMethods | Where-Object { $_.GetParameters().Length -eq 2 })',
     factoryDiscoveryMarker('parameter-filter-return'),
+    factoryDiscoveryMarker('index-enter'),
+    '$indexedFactory = $twoParameterMethods[0]',
+    factoryDiscoveryMarker('index-return'),
+    'if ($null -eq $indexedFactory) {',
+    factoryDiscoveryMarker('indexed-null', '  '),
+    '} else {',
+    factoryDiscoveryMarker('indexed-present', '  '),
+    '}',
     factoryDiscoveryMarker('select-enter'),
     '$staticFactory = $twoParameterMethods | Select-Object -First 1',
     factoryDiscoveryMarker('select-return'),
@@ -2792,7 +2824,8 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(countLiteral(scripts.factoryDiscovery, '$allMethods'), 2);
   assert.equal(countLiteral(scripts.factoryDiscovery, '$namedMethods'), 2);
   assert.equal(countLiteral(scripts.factoryDiscovery, '$staticMethods'), 2);
-  assert.equal(countLiteral(scripts.factoryDiscovery, '$twoParameterMethods'), 2);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$twoParameterMethods'), 3);
+  assert.equal(countLiteral(scripts.factoryDiscovery, '$indexedFactory'), 2);
   assert.equal(countLiteral(scripts.factoryDiscovery, '$staticFactory'), 2);
   assert.equal(countLiteral(scripts.factoryDiscovery, 'DefineDynamicAssembly'), 1,
     'factory discovery may contain only the exact public method-name literal');
@@ -3042,15 +3075,21 @@ test('factory discovery control evidence rejects grammar, order, branch, and pro
       'name-filter-enter','name-filter-return',
       'static-filter-enter','static-filter-return',
       'parameter-filter-enter','parameter-filter-return',
+      'index-enter','index-return',
+      'indexed-null','indexed-present',
       'select-enter','select-return',
       'selected-null','selected-present',
       'completed',
     ];
-    const prefixStages = allowedStages.slice(0, allowedStages.indexOf('selected-null'));
-    const recordsFor = (branch) => [
+    const prefixBeforeIndexed = allowedStages.slice(0, allowedStages.indexOf('indexed-null'));
+    const prefixAfterIndexed = allowedStages.slice(
+      allowedStages.indexOf('indexed-present') + 1, allowedStages.indexOf('selected-null'));
+    const recordsFor = (indexedBranch, selectedBranch) => [
       typeResolveIdentityFixture('factory-discovery'),
-      ...prefixStages.map((stage) => ({version:1, probe:'factory-discovery', stage})),
-      {version:1, probe:'factory-discovery', stage:branch},
+      ...prefixBeforeIndexed.map((stage) => ({version:1, probe:'factory-discovery', stage})),
+      {version:1, probe:'factory-discovery', stage:indexedBranch},
+      ...prefixAfterIndexed.map((stage) => ({version:1, probe:'factory-discovery', stage})),
+      {version:1, probe:'factory-discovery', stage:selectedBranch},
       {version:1, probe:'factory-discovery', stage:'completed'},
     ];
     const resultFor = (stdout, stderr = Buffer.alloc(0), extra = {}) => ({
@@ -3065,8 +3104,8 @@ test('factory discovery control evidence rejects grammar, order, branch, and pro
       'factory-discovery', resultFor(stdout, stderr, extra), 11, allowedStages);
     const serialize = (records) => `${records.map(JSON.stringify).join('\n')}\n`;
 
-    const selectedPresent = recordsFor('selected-present');
-    assert.equal(selectedPresent.length, 16, 'factory discovery maximum runtime records');
+    const selectedPresent = recordsFor('indexed-present', 'selected-present');
+    assert.equal(selectedPresent.length, 19, 'factory discovery maximum runtime records');
     assert.equal(selectedPresent.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
       'factory discovery record cap');
     const cleanPresent = evidenceFor(serialize(selectedPresent));
@@ -3075,7 +3114,7 @@ test('factory discovery control evidence rejects grammar, order, branch, and pro
     assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(cleanPresent));
     assert.doesNotThrow(() => assertFactoryDiscoveryTypeResolveRecords(
       cleanPresent.records));
-    const cleanNull = evidenceFor(serialize(recordsFor('selected-null')));
+    const cleanNull = evidenceFor(serialize(recordsFor('indexed-null', 'selected-null')));
     assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(cleanNull));
     assert.doesNotThrow(() => assertFactoryDiscoveryTypeResolveRecords(cleanNull.records));
     const missingIdentityEvidence = evidenceFor(serialize(selectedPresent.slice(1)));
@@ -3098,11 +3137,40 @@ test('factory discovery control evidence rejects grammar, order, branch, and pro
       duplicateEvidence.records), /factory discovery oracle/);
 
     const outOfOrder = [...selectedPresent];
-    [outOfOrder[7], outOfOrder[8]] = [outOfOrder[8], outOfOrder[7]];
+    const indexReturnPosition = outOfOrder.findIndex((record) =>
+      record.stage === 'index-return');
+    const selectEnterPosition = outOfOrder.findIndex((record) =>
+      record.stage === 'select-enter');
+    [outOfOrder[indexReturnPosition], outOfOrder[selectEnterPosition]] =
+      [outOfOrder[selectEnterPosition], outOfOrder[indexReturnPosition]];
     const outOfOrderEvidence = evidenceFor(serialize(outOfOrder));
     assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(outOfOrderEvidence));
     assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
       outOfOrderEvidence.records), /factory discovery oracle/);
+
+    const bothIndexedBranches = [...selectedPresent];
+    const indexedPresentPosition = bothIndexedBranches.findIndex((record) =>
+      record.stage === 'indexed-present');
+    bothIndexedBranches.splice(indexedPresentPosition, 0,
+      {version:1, probe:'factory-discovery', stage:'indexed-null'});
+    const bothIndexedEvidence = evidenceFor(serialize(bothIndexedBranches));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(bothIndexedEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      bothIndexedEvidence.records), /factory discovery oracle/);
+
+    const missingIndexedBranch = selectedPresent.filter((record) =>
+      record.stage !== 'indexed-present');
+    const missingIndexedEvidence = evidenceFor(serialize(missingIndexedBranch));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(missingIndexedEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      missingIndexedEvidence.records), /factory discovery oracle/);
+
+    const missingIndexEnter = selectedPresent.filter((record) =>
+      record.stage !== 'index-enter');
+    const missingIndexEnterEvidence = evidenceFor(serialize(missingIndexEnter));
+    assert.doesNotThrow(() => assertNativeWindowsLifecyclePreOracle(missingIndexEnterEvidence));
+    assert.throws(() => assertFactoryDiscoveryTypeResolveRecords(
+      missingIndexEnterEvidence.records), /factory discovery oracle/);
 
     const bothBranches = [...selectedPresent];
     bothBranches.splice(-1, 0,
