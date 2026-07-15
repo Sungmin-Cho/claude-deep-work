@@ -140,7 +140,7 @@ $typeResolveCallback = {
         -not [String]::Equals($resolvedStreamDataType.FullName, $expectedStreamDataTypeName,
           [System.StringComparison]::Ordinal) -or
         -not $resolvedStreamDataType.IsValueType -or
-        -not [Object]::ReferenceEquals($resolvedStreamDataType.Assembly, $assemblyBuilder)) {
+        -not [Object]::Equals($resolvedStreamDataType.Assembly, $assemblyBuilder)) {
       $typeResolveState.Failure = 'stream type resolve result mismatch'
       return $null
     }
@@ -181,7 +181,7 @@ if ($null -eq $streamDataType -or
       [System.StringComparison]::Ordinal) -or
     -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or
     -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or
-    -not [Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder) -or
+    -not [Object]::Equals($streamDataType.Assembly, $assemblyBuilder) -or
     -not [String]::Equals($streamDataType.Module.ScopeName, $moduleBuilder.ScopeName,
       [System.StringComparison]::Ordinal)) {
   throw 'stream type identity invalid'

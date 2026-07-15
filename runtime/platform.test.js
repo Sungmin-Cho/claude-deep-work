@@ -257,7 +257,7 @@ function assertWindowsStreamTypeResolveSource(source) {
     'duplicate TypeResolve guard');
   assert.equal(handler.includes("'stream type resolve duplicate'"), true,
     'duplicate TypeResolve rejection');
-  assert.equal(handler.includes('[Object]::ReferenceEquals('), true,
+  assert.equal(handler.includes('[Object]::Equals('), true,
     'resolved type assembly identity check');
   assert.equal(handler.includes("'stream type resolve result mismatch'"), true,
     'wrong TypeResolve result rejection');
@@ -299,7 +299,7 @@ function assertWindowsStreamTypeResolveSource(source) {
     '[Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType)'), true,
   'post-bake declaring type identity');
   assert.equal(authentication.includes(
-    '[Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder)'), true,
+    '[Object]::Equals($streamDataType.Assembly, $assemblyBuilder)'), true,
   'post-bake dynamic assembly identity');
   for (const marker of ["'stream type identity invalid'", "'stream type layout invalid'",
     "'stream type fields invalid'", "'stream type marshal invalid'",
@@ -360,7 +360,7 @@ function replaceWindowsStreamSourceOnce(source, before, after) {
 function windowsStreamProbeAttestationLines() {
   return [
     "if ($typeResolveState.Requests -ne 1 -or $null -ne $typeResolveState.Failure -or $null -eq $typeResolveState.Type) { throw 'probe resolver state invalid' }",
-    "if (-not [String]::Equals($streamDataType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA', [System.StringComparison]::Ordinal) -or -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or -not [Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder)) { throw 'probe stream type identity invalid' }",
+    "if (-not [String]::Equals($streamDataType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA', [System.StringComparison]::Ordinal) -or -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or -not [Object]::Equals($streamDataType.Assembly, $assemblyBuilder)) { throw 'probe stream type identity invalid' }",
     "if (-not $streamDataType.IsValueType -or -not $streamDataType.IsNestedPublic -or -not $streamDataType.IsSealed -or -not $streamDataType.IsLayoutSequential -or -not $streamDataType.IsUnicodeClass) { throw 'probe stream type layout invalid' }",
     '$probeFields = @($streamDataType.GetFields([System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::DeclaredOnly))',
     "$probeStreamSize = $streamDataType.GetField('StreamSize')",
@@ -589,8 +589,8 @@ const TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES = [
   ...TYPE_RESOLVE_DISPATCH_GREEN_STAGES,'name-foreign','request-duplicate',
 ];
 const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_SHA256 =
-  '6ba1802bee9087546b8ada8c52cc2d03dc1585da9d464f1e1e8b3cae1ac6d3b7';
-const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_BYTES = 8_363;
+  '7f6070258b5fd6936191e8e34024620a478c55ad4f7d11c6724198eddbe86914';
+const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_BYTES = 8_354;
 const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_LINES = 142;
 const TYPE_RESOLVE_DOCUMENTED_SETUP_INSERTED_STAGES = [
   'assembly-name-ready','assembly-access-ready',
@@ -691,7 +691,7 @@ const TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES = [
   {
     id:'assembly',
     predicate:[
-      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '    $lateBakeIdentityAxisMatch = [Object]::Equals(',
       '      $lateBakeType.Assembly, $assemblyBuilder)',
     ],
   },
@@ -905,7 +905,7 @@ const EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES = [
   {
     id:'assembly',
     predicate:[
-      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '    $lateBakeIdentityAxisMatch = [Object]::Equals(',
       '      $lateBakeType.Assembly, $assemblyBuilder)',
     ],
   },
@@ -1172,7 +1172,7 @@ function expectedPinnedNoDispatchLateBakeBlock() {
     "      [String]::Equals($lateBakeType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',",
     '        [System.StringComparison]::Ordinal) -and',
     '      [Object]::ReferenceEquals($lateBakeType.DeclaringType, $nativeType) -and',
-    '      [Object]::ReferenceEquals($lateBakeType.Assembly, $assemblyBuilder) -and',
+    '      [Object]::Equals($lateBakeType.Assembly, $assemblyBuilder) -and',
     '      [Object]::ReferenceEquals($lateBakeType.Module, $nativeType.Module) -and',
     '      $lateBakeType.IsValueType -and $lateBakeType.IsNestedPublic -and',
     '      $lateBakeType.IsSealed -and $lateBakeType.IsLayoutSequential -and',
@@ -1910,7 +1910,7 @@ function expectedTypeResolvePinnedGuardedCallbackBlock() {
     '        -not [String]::Equals($resolvedStreamDataType.FullName, $expectedStreamDataTypeName,',
     '          [System.StringComparison]::Ordinal) -or',
     '        -not $resolvedStreamDataType.IsValueType -or',
-    '        -not [Object]::ReferenceEquals($resolvedStreamDataType.Assembly, $assemblyBuilder)) {',
+    '        -not [Object]::Equals($resolvedStreamDataType.Assembly, $assemblyBuilder)) {',
     "      $typeResolveState.Failure = 'stream type resolve result mismatch'",
     '      return $null',
     '    }',
@@ -2455,7 +2455,7 @@ function documentedTypeResolveDiagnosticScript() {
     "if ($outerType.FullName -cne 'DeepWorkTypeResolveDocumentedOuter' -or",
     '    $nestedType.FullName -cne $expectedName -or',
     '    -not [Object]::ReferenceEquals($nestedType.DeclaringType, $outerType) -or',
-    '    -not [Object]::ReferenceEquals($nestedType.Assembly, $assemblyBuilder) -or',
+    '    -not [Object]::Equals($nestedType.Assembly, $assemblyBuilder) -or',
     "    $outerFields.Length -ne 1 -or $outerFields[0].Name -cne 'Nested' -or",
     '    -not [Object]::ReferenceEquals($outerFields[0].FieldType, $nestedType) -or',
     "    $nestedFields.Length -ne 1 -or $nestedFields[0].Name -cne 'Value' -or",
@@ -2548,7 +2548,7 @@ function pinnedTypeResolveLateBakeDiagnosticBlock() {
     "      [String]::Equals($lateBakeType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',",
     '        [System.StringComparison]::Ordinal) -and',
     '      [Object]::ReferenceEquals($lateBakeType.DeclaringType, $nativeType) -and',
-    '      [Object]::ReferenceEquals($lateBakeType.Assembly, $assemblyBuilder) -and',
+    '      [Object]::Equals($lateBakeType.Assembly, $assemblyBuilder) -and',
     '      [Object]::ReferenceEquals($lateBakeType.Module, $nativeType.Module) -and',
     '      $lateBakeType.IsValueType -and $lateBakeType.IsNestedPublic -and',
     '      $lateBakeType.IsSealed -and $lateBakeType.IsLayoutSequential -and',
@@ -5233,6 +5233,191 @@ test('Windows pinned late-bake identity-axis detector rejects closed-surface mut
   }
 });
 
+// DEEP_WORK_S211_STRICT_RED_TESTS_BEGIN
+const S211_WRAPPER_AWARE_ASSEMBLY_SURFACES = Object.freeze([
+  Object.freeze({
+    id:'type-resolve-result',
+    count:2,
+    reference:'[Object]::ReferenceEquals($resolvedStreamDataType.Assembly, $assemblyBuilder)',
+    wrapperAware:'[Object]::Equals($resolvedStreamDataType.Assembly, $assemblyBuilder)',
+  }),
+  Object.freeze({
+    id:'post-bake-stream-data',
+    count:3,
+    reference:'[Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder)',
+    wrapperAware:'[Object]::Equals($streamDataType.Assembly, $assemblyBuilder)',
+  }),
+  Object.freeze({
+    id:'generic-late-bake',
+    count:2,
+    reference:'[Object]::ReferenceEquals($lateBakeType.Assembly, $assemblyBuilder)',
+    wrapperAware:'[Object]::Equals($lateBakeType.Assembly, $assemblyBuilder)',
+  }),
+  Object.freeze({
+    id:'documented-control',
+    count:1,
+    reference:'[Object]::ReferenceEquals($nestedType.Assembly, $assemblyBuilder)',
+    wrapperAware:'[Object]::Equals($nestedType.Assembly, $assemblyBuilder)',
+  }),
+  Object.freeze({
+    id:'ordered-identity-axis',
+    count:2,
+    reference:[
+      "'    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',",
+      "      '      $lateBakeType.Assembly, $assemblyBuilder)'",
+    ].join('\n'),
+    wrapperAware:[
+      "'    $lateBakeIdentityAxisMatch = [Object]::Equals(',",
+      "      '      $lateBakeType.Assembly, $assemblyBuilder)'",
+    ].join('\n'),
+  }),
+]);
+
+const S211_REFERENCE_IDENTITY_SURFACES = Object.freeze([
+  Object.freeze({
+    id:'state-type',
+    count:3,
+    reference:'[Object]::ReferenceEquals($streamDataType, $typeResolveState.Type)',
+  }),
+  Object.freeze({
+    id:'canonical-late-bake-type',
+    count:2,
+    reference:'[Object]::ReferenceEquals($lateBakeType, $lateBakeCanonicalType)',
+  }),
+  Object.freeze({
+    id:'stream-data-declaring-type',
+    count:3,
+    reference:'[Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType)',
+  }),
+  Object.freeze({
+    id:'late-bake-declaring-type',
+    count:2,
+    reference:'[Object]::ReferenceEquals($lateBakeType.DeclaringType, $nativeType)',
+  }),
+  Object.freeze({
+    id:'late-bake-module',
+    count:2,
+    reference:'[Object]::ReferenceEquals($lateBakeType.Module, $nativeType.Module)',
+  }),
+  Object.freeze({
+    id:'axis-canonical-type',
+    count:2,
+    reference:[
+      "'    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',",
+      "      '      $lateBakeType, $lateBakeIdentityAxisCanonicalType)'",
+    ].join('\n'),
+  }),
+  Object.freeze({
+    id:'axis-declaring-type',
+    count:2,
+    reference:[
+      "'    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',",
+      "      '      $lateBakeType.DeclaringType, $nativeType)'",
+    ].join('\n'),
+  }),
+  Object.freeze({
+    id:'axis-module',
+    count:2,
+    reference:[
+      "'    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',",
+      "      '      $lateBakeType.Module, $nativeType.Module)'",
+    ].join('\n'),
+  }),
+  Object.freeze({
+    id:'documented-declaring-type',
+    count:1,
+    reference:'[Object]::ReferenceEquals($nestedType.DeclaringType, $outerType)',
+  }),
+]);
+
+function s211CurrentAssemblyIdentityContractSource() {
+  const helperSource = fs.readFileSync(
+    path.join(__dirname, 'windows-stream-inventory.ps1'), 'utf8');
+  const testSource = fs.readFileSync(__filename, 'utf8');
+  const marker = ['\n// DEEP_WORK_S211', '_STRICT_RED_TESTS_BEGIN'].join('');
+  const markerIndex = testSource.lastIndexOf(marker);
+  assert.equal(markerIndex > 0, true, 'S2.11 strict RED source boundary');
+  return `${helperSource}\n${testSource.slice(0, markerIndex)}`;
+}
+
+function assertS211WrapperAwareDynamicAssemblyIdentity(source) {
+  for (const surface of S211_WRAPPER_AWARE_ASSEMBLY_SURFACES) {
+    assert.deepEqual({
+      wrapperAwareCount:countLiteral(source, surface.wrapperAware),
+      referenceOnlyCount:countLiteral(source, surface.reference),
+    }, {
+      wrapperAwareCount:surface.count,
+      referenceOnlyCount:0,
+    }, `S2.11 wrapper-aware assembly surface: ${surface.id}`);
+  }
+  for (const surface of S211_REFERENCE_IDENTITY_SURFACES) {
+    assert.equal(countLiteral(source, surface.reference), surface.count,
+      `S2.11 preserved reference identity surface: ${surface.id}`);
+  }
+}
+
+function replaceS211ContractSurfaceOnce(source, before, after) {
+  const index = source.indexOf(before);
+  assert.notEqual(index, -1, `S2.11 mutant anchor: ${before}`);
+  return `${source.slice(0, index)}${after}${source.slice(index + before.length)}`;
+}
+
+function s211IntendedWrapperAwareAssemblyIdentityFixture() {
+  let source = s211CurrentAssemblyIdentityContractSource();
+  for (const surface of S211_WRAPPER_AWARE_ASSEMBLY_SURFACES) {
+    const referenceCount = countLiteral(source, surface.reference);
+    const wrapperAwareCount = countLiteral(source, surface.wrapperAware);
+    assert.deepEqual({
+      totalCount:referenceCount + wrapperAwareCount,
+      mixedForms:referenceCount > 0 && wrapperAwareCount > 0,
+    }, {
+      totalCount:surface.count,
+      mixedForms:false,
+    }, `S2.11 normalizable fixture surface: ${surface.id}`);
+    source = source.split(surface.reference).join(surface.wrapperAware);
+  }
+  return source;
+}
+
+test('expected Windows wrapper-aware dynamic assembly identity remediation contract', () => {
+  assertS211WrapperAwareDynamicAssemblyIdentity(
+    s211CurrentAssemblyIdentityContractSource());
+});
+
+test('Windows wrapper-aware dynamic assembly identity detector rejects weak and reference-only mutants',
+  () => {
+    const intended = s211IntendedWrapperAwareAssemblyIdentityFixture();
+    assert.doesNotThrow(() => assertS211WrapperAwareDynamicAssemblyIdentity(intended));
+
+    const assembly = S211_WRAPPER_AWARE_ASSEMBLY_SURFACES[0];
+    const state = S211_REFERENCE_IDENTITY_SURFACES.find((surface) =>
+      surface.id === 'state-type');
+    const canonical = S211_REFERENCE_IDENTITY_SURFACES.find((surface) =>
+      surface.id === 'canonical-late-bake-type');
+    const declaring = S211_REFERENCE_IDENTITY_SURFACES.find((surface) =>
+      surface.id === 'stream-data-declaring-type');
+    const moduleIdentity = S211_REFERENCE_IDENTITY_SURFACES.find((surface) =>
+      surface.id === 'late-bake-module');
+    const assemblyMutants = [
+      assembly.reference,
+      '[String]::Equals($resolvedStreamDataType.Assembly.FullName, ' +
+        '$assemblyBuilder.FullName, [System.StringComparison]::Ordinal)',
+      '[String]::Equals($resolvedStreamDataType.Module.ScopeName, ' +
+        '$moduleBuilder.ScopeName, [System.StringComparison]::Ordinal)',
+      '$resolvedStreamDataType.Assembly.IsDynamic',
+      '$true',
+      '(1 -eq 1)',
+    ].map((replacement) => replaceS211ContractSurfaceOnce(
+      intended, assembly.wrapperAware, replacement));
+    const referenceIdentityMutants = [state, canonical, declaring, moduleIdentity].map(
+      (surface) => replaceS211ContractSurfaceOnce(intended, surface.reference,
+        surface.reference.replace('[Object]::ReferenceEquals(', '[Object]::Equals(')));
+
+    for (const mutant of [...assemblyMutants, ...referenceIdentityMutants]) {
+      assert.throws(() => assertS211WrapperAwareDynamicAssemblyIdentity(mutant));
+    }
+  });
+
 test('Windows pinned late-bake identity-axis outer normalizer preserves lower-layer contracts',
   () => {
     const intended = expectedPinnedLateBakeIdentityAxisFixture();
@@ -5674,7 +5859,7 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(hash(Buffer.from(scripts.dispatch, 'utf8')),
     '2f212bdb6ae76e75f32c9ab4956be457116f8bfb7df1a8a1184d6082aea3d8f8');
   assert.equal(hash(Buffer.from(scripts.pinned, 'utf8')),
-    '906a719458557c8c66a34c15d923472bd9c85018c46029b2eb8df86f5e532b65');
+    '6dcd68e2b0b29321dedd10c5751e680f5d216e69e0d64ea9b9d5e1020bc121fa');
   assert.equal(scripts.dispatch.includes(
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
       'handler-entered', '  ')}`), true);
