@@ -653,6 +653,26 @@ const TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES = [
   'state-failure-result-mismatch','state-failure-catch','state-failure-other',
   'state-type-null','state-type-present',
 ];
+const TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES = [
+  'late-bake-applicable','late-bake-create-enter','late-bake-create-return',
+  'late-bake-create-exception','late-bake-result-null',
+  'late-bake-identity-authenticated','late-bake-identity-exception',
+  'late-bake-identity-mismatch','late-bake-fields-authenticated',
+  'late-bake-fields-exception','late-bake-fields-mismatch',
+  'late-bake-methods-authenticated','late-bake-methods-exception',
+  'late-bake-methods-mismatch','late-bake-interop-authenticated',
+  'late-bake-interop-exception','late-bake-interop-mismatch','late-bake-completed',
+];
+const TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES = [
+  ['identity','late-bake-identity-authenticated','late-bake-identity-exception',
+    'late-bake-identity-mismatch'],
+  ['fields','late-bake-fields-authenticated','late-bake-fields-exception',
+    'late-bake-fields-mismatch'],
+  ['methods','late-bake-methods-authenticated','late-bake-methods-exception',
+    'late-bake-methods-mismatch'],
+  ['interop','late-bake-interop-authenticated','late-bake-interop-exception',
+    'late-bake-interop-mismatch'],
+];
 const TYPE_RESOLVE_PINNED_CALLBACK_OUTPUT_GUARDS = [
   ['resolver-entered','before-increment'],
   ['resolver-request-incremented','after-increment'],
@@ -689,7 +709,8 @@ const TYPE_RESOLVE_PINNED_ALLOWED_STAGES = [
   'started',
   ...TYPE_RESOLVE_PINNED_INSERTED_STAGES.flatMap((stage) =>
     stage === 'scope-exited'
-      ? [stage, ...TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES]
+      ? [stage, ...TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES,
+        ...TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES]
       : [stage]),
   'completed',
 ];
@@ -748,6 +769,26 @@ const EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES = [
   'state-failure-null','state-failure-name-mismatch','state-failure-duplicate',
   'state-failure-result-mismatch','state-failure-catch','state-failure-other',
   'state-type-null','state-type-present',
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES = [
+  'late-bake-applicable','late-bake-create-enter','late-bake-create-return',
+  'late-bake-create-exception','late-bake-result-null',
+  'late-bake-identity-authenticated','late-bake-identity-exception',
+  'late-bake-identity-mismatch','late-bake-fields-authenticated',
+  'late-bake-fields-exception','late-bake-fields-mismatch',
+  'late-bake-methods-authenticated','late-bake-methods-exception',
+  'late-bake-methods-mismatch','late-bake-interop-authenticated',
+  'late-bake-interop-exception','late-bake-interop-mismatch','late-bake-completed',
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES = [
+  ['identity','late-bake-identity-authenticated','late-bake-identity-exception',
+    'late-bake-identity-mismatch'],
+  ['fields','late-bake-fields-authenticated','late-bake-fields-exception',
+    'late-bake-fields-mismatch'],
+  ['methods','late-bake-methods-authenticated','late-bake-methods-exception',
+    'late-bake-methods-mismatch'],
+  ['interop','late-bake-interop-authenticated','late-bake-interop-exception',
+    'late-bake-interop-mismatch'],
 ];
 const EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS = [
   ['resolver-entered','-lt'],
@@ -946,6 +987,450 @@ function expectedPinnedPostScopeResolverStateFixture() {
   return {original:base.original, transformed};
 }
 
+function expectedPinnedNoDispatchLateBakeBlock() {
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  return [
+    '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_DIAGNOSTIC_BEGIN',
+    '$lateBakeApplicable = -not $nativeTypeFailure -and',
+    '  $typeResolveState.Requests -eq 0 -and',
+    '  $null -eq $typeResolveState.Failure -and',
+    '  $null -eq $typeResolveState.Type',
+    'if ($lateBakeApplicable) {',
+    marker('late-bake-applicable', '  '),
+    marker('late-bake-create-enter', '  '),
+    '  try {',
+    '    $lateBakeType = $streamDataBuilder.CreateType()',
+    marker('late-bake-create-return', '    '),
+    '  } catch {',
+    marker('late-bake-create-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if ($null -eq $lateBakeType) {',
+    marker('late-bake-result-null', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  try {',
+    '    $lateBakeNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+    '      [System.Reflection.BindingFlags]::NonPublic',
+    "    $lateBakeCanonicalType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA',",
+    '      $lateBakeNestedFlags)',
+    '    $lateBakeIdentityMatch = $null -ne $lateBakeCanonicalType -and',
+    '      [Object]::ReferenceEquals($lateBakeType, $lateBakeCanonicalType) -and',
+    "      [String]::Equals($lateBakeType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',",
+    '        [System.StringComparison]::Ordinal) -and',
+    '      [Object]::ReferenceEquals($lateBakeType.DeclaringType, $nativeType) -and',
+    '      [Object]::ReferenceEquals($lateBakeType.Assembly, $assemblyBuilder) -and',
+    '      [Object]::ReferenceEquals($lateBakeType.Module, $nativeType.Module) -and',
+    '      $lateBakeType.IsValueType -and $lateBakeType.IsNestedPublic -and',
+    '      $lateBakeType.IsSealed -and $lateBakeType.IsLayoutSequential -and',
+    '      $lateBakeType.IsUnicodeClass -and',
+    '      ($lateBakeType.Attributes -band',
+    '        [System.Reflection.TypeAttributes]::BeforeFieldInit) -ne 0',
+    '  } catch {',
+    marker('late-bake-identity-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeIdentityMatch) {',
+    marker('late-bake-identity-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-identity-authenticated', '  '),
+    '  try {',
+    '    $lateBakeFieldFlags = [System.Reflection.BindingFlags]::Public -bor',
+    '      [System.Reflection.BindingFlags]::NonPublic -bor',
+    '      [System.Reflection.BindingFlags]::Instance -bor',
+    '      [System.Reflection.BindingFlags]::Static -bor',
+    '      [System.Reflection.BindingFlags]::DeclaredOnly',
+    '    $lateBakeFields = @($lateBakeType.GetFields($lateBakeFieldFlags))',
+    "    $lateBakeStreamSizeField = $lateBakeType.GetField('StreamSize', $lateBakeFieldFlags)",
+    "    $lateBakeStreamNameField = $lateBakeType.GetField('cStreamName', $lateBakeFieldFlags)",
+    '    $lateBakeMarshal = @($lateBakeStreamNameField.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.MarshalAsAttribute], $false))',
+    '    $lateBakeFieldsMatch = $lateBakeFields.Length -eq 2 -and',
+    '      $null -ne $lateBakeStreamSizeField -and',
+    '      $lateBakeStreamSizeField.FieldType -eq [Int64] -and',
+    '      $lateBakeStreamSizeField.IsPublic -and -not $lateBakeStreamSizeField.IsStatic -and',
+    '      $null -ne $lateBakeStreamNameField -and',
+    '      $lateBakeStreamNameField.FieldType -eq [String] -and',
+    '      $lateBakeStreamNameField.IsPublic -and -not $lateBakeStreamNameField.IsStatic -and',
+    '      $lateBakeMarshal.Length -eq 1 -and',
+    '      $lateBakeMarshal[0].Value -eq',
+    '        [System.Runtime.InteropServices.UnmanagedType]::ByValTStr -and',
+    '      $lateBakeMarshal[0].SizeConst -eq 296',
+    '  } catch {',
+    marker('late-bake-fields-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeFieldsMatch) {',
+    marker('late-bake-fields-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-fields-authenticated', '  '),
+    '  try {',
+    '    $lateBakeMethodFlags = [System.Reflection.BindingFlags]::Public -bor',
+    '      [System.Reflection.BindingFlags]::Static -bor',
+    '      [System.Reflection.BindingFlags]::DeclaredOnly',
+    '    $lateBakeMethods = @($nativeType.GetMethods($lateBakeMethodFlags))',
+    "    $lateBakeFindFirst = $nativeType.GetMethod('FindFirstStreamW', $lateBakeMethodFlags)",
+    "    $lateBakeFindNext = $nativeType.GetMethod('FindNextStreamW', $lateBakeMethodFlags)",
+    "    $lateBakeFindClose = $nativeType.GetMethod('FindClose', $lateBakeMethodFlags)",
+    '    $lateBakeByRef = $lateBakeType.MakeByRefType()',
+    '    $lateBakeFindFirstParameters = @($lateBakeFindFirst.GetParameters())',
+    '    $lateBakeFindNextParameters = @($lateBakeFindNext.GetParameters())',
+    '    $lateBakeFindCloseParameters = @($lateBakeFindClose.GetParameters())',
+    '    $lateBakeMethodsMatch = $lateBakeMethods.Length -eq 3 -and',
+    '      $null -ne $lateBakeFindFirst -and $null -ne $lateBakeFindNext -and',
+    '      $null -ne $lateBakeFindClose -and',
+    '      $lateBakeFindFirst.ReturnType -eq [IntPtr] -and',
+    '      $lateBakeFindFirstParameters.Length -eq 4 -and',
+    '      $lateBakeFindFirstParameters[0].ParameterType -eq [String] -and',
+    '      $lateBakeFindFirstParameters[1].ParameterType -eq [Int32] -and',
+    '      $lateBakeFindFirstParameters[2].ParameterType -eq $lateBakeByRef -and',
+    '      $lateBakeFindFirstParameters[3].ParameterType -eq [UInt32] -and',
+    '      $lateBakeFindNext.ReturnType -eq [Boolean] -and',
+    '      $lateBakeFindNextParameters.Length -eq 2 -and',
+    '      $lateBakeFindNextParameters[0].ParameterType -eq [IntPtr] -and',
+    '      $lateBakeFindNextParameters[1].ParameterType -eq $lateBakeByRef -and',
+    '      $lateBakeFindClose.ReturnType -eq [Boolean] -and',
+    '      $lateBakeFindCloseParameters.Length -eq 1 -and',
+    '      $lateBakeFindCloseParameters[0].ParameterType -eq [IntPtr]',
+    '  } catch {',
+    marker('late-bake-methods-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeMethodsMatch) {',
+    marker('late-bake-methods-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-methods-authenticated', '  '),
+    '  try {',
+    '    $lateBakeFindFirstImports = @($lateBakeFindFirst.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.DllImportAttribute], $false))',
+    '    $lateBakeFindNextImports = @($lateBakeFindNext.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.DllImportAttribute], $false))',
+    '    $lateBakeFindCloseImports = @($lateBakeFindClose.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.DllImportAttribute], $false))',
+    '    $lateBakeInteropMatch = $lateBakeFindFirstImports.Length -eq 1 -and',
+    '      $lateBakeFindNextImports.Length -eq 1 -and $lateBakeFindCloseImports.Length -eq 1 -and',
+    "      [String]::Equals($lateBakeFindFirstImports[0].Value, 'kernel32.dll',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindNextImports[0].Value, 'kernel32.dll',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindCloseImports[0].Value, 'kernel32.dll',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindFirstImports[0].EntryPoint, 'FindFirstStreamW',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindNextImports[0].EntryPoint, 'FindNextStreamW',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindCloseImports[0].EntryPoint, 'FindClose',",
+    '        [System.StringComparison]::Ordinal) -and',
+    '      $lateBakeFindFirstImports[0].CharSet -eq',
+    '        [System.Runtime.InteropServices.CharSet]::Unicode -and',
+    '      $lateBakeFindNextImports[0].CharSet -eq',
+    '        [System.Runtime.InteropServices.CharSet]::Unicode -and',
+    '      $lateBakeFindCloseImports[0].CharSet -eq',
+    '        [System.Runtime.InteropServices.CharSet]::None -and',
+    '      $lateBakeFindFirstImports[0].CallingConvention -eq',
+    '        [System.Runtime.InteropServices.CallingConvention]::Winapi -and',
+    '      $lateBakeFindNextImports[0].CallingConvention -eq',
+    '        [System.Runtime.InteropServices.CallingConvention]::Winapi -and',
+    '      $lateBakeFindCloseImports[0].CallingConvention -eq',
+    '        [System.Runtime.InteropServices.CallingConvention]::Winapi -and',
+    '      $lateBakeFindFirstImports[0].SetLastError -and',
+    '      $lateBakeFindNextImports[0].SetLastError -and',
+    '      $lateBakeFindCloseImports[0].SetLastError -and',
+    '      $lateBakeFindFirstImports[0].ExactSpelling -and',
+    '      $lateBakeFindNextImports[0].ExactSpelling -and',
+    '      $lateBakeFindCloseImports[0].ExactSpelling -and',
+    '      $lateBakeFindFirstImports[0].PreserveSig -and',
+    '      $lateBakeFindNextImports[0].PreserveSig -and',
+    '      $lateBakeFindCloseImports[0].PreserveSig -and',
+    '      ($lateBakeFindFirst.GetMethodImplementationFlags() -band',
+    '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0 -and',
+    '      ($lateBakeFindNext.GetMethodImplementationFlags() -band',
+    '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0 -and',
+    '      ($lateBakeFindClose.GetMethodImplementationFlags() -band',
+    '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0',
+    '  } catch {',
+    marker('late-bake-interop-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeInteropMatch) {',
+    marker('late-bake-interop-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-interop-authenticated', '  '),
+    marker('late-bake-completed', '  '),
+    '}',
+    '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_DIAGNOSTIC_END',
+  ].join('\n');
+}
+
+function expectedPinnedNoDispatchLateBakeAllowedStages() {
+  return [
+    'started',
+    ...EXPECTED_TYPE_RESOLVE_PINNED_PRE_GREEN_INSERTED_STAGES.flatMap((stage) =>
+      stage === 'scope-exited'
+        ? [stage, ...EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES,
+          ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES]
+        : [stage]),
+    'completed',
+  ];
+}
+
+function expectedPinnedNoDispatchLateBakeOracleFixtureSource() {
+  return [
+    "groups.length === 0 && request === 'zero' && failure === 'null' && type === 'null'",
+    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES.map((stage) => `'${stage}'`),
+    'records.length === 36',
+    'TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS === 64',
+    'terminal records forbid post-terminal records',
+  ].join('\n');
+}
+
+function expectedPinnedNoDispatchLateBakeFixture() {
+  const base = expectedPinnedPostScopeResolverStateFixture();
+  const anchor = [
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+    "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+  ].join('\n');
+  assert.equal(countLiteral(base.transformed, anchor), 1,
+    'expected pinned late-bake fixture insertion anchor');
+  return {
+    original:base.original,
+    transformed:base.transformed.replace(anchor, [
+      '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+      expectedPinnedNoDispatchLateBakeBlock(),
+      "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+    ].join('\n')),
+    allowedStages:expectedPinnedNoDispatchLateBakeAllowedStages(),
+    oracleSource:expectedPinnedNoDispatchLateBakeOracleFixtureSource(),
+    actualOracleDiscrepancies:[],
+  };
+}
+
+function expectedPinnedNoDispatchLateBakeBaseFixture() {
+  return expectedPinnedStateRecordFixture({
+    native:'succeeded', request:'zero', failure:'null', type:'null', groups:[],
+  }).records;
+}
+
+function expectedPinnedNoDispatchLateBakeRecordFixture(suffix) {
+  return [
+    ...expectedPinnedNoDispatchLateBakeBaseFixture(),
+    ...suffix.map((stage) => ({version:1, probe:'pinned', stage})),
+  ];
+}
+
+function assertExpectedPinnedNoDispatchLateBakeRecordFixture(records) {
+  const base = expectedPinnedNoDispatchLateBakeBaseFixture();
+  assert.deepEqual(records.slice(0, base.length), base,
+    'expected pinned late-bake record base tuple');
+  assert.equal(records.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
+    'expected pinned late-bake parser cap');
+  const stages = records.slice(base.length).map((record) => record.stage);
+  assert.deepEqual(stages.slice(0, 2),
+    ['late-bake-applicable','late-bake-create-enter'],
+  'expected pinned late-bake record prefix');
+  let index = 2;
+  if (stages[index] === 'late-bake-create-exception') {
+    assert.equal(index + 1, stages.length, 'expected pinned late-bake create terminal');
+    return;
+  }
+  assert.equal(stages[index], 'late-bake-create-return',
+    'expected pinned late-bake create return');
+  index += 1;
+  if (stages[index] === 'late-bake-result-null') {
+    assert.equal(index + 1, stages.length, 'expected pinned late-bake null terminal');
+    return;
+  }
+  for (const [, authenticated, exception, mismatch] of
+    EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES) {
+    if (stages[index] === exception || stages[index] === mismatch) {
+      assert.equal(index + 1, stages.length, 'expected pinned late-bake phase terminal');
+      return;
+    }
+    assert.equal(stages[index], authenticated,
+      'expected pinned late-bake authenticated phase order');
+    index += 1;
+  }
+  assert.equal(stages[index], 'late-bake-completed',
+    'expected pinned late-bake completed terminal');
+  assert.equal(index + 1, stages.length, 'expected pinned late-bake no post-terminal record');
+  assert.equal(records.length, 36, 'expected pinned late-bake exact completed path');
+}
+
+function expectedPinnedNoDispatchLateBakeRecordFixtures() {
+  const prefix = ['late-bake-applicable','late-bake-create-enter'];
+  const fixtures = [
+    expectedPinnedNoDispatchLateBakeRecordFixture(
+      [...prefix, 'late-bake-create-exception']),
+    expectedPinnedNoDispatchLateBakeRecordFixture(
+      [...prefix, 'late-bake-create-return', 'late-bake-result-null']),
+  ];
+  const authenticated = [];
+  for (const [, success, exception, mismatch] of
+    EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES) {
+    fixtures.push(expectedPinnedNoDispatchLateBakeRecordFixture(
+      [...prefix, 'late-bake-create-return', ...authenticated, exception]));
+    fixtures.push(expectedPinnedNoDispatchLateBakeRecordFixture(
+      [...prefix, 'late-bake-create-return', ...authenticated, mismatch]));
+    authenticated.push(success);
+  }
+  fixtures.push(expectedPinnedNoDispatchLateBakeRecordFixture(
+    [...prefix, 'late-bake-create-return', ...authenticated, 'late-bake-completed']));
+  return fixtures;
+}
+
+function expectedPinnedNoDispatchLateBakeInvalidRecordFixtures() {
+  const fixtures = expectedPinnedNoDispatchLateBakeRecordFixtures();
+  const completed = fixtures.at(-1);
+  const baseLength = expectedPinnedNoDispatchLateBakeBaseFixture().length;
+  const reordered = completed.map((record) => ({...record}));
+  const identityIndex = reordered.findIndex((record) =>
+    record.stage === 'late-bake-identity-authenticated');
+  const fieldsIndex = reordered.findIndex((record) =>
+    record.stage === 'late-bake-fields-authenticated');
+  [reordered[identityIndex], reordered[fieldsIndex]] =
+    [reordered[fieldsIndex], reordered[identityIndex]];
+  const callbackBase = expectedPinnedStateRecordFixture({
+    native:'succeeded', request:'one', failure:'null', type:'present', groups:['success'],
+  }).records;
+  return [
+    {id:'authenticated phases reordered', records:reordered},
+    {id:'post-terminal mismatch', records:[
+      ...completed,
+      {version:1, probe:'pinned', stage:'late-bake-identity-mismatch'},
+    ]},
+    {id:'callback path is inapplicable', records:[
+      ...callbackBase,
+      ...completed.slice(baseLength),
+    ]},
+    {id:'completed path has 37 records', records:[
+      ...completed,
+      {version:1, probe:'pinned', stage:'late-bake-completed'},
+    ]},
+    {id:'completed path exceeds parser cap', records:[
+      ...completed,
+      ...Array.from({length:65 - completed.length}, () =>
+        ({version:1, probe:'pinned', stage:'late-bake-completed'})),
+    ]},
+    {id:'completed path omits authenticated phase', records:completed.filter((record) =>
+      record.stage !== 'late-bake-methods-authenticated')},
+  ];
+}
+
+function actualPinnedNoDispatchLateBakeOracleDiscrepancies() {
+  const discrepancies = [];
+  const expectedOutcome = {
+    native:'succeeded', request:'zero', failure:'null', type:'null', groups:[],
+  };
+  for (const [index, records] of
+    expectedPinnedNoDispatchLateBakeRecordFixtures().entries()) {
+    try {
+      assert.deepEqual(assertPinnedTypeResolveRecords(records), expectedOutcome,
+        `real pinned oracle valid late-bake outcome ${index}`);
+    } catch (error) {
+      discrepancies.push(`real pinned oracle rejected valid late-bake fixture ${index}: ` +
+        error.message);
+    }
+  }
+  for (const fixture of expectedPinnedNoDispatchLateBakeInvalidRecordFixtures()) {
+    try {
+      assertPinnedTypeResolveRecords(fixture.records);
+      discrepancies.push(`real pinned oracle accepted invalid late-bake fixture: ${fixture.id}`);
+    } catch {
+      // Rejection is the required real-oracle behavior for this invalid fixture.
+    }
+  }
+  return discrepancies;
+}
+
+function stripExpectedPinnedNoDispatchLateBakeDiagnostic(diagnostic) {
+  const block = expectedPinnedNoDispatchLateBakeBlock();
+  assert.equal(countLiteral(diagnostic.transformed, `${block}\n`), 1,
+    'expected pinned late-bake block strip');
+  return diagnostic.transformed.replace(`${block}\n`, '');
+}
+
+function expectedPinnedNoDispatchLateBakeDiscrepancies(diagnostic) {
+  const discrepancies = [];
+  const requireExactCount = (value, expected, id) => {
+    const actual = countLiteral(diagnostic.transformed, value);
+    if (actual !== expected) discrepancies.push(`${id}: expected ${expected}, actual ${actual}`);
+  };
+  const block = expectedPinnedNoDispatchLateBakeBlock();
+  requireExactCount(block, 1, 'late-bake exact block');
+  const placement = [
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+    block,
+    "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+  ].join('\n');
+  requireExactCount(placement, 1, 'late-bake post-classifier pre-guard placement');
+  for (const stage of EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES) {
+    requireExactCount(typeResolveStageLine('pinned', stage), 1, `late-bake stage ${stage}`);
+  }
+  if (countLiteral(block, '$streamDataBuilder.CreateType()') !== 1) {
+    discrepancies.push('late-bake nested CreateType count');
+  }
+  if (countLiteral(block, '$nativeBuilder.CreateType()') !== 0) {
+    discrepancies.push('late-bake repeats enclosing CreateType');
+  }
+  const assignments = [...block.matchAll(/\$([A-Za-z][A-Za-z0-9]*)\s*(?:=|\+\+|--)/gu)]
+    .map((match) => match[1]);
+  if (assignments.some((name) => !name.startsWith('lateBake'))) {
+    discrepancies.push('late-bake assigns non-lateBake variable');
+  }
+  if (/Exception\.Message|WriteLine\([^'\n]|Start-Sleep|Get-Item|Invoke-Expression|\.Invoke\(/u
+    .test(block)) {
+    discrepancies.push('late-bake exceeds closed diagnostic surface');
+  }
+  if (JSON.stringify(diagnostic.allowedStages) !==
+      JSON.stringify(expectedPinnedNoDispatchLateBakeAllowedStages())) {
+    discrepancies.push('late-bake allowed-stage vocabulary mismatch');
+  }
+  for (const fragment of [
+    "groups.length === 0 && request === 'zero' && failure === 'null' && type === 'null'",
+    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES.map((stage) => `'${stage}'`),
+    'records.length === 36','TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS === 64',
+    'post-terminal',
+  ]) {
+    if (!diagnostic.oracleSource.includes(fragment)) {
+      discrepancies.push(`late-bake oracle fragment absent: ${fragment}`);
+    }
+  }
+  if (!Array.isArray(diagnostic.actualOracleDiscrepancies)) {
+    discrepancies.push('late-bake real record-oracle execution absent');
+  } else {
+    discrepancies.push(...diagnostic.actualOracleDiscrepancies);
+  }
+  try {
+    const withoutLateBake = stripExpectedPinnedNoDispatchLateBakeDiagnostic(diagnostic);
+    if (withoutLateBake !== expectedPinnedPostScopeResolverStateFixture().transformed) {
+      discrepancies.push('late-bake reversible reconstruction mismatch');
+    }
+  } catch (error) {
+    discrepancies.push(`late-bake reversible reconstruction rejected: ${error.message}`);
+  }
+  return discrepancies;
+}
+
+function assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(diagnostic) {
+  const fixtures = expectedPinnedNoDispatchLateBakeRecordFixtures();
+  assert.equal(fixtures.length, 11, 'expected pinned late-bake terminal fixture count');
+  for (const fixture of fixtures) {
+    assertExpectedPinnedNoDispatchLateBakeRecordFixture(fixture);
+  }
+  assert.equal(Math.max(...fixtures.map((fixture) => fixture.length)), 36,
+    'expected pinned late-bake exact no-dispatch maximum');
+  assert.equal(typeResolvePinnedGreenStages().length, 41,
+    'expected pinned late-bake preserved global maximum');
+  assert.equal(TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, 64,
+    'expected pinned late-bake parser cap');
+  assert.deepEqual(expectedPinnedNoDispatchLateBakeDiscrepancies(diagnostic), [],
+    'expected pinned late-bake aggregated actual-script discrepancies');
+}
+
 function expectedTypeResolvePinnedGuardedCallbackBlock() {
   const comparisons = Object.fromEntries(EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS);
   const guard = (stage) => expectedTypeResolvePinnedGuardedMarker(
@@ -1137,6 +1622,11 @@ function expectedPinnedStateRecordFixtures() {
 
 function stripExpectedPinnedPostScopeResolverStateDiagnostic(diagnostic) {
   let stripped = diagnostic.transformed;
+  const lateBake = `${expectedPinnedNoDispatchLateBakeBlock()}\n`;
+  const lateBakeCount = countLiteral(stripped, lateBake);
+  assert.equal(lateBakeCount <= 1, true,
+    'expected pinned post-scope resolver-state upper-layer block bound');
+  if (lateBakeCount === 1) stripped = stripped.replace(lateBake, '');
   const classifier = expectedTypeResolvePinnedStateDiagnosticBlock();
   assert.equal(countLiteral(stripped, `${classifier}\n`), 1,
     'expected pinned post-scope resolver-state classifier strip');
@@ -1155,11 +1645,17 @@ function stripExpectedPinnedPostScopeResolverStateDiagnostic(diagnostic) {
 
 function expectedPinnedPostScopeResolverStateDiscrepancies(diagnostic) {
   const discrepancies = [];
+  const lateBake = `${expectedPinnedNoDispatchLateBakeBlock()}\n`;
+  const lateBakeCount = countLiteral(diagnostic.transformed, lateBake);
+  if (lateBakeCount > 1) {
+    discrepancies.push(`upper-layer late-bake block: expected at most 1, actual ${lateBakeCount}`);
+  }
+  const transformed = lateBakeCount === 1
+    ? diagnostic.transformed.replace(lateBake, '') : diagnostic.transformed;
   const requireExactCount = (value, expected, id) => {
-    const actual = countLiteral(diagnostic.transformed, value);
+    const actual = countLiteral(transformed, value);
     if (actual !== expected) discrepancies.push(`${id}: expected ${expected}, actual ${actual}`);
   };
-  const {transformed} = diagnostic;
   const classifier = expectedTypeResolvePinnedStateDiagnosticBlock();
   requireExactCount(classifier, 1, 'classifier');
   const placement = [
@@ -1573,6 +2069,185 @@ function pinnedTypeResolveStateDiagnosticBlock() {
   ].join('\n');
 }
 
+function pinnedTypeResolveLateBakeDiagnosticBlock() {
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  return [
+    '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_DIAGNOSTIC_BEGIN',
+    '$lateBakeApplicable = -not $nativeTypeFailure -and',
+    '  $typeResolveState.Requests -eq 0 -and',
+    '  $null -eq $typeResolveState.Failure -and',
+    '  $null -eq $typeResolveState.Type',
+    'if ($lateBakeApplicable) {',
+    marker('late-bake-applicable', '  '),
+    marker('late-bake-create-enter', '  '),
+    '  try {',
+    '    $lateBakeType = $streamDataBuilder.CreateType()',
+    marker('late-bake-create-return', '    '),
+    '  } catch {',
+    marker('late-bake-create-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if ($null -eq $lateBakeType) {',
+    marker('late-bake-result-null', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  try {',
+    '    $lateBakeNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+    '      [System.Reflection.BindingFlags]::NonPublic',
+    "    $lateBakeCanonicalType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA',",
+    '      $lateBakeNestedFlags)',
+    '    $lateBakeIdentityMatch = $null -ne $lateBakeCanonicalType -and',
+    '      [Object]::ReferenceEquals($lateBakeType, $lateBakeCanonicalType) -and',
+    "      [String]::Equals($lateBakeType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',",
+    '        [System.StringComparison]::Ordinal) -and',
+    '      [Object]::ReferenceEquals($lateBakeType.DeclaringType, $nativeType) -and',
+    '      [Object]::ReferenceEquals($lateBakeType.Assembly, $assemblyBuilder) -and',
+    '      [Object]::ReferenceEquals($lateBakeType.Module, $nativeType.Module) -and',
+    '      $lateBakeType.IsValueType -and $lateBakeType.IsNestedPublic -and',
+    '      $lateBakeType.IsSealed -and $lateBakeType.IsLayoutSequential -and',
+    '      $lateBakeType.IsUnicodeClass -and',
+    '      ($lateBakeType.Attributes -band',
+    '        [System.Reflection.TypeAttributes]::BeforeFieldInit) -ne 0',
+    '  } catch {',
+    marker('late-bake-identity-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeIdentityMatch) {',
+    marker('late-bake-identity-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-identity-authenticated', '  '),
+    '  try {',
+    '    $lateBakeFieldFlags = [System.Reflection.BindingFlags]::Public -bor',
+    '      [System.Reflection.BindingFlags]::NonPublic -bor',
+    '      [System.Reflection.BindingFlags]::Instance -bor',
+    '      [System.Reflection.BindingFlags]::Static -bor',
+    '      [System.Reflection.BindingFlags]::DeclaredOnly',
+    '    $lateBakeFields = @($lateBakeType.GetFields($lateBakeFieldFlags))',
+    "    $lateBakeStreamSizeField = $lateBakeType.GetField('StreamSize', $lateBakeFieldFlags)",
+    "    $lateBakeStreamNameField = $lateBakeType.GetField('cStreamName', $lateBakeFieldFlags)",
+    '    $lateBakeMarshal = @($lateBakeStreamNameField.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.MarshalAsAttribute], $false))',
+    '    $lateBakeFieldsMatch = $lateBakeFields.Length -eq 2 -and',
+    '      $null -ne $lateBakeStreamSizeField -and',
+    '      $lateBakeStreamSizeField.FieldType -eq [Int64] -and',
+    '      $lateBakeStreamSizeField.IsPublic -and -not $lateBakeStreamSizeField.IsStatic -and',
+    '      $null -ne $lateBakeStreamNameField -and',
+    '      $lateBakeStreamNameField.FieldType -eq [String] -and',
+    '      $lateBakeStreamNameField.IsPublic -and -not $lateBakeStreamNameField.IsStatic -and',
+    '      $lateBakeMarshal.Length -eq 1 -and',
+    '      $lateBakeMarshal[0].Value -eq',
+    '        [System.Runtime.InteropServices.UnmanagedType]::ByValTStr -and',
+    '      $lateBakeMarshal[0].SizeConst -eq 296',
+    '  } catch {',
+    marker('late-bake-fields-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeFieldsMatch) {',
+    marker('late-bake-fields-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-fields-authenticated', '  '),
+    '  try {',
+    '    $lateBakeMethodFlags = [System.Reflection.BindingFlags]::Public -bor',
+    '      [System.Reflection.BindingFlags]::Static -bor',
+    '      [System.Reflection.BindingFlags]::DeclaredOnly',
+    '    $lateBakeMethods = @($nativeType.GetMethods($lateBakeMethodFlags))',
+    "    $lateBakeFindFirst = $nativeType.GetMethod('FindFirstStreamW', $lateBakeMethodFlags)",
+    "    $lateBakeFindNext = $nativeType.GetMethod('FindNextStreamW', $lateBakeMethodFlags)",
+    "    $lateBakeFindClose = $nativeType.GetMethod('FindClose', $lateBakeMethodFlags)",
+    '    $lateBakeByRef = $lateBakeType.MakeByRefType()',
+    '    $lateBakeFindFirstParameters = @($lateBakeFindFirst.GetParameters())',
+    '    $lateBakeFindNextParameters = @($lateBakeFindNext.GetParameters())',
+    '    $lateBakeFindCloseParameters = @($lateBakeFindClose.GetParameters())',
+    '    $lateBakeMethodsMatch = $lateBakeMethods.Length -eq 3 -and',
+    '      $null -ne $lateBakeFindFirst -and $null -ne $lateBakeFindNext -and',
+    '      $null -ne $lateBakeFindClose -and',
+    '      $lateBakeFindFirst.ReturnType -eq [IntPtr] -and',
+    '      $lateBakeFindFirstParameters.Length -eq 4 -and',
+    '      $lateBakeFindFirstParameters[0].ParameterType -eq [String] -and',
+    '      $lateBakeFindFirstParameters[1].ParameterType -eq [Int32] -and',
+    '      $lateBakeFindFirstParameters[2].ParameterType -eq $lateBakeByRef -and',
+    '      $lateBakeFindFirstParameters[3].ParameterType -eq [UInt32] -and',
+    '      $lateBakeFindNext.ReturnType -eq [Boolean] -and',
+    '      $lateBakeFindNextParameters.Length -eq 2 -and',
+    '      $lateBakeFindNextParameters[0].ParameterType -eq [IntPtr] -and',
+    '      $lateBakeFindNextParameters[1].ParameterType -eq $lateBakeByRef -and',
+    '      $lateBakeFindClose.ReturnType -eq [Boolean] -and',
+    '      $lateBakeFindCloseParameters.Length -eq 1 -and',
+    '      $lateBakeFindCloseParameters[0].ParameterType -eq [IntPtr]',
+    '  } catch {',
+    marker('late-bake-methods-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeMethodsMatch) {',
+    marker('late-bake-methods-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-methods-authenticated', '  '),
+    '  try {',
+    '    $lateBakeFindFirstImports = @($lateBakeFindFirst.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.DllImportAttribute], $false))',
+    '    $lateBakeFindNextImports = @($lateBakeFindNext.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.DllImportAttribute], $false))',
+    '    $lateBakeFindCloseImports = @($lateBakeFindClose.GetCustomAttributes(',
+    '      [System.Runtime.InteropServices.DllImportAttribute], $false))',
+    '    $lateBakeInteropMatch = $lateBakeFindFirstImports.Length -eq 1 -and',
+    '      $lateBakeFindNextImports.Length -eq 1 -and $lateBakeFindCloseImports.Length -eq 1 -and',
+    "      [String]::Equals($lateBakeFindFirstImports[0].Value, 'kernel32.dll',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindNextImports[0].Value, 'kernel32.dll',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindCloseImports[0].Value, 'kernel32.dll',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindFirstImports[0].EntryPoint, 'FindFirstStreamW',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindNextImports[0].EntryPoint, 'FindNextStreamW',",
+    '        [System.StringComparison]::Ordinal) -and',
+    "      [String]::Equals($lateBakeFindCloseImports[0].EntryPoint, 'FindClose',",
+    '        [System.StringComparison]::Ordinal) -and',
+    '      $lateBakeFindFirstImports[0].CharSet -eq',
+    '        [System.Runtime.InteropServices.CharSet]::Unicode -and',
+    '      $lateBakeFindNextImports[0].CharSet -eq',
+    '        [System.Runtime.InteropServices.CharSet]::Unicode -and',
+    '      $lateBakeFindCloseImports[0].CharSet -eq',
+    '        [System.Runtime.InteropServices.CharSet]::None -and',
+    '      $lateBakeFindFirstImports[0].CallingConvention -eq',
+    '        [System.Runtime.InteropServices.CallingConvention]::Winapi -and',
+    '      $lateBakeFindNextImports[0].CallingConvention -eq',
+    '        [System.Runtime.InteropServices.CallingConvention]::Winapi -and',
+    '      $lateBakeFindCloseImports[0].CallingConvention -eq',
+    '        [System.Runtime.InteropServices.CallingConvention]::Winapi -and',
+    '      $lateBakeFindFirstImports[0].SetLastError -and',
+    '      $lateBakeFindNextImports[0].SetLastError -and',
+    '      $lateBakeFindCloseImports[0].SetLastError -and',
+    '      $lateBakeFindFirstImports[0].ExactSpelling -and',
+    '      $lateBakeFindNextImports[0].ExactSpelling -and',
+    '      $lateBakeFindCloseImports[0].ExactSpelling -and',
+    '      $lateBakeFindFirstImports[0].PreserveSig -and',
+    '      $lateBakeFindNextImports[0].PreserveSig -and',
+    '      $lateBakeFindCloseImports[0].PreserveSig -and',
+    '      ($lateBakeFindFirst.GetMethodImplementationFlags() -band',
+    '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0 -and',
+    '      ($lateBakeFindNext.GetMethodImplementationFlags() -band',
+    '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0 -and',
+    '      ($lateBakeFindClose.GetMethodImplementationFlags() -band',
+    '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0',
+    '  } catch {',
+    marker('late-bake-interop-exception', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeInteropMatch) {',
+    marker('late-bake-interop-mismatch', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+    marker('late-bake-interop-authenticated', '  '),
+    marker('late-bake-completed', '  '),
+    '}',
+    '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_DIAGNOSTIC_END',
+  ].join('\n');
+}
+
 function pinnedTypeResolveGuardedMarker(stage, outputGuard) {
   assert.equal(['before-increment','after-increment'].includes(outputGuard), true,
     `pinned output guard class ${stage}`);
@@ -1607,8 +2282,30 @@ function applyPinnedTypeResolveStateClassifier(source) {
   };
 }
 
+function applyPinnedTypeResolveLateBakeDiagnostic(source) {
+  const before = [
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+    "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+  ].join('\n');
+  const block = pinnedTypeResolveLateBakeDiagnosticBlock();
+  const after = [
+    '# DEEP_WORK_TYPE_RESOLVE_STATE_DIAGNOSTIC_END',
+    block,
+    "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+  ].join('\n');
+  assert.equal(countLiteral(source, before), 1, 'pinned late-bake insertion anchor');
+  return {
+    source:source.replace(before, after),
+    transform:{id:'no-dispatch-late-bake-diagnostic', before, after},
+  };
+}
+
 function reversePinnedTypeResolveDiagnosticTransforms(diagnostic) {
   let reconstructed = diagnostic.transformed;
+  assert.equal(countLiteral(reconstructed, diagnostic.lateBakeTransform.after), 1,
+    'pinned reverse late-bake diagnostic');
+  reconstructed = reconstructed.replace(diagnostic.lateBakeTransform.after,
+    diagnostic.lateBakeTransform.before);
   assert.equal(countLiteral(reconstructed, diagnostic.classifierTransform.after), 1,
     'pinned reverse state classifier');
   reconstructed = reconstructed.replace(diagnostic.classifierTransform.after,
@@ -1628,6 +2325,9 @@ function reversePinnedTypeResolveDiagnosticTransforms(diagnostic) {
 
 function stripPinnedTypeResolveDiagnostic(source) {
   let stripped = source;
+  const lateBake = `${pinnedTypeResolveLateBakeDiagnosticBlock()}\n`;
+  assert.equal(countLiteral(stripped, lateBake), 1, 'pinned late-bake strip');
+  stripped = stripped.replace(lateBake, '');
   const classifier = `${pinnedTypeResolveStateDiagnosticBlock()}\n`;
   assert.equal(countLiteral(stripped, classifier), 1, 'pinned classifier strip');
   stripped = stripped.replace(classifier, '');
@@ -1728,12 +2428,15 @@ function pinnedWindowsTypeResolveDiagnostic() {
   }
   const classifier = applyPinnedTypeResolveStateClassifier(transformed);
   transformed = classifier.source;
+  const lateBake = applyPinnedTypeResolveLateBakeDiagnostic(transformed);
+  transformed = lateBake.source;
   const diagnostic = {
     original,
     transformed,
     transforms,
     guardTransforms,
     classifierTransform:classifier.transform,
+    lateBakeTransform:lateBake.transform,
   };
   const reconstructed = reversePinnedTypeResolveDiagnosticTransforms(diagnostic);
   assert.equal(reconstructed, original, 'pinned reverse reconstruction');
@@ -1750,6 +2453,7 @@ function pinnedWindowsTypeResolveDiagnostic() {
     transforms,
     guardTransforms,
     classifierTransform:classifier.transform,
+    lateBakeTransform:lateBake.transform,
     markerLines,
   };
 }
@@ -1909,6 +2613,10 @@ function assertClosedTypeResolveDiagnosticScript(script, {
     assert.equal(script.includes('RequestingAssembly'), false,
       'closed pinned requester observation');
     const classifier = pinnedTypeResolveStateDiagnosticBlock();
+    const lateBake = `${pinnedTypeResolveLateBakeDiagnosticBlock()}\n`;
+    assert.equal(countLiteral(pinned.transformed, lateBake), 1,
+      'closed pinned late-bake diagnostic count');
+    const preLateBake = pinned.transformed.replace(lateBake, '');
     const placement = [
       '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
       '',
@@ -1916,7 +2624,7 @@ function assertClosedTypeResolveDiagnosticScript(script, {
       classifier,
       "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
     ].join('\n');
-    assert.equal(countLiteral(pinned.transformed, placement), 1,
+    assert.equal(countLiteral(preLateBake, placement), 1,
       'closed pinned state classifier placement');
     assert.equal(countLiteral(pinned.transformed, classifier), 1,
       'closed pinned state classifier count');
@@ -2279,11 +2987,70 @@ function assertPinnedTypeResolveRecords(records) {
   assert.equal(stateNative, native, 'pinned oracle enclosing/state consistency');
   index += 4;
 
+  const lateBakePhases = [
+    ['identity','late-bake-identity-authenticated','late-bake-identity-exception',
+      'late-bake-identity-mismatch'],
+    ['fields','late-bake-fields-authenticated','late-bake-fields-exception',
+      'late-bake-fields-mismatch'],
+    ['methods','late-bake-methods-authenticated','late-bake-methods-exception',
+      'late-bake-methods-mismatch'],
+    ['interop','late-bake-interop-authenticated','late-bake-interop-exception',
+      'late-bake-interop-mismatch'],
+  ];
+  assert.deepEqual(lateBakePhases, TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES,
+    'pinned oracle late-bake phase vocabulary');
+  const parseLateBakeSuffix = (start) => {
+    assert.equal(TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS === 64, true,
+      'pinned oracle late-bake fixed parser cap');
+    let lateIndex = start;
+    assert.deepEqual(stages.slice(lateIndex, lateIndex + 2),
+      ['late-bake-applicable','late-bake-create-enter'],
+    'pinned oracle late-bake prefix');
+    lateIndex += 2;
+    const terminal = (label) => {
+      assert.equal(lateIndex + 1, stages.length,
+        `pinned oracle late-bake ${label} terminal forbids post-terminal records`);
+      assert.equal(records.length < 36, true,
+        `pinned oracle late-bake ${label} failure path bound`);
+      return stages.length;
+    };
+    if (stages[lateIndex] === 'late-bake-create-exception') {
+      return terminal('create-exception');
+    }
+    assert.equal(stages[lateIndex], 'late-bake-create-return',
+      'pinned oracle late-bake create return');
+    lateIndex += 1;
+    if (stages[lateIndex] === 'late-bake-result-null') {
+      return terminal('result-null');
+    }
+    for (const [phase, authenticated, exception, mismatch] of lateBakePhases) {
+      if (stages[lateIndex] === exception || stages[lateIndex] === mismatch) {
+        return terminal(`${phase}-failure`);
+      }
+      assert.equal(stages[lateIndex], authenticated,
+        `pinned oracle late-bake ${phase} authenticated`);
+      lateIndex += 1;
+    }
+    assert.equal(stages[lateIndex], 'late-bake-completed',
+      'pinned oracle late-bake completed');
+    assert.equal(lateIndex + 1, stages.length,
+      'pinned oracle late-bake completed forbids post-terminal records');
+    assert.equal(records.length === 36, true,
+      'pinned oracle late-bake exact completed path');
+    return stages.length;
+  };
+
   let successfulState = false;
+  const lateBakeApplicable = groups.length === 0 && request === 'zero' && failure === 'null' && type === 'null';
   if (groups.length === 0) {
     assert.deepEqual({request, failure, type},
       {request:'zero', failure:'null', type:'null'},
     'pinned oracle zero-request tuple');
+    if (index < stages.length) {
+      assert.equal(native === 'succeeded' && lateBakeApplicable, true,
+        'pinned oracle late-bake applicability');
+      index = parseLateBakeSuffix(index);
+    }
   } else if (groups.length === 1) {
     const outcomes = {
       success:{failure:'null', type:'present'},
@@ -3683,7 +4450,8 @@ test('expected Windows pinned factory-boundary diagnostic contract', () => {
         'started',
         ...EXPECTED_TYPE_RESOLVE_PINNED_INSERTED_STAGES.flatMap((stage) =>
           stage === 'scope-exited'
-            ? [stage, ...EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES] : [stage]),
+            ? [stage, ...EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES,
+              ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES] : [stage]),
         'completed',
       ]),
     factoryMarkerCounts:EXPECTED_TYPE_RESOLVE_PINNED_FACTORY_STAGES.every(
@@ -3769,6 +4537,145 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   ];
   for (const [name, mutant, expected] of mutants) {
     assert.throws(() => assertWindowsStreamTypeResolveSource(mutant), expected, name);
+  }
+});
+
+test('expected Windows pinned no-dispatch late-bake diagnostic contract', () => {
+  assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic({
+    ...pinnedWindowsTypeResolveDiagnostic(),
+    allowedStages:TYPE_RESOLVE_PINNED_ALLOWED_STAGES,
+    oracleSource:assertPinnedTypeResolveRecords.toString(),
+    actualOracleDiscrepancies:actualPinnedNoDispatchLateBakeOracleDiscrepancies(),
+  });
+});
+
+test('Windows pinned no-dispatch late-bake detector rejects closed-surface mutants', () => {
+  const intended = expectedPinnedNoDispatchLateBakeFixture();
+  assert.doesNotThrow(() =>
+    assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(intended));
+
+  const block = expectedPinnedNoDispatchLateBakeBlock();
+  const marker = (stage) => typeResolveStageLine('pinned', stage);
+  const mutate = (before, after) => {
+    assert.equal(countLiteral(block, before), 1,
+      `expected pinned late-bake detector mutant anchor ${before}`);
+    const mutantBlock = block.replace(before, after);
+    return {...intended, transformed:intended.transformed.replace(block, mutantBlock)};
+  };
+  const movedBeforeEnclosing = {
+    ...intended,
+    transformed:intended.transformed.replace(`${block}\n`, '').replace(
+      marker('enclosing-create-enter'), `${block}\n${marker('enclosing-create-enter')}`),
+  };
+  const reorderedPhases = {
+    ...intended,
+    transformed:intended.transformed
+      .replace(marker('late-bake-identity-authenticated'), 'LATE_BAKE_PHASE_SWAP')
+      .replace(marker('late-bake-fields-authenticated'),
+        marker('late-bake-identity-authenticated'))
+      .replace('LATE_BAKE_PHASE_SWAP', marker('late-bake-fields-authenticated')),
+  };
+  const scriptMutants = [
+    mutate('$lateBakeApplicable = -not $nativeTypeFailure -and',
+      '$lateBakeApplicable = $true -and'),
+    mutate('$typeResolveState.Requests -eq 0 -and',
+      '$typeResolveState.Requests -ge 0 -and'),
+    movedBeforeEnclosing,
+    mutate('    $lateBakeType = $streamDataBuilder.CreateType()', [
+      '    $lateBakeType = $streamDataBuilder.CreateType()',
+      '    $lateBakeType = $streamDataBuilder.CreateType()',
+    ].join('\n')),
+    mutate('    $lateBakeType = $streamDataBuilder.CreateType()', [
+      '    $lateBakeType = $streamDataBuilder.CreateType()',
+      '    $lateBakeOtherType = $nativeBuilder.CreateType()',
+    ].join('\n')),
+    mutate('$lateBakeApplicable = -not $nativeTypeFailure -and', [
+      '$typeResolveState.Type = $null',
+      '$lateBakeApplicable = -not $nativeTypeFailure -and',
+    ].join('\n')),
+    mutate(marker('late-bake-create-exception'), [
+      '[Console]::Out.WriteLine($_.Exception.Message)',
+      marker('late-bake-create-exception'),
+    ].join('\n')),
+    mutate(marker('late-bake-create-return'), [
+      '[Console]::Out.WriteLine($lateBakeType.FullName)',
+      marker('late-bake-create-return'),
+    ].join('\n')),
+    mutate(marker('late-bake-interop-authenticated'), [
+      '$lateBakeFindClose.Invoke($null, @([IntPtr]::Zero))',
+      marker('late-bake-interop-authenticated'),
+    ].join('\n')),
+    mutate(marker('late-bake-completed'), ''),
+    mutate(marker('late-bake-completed'), [
+      marker('late-bake-completed'), marker('late-bake-completed'),
+    ].join('\n')),
+    reorderedPhases,
+    mutate(marker('late-bake-identity-authenticated'), [
+      marker('late-bake-identity-authenticated'), marker('late-bake-identity-mismatch'),
+    ].join('\n')),
+    mutate('$lateBakeType.IsValueType -and $lateBakeType.IsNestedPublic -and',
+      '$lateBakeType.IsValueType -and $lateBakeType.IsPublic -and'),
+    mutate('$lateBakeType.IsSealed -and $lateBakeType.IsLayoutSequential -and',
+      '$true -and $lateBakeType.IsLayoutSequential -and'),
+    mutate('[System.Reflection.TypeAttributes]::BeforeFieldInit) -ne 0',
+      '[System.Reflection.TypeAttributes]::Serializable) -ne 0'),
+    mutate('$lateBakeMethodFlags = [System.Reflection.BindingFlags]::Public -bor',
+      '$lateBakeMethodFlags = [System.Reflection.BindingFlags]::NonPublic -bor'),
+    mutate([
+      '$lateBakeMethodFlags = [System.Reflection.BindingFlags]::Public -bor',
+      '      [System.Reflection.BindingFlags]::Static -bor',
+      '      [System.Reflection.BindingFlags]::DeclaredOnly',
+    ].join('\n'), [
+      '$lateBakeMethodFlags = [System.Reflection.BindingFlags]::Public -bor',
+      '      [System.Reflection.BindingFlags]::Instance -bor',
+      '      [System.Reflection.BindingFlags]::DeclaredOnly',
+    ].join('\n')),
+    mutate('      [System.Reflection.BindingFlags]::DeclaredOnly\n' +
+      '    $lateBakeMethods = @($nativeType.GetMethods($lateBakeMethodFlags))',
+    '      [System.Reflection.BindingFlags]::FlattenHierarchy\n' +
+      '    $lateBakeMethods = @($nativeType.GetMethods($lateBakeMethodFlags))'),
+    mutate('$lateBakeMethods.Length -eq 3 -and',
+      '$lateBakeMethods.Length -eq 4 -and'),
+    mutate('      $lateBakeFindFirstImports[0].PreserveSig -and',
+      '      $lateBakeFindFirstImports[0].ExactSpelling -and'),
+    mutate([
+      '      ($lateBakeFindFirst.GetMethodImplementationFlags() -band',
+      '        [System.Reflection.MethodImplAttributes]::PreserveSig) -ne 0 -and',
+    ].join('\n'), [
+      '      ($lateBakeFindFirst.GetMethodImplementationFlags() -band',
+      '        [System.Reflection.MethodImplAttributes]::Synchronized) -ne 0 -and',
+    ].join('\n')),
+  ];
+  for (const mutant of scriptMutants) {
+    assert.throws(() =>
+      assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(mutant));
+  }
+
+  assert.throws(() => assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic({
+    ...intended,
+    allowedStages:intended.allowedStages.filter((stage) =>
+      stage !== 'late-bake-identity-mismatch'),
+  }));
+  assert.throws(() => assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic({
+    ...intended,
+    oracleSource:intended.oracleSource.replace("'late-bake-methods-mismatch'", ''),
+  }));
+  assert.throws(() => assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic({
+    ...intended,
+    actualOracleDiscrepancies:undefined,
+  }));
+  assert.throws(() => assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic({
+    ...intended,
+    actualOracleDiscrepancies:['real pinned oracle accepted invalid late-bake fixture'],
+  }));
+
+  const fixtures = expectedPinnedNoDispatchLateBakeRecordFixtures();
+  for (const fixture of fixtures) {
+    assert.doesNotThrow(() => assertExpectedPinnedNoDispatchLateBakeRecordFixture(fixture));
+  }
+  for (const fixture of expectedPinnedNoDispatchLateBakeInvalidRecordFixtures()) {
+    assert.throws(() => assertExpectedPinnedNoDispatchLateBakeRecordFixture(fixture.records),
+      undefined, fixture.id);
   }
 });
 
@@ -4020,7 +4927,7 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(hash(Buffer.from(scripts.dispatch, 'utf8')),
     '2f212bdb6ae76e75f32c9ab4956be457116f8bfb7df1a8a1184d6082aea3d8f8');
   assert.equal(hash(Buffer.from(scripts.pinned, 'utf8')),
-    '88b9f0a10a0df67f6c4695a156e78127db147b5fbaefb58716afcfaa2194c5db');
+    '8eddad57ed1a1edbe2852f45e9f1e0dfe471e362e84e507deb37ab0474b2bc9e');
   assert.equal(scripts.dispatch.includes(
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
       'handler-entered', '  ')}`), true);
