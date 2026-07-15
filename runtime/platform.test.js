@@ -653,9 +653,86 @@ const TYPE_RESOLVE_PINNED_STATE_CLASSIFICATION_STAGES = [
   'state-failure-result-mismatch','state-failure-catch','state-failure-other',
   'state-type-null','state-type-present',
 ];
+const TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES = [
+  {
+    id:'canonical-present',
+    setup:[
+      '    $lateBakeIdentityAxisNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+      '      [System.Reflection.BindingFlags]::NonPublic',
+      "    $lateBakeIdentityAxisCanonicalType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA',",
+      '      $lateBakeIdentityAxisNestedFlags)',
+    ],
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = $null -ne $lateBakeIdentityAxisCanonicalType',
+    ],
+  },
+  {
+    id:'canonical-reference',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType, $lateBakeIdentityAxisCanonicalType)',
+    ],
+  },
+  {
+    id:'full-name',
+    predicate:[
+      "    $lateBakeIdentityAxisMatch = [String]::Equals($lateBakeType.FullName,",
+      "      'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',",
+      '      [System.StringComparison]::Ordinal)',
+    ],
+  },
+  {
+    id:'declaring-type',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType.DeclaringType, $nativeType)',
+    ],
+  },
+  {
+    id:'assembly',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType.Assembly, $assemblyBuilder)',
+    ],
+  },
+  {
+    id:'module',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType.Module, $nativeType.Module)',
+    ],
+  },
+  {id:'value-type', predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsValueType']},
+  {
+    id:'nested-public',
+    predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsNestedPublic'],
+  },
+  {id:'sealed', predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsSealed']},
+  {
+    id:'sequential-layout',
+    predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsLayoutSequential'],
+  },
+  {
+    id:'unicode-class',
+    predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsUnicodeClass'],
+  },
+  {
+    id:'before-field-init',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = ($lateBakeType.Attributes -band',
+      '      [System.Reflection.TypeAttributes]::BeforeFieldInit) -ne 0',
+    ],
+  },
+];
+const TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES =
+  TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES.flatMap(({id}) => [
+    `late-bake-identity-axis-${id}-exception`,
+    `late-bake-identity-axis-${id}-mismatch`,
+  ]);
 const TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES = [
   'late-bake-applicable','late-bake-create-enter','late-bake-create-return',
   'late-bake-create-exception','late-bake-result-null',
+  ...TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES,
   'late-bake-identity-authenticated','late-bake-identity-exception',
   'late-bake-identity-mismatch','late-bake-fields-authenticated',
   'late-bake-fields-exception','late-bake-fields-mismatch',
@@ -790,6 +867,82 @@ const EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES = [
   ['interop','late-bake-interop-authenticated','late-bake-interop-exception',
     'late-bake-interop-mismatch'],
 ];
+const EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES = [
+  {
+    id:'canonical-present',
+    setup:[
+      '    $lateBakeIdentityAxisNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+      '      [System.Reflection.BindingFlags]::NonPublic',
+      "    $lateBakeIdentityAxisCanonicalType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA',",
+      '      $lateBakeIdentityAxisNestedFlags)',
+    ],
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = $null -ne $lateBakeIdentityAxisCanonicalType',
+    ],
+  },
+  {
+    id:'canonical-reference',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType, $lateBakeIdentityAxisCanonicalType)',
+    ],
+  },
+  {
+    id:'full-name',
+    predicate:[
+      "    $lateBakeIdentityAxisMatch = [String]::Equals($lateBakeType.FullName,",
+      "      'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA',",
+      '      [System.StringComparison]::Ordinal)',
+    ],
+  },
+  {
+    id:'declaring-type',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType.DeclaringType, $nativeType)',
+    ],
+  },
+  {
+    id:'assembly',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType.Assembly, $assemblyBuilder)',
+    ],
+  },
+  {
+    id:'module',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = [Object]::ReferenceEquals(',
+      '      $lateBakeType.Module, $nativeType.Module)',
+    ],
+  },
+  {id:'value-type', predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsValueType']},
+  {
+    id:'nested-public',
+    predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsNestedPublic'],
+  },
+  {id:'sealed', predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsSealed']},
+  {
+    id:'sequential-layout',
+    predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsLayoutSequential'],
+  },
+  {
+    id:'unicode-class',
+    predicate:['    $lateBakeIdentityAxisMatch = $lateBakeType.IsUnicodeClass'],
+  },
+  {
+    id:'before-field-init',
+    predicate:[
+      '    $lateBakeIdentityAxisMatch = ($lateBakeType.Attributes -band',
+      '      [System.Reflection.TypeAttributes]::BeforeFieldInit) -ne 0',
+    ],
+  },
+];
+const EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES =
+  EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES.flatMap(({id}) => [
+    `late-bake-identity-axis-${id}-exception`,
+    `late-bake-identity-axis-${id}-mismatch`,
+  ]);
 const EXPECTED_TYPE_RESOLVE_PINNED_CALLBACK_GUARDS = [
   ['resolver-entered','-lt'],
   ['resolver-request-incremented','-le'],
@@ -1429,6 +1582,300 @@ function assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(diagnostic) {
     'expected pinned late-bake parser cap');
   assert.deepEqual(expectedPinnedNoDispatchLateBakeDiscrepancies(diagnostic), [],
     'expected pinned late-bake aggregated actual-script discrepancies');
+}
+
+function expectedPinnedLateBakeIdentityAxisStep(axis) {
+  const exception = `late-bake-identity-axis-${axis.id}-exception`;
+  const mismatch = `late-bake-identity-axis-${axis.id}-mismatch`;
+  return [
+    '  try {',
+    ...(axis.setup || []),
+    ...axis.predicate,
+    '  } catch {',
+    typeResolveStageLine('pinned', exception, '    '),
+    "    throw 'stream late bake identity-axis diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeIdentityAxisMatch) {',
+    typeResolveStageLine('pinned', mismatch, '    '),
+    "    throw 'stream late bake identity-axis diagnostic failed'",
+    '  }',
+  ].join('\n');
+}
+
+function expectedPinnedLateBakeIdentityAxisBlock() {
+  return [
+    '  # DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_BEGIN',
+    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES.map(
+      expectedPinnedLateBakeIdentityAxisStep),
+    '  # DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_END',
+  ].join('\n');
+}
+
+function expectedPinnedLateBakeIdentityAxisTransformMetadata() {
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  return {
+    id:'late-bake-identity-axis',
+    before:[
+      '  if ($null -eq $lateBakeType) {',
+      marker('late-bake-result-null', '    '),
+      "    throw 'stream late bake diagnostic failed'",
+      '  }',
+    ].join('\n'),
+    after:[
+      '  try {',
+      '    $lateBakeNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+    ].join('\n'),
+  };
+}
+
+function expectedPinnedLateBakeIdentityAxisAllowedStages() {
+  return expectedPinnedNoDispatchLateBakeAllowedStages().flatMap((stage) =>
+    stage === 'late-bake-result-null'
+      ? [stage, ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES]
+      : [stage]);
+}
+
+function expectedPinnedLateBakeIdentityAxisOracleFixtureSource() {
+  return [
+    expectedPinnedNoDispatchLateBakeOracleFixtureSource(),
+    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES.map(
+      (stage) => `'${stage}'`),
+    'records.length === 32',
+    'identity-axis terminal records forbid post-terminal records',
+  ].join('\n');
+}
+
+function expectedPinnedLateBakeIdentityAxisFixture() {
+  const base = expectedPinnedNoDispatchLateBakeFixture();
+  const block = expectedPinnedLateBakeIdentityAxisBlock();
+  const transform = expectedPinnedLateBakeIdentityAxisTransformMetadata();
+  const anchor = `${transform.before}\n${transform.after}`;
+  assert.equal(countLiteral(base.transformed, anchor), 1,
+    'expected pinned identity-axis fixture insertion anchor');
+  return {
+    ...base,
+    transformed:base.transformed.replace(anchor,
+      `${transform.before}\n${block}\n${transform.after}`),
+    allowedStages:expectedPinnedLateBakeIdentityAxisAllowedStages(),
+    oracleSource:expectedPinnedLateBakeIdentityAxisOracleFixtureSource(),
+    axisActualOracleDiscrepancies:[],
+    lateBakeIdentityAxisTransform:transform,
+  };
+}
+
+function normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(diagnostic) {
+  assert.equal(diagnostic && typeof diagnostic === 'object', true,
+    'expected pinned identity-axis diagnostic object');
+  assert.equal(typeof diagnostic.transformed, 'string',
+    'expected pinned identity-axis transformed source');
+  assert.equal(Array.isArray(diagnostic.allowedStages), true,
+    'expected pinned identity-axis allowed stages');
+  const block = expectedPinnedLateBakeIdentityAxisBlock();
+  const transform = expectedPinnedLateBakeIdentityAxisTransformMetadata();
+  assert.deepEqual(diagnostic.lateBakeIdentityAxisTransform, transform,
+    'expected pinned identity-axis transform metadata');
+  assert.equal(countLiteral(diagnostic.transformed, `${block}\n`), 1,
+    'expected pinned identity-axis exact block count');
+  assert.equal(countLiteral(diagnostic.transformed,
+    '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_BEGIN'), 1,
+  'expected pinned identity-axis begin count');
+  assert.equal(countLiteral(diagnostic.transformed,
+    '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_END'), 1,
+  'expected pinned identity-axis end count');
+  const placement = `${transform.before}\n${block}\n${transform.after}`;
+  assert.equal(countLiteral(diagnostic.transformed, placement), 1,
+    'expected pinned identity-axis exact placement');
+  const sourceStages = [...diagnostic.transformed.matchAll(
+    /"stage":"(late-bake-identity-axis-[a-z-]+)"/gu)].map((match) => match[1]);
+  assert.deepEqual(sourceStages, EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES,
+    'expected pinned identity-axis fixed source vocabulary');
+  const assignments = [...block.matchAll(/\$([A-Za-z][A-Za-z0-9]*)\s*=/gu)]
+    .map((match) => match[1]);
+  assert.equal(assignments.length > 0 && assignments.every((name) =>
+    name.startsWith('lateBakeIdentityAxis')), true,
+  'expected pinned identity-axis assignment boundary');
+  assert.doesNotMatch(block,
+    /Exception\.Message|WriteLine\([^'\n]|CreateType|DefineType|DefineNestedType|DefineField|DefineMethod|add_TypeResolve|Get-Item|Start-Process|\$env:|Registry|Start-Sleep|retry|fallback|\.Invoke\(/iu,
+  'expected pinned identity-axis closed diagnostic surface');
+  assert.equal(countLiteral(block,
+    "throw 'stream late bake identity-axis diagnostic failed'"), 24,
+  'expected pinned identity-axis fixed throw count');
+
+  const axisStages = diagnostic.allowedStages.filter((stage) =>
+    stage.startsWith('late-bake-identity-axis-'));
+  assert.deepEqual(axisStages, EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES,
+    'expected pinned identity-axis allowed vocabulary');
+  const resultNullIndex = diagnostic.allowedStages.indexOf('late-bake-result-null');
+  const identityIndex = diagnostic.allowedStages.indexOf('late-bake-identity-authenticated');
+  assert.equal(resultNullIndex >= 0 && identityIndex > resultNullIndex, true,
+    'expected pinned identity-axis vocabulary anchors');
+  assert.deepEqual(diagnostic.allowedStages.slice(resultNullIndex + 1, identityIndex),
+    EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES,
+  'expected pinned identity-axis contiguous vocabulary placement');
+
+  const normalized = {
+    ...diagnostic,
+    transformed:diagnostic.transformed.replace(`${block}\n`, ''),
+    allowedStages:diagnostic.allowedStages.filter((stage) =>
+      !stage.startsWith('late-bake-identity-axis-')),
+  };
+  const expected = expectedPinnedNoDispatchLateBakeFixture();
+  assert.equal(normalized.transformed, expected.transformed,
+    'expected pinned identity-axis normalized source');
+  assert.deepEqual(normalized.allowedStages, expected.allowedStages,
+    'expected pinned identity-axis normalized vocabulary');
+  return normalized;
+}
+
+function expectedPinnedLateBakeIdentityAxisRecordFixture(stage) {
+  return expectedPinnedNoDispatchLateBakeRecordFixture([
+    'late-bake-applicable','late-bake-create-enter','late-bake-create-return',stage,
+  ]);
+}
+
+function expectedPinnedLateBakeIdentityAxisRecordFixtures() {
+  return EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES.map(
+    expectedPinnedLateBakeIdentityAxisRecordFixture);
+}
+
+function assertExpectedPinnedLateBakeIdentityAxisRecordFixture(records) {
+  const base = expectedPinnedNoDispatchLateBakeBaseFixture();
+  assert.equal(records.length <= TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, true,
+    'expected pinned identity-axis parser cap');
+  assert.equal(records.length, 32, 'expected pinned identity-axis exact terminal length');
+  assert.deepEqual(records.slice(0, base.length), base,
+    'expected pinned identity-axis authenticated zero/null base tuple');
+  assert.deepEqual(records.slice(base.length, base.length + 3), [
+    {version:1, probe:'pinned', stage:'late-bake-applicable'},
+    {version:1, probe:'pinned', stage:'late-bake-create-enter'},
+    {version:1, probe:'pinned', stage:'late-bake-create-return'},
+  ], 'expected pinned identity-axis fixed prefix');
+  const terminal = records.at(-1);
+  assert.equal(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES
+    .includes(terminal && terminal.stage), true,
+  'expected pinned identity-axis fixed terminal');
+  assert.deepEqual(terminal, {version:1, probe:'pinned', stage:terminal.stage},
+    'expected pinned identity-axis terminal shape');
+}
+
+function expectedPinnedLateBakeIdentityAxisInvalidRecordFixtures() {
+  const terminal = EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0];
+  const valid = expectedPinnedLateBakeIdentityAxisRecordFixture(terminal);
+  const baseLength = expectedPinnedNoDispatchLateBakeBaseFixture().length;
+  const callbackBase = expectedPinnedStateRecordFixture({
+    native:'succeeded', request:'one', failure:'null', type:'present', groups:['success'],
+  }).records;
+  const mutatedTuples = (replacements) => {
+    const records = valid.map((record) => ({...record}));
+    for (const [stage, replacement] of replacements) {
+      assert.equal(records.filter((record) => record.stage === stage).length, 1,
+        `expected pinned identity-axis invalid tuple ${stage}`);
+      const index = records.findIndex((record) => record.stage === stage);
+      records[index] = {...records[index], stage:replacement};
+    }
+    return records;
+  };
+  const mutatedTuple = (stage, replacement) =>
+    mutatedTuples([[stage, replacement]]);
+  return [
+    {id:'post-terminal record', records:[
+      ...valid, {version:1, probe:'pinned', stage:'late-bake-identity-authenticated'},
+    ]},
+    {id:'callback-present tuple', records:[
+      ...callbackBase, ...valid.slice(baseLength),
+    ]},
+    {id:'internally consistent native-failed tuple', records:mutatedTuples([
+      ['enclosing-create-return', 'enclosing-create-catch'],
+      ['state-native-create-succeeded', 'state-native-create-failed'],
+    ])},
+    {id:'non-zero request tuple', records:mutatedTuple(
+      'state-requests-zero', 'state-requests-one')},
+    {id:'non-null failure tuple', records:mutatedTuple(
+      'state-failure-null', 'state-failure-catch')},
+    {id:'non-null type tuple', records:mutatedTuple(
+      'state-type-null', 'state-type-present')},
+    {id:'out-of-vocabulary axis terminal', records:mutatedTuple(
+      terminal, 'late-bake-identity-axis-unexpected-mismatch')},
+    {id:'33-record axis failure', records:[
+      ...valid, {version:1, probe:'pinned', stage:terminal},
+    ]},
+    {id:'65-record overflow', records:[
+      ...valid,
+      ...Array.from({length:65 - valid.length}, () =>
+        ({version:1, probe:'pinned', stage:terminal})),
+    ]},
+  ];
+}
+
+function actualPinnedLateBakeIdentityAxisOracleDiscrepancies() {
+  const discrepancies = [];
+  const expectedOutcome = {
+    native:'succeeded', request:'zero', failure:'null', type:'null', groups:[],
+  };
+  for (const [index, records] of
+    expectedPinnedLateBakeIdentityAxisRecordFixtures().entries()) {
+    try {
+      assert.deepEqual(assertPinnedTypeResolveRecords(records), expectedOutcome,
+        `real pinned oracle valid identity-axis outcome ${index}`);
+    } catch (error) {
+      discrepancies.push(`real pinned oracle rejected valid identity-axis fixture ${index}: ` +
+        error.message);
+    }
+  }
+  for (const fixture of expectedPinnedLateBakeIdentityAxisInvalidRecordFixtures()) {
+    try {
+      assertPinnedTypeResolveRecords(fixture.records);
+      discrepancies.push(`real pinned oracle accepted invalid identity-axis fixture: ${fixture.id}`);
+    } catch {
+      // Rejection is the required real-oracle behavior for this invalid fixture.
+    }
+  }
+  return discrepancies;
+}
+
+function expectedPinnedLateBakeIdentityAxisDiscrepancies(diagnostic) {
+  const discrepancies = [];
+  try {
+    normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(diagnostic);
+  } catch (error) {
+    discrepancies.push(`identity-axis outer normalization rejected: ${error.message}`);
+  }
+  for (const fragment of [
+    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES.map(
+      (stage) => `'${stage}'`),
+    'records.length === 32','post-terminal',
+  ]) {
+    if (typeof diagnostic.oracleSource !== 'string' ||
+        !diagnostic.oracleSource.includes(fragment)) {
+      discrepancies.push(`identity-axis oracle fragment absent: ${fragment}`);
+    }
+  }
+  if (!Array.isArray(diagnostic.axisActualOracleDiscrepancies)) {
+    discrepancies.push('identity-axis real record-oracle execution absent');
+  } else {
+    discrepancies.push(...diagnostic.axisActualOracleDiscrepancies);
+  }
+  return discrepancies;
+}
+
+function assertExpectedWindowsPinnedLateBakeIdentityAxisDiagnostic(diagnostic) {
+  const fixtures = expectedPinnedLateBakeIdentityAxisRecordFixtures();
+  assert.equal(fixtures.length, 24, 'expected pinned identity-axis terminal fixture count');
+  for (const fixture of fixtures) {
+    assertExpectedPinnedLateBakeIdentityAxisRecordFixture(fixture);
+  }
+  assert.equal(Math.max(...fixtures.map((fixture) => fixture.length)), 32,
+    'expected pinned identity-axis exact no-dispatch maximum');
+  assert.equal(expectedPinnedNoDispatchLateBakeRecordFixtures().length, 11,
+    'expected pinned identity-axis preserved S2.9 terminals');
+  assert.equal(typeResolvePinnedGreenStages().length, 41,
+    'expected pinned identity-axis preserved global maximum');
+  assert.equal(TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS, 64,
+    'expected pinned identity-axis parser cap');
+  assert.deepEqual(expectedPinnedLateBakeIdentityAxisDiscrepancies(diagnostic), [],
+    'expected pinned identity-axis aggregated actual-script discrepancies');
+  const normalized = normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(diagnostic);
+  assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(normalized);
 }
 
 function expectedTypeResolvePinnedGuardedCallbackBlock() {
@@ -2248,6 +2695,33 @@ function pinnedTypeResolveLateBakeDiagnosticBlock() {
   ].join('\n');
 }
 
+function pinnedTypeResolveLateBakeIdentityAxisStep(axis) {
+  const exception = `late-bake-identity-axis-${axis.id}-exception`;
+  const mismatch = `late-bake-identity-axis-${axis.id}-mismatch`;
+  return [
+    '  try {',
+    ...(axis.setup || []),
+    ...axis.predicate,
+    '  } catch {',
+    typeResolveStageLine('pinned', exception, '    '),
+    "    throw 'stream late bake identity-axis diagnostic failed'",
+    '  }',
+    '  if (-not $lateBakeIdentityAxisMatch) {',
+    typeResolveStageLine('pinned', mismatch, '    '),
+    "    throw 'stream late bake identity-axis diagnostic failed'",
+    '  }',
+  ].join('\n');
+}
+
+function pinnedTypeResolveLateBakeIdentityAxisDiagnosticBlock() {
+  return [
+    '  # DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_BEGIN',
+    ...TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES.map(
+      pinnedTypeResolveLateBakeIdentityAxisStep),
+    '  # DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_END',
+  ].join('\n');
+}
+
 function pinnedTypeResolveGuardedMarker(stage, outputGuard) {
   assert.equal(['before-increment','after-increment'].includes(outputGuard), true,
     `pinned output guard class ${stage}`);
@@ -2300,8 +2774,39 @@ function applyPinnedTypeResolveLateBakeDiagnostic(source) {
   };
 }
 
+function applyPinnedTypeResolveLateBakeIdentityAxisDiagnostic(source) {
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  const before = [
+    '  if ($null -eq $lateBakeType) {',
+    marker('late-bake-result-null', '    '),
+    "    throw 'stream late bake diagnostic failed'",
+    '  }',
+  ].join('\n');
+  const after = [
+    '  try {',
+    '    $lateBakeNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+  ].join('\n');
+  const block = pinnedTypeResolveLateBakeIdentityAxisDiagnosticBlock();
+  const anchor = `${before}\n${after}`;
+  const replacement = `${before}\n${block}\n${after}`;
+  assert.equal(countLiteral(source, anchor), 1,
+    'pinned late-bake identity-axis insertion anchor');
+  return {
+    source:source.replace(anchor, replacement),
+    transform:{id:'late-bake-identity-axis', before, after},
+  };
+}
+
 function reversePinnedTypeResolveDiagnosticTransforms(diagnostic) {
   let reconstructed = diagnostic.transformed;
+  const identityAxisBlock = pinnedTypeResolveLateBakeIdentityAxisDiagnosticBlock();
+  const identityAxisPlacement = `${diagnostic.lateBakeIdentityAxisTransform.before}\n` +
+    `${identityAxisBlock}\n${diagnostic.lateBakeIdentityAxisTransform.after}`;
+  const identityAxisAnchor = `${diagnostic.lateBakeIdentityAxisTransform.before}\n` +
+    diagnostic.lateBakeIdentityAxisTransform.after;
+  assert.equal(countLiteral(reconstructed, identityAxisPlacement), 1,
+    'pinned reverse late-bake identity-axis diagnostic');
+  reconstructed = reconstructed.replace(identityAxisPlacement, identityAxisAnchor);
   assert.equal(countLiteral(reconstructed, diagnostic.lateBakeTransform.after), 1,
     'pinned reverse late-bake diagnostic');
   reconstructed = reconstructed.replace(diagnostic.lateBakeTransform.after,
@@ -2325,6 +2830,10 @@ function reversePinnedTypeResolveDiagnosticTransforms(diagnostic) {
 
 function stripPinnedTypeResolveDiagnostic(source) {
   let stripped = source;
+  const identityAxis = `${pinnedTypeResolveLateBakeIdentityAxisDiagnosticBlock()}\n`;
+  assert.equal(countLiteral(stripped, identityAxis), 1,
+    'pinned late-bake identity-axis strip');
+  stripped = stripped.replace(identityAxis, '');
   const lateBake = `${pinnedTypeResolveLateBakeDiagnosticBlock()}\n`;
   assert.equal(countLiteral(stripped, lateBake), 1, 'pinned late-bake strip');
   stripped = stripped.replace(lateBake, '');
@@ -2430,6 +2939,8 @@ function pinnedWindowsTypeResolveDiagnostic() {
   transformed = classifier.source;
   const lateBake = applyPinnedTypeResolveLateBakeDiagnostic(transformed);
   transformed = lateBake.source;
+  const lateBakeIdentityAxis = applyPinnedTypeResolveLateBakeIdentityAxisDiagnostic(transformed);
+  transformed = lateBakeIdentityAxis.source;
   const diagnostic = {
     original,
     transformed,
@@ -2437,6 +2948,7 @@ function pinnedWindowsTypeResolveDiagnostic() {
     guardTransforms,
     classifierTransform:classifier.transform,
     lateBakeTransform:lateBake.transform,
+    lateBakeIdentityAxisTransform:lateBakeIdentityAxis.transform,
   };
   const reconstructed = reversePinnedTypeResolveDiagnosticTransforms(diagnostic);
   assert.equal(reconstructed, original, 'pinned reverse reconstruction');
@@ -2454,6 +2966,7 @@ function pinnedWindowsTypeResolveDiagnostic() {
     guardTransforms,
     classifierTransform:classifier.transform,
     lateBakeTransform:lateBake.transform,
+    lateBakeIdentityAxisTransform:lateBakeIdentityAxis.transform,
     markerLines,
   };
 }
@@ -2613,10 +3126,14 @@ function assertClosedTypeResolveDiagnosticScript(script, {
     assert.equal(script.includes('RequestingAssembly'), false,
       'closed pinned requester observation');
     const classifier = pinnedTypeResolveStateDiagnosticBlock();
+    const identityAxis = `${pinnedTypeResolveLateBakeIdentityAxisDiagnosticBlock()}\n`;
+    assert.equal(countLiteral(pinned.transformed, identityAxis), 1,
+      'closed pinned late-bake identity-axis diagnostic count');
+    const normalizedPinned = pinned.transformed.replace(identityAxis, '');
     const lateBake = `${pinnedTypeResolveLateBakeDiagnosticBlock()}\n`;
-    assert.equal(countLiteral(pinned.transformed, lateBake), 1,
+    assert.equal(countLiteral(normalizedPinned, lateBake), 1,
       'closed pinned late-bake diagnostic count');
-    const preLateBake = pinned.transformed.replace(lateBake, '');
+    const preLateBake = normalizedPinned.replace(lateBake, '');
     const placement = [
       '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
       '',
@@ -2999,6 +3516,35 @@ function assertPinnedTypeResolveRecords(records) {
   ];
   assert.deepEqual(lateBakePhases, TYPE_RESOLVE_PINNED_LATE_BAKE_PHASES,
     'pinned oracle late-bake phase vocabulary');
+  const lateBakeIdentityAxisStages = [
+    'late-bake-identity-axis-canonical-present-exception',
+    'late-bake-identity-axis-canonical-present-mismatch',
+    'late-bake-identity-axis-canonical-reference-exception',
+    'late-bake-identity-axis-canonical-reference-mismatch',
+    'late-bake-identity-axis-full-name-exception',
+    'late-bake-identity-axis-full-name-mismatch',
+    'late-bake-identity-axis-declaring-type-exception',
+    'late-bake-identity-axis-declaring-type-mismatch',
+    'late-bake-identity-axis-assembly-exception',
+    'late-bake-identity-axis-assembly-mismatch',
+    'late-bake-identity-axis-module-exception',
+    'late-bake-identity-axis-module-mismatch',
+    'late-bake-identity-axis-value-type-exception',
+    'late-bake-identity-axis-value-type-mismatch',
+    'late-bake-identity-axis-nested-public-exception',
+    'late-bake-identity-axis-nested-public-mismatch',
+    'late-bake-identity-axis-sealed-exception',
+    'late-bake-identity-axis-sealed-mismatch',
+    'late-bake-identity-axis-sequential-layout-exception',
+    'late-bake-identity-axis-sequential-layout-mismatch',
+    'late-bake-identity-axis-unicode-class-exception',
+    'late-bake-identity-axis-unicode-class-mismatch',
+    'late-bake-identity-axis-before-field-init-exception',
+    'late-bake-identity-axis-before-field-init-mismatch',
+  ];
+  assert.deepEqual(lateBakeIdentityAxisStages,
+    TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES,
+  'pinned oracle late-bake identity-axis vocabulary');
   const parseLateBakeSuffix = (start) => {
     assert.equal(TYPE_RESOLVE_DIAGNOSTIC_MAX_RECORDS === 64, true,
       'pinned oracle late-bake fixed parser cap');
@@ -3022,6 +3568,13 @@ function assertPinnedTypeResolveRecords(records) {
     lateIndex += 1;
     if (stages[lateIndex] === 'late-bake-result-null') {
       return terminal('result-null');
+    }
+    if (lateBakeIdentityAxisStages.includes(stages[lateIndex])) {
+      assert.equal(lateIndex + 1, stages.length,
+        'pinned oracle late-bake identity-axis terminal records forbid post-terminal records');
+      assert.equal(records.length === 32, true,
+        'pinned oracle late-bake identity-axis exact terminal records');
+      return stages.length;
     }
     for (const [phase, authenticated, exception, mismatch] of lateBakePhases) {
       if (stages[lateIndex] === exception || stages[lateIndex] === mismatch) {
@@ -4451,7 +5004,11 @@ test('expected Windows pinned factory-boundary diagnostic contract', () => {
         ...EXPECTED_TYPE_RESOLVE_PINNED_INSERTED_STAGES.flatMap((stage) =>
           stage === 'scope-exited'
             ? [stage, ...EXPECTED_TYPE_RESOLVE_PINNED_STATE_STAGES,
-              ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES] : [stage]),
+              ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_STAGES.flatMap((lateBakeStage) =>
+                lateBakeStage === 'late-bake-result-null'
+                  ? [lateBakeStage,
+                    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES]
+                  : [lateBakeStage])] : [stage]),
         'completed',
       ]),
     factoryMarkerCounts:EXPECTED_TYPE_RESOLVE_PINNED_FACTORY_STAGES.every(
@@ -4540,13 +5097,199 @@ test('fixed Windows stream helper is closed P/Invoke source without Get-Item or 
   }
 });
 
-test('expected Windows pinned no-dispatch late-bake diagnostic contract', () => {
-  assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic({
+test('expected Windows pinned late-bake identity-axis diagnostic contract', () => {
+  assertExpectedWindowsPinnedLateBakeIdentityAxisDiagnostic({
     ...pinnedWindowsTypeResolveDiagnostic(),
     allowedStages:TYPE_RESOLVE_PINNED_ALLOWED_STAGES,
     oracleSource:assertPinnedTypeResolveRecords.toString(),
     actualOracleDiscrepancies:actualPinnedNoDispatchLateBakeOracleDiscrepancies(),
+    axisActualOracleDiscrepancies:actualPinnedLateBakeIdentityAxisOracleDiscrepancies(),
   });
+});
+
+test('Windows pinned late-bake identity-axis detector rejects closed-surface mutants', () => {
+  const intended = expectedPinnedLateBakeIdentityAxisFixture();
+  assert.doesNotThrow(() =>
+    assertExpectedWindowsPinnedLateBakeIdentityAxisDiagnostic(intended));
+  for (const fixture of expectedPinnedLateBakeIdentityAxisRecordFixtures()) {
+    assert.doesNotThrow(() =>
+      assertExpectedPinnedLateBakeIdentityAxisRecordFixture(fixture));
+  }
+
+  const block = expectedPinnedLateBakeIdentityAxisBlock();
+  const marker = (stage, indent = '') => typeResolveStageLine('pinned', stage, indent);
+  const mutateBlock = (before, after) => {
+    assert.equal(countLiteral(block, before), 1,
+      `expected pinned identity-axis detector mutant anchor ${before}`);
+    return {
+      ...intended,
+      transformed:intended.transformed.replace(block, block.replace(before, after)),
+    };
+  };
+  const firstStep = expectedPinnedLateBakeIdentityAxisStep(
+    EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES[0]);
+  const secondStep = expectedPinnedLateBakeIdentityAxisStep(
+    EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES[1]);
+  const reorderedBlock = block.replace(`${firstStep}\n${secondStep}`,
+    `${secondStep}\n${firstStep}`);
+  assert.notEqual(reorderedBlock, block, 'expected pinned identity-axis order mutant');
+  const withoutBlock = intended.transformed.replace(`${block}\n`, '');
+  const movedBeforeCreateReturn = {
+    ...intended,
+    transformed:withoutBlock.replace(marker('late-bake-create-return', '    '),
+      `${block}\n${marker('late-bake-create-return', '    ')}`),
+  };
+  const movedAfterAggregateIdentity = {
+    ...intended,
+    transformed:withoutBlock.replace(marker('late-bake-identity-authenticated', '  '),
+      `${marker('late-bake-identity-authenticated', '  ')}\n${block}`),
+  };
+  const scriptMutants = [
+    ...EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXES.map((axis) =>
+      mutateBlock(axis.predicate.join('\n'),
+        '    $lateBakeIdentityAxisMatch = $true')),
+    {...intended, transformed:intended.transformed.replace(block, reorderedBlock)},
+    {...intended, transformed:withoutBlock},
+    {...intended, transformed:intended.transformed.replace(block, `${block}\n${block}`)},
+    movedBeforeCreateReturn,
+    movedAfterAggregateIdentity,
+    mutateBlock(marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0],
+      '    '), ''),
+    mutateBlock(marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0],
+      '    '), [
+      marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0], '    '),
+      marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0], '    '),
+    ].join('\n')),
+    mutateBlock(marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0],
+      '    '), '    [Console]::Out.WriteLine($lateBakeIdentityAxisMatch)'),
+    mutateBlock(marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0],
+      '    '), [
+      '    [Console]::Out.WriteLine($_.Exception.Message)',
+      marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0], '    '),
+    ].join('\n')),
+    mutateBlock(marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[1],
+      '    '), [
+      '    [Console]::Out.WriteLine($lateBakeType.FullName)',
+      marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[1], '    '),
+    ].join('\n')),
+    mutateBlock(
+      '    $lateBakeIdentityAxisNestedFlags = [System.Reflection.BindingFlags]::Public -bor', [
+      '    $identityAxisForeign = $true',
+      '    $lateBakeIdentityAxisNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+    ].join('\n')),
+    ...[
+      '    $lateBakeIdentityAxisForbidden = $streamDataBuilder.CreateType()',
+      "    $lateBakeIdentityAxisForbidden = $moduleBuilder.DefineType('Forbidden')",
+      "    $lateBakeIdentityAxisForbidden = $nativeBuilder.DefineNestedType('Forbidden')",
+      "    $lateBakeIdentityAxisForbidden = $nativeBuilder.DefineField('Forbidden')",
+      "    $lateBakeIdentityAxisForbidden = $nativeBuilder.DefineMethod('Forbidden')",
+      '    $currentDomain.add_TypeResolve($typeResolveHandler)',
+      "    $lateBakeIdentityAxisForbidden = Get-Item '.'",
+      "    $lateBakeIdentityAxisForbidden = Start-Process 'cmd.exe'",
+      '    $lateBakeIdentityAxisForbidden = $env:TEMP',
+      '    $lateBakeIdentityAxisForbidden = [Microsoft.Win32.Registry]::CurrentUser',
+      '    Start-Sleep -Milliseconds 1',
+      '    $lateBakeIdentityAxisRetry = 1',
+      '    $lateBakeIdentityAxisFallback = $true',
+      '    $lateBakeIdentityAxisForbidden = $method.Invoke($null, @())',
+    ].map((line) => mutateBlock(
+      '    $lateBakeIdentityAxisNestedFlags = [System.Reflection.BindingFlags]::Public -bor',
+      `${line}\n` +
+        '    $lateBakeIdentityAxisNestedFlags = [System.Reflection.BindingFlags]::Public -bor')),
+    mutateBlock([
+      marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0], '    '),
+      "    throw 'stream late bake identity-axis diagnostic failed'",
+    ].join('\n'), [
+      marker(EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES[0], '    '),
+      "    throw 'stream late bake identity-axis diagnostic changed'",
+    ].join('\n')),
+  ];
+  for (const mutant of scriptMutants) {
+    assert.throws(() =>
+      assertExpectedWindowsPinnedLateBakeIdentityAxisDiagnostic(mutant));
+  }
+
+  const axisStages = EXPECTED_TYPE_RESOLVE_PINNED_LATE_BAKE_IDENTITY_AXIS_STAGES;
+  const firstAxisIndex = intended.allowedStages.indexOf(axisStages[0]);
+  const allowedStageMutants = [
+    intended.allowedStages.filter((stage) => stage !== axisStages[0]),
+    [...intended.allowedStages.slice(0, firstAxisIndex), axisStages[0],
+      ...intended.allowedStages.slice(firstAxisIndex)],
+    [...intended.allowedStages.slice(0, firstAxisIndex), axisStages[1], axisStages[0],
+      ...intended.allowedStages.slice(firstAxisIndex + 2)],
+    [...intended.allowedStages.slice(0, firstAxisIndex),
+      'late-bake-identity-axis-unexpected-mismatch',
+      ...intended.allowedStages.slice(firstAxisIndex)],
+  ];
+  for (const allowedStages of allowedStageMutants) {
+    assert.throws(() => assertExpectedWindowsPinnedLateBakeIdentityAxisDiagnostic({
+      ...intended, allowedStages,
+    }));
+  }
+  for (const fixture of expectedPinnedLateBakeIdentityAxisInvalidRecordFixtures()) {
+    assert.throws(() =>
+      assertExpectedPinnedLateBakeIdentityAxisRecordFixture(fixture.records),
+    undefined, fixture.id);
+  }
+});
+
+test('Windows pinned late-bake identity-axis outer normalizer preserves lower-layer contracts',
+  () => {
+    const intended = expectedPinnedLateBakeIdentityAxisFixture();
+    const normalized = normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(intended);
+    assert.doesNotThrow(() =>
+      assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(normalized));
+    assert.doesNotThrow(() =>
+      assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(normalized));
+    assert.doesNotThrow(() => assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(
+      expectedPinnedNoDispatchLateBakeFixture()));
+    assert.doesNotThrow(() => assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(
+      expectedPinnedPostScopeResolverStateFixture()));
+
+    const block = expectedPinnedLateBakeIdentityAxisBlock();
+    const zeroBlock = expectedPinnedNoDispatchLateBakeFixture();
+    const multipleBlocks = {
+      ...intended,
+      transformed:intended.transformed.replace(block, `${block}\n${block}`),
+    };
+    const malformedBlock = {
+      ...intended,
+      transformed:intended.transformed.replace(
+        '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_END',
+        '# DEEP_WORK_TYPE_RESOLVE_LATE_BAKE_IDENTITY_AXIS_MALFORMED'),
+    };
+    const transform = expectedPinnedLateBakeIdentityAxisTransformMetadata();
+    const withoutBlock = intended.transformed.replace(`${block}\n`, '');
+    const misplacedBlock = {
+      ...intended,
+      transformed:withoutBlock.replace(transform.before, `${block}\n${transform.before}`),
+    };
+    const partialBlock = {
+      ...intended,
+      transformed:intended.transformed.replace(block,
+        block.slice(0, block.indexOf('\n  try {'))),
+    };
+    const unexpectedStage = {
+      ...intended,
+      allowedStages:[...intended.allowedStages,
+        'late-bake-identity-axis-unexpected-exception'],
+    };
+    for (const mutant of [zeroBlock, multipleBlocks, malformedBlock, misplacedBlock,
+      partialBlock, unexpectedStage]) {
+      assert.throws(() =>
+        normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(mutant));
+    }
+  });
+
+test('expected Windows pinned no-dispatch late-bake diagnostic contract', () => {
+  const diagnostic = {
+    ...pinnedWindowsTypeResolveDiagnostic(),
+    allowedStages:TYPE_RESOLVE_PINNED_ALLOWED_STAGES,
+    oracleSource:assertPinnedTypeResolveRecords.toString(),
+    actualOracleDiscrepancies:actualPinnedNoDispatchLateBakeOracleDiscrepancies(),
+  };
+  assertExpectedWindowsPinnedNoDispatchLateBakeDiagnostic(
+    normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(diagnostic));
 });
 
 test('Windows pinned no-dispatch late-bake detector rejects closed-surface mutants', () => {
@@ -4680,8 +5423,12 @@ test('Windows pinned no-dispatch late-bake detector rejects closed-surface mutan
 });
 
 test('expected Windows pinned post-scope resolver-state diagnostic contract', () => {
+  const diagnostic = {
+    ...pinnedWindowsTypeResolveDiagnostic(),
+    allowedStages:TYPE_RESOLVE_PINNED_ALLOWED_STAGES,
+  };
   assertExpectedWindowsPinnedPostScopeResolverStateDiagnostic(
-    pinnedWindowsTypeResolveDiagnostic());
+    normalizeExpectedPinnedLateBakeIdentityAxisDiagnostic(diagnostic));
 });
 
 test('Windows pinned post-scope resolver-state detector rejects closed-surface mutants', () => {
@@ -4927,7 +5674,7 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(hash(Buffer.from(scripts.dispatch, 'utf8')),
     '2f212bdb6ae76e75f32c9ab4956be457116f8bfb7df1a8a1184d6082aea3d8f8');
   assert.equal(hash(Buffer.from(scripts.pinned, 'utf8')),
-    '8eddad57ed1a1edbe2852f45e9f1e0dfe471e362e84e507deb37ab0474b2bc9e');
+    '906a719458557c8c66a34c15d923472bd9c85018c46029b2eb8df86f5e532b65');
   assert.equal(scripts.dispatch.includes(
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
       'handler-entered', '  ')}`), true);
