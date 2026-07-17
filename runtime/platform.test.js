@@ -173,12 +173,15 @@ const EXPECTED_WINDOWS_FACTORY_CANDIDATE_MATERIALIZATION = [
   '      $_.GetParameters().Length -eq 2',
   '    }',
   ')',
-].join('\n');
+].join('\n').replace('    Where-Object {',
+  '    Microsoft.PowerShell.Core\\Where-Object {');
 const EXPECTED_WINDOWS_FACTORY_DIRECT_INDEX =
   '$staticFactory = $staticFactoryCandidates[0]';
 const EXPECTED_WINDOWS_FACTORY_SELECTION_SOURCE =
   `${EXPECTED_WINDOWS_FACTORY_CANDIDATE_MATERIALIZATION}\n` +
   EXPECTED_WINDOWS_FACTORY_DIRECT_INDEX;
+const EXPECTED_WINDOWS_FACTORY_INVOCATION =
+  '  $assemblyBuilder = $staticFactory.Invoke($null, @($assemblyName, $assemblyAccess))';
 
 function assertExpectedWindowsFactorySelectionSource(source) {
   const selectionIndex = source.indexOf(EXPECTED_WINDOWS_FACTORY_SELECTION_SOURCE);
@@ -243,10 +246,12 @@ function assertWindowsStreamTypeResolveSource(source) {
     'TypeResolve removal must be inside finally');
   assert.equal(countLiteral(source, '$nativeBuilder.CreateType()'), 1,
     'enclosing CreateType count');
-  assert.equal(countLiteral(source, '$streamDataBuilder.CreateType()'), 1,
+  assert.equal(countLiteral(source, '$streamDataBuilder.CreateType()'), 2,
     'nested CreateType count');
   assert.equal(countLiteral(handler, '$streamDataBuilder.CreateType()'), 1,
     'nested CreateType handler placement');
+  assert.equal(countLiteral(authentication, '$streamDataBuilder.CreateType()'), 1,
+    'nested CreateType late-bake placement');
   assert.equal(handler.includes('[System.StringComparison]::Ordinal'), true,
     'ordinal TypeResolve name comparison');
   assert.equal(handler.includes('$eventArgs.Name, $expectedStreamDataTypeName'), true,
@@ -281,26 +286,31 @@ function assertWindowsStreamTypeResolveSource(source) {
       handler.indexOf('return $assemblyBuilder'), true,
   'TypeResolve handler fail-closed order');
 
-  assert.equal(authentication.includes('$typeResolveState.Requests -ne 1'), true,
-    'missing TypeResolve request rejection');
-  assert.equal(authentication.includes('$null -ne $typeResolveState.Failure'), true,
+  assert.equal(authentication.includes('$typeResolveState.Requests -eq 1') &&
+    authentication.includes('$typeResolveState.Requests -eq 0'), true,
+  'closed callback/no-dispatch request selection');
+  assert.equal(countLiteral(authentication, '$null -eq $typeResolveState.Failure'), 2,
     'recorded TypeResolve failure rejection');
-  assert.equal(authentication.includes('$null -eq $typeResolveState.Type'), true,
-    'missing resolved type rejection');
+  assert.equal(authentication.includes('$null -ne $typeResolveState.Type') &&
+    authentication.includes('$null -eq $typeResolveState.Type'), true,
+  'closed callback/no-dispatch resolved type selection');
   assert.equal(authentication.includes(".GetNestedType('WIN32_FIND_STREAM_DATA',"), true,
     'canonical nested type lookup');
   assert.equal(authentication.includes(
     '$streamDataType.FullName, $expectedStreamDataTypeName'), true,
   'post-bake exact nested type name');
   assert.equal(authentication.includes(
-    '[Object]::ReferenceEquals($streamDataType, $typeResolveState.Type)'), true,
+    '[Object]::ReferenceEquals($streamDataType, $selectedStreamDataType)'), true,
   'post-bake resolved type identity');
   assert.equal(authentication.includes(
     '[Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType)'), true,
   'post-bake declaring type identity');
   assert.equal(authentication.includes(
-    '[Object]::Equals($streamDataType.Assembly, $assemblyBuilder)'), true,
+    '[Object]::Equals($selectedStreamDataType.Assembly, $assemblyBuilder)'), true,
   'post-bake dynamic assembly identity');
+  assert.equal(authentication.includes(
+    '[Object]::ReferenceEquals($streamDataType.Module, $selectedStreamDataType.Module)'), true,
+  'post-bake module identity');
   for (const marker of ["'stream type identity invalid'", "'stream type layout invalid'",
     "'stream type fields invalid'", "'stream type marshal invalid'",
     "'stream native methods invalid'", "'stream native signature invalid'",
@@ -589,9 +599,9 @@ const TYPE_RESOLVE_DISPATCH_ALLOWED_STAGES = [
   ...TYPE_RESOLVE_DISPATCH_GREEN_STAGES,'name-foreign','request-duplicate',
 ];
 const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_SHA256 =
-  '7f6070258b5fd6936191e8e34024620a478c55ad4f7d11c6724198eddbe86914';
-const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_BYTES = 8_354;
-const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_LINES = 142;
+  'c329836684c850a1b87c197defc86ed25966a210c96fab9057127e4d2f1f90b8';
+const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_BYTES = 8_425;
+const TYPE_RESOLVE_DOCUMENTED_BASE_SCRIPT_LINES = 145;
 const TYPE_RESOLVE_DOCUMENTED_SETUP_INSERTED_STAGES = [
   'assembly-name-ready','assembly-access-ready',
   'factory-search-enter','factory-search-return',
@@ -1097,7 +1107,7 @@ function expectedPinnedPreGreenDiagnosticBaseline() {
     {id:'resolver-nested-create-return', anchor:'    $resolvedStreamDataType = $streamDataBuilder.CreateType()'},
     {id:'resolver-result-authenticated', anchor:'    $typeResolveState.Type = $resolvedStreamDataType', placement:'before'},
     {id:'resolver-return-assembly', anchor:'    return $assemblyBuilder', placement:'before'},
-    {id:'resolver-catch', anchor:'  } catch {'},
+    {id:'resolver-catch', anchor:'    return $assemblyBuilder\n  } catch {'},
     {id:'callback-closure-ready', anchor:'}.GetNewClosure()'},
     {id:'delegate-ready', anchor:'$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback'},
     {id:'handler-registered', anchor:'$currentDomain.add_TypeResolve($typeResolveHandler)'},
@@ -2193,9 +2203,9 @@ function assertDocumentedSetupMarkerPlacements(script) {
     ['assembly-access-ready',
       `$assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run\n${marker('assembly-access-ready')}`],
     ['factory-search-enter',
-      `${marker('factory-search-enter')}\n$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |`],
+      `${marker('factory-search-enter')}\n$staticFactoryCandidates = @(`],
     ['factory-search-return',
-      `  } | Select-Object -First 1\n${marker('factory-search-return')}`],
+      `$staticFactory = $staticFactoryCandidates[0]\n${marker('factory-search-return')}`],
     ['assembly-create-enter',
       `${marker('assembly-create-enter')}\nif ($null -ne $staticFactory) {`],
     ['assembly-create-static',
@@ -2359,11 +2369,14 @@ function documentedTypeResolveDiagnosticScript() {
     '$assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run',
     typeResolveStageLine(probe, 'assembly-access-ready'),
     typeResolveStageLine(probe, 'factory-search-enter'),
-    '$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |',
-    '  Where-Object {',
-    "    $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and",
-    '    $_.GetParameters().Length -eq 2',
-    '  } | Select-Object -First 1',
+    '$staticFactoryCandidates = @(',
+    '  [System.Reflection.Emit.AssemblyBuilder].GetMethods() |',
+    '    Microsoft.PowerShell.Core\\Where-Object {',
+    "      $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and",
+    '      $_.GetParameters().Length -eq 2',
+    '    }',
+    ')',
+    '$staticFactory = $staticFactoryCandidates[0]',
     typeResolveStageLine(probe, 'factory-search-return'),
     typeResolveStageLine(probe, 'assembly-create-enter'),
     'if ($null -ne $staticFactory) {',
@@ -2899,7 +2912,8 @@ function pinnedWindowsTypeResolveDiagnostic() {
       placement:'before', outputGuard:'after-increment'},
     {id:'resolver-return-assembly', anchor:'    return $assemblyBuilder',
       placement:'before', outputGuard:'after-increment'},
-    {id:'resolver-catch', anchor:'  } catch {', outputGuard:'after-increment'},
+    {id:'resolver-catch', anchor:'    return $assemblyBuilder\n  } catch {',
+      outputGuard:'after-increment'},
     {id:'callback-closure-ready', anchor:'}.GetNewClosure()'},
     {id:'delegate-ready', anchor:'$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback'},
     {id:'handler-registered', anchor:'$currentDomain.add_TypeResolve($typeResolveHandler)'},
@@ -5243,9 +5257,15 @@ const S211_WRAPPER_AWARE_ASSEMBLY_SURFACES = Object.freeze([
   }),
   Object.freeze({
     id:'post-bake-stream-data',
-    count:3,
+    count:1,
     reference:'[Object]::ReferenceEquals($streamDataType.Assembly, $assemblyBuilder)',
     wrapperAware:'[Object]::Equals($streamDataType.Assembly, $assemblyBuilder)',
+  }),
+  Object.freeze({
+    id:'selected-stream-data',
+    count:2,
+    reference:'[Object]::ReferenceEquals($selectedStreamDataType.Assembly, $assemblyBuilder)',
+    wrapperAware:'[Object]::Equals($selectedStreamDataType.Assembly, $assemblyBuilder)',
   }),
   Object.freeze({
     id:'generic-late-bake',
@@ -5276,8 +5296,13 @@ const S211_WRAPPER_AWARE_ASSEMBLY_SURFACES = Object.freeze([
 const S211_REFERENCE_IDENTITY_SURFACES = Object.freeze([
   Object.freeze({
     id:'state-type',
-    count:3,
+    count:1,
     reference:'[Object]::ReferenceEquals($streamDataType, $typeResolveState.Type)',
+  }),
+  Object.freeze({
+    id:'selected-canonical-type',
+    count:2,
+    reference:'[Object]::ReferenceEquals($streamDataType, $selectedStreamDataType)',
   }),
   Object.freeze({
     id:'canonical-late-bake-type',
@@ -5333,7 +5358,7 @@ const S211_REFERENCE_IDENTITY_SURFACES = Object.freeze([
 function s211CurrentAssemblyIdentityContractSource() {
   const helperSource = fs.readFileSync(
     path.join(__dirname, 'windows-stream-inventory.ps1'), 'utf8');
-  const testSource = fs.readFileSync(__filename, 'utf8');
+  const testSource = fs.readFileSync(__filename, 'utf8').replace(/\r\n/gu, '\n');
   const marker = ['\n// DEEP_WORK_S211', '_STRICT_RED_TESTS_BEGIN'].join('');
   const markerIndex = testSource.lastIndexOf(marker);
   assert.equal(markerIndex > 0, true, 'S2.11 strict RED source boundary');
@@ -5417,6 +5442,1333 @@ test('Windows wrapper-aware dynamic assembly identity detector rejects weak and 
       assert.throws(() => assertS211WrapperAwareDynamicAssemblyIdentity(mutant));
     }
   });
+
+const S212_CURRENT_TYPE_RESOLVE_STATE_GUARD = [
+  'if ($typeResolveState.Requests -ne 1 -or $null -ne $typeResolveState.Failure -or',
+  '    $null -eq $typeResolveState.Type) {',
+  "  throw 'stream type resolution state invalid'",
+  '}',
+].join('\n');
+const S212_CURRENT_CANONICAL_TYPE_REFERENCE =
+  '    -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or';
+const S212_SELECTED_CANONICAL_TYPE_REFERENCE =
+  '    -not [Object]::ReferenceEquals($streamDataType, $selectedStreamDataType) -or';
+const S212_CURRENT_OWNED_ASSEMBLY_IDENTITY =
+  '    -not [Object]::Equals($streamDataType.Assembly, $assemblyBuilder) -or';
+const S212_SELECTED_OWNED_ASSEMBLY_IDENTITY =
+  '    -not [Object]::Equals($selectedStreamDataType.Assembly, $assemblyBuilder) -or';
+const S212_SELECTED_MODULE_REFERENCE =
+  '    -not [Object]::ReferenceEquals($streamDataType.Module, ' +
+  '$selectedStreamDataType.Module) -or';
+const S212_NATIVE_CREATE_SUCCESS_GUARD =
+  "if ($nativeTypeFailure) { throw 'stream native type creation failed' }";
+const S212_TWO_MODE_SELECTION_SOURCE = [
+  '$selectedStreamDataType = $null',
+  'if ($typeResolveState.Requests -eq 1 -and',
+  '    $null -eq $typeResolveState.Failure -and',
+  '    $null -ne $typeResolveState.Type) {',
+  '  $selectedStreamDataType = $typeResolveState.Type',
+  '} elseif ($typeResolveState.Requests -eq 0 -and',
+  '    $null -eq $typeResolveState.Failure -and',
+  '    $null -eq $typeResolveState.Type) {',
+  '  try {',
+  '    $selectedStreamDataType = $streamDataBuilder.CreateType()',
+  '  } catch {',
+  "    throw 'stream late nested type creation failed'",
+  '  }',
+  '  if ($null -eq $selectedStreamDataType) {',
+  "    throw 'stream late nested type creation failed'",
+  '  }',
+  '} else {',
+  "  throw 'stream type resolution state invalid'",
+  '}',
+].join('\n');
+const S212_SELECTION_TO_CANONICAL_LOOKUP_SOURCE = [
+  S212_TWO_MODE_SELECTION_SOURCE,
+  '$nestedTypeFlags = [System.Reflection.BindingFlags]::Public -bor',
+  '  [System.Reflection.BindingFlags]::NonPublic',
+  "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', $nestedTypeFlags)",
+].join('\n');
+const S212_NATIVE_SUCCESS_TO_CANONICAL_LOOKUP_SOURCE = [
+  S212_NATIVE_CREATE_SUCCESS_GUARD,
+  S212_SELECTION_TO_CANONICAL_LOOKUP_SOURCE,
+].join('\n');
+const S212_BOUNDED_SIGNATURE_LOOP_SOURCE = [
+  '  for ($parameterIndex = 0; $parameterIndex -lt $ParameterTypes.Length; ' +
+    '$parameterIndex++) {',
+  '    if ($actualParameters[$parameterIndex].ParameterType -ne ' +
+    '$ParameterTypes[$parameterIndex]) {',
+  "      throw 'stream native signature invalid'",
+  '    }',
+  '  }',
+].join('\n');
+const S212_EXACT_AUTHENTICATION_SOURCE = [
+  '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN',
+  S212_NATIVE_SUCCESS_TO_CANONICAL_LOOKUP_SOURCE,
+  'if ($null -eq $streamDataType -or',
+  '    -not [String]::Equals($streamDataType.FullName, $expectedStreamDataTypeName,',
+  '      [System.StringComparison]::Ordinal) -or',
+  S212_SELECTED_CANONICAL_TYPE_REFERENCE,
+  '    -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or',
+  S212_SELECTED_OWNED_ASSEMBLY_IDENTITY,
+  S212_SELECTED_MODULE_REFERENCE,
+  '    -not [String]::Equals($streamDataType.Module.ScopeName, $moduleBuilder.ScopeName,',
+  '      [System.StringComparison]::Ordinal)) {',
+  "  throw 'stream type identity invalid'",
+  '}',
+  'if (-not $streamDataType.IsValueType -or -not $streamDataType.IsNestedPublic -or',
+  '    -not $streamDataType.IsSealed -or -not $streamDataType.IsLayoutSequential -or',
+  '    -not $streamDataType.IsUnicodeClass -or',
+  '    ($streamDataType.Attributes -band ' +
+    '[System.Reflection.TypeAttributes]::BeforeFieldInit) -eq 0) {',
+  "  throw 'stream type layout invalid'",
+  '}',
+  '$streamFieldFlags = [System.Reflection.BindingFlags]::Public -bor',
+  '  [System.Reflection.BindingFlags]::NonPublic -bor',
+  '  [System.Reflection.BindingFlags]::Instance -bor',
+  '  [System.Reflection.BindingFlags]::Static -bor',
+  '  [System.Reflection.BindingFlags]::DeclaredOnly',
+  '$streamFields = @($streamDataType.GetFields($streamFieldFlags))',
+  "$streamSizeField = $streamDataType.GetField('StreamSize', $streamFieldFlags)",
+  "$streamNameRuntimeField = $streamDataType.GetField('cStreamName', $streamFieldFlags)",
+  'if ($streamFields.Length -ne 2 -or $null -eq $streamSizeField -or',
+  '    $streamSizeField.FieldType -ne [Int64] -or -not $streamSizeField.IsPublic -or',
+  '    $streamSizeField.IsStatic -or $null -eq $streamNameRuntimeField -or',
+  '    $streamNameRuntimeField.FieldType -ne [String] -or ' +
+    '-not $streamNameRuntimeField.IsPublic -or',
+  '    $streamNameRuntimeField.IsStatic) {',
+  "  throw 'stream type fields invalid'",
+  '}',
+  '$streamNameMarshal = @($streamNameRuntimeField.GetCustomAttributes(',
+  '  [System.Runtime.InteropServices.MarshalAsAttribute], $false))',
+  'if ($streamNameMarshal.Length -ne 1 -or',
+  '    $streamNameMarshal[0].Value -ne ' +
+    '[System.Runtime.InteropServices.UnmanagedType]::ByValTStr -or',
+  '    $streamNameMarshal[0].SizeConst -ne 296) {',
+  "  throw 'stream type marshal invalid'",
+  '}',
+  '$nativeMethodFlags = [System.Reflection.BindingFlags]::Public -bor',
+  '  [System.Reflection.BindingFlags]::Static -bor',
+  '  [System.Reflection.BindingFlags]::DeclaredOnly',
+  '$nativeMethods = @($nativeType.GetMethods($nativeMethodFlags))',
+  "$findFirstStream = $nativeType.GetMethod('FindFirstStreamW', $nativeMethodFlags)",
+  "$findNextStream = $nativeType.GetMethod('FindNextStreamW', $nativeMethodFlags)",
+  "$findClose = $nativeType.GetMethod('FindClose', $nativeMethodFlags)",
+  'if ($nativeMethods.Length -ne 3 -or $null -eq $findFirstStream -or',
+  '    $null -eq $findNextStream -or $null -eq $findClose) {',
+  "  throw 'stream native methods invalid'",
+  '}',
+  '',
+  'function Assert-ClosedPInvokeRuntimeMethod(',
+  '  [System.Reflection.MethodInfo]$Method,',
+  '  [string]$Name,',
+  '  [Type]$ReturnType,',
+  '  [Type[]]$ParameterTypes,',
+  '  [System.Runtime.InteropServices.CharSet]$CharSet',
+  ') {',
+  '  if (-not [String]::Equals($Method.Name, $Name, ' +
+    '[System.StringComparison]::Ordinal) -or',
+  '      $Method.ReturnType -ne $ReturnType) {',
+  "    throw 'stream native signature invalid'",
+  '  }',
+  '  $actualParameters = @($Method.GetParameters())',
+  '  if ($actualParameters.Length -ne $ParameterTypes.Length) {',
+  "    throw 'stream native signature invalid'",
+  '  }',
+  S212_BOUNDED_SIGNATURE_LOOP_SOURCE,
+  '  $imports = @($Method.GetCustomAttributes(',
+  '    [System.Runtime.InteropServices.DllImportAttribute], $false))',
+  '  if ($imports.Length -ne 1 -or',
+  "      -not [String]::Equals($imports[0].Value, 'kernel32.dll',",
+  '        [System.StringComparison]::Ordinal) -or',
+  '      -not [String]::Equals($imports[0].EntryPoint, $Name,',
+  '        [System.StringComparison]::Ordinal) -or',
+  '      $imports[0].CharSet -ne $CharSet -or',
+  '      $imports[0].CallingConvention -ne ' +
+    '[System.Runtime.InteropServices.CallingConvention]::Winapi -or',
+  '      -not $imports[0].SetLastError -or -not $imports[0].ExactSpelling -or',
+  '      -not $imports[0].PreserveSig -or',
+  '      ($Method.GetMethodImplementationFlags() -band',
+  '        [System.Reflection.MethodImplAttributes]::PreserveSig) -eq 0) {',
+  "    throw 'stream native import invalid'",
+  '  }',
+  '}',
+  '',
+  ...windowsStreamRuntimeAttestationLines(),
+  '',
+].join('\n');
+const S212_RESIDUAL_LOOP_PATTERN =
+  /(?:^|[\s;{}])(?:for|foreach|while)\s*\(|(?:^|[\s;{}])do(?=\s*\{)/iu;
+const S212_FORBIDDEN_AUTHENTICATION_PATTERNS = [
+  {
+    label:'file or item-provider access',
+    pattern:/\b(?:get|set|new|remove|move|copy|rename|clear)-item(?:property)?\b|\bget-childitem\b|\b(?:get|set|add|clear)-content\b|\[\s*system\.io\.[^\]]+\]\s*::/iu,
+  },
+  {
+    label:'module access',
+    pattern:/\b(?:get|import|remove|new)-module\b/iu,
+  },
+  {
+    label:'environment access',
+    pattern:/\$env:|\[\s*(?:system\.)?environment\s*\]\s*::/iu,
+  },
+  {
+    label:'registry access',
+    pattern:/\b(?:hkcu|hklm|hkcr|hku|hkcc):\s*\\|\bregistry::|\[\s*(?:microsoft\.)?win32\.registry[^\]]*\]\s*::/iu,
+  },
+  {
+    label:'dynamic execution',
+    pattern:/\b(?:add-type|invoke-expression|iex|invoke-command|invoke-item|foreach-object)\b|\[\s*(?:system\.)?scriptblock\s*\]\s*::/iu,
+  },
+  {
+    label:'dynamic output',
+    pattern:/\bwrite-(?:error|output|host|information|warning|verbose|debug)\b|\[\s*(?:system\.)?console\s*\]\s*::|\bthrow\s+\$/iu,
+  },
+  {
+    label:'external process',
+    pattern:/\b(?:start-process|wait-process)\b|\[\s*system\.diagnostics\.process\s*\]\s*::/iu,
+  },
+  {
+    label:'retry or sleep',
+    pattern:/\b(?:start-sleep|retry)\b|\[\s*system\.threading\.thread\s*\]\s*::\s*sleep\b/iu,
+  },
+];
+
+function s212IntendedNoDispatchLateBakeFixture() {
+  return [
+    "$expectedStreamDataTypeName = 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA'",
+    '# DEEP_WORK_TYPE_RESOLVE_HANDLER_BEGIN',
+    '$typeResolveCallback = {',
+    '  param($sender, $eventArgs)',
+    '  $typeResolveState.Requests++',
+    '  $resolvedStreamDataType = $streamDataBuilder.CreateType()',
+    '  $typeResolveState.Type = $resolvedStreamDataType',
+    '  return $assemblyBuilder',
+    '}.GetNewClosure()',
+    '$typeResolveHandler = [System.ResolveEventHandler]$typeResolveCallback',
+    '# DEEP_WORK_TYPE_RESOLVE_HANDLER_END',
+    '# DEEP_WORK_TYPE_RESOLVE_SCOPE_BEGIN',
+    '$currentDomain = [AppDomain]::CurrentDomain',
+    '$nativeTypeFailure = $false',
+    '$currentDomain.add_TypeResolve($typeResolveHandler)',
+    'try {',
+    '  $nativeType = $nativeBuilder.CreateType()',
+    '} catch {',
+    '  $nativeTypeFailure = $true',
+    '} finally {',
+    '  $currentDomain.remove_TypeResolve($typeResolveHandler)',
+    '}',
+    '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
+    `${S212_EXACT_AUTHENTICATION_SOURCE}# DEEP_WORK_TYPE_AUTHENTICATION_END`,
+  ].join('\n');
+}
+
+function assertS212NoDispatchLateBakeRemediationContract(source) {
+  const handlerBegin = '# DEEP_WORK_TYPE_RESOLVE_HANDLER_BEGIN';
+  const handlerEnd = '# DEEP_WORK_TYPE_RESOLVE_HANDLER_END';
+  const scopeBegin = '# DEEP_WORK_TYPE_RESOLVE_SCOPE_BEGIN';
+  const scopeEnd = '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END';
+  const authenticationBegin = '# DEEP_WORK_TYPE_AUTHENTICATION_BEGIN';
+  const authenticationEnd = '# DEEP_WORK_TYPE_AUTHENTICATION_END';
+  for (const marker of [handlerBegin, handlerEnd, scopeBegin, scopeEnd,
+    authenticationBegin, authenticationEnd]) {
+    assert.equal(countLiteral(source, marker), 1, `S2.12 source marker: ${marker}`);
+  }
+
+  const handlerStart = source.indexOf(handlerBegin);
+  const handlerStop = source.indexOf(handlerEnd);
+  const scopeStart = source.indexOf(scopeBegin);
+  const scopeStop = source.indexOf(scopeEnd);
+  const authenticationStart = source.indexOf(authenticationBegin);
+  const authenticationStop = source.indexOf(authenticationEnd);
+  assert.equal(handlerStart < handlerStop && handlerStop < scopeStart &&
+    scopeStart < scopeStop && scopeStop < authenticationStart &&
+    authenticationStart < authenticationStop, true, 'S2.12 section order');
+
+  const handler = source.slice(handlerStart, handlerStop);
+  const scope = source.slice(scopeStart, scopeStop);
+  const authentication = source.slice(authenticationStart, authenticationStop);
+  assert.equal(authentication, S212_EXACT_AUTHENTICATION_SOURCE,
+    'S2.12 exact closed authentication source');
+  const nativeSuccessGuardIndex = authentication.indexOf(
+    S212_NATIVE_CREATE_SUCCESS_GUARD);
+  const selectionIndex = authentication.indexOf(S212_TWO_MODE_SELECTION_SOURCE);
+  const canonicalLookupIndex = authentication.indexOf(
+    "$nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', $nestedTypeFlags)");
+  const modeSelectionRegion = selectionIndex >= 0 && canonicalLookupIndex > selectionIndex
+    ? authentication.slice(selectionIndex, canonicalLookupIndex) : '';
+  assert.deepEqual({
+    exactSelectionCount:countLiteral(authentication, S212_TWO_MODE_SELECTION_SOURCE),
+    currentStateGuardCount:countLiteral(authentication,
+      S212_CURRENT_TYPE_RESOLVE_STATE_GUARD),
+    selectedCanonicalReferenceCount:countLiteral(authentication,
+      S212_SELECTED_CANONICAL_TYPE_REFERENCE),
+    currentCanonicalReferenceCount:countLiteral(authentication,
+      S212_CURRENT_CANONICAL_TYPE_REFERENCE),
+    selectedOwnedAssemblyCount:countLiteral(authentication,
+      S212_SELECTED_OWNED_ASSEMBLY_IDENTITY),
+    currentOwnedAssemblyCount:countLiteral(authentication,
+      S212_CURRENT_OWNED_ASSEMBLY_IDENTITY),
+    selectedModuleReferenceCount:countLiteral(authentication,
+      S212_SELECTED_MODULE_REFERENCE),
+    exactSelectionToCanonicalCount:countLiteral(authentication,
+      S212_SELECTION_TO_CANONICAL_LOOKUP_SOURCE),
+    nativeCreateSuccessGuardCount:countLiteral(authentication,
+      S212_NATIVE_CREATE_SUCCESS_GUARD),
+    exactNativeSuccessToCanonicalCount:countLiteral(authentication,
+      S212_NATIVE_SUCCESS_TO_CANONICAL_LOOKUP_SOURCE),
+    boundedSignatureLoopCount:countLiteral(authentication,
+      S212_BOUNDED_SIGNATURE_LOOP_SOURCE),
+    nativeSuccessBeforeSelection:nativeSuccessGuardIndex >= 0 &&
+      nativeSuccessGuardIndex < selectionIndex,
+    selectionAfterScope:scopeStop < authenticationStart + selectionIndex,
+    selectionBeforeCanonicalLookup:selectionIndex >= 0 &&
+      selectionIndex < canonicalLookupIndex,
+  }, {
+    exactSelectionCount:1,
+    currentStateGuardCount:0,
+    selectedCanonicalReferenceCount:1,
+    currentCanonicalReferenceCount:0,
+    selectedOwnedAssemblyCount:1,
+    currentOwnedAssemblyCount:0,
+    selectedModuleReferenceCount:1,
+    exactSelectionToCanonicalCount:1,
+    nativeCreateSuccessGuardCount:1,
+    exactNativeSuccessToCanonicalCount:1,
+    boundedSignatureLoopCount:1,
+    nativeSuccessBeforeSelection:true,
+    selectionAfterScope:true,
+    selectionBeforeCanonicalLookup:true,
+  }, 'S2.12 exact callback/no-dispatch selection');
+
+  assert.deepEqual({
+    registrationCount:countLiteral(source, '.add_TypeResolve($typeResolveHandler)'),
+    removalCount:countLiteral(source, '.remove_TypeResolve($typeResolveHandler)'),
+    nativeCreateCount:countLiteral(source, '$nativeBuilder.CreateType()'),
+    nestedCreateCount:countLiteral(source, '$streamDataBuilder.CreateType()'),
+    handlerNestedCreateCount:countLiteral(handler, '$streamDataBuilder.CreateType()'),
+    scopeNestedCreateCount:countLiteral(scope, '$streamDataBuilder.CreateType()'),
+    authenticationNestedCreateCount:countLiteral(authentication,
+      '$streamDataBuilder.CreateType()'),
+  }, {
+    registrationCount:1,
+    removalCount:1,
+    nativeCreateCount:1,
+    nestedCreateCount:2,
+    handlerNestedCreateCount:1,
+    scopeNestedCreateCount:0,
+    authenticationNestedCreateCount:1,
+  }, 'S2.12 closed construction counts');
+  assert.match(scope,
+    /\.add_TypeResolve\(\$typeResolveHandler\)[\s\S]*try \{[\s\S]*\$nativeType = \$nativeBuilder\.CreateType\(\)[\s\S]*\} finally \{\n  \$currentDomain\.remove_TypeResolve\(\$typeResolveHandler\)\n\}/u,
+    'S2.12 handler lifetime and native creation');
+
+  for (const exact of [
+    'if ($typeResolveState.Requests -eq 1 -and',
+    '} elseif ($typeResolveState.Requests -eq 0 -and',
+    '  $selectedStreamDataType = $typeResolveState.Type',
+    '    $selectedStreamDataType = $streamDataBuilder.CreateType()',
+    '  if ($null -eq $selectedStreamDataType) {',
+    "    throw 'stream late nested type creation failed'",
+    "  throw 'stream type resolution state invalid'",
+  ]) {
+    assert.equal(countLiteral(authentication, exact), exact.includes('late nested') ? 2 : 1,
+      `S2.12 exact state-machine surface: ${exact}`);
+  }
+  assert.equal(countLiteral(authentication, '$null -eq $typeResolveState.Failure'), 2,
+    'S2.12 both success modes require null resolver failure');
+  assert.equal(countLiteral(authentication, '$null -ne $typeResolveState.Type'), 1,
+    'S2.12 callback requires the recorded type');
+  assert.equal(countLiteral(authentication, '$null -eq $typeResolveState.Type'), 1,
+    'S2.12 no-dispatch requires no recorded type');
+  assert.equal(countLiteral(authentication, 'try {'), 1,
+    'S2.12 late bake is one fixed attempt');
+  assert.equal(countLiteral(authentication, '} catch {'), 1,
+    'S2.12 late-bake exception is fail-closed');
+
+  for (const required of [
+    "if ($nativeTypeFailure) { throw 'stream native type creation failed' }",
+    ".GetNestedType('WIN32_FIND_STREAM_DATA', $nestedTypeFlags)",
+    '$streamDataType.FullName, $expectedStreamDataTypeName',
+    '[Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType)',
+    S212_SELECTED_OWNED_ASSEMBLY_IDENTITY,
+    S212_SELECTED_MODULE_REFERENCE,
+    '$streamDataType.Module.ScopeName',
+    "'stream type identity invalid'", "'stream type layout invalid'",
+    "'stream type fields invalid'", "'stream type marshal invalid'",
+    "'stream native methods invalid'", "'stream native signature invalid'",
+    "'stream native import invalid'",
+  ]) {
+    assert.equal(authentication.includes(required), true,
+      `S2.12 preserved authentication surface: ${required}`);
+  }
+  for (const {label, pattern} of S212_FORBIDDEN_AUTHENTICATION_PATTERNS) {
+    assert.doesNotMatch(authentication, pattern,
+      `S2.12 forbidden authentication surface: ${label}`);
+  }
+  const authenticationWithoutBoundedSignatureLoop = authentication.replace(
+    S212_BOUNDED_SIGNATURE_LOOP_SOURCE, '');
+  assert.doesNotMatch(authenticationWithoutBoundedSignatureLoop,
+    S212_RESIDUAL_LOOP_PATTERN, 'S2.12 only the fixed bounded signature loop is allowed');
+  assert.doesNotMatch(modeSelectionRegion, S212_RESIDUAL_LOOP_PATTERN,
+    'S2.12 no loop in mode selection');
+}
+
+function s212MoveSelectionBeforeHandlerRemoval(source) {
+  const withoutSelection = replaceWindowsStreamSourceOnce(source,
+    `${S212_TWO_MODE_SELECTION_SOURCE}\n`, '');
+  return replaceWindowsStreamSourceOnce(withoutSelection,
+    '# DEEP_WORK_TYPE_RESOLVE_SCOPE_END',
+    `${S212_TWO_MODE_SELECTION_SOURCE}\n# DEEP_WORK_TYPE_RESOLVE_SCOPE_END`);
+}
+
+function s212AppendAfterCanonicalLookup(source, addition) {
+  const canonicalLookup =
+    "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+    '$nestedTypeFlags)';
+  return replaceWindowsStreamSourceOnce(source, canonicalLookup,
+    `${canonicalLookup}\n${addition}`);
+}
+
+function s212MoveNativeSuccessGuardAfterCanonicalLookup(source) {
+  const withoutGuard = replaceWindowsStreamSourceOnce(source,
+    `${S212_NATIVE_CREATE_SUCCESS_GUARD}\n`, '');
+  return s212AppendAfterCanonicalLookup(withoutGuard,
+    S212_NATIVE_CREATE_SUCCESS_GUARD);
+}
+
+const S212_DOCUMENTED_CURRENT_FACTORY_SELECTION_SOURCE = [
+  '$staticFactory = [System.Reflection.Emit.AssemblyBuilder].GetMethods() |',
+  '  Where-Object {',
+  "    $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and",
+  '    $_.GetParameters().Length -eq 2',
+  '  } | Select-Object -First 1',
+].join('\n');
+const S212_DOCUMENTED_FACTORY_FORBIDDEN_COMMANDS = Object.freeze(new Map([
+  ['select-object', 'Select-Object/select'],
+  ['select', 'Select-Object/select'],
+  ['foreach-object', 'ForEach-Object'],
+  ['%', 'pipeline iteration alias'],
+  ['foreach', 'pipeline iteration alias/loop'],
+  ['for', 'loop'],
+  ['while', 'loop'],
+  ['do', 'loop'],
+  ['start-sleep', 'sleep'],
+  ['sleep', 'sleep'],
+  ['start-process', 'external process command'],
+  ['saps', 'external process command'],
+  ['start', 'external process command'],
+]));
+const S212_DOCUMENTED_FACTORY_ALLOWED_KEYWORDS = Object.freeze(new Map([
+  ['if', 'PowerShell conditional keyword'],
+  ['elseif', 'PowerShell conditional keyword'],
+  ['else', 'PowerShell conditional keyword'],
+  ['try', 'PowerShell exception keyword'],
+  ['catch', 'PowerShell exception keyword'],
+  ['finally', 'PowerShell exception keyword'],
+  ['param', 'PowerShell parameter keyword'],
+  ['return', 'PowerShell return keyword'],
+  ['throw', 'PowerShell throw keyword'],
+]));
+const S212_DOCUMENTED_FACTORY_ALLOWED_CMDLETS = Object.freeze(new Map([
+  ['microsoft.powershell.core\\where-object',
+    'exact Microsoft.PowerShell.Core\\Where-Object cmdlet identity'],
+  ['microsoft.powershell.utility\\write-output',
+    'exact Microsoft.PowerShell.Utility\\Write-Output cmdlet identity'],
+]));
+const S212_DOCUMENTED_FACTORY_ALLOWED_MEMBER_CALLS = Object.freeze(new Set([
+  'add_typeresolve',
+  'close',
+  'createtype',
+  'definedynamicassembly',
+  'definedynamicmodule',
+  'definefield',
+  'definenestedtype',
+  'definetype',
+  'equals',
+  'format',
+  'getfields',
+  'getcurrentprocess',
+  'getmethods',
+  'getnestedtype',
+  'getnewclosure',
+  'getparameters',
+  'getvalue',
+  'getvaluekind',
+  'invoke',
+  'new',
+  'openbasekey',
+  'opensubkey',
+  'referenceequals',
+  'remove_typeresolve',
+  'restart',
+  'tryparse',
+  'writeline',
+]));
+const S212_POWERSHELL_CODE_ESCAPE = '\u{E000}';
+const S212_POWERSHELL_TOKEN_START_BOUNDARY = /[\t\r\n ;|&,(){}=<>]/u;
+
+function s212MaskPowerShellNonExecutable(source) {
+  const masked = Array.from(source, (character) =>
+    character === '\n' || character === '\r' ? character : ' ');
+  const errors = [];
+  const keep = (index) => { masked[index] = source[index]; };
+  const isHereStringStart = (index) =>
+    source[index] === '@' && (source[index + 1] === "'" || source[index + 1] === '"') &&
+    (source[index + 2] === '\n' ||
+      (source[index + 2] === '\r' && source[index + 3] === '\n'));
+  const isLineCommentStart = (index) => index === 0 ||
+    S212_POWERSHELL_TOKEN_START_BOUNDARY.test(source[index - 1]);
+
+  function findHereStringEnd(start, quote) {
+    for (let index = start; index < source.length - 1; index += 1) {
+      if ((index === 0 || source[index - 1] === '\n') &&
+          source[index] === quote && source[index + 1] === '@') {
+        const after = index + 2;
+        if (after === source.length || source[after] === '\n' ||
+            (source[after] === '\r' && source[after + 1] === '\n')) return index;
+      }
+    }
+    return -1;
+  }
+
+  function scanBacktickEscape(start, end = source.length, preserveCodeEscape = false) {
+    let stop = Math.min(start + 2, end);
+    if (source[start + 1] === '\r' && source[start + 2] === '\n') {
+      stop = Math.min(start + 3, end);
+    }
+    for (let index = start; index < stop; index += 1) masked[index] = ' ';
+    if (stop === start + 1) errors.push(`unterminated backtick escape at ${start}`);
+    if (preserveCodeEscape && stop > start + 1) {
+      masked[start] = S212_POWERSHELL_CODE_ESCAPE;
+    }
+    return stop;
+  }
+
+  function scanLineComment(start) {
+    let index = start;
+    while (index < source.length && source[index] !== '\n') index += 1;
+    return index;
+  }
+
+  function scanBlockComment(start) {
+    const end = source.indexOf('#>', start + 2);
+    if (end < 0) {
+      errors.push(`unterminated block comment at ${start}`);
+      return source.length;
+    }
+    return end + 2;
+  }
+
+  function scanQuoted(start, quote) {
+    let index = start + 1;
+    while (index < source.length) {
+      if (quote === "'" && source[index] === "'" && source[index + 1] === "'") {
+        index += 2;
+        continue;
+      }
+      if (quote === '"' && source[index] === '`') {
+        index = scanBacktickEscape(index);
+        continue;
+      }
+      if (quote === '"' && source[index] === '$' && source[index + 1] === '(') {
+        keep(index);
+        keep(index + 1);
+        index = scanCode(index + 2, true);
+        continue;
+      }
+      if (source[index] === quote) return index + 1;
+      index += 1;
+    }
+    errors.push(`unterminated ${quote} string at ${start}`);
+    return source.length;
+  }
+
+  function scanHereString(start) {
+    const quote = source[start + 1];
+    const bodyStart = source[start + 2] === '\r' ? start + 4 : start + 3;
+    const end = findHereStringEnd(bodyStart, quote);
+    if (end < 0) {
+      errors.push(`unterminated ${quote} here-string at ${start}`);
+      return source.length;
+    }
+    if (quote === '"') {
+      let index = bodyStart;
+      while (index < end) {
+        if (source[index] === '`') {
+          index = scanBacktickEscape(index, end);
+          continue;
+        }
+        if (source[index] === '$' && source[index + 1] === '(') {
+          keep(index);
+          keep(index + 1);
+          index = scanCode(index + 2, true);
+          if (index > end) errors.push(`subexpression escaped here-string at ${start}`);
+          continue;
+        }
+        index += 1;
+      }
+    }
+    return end + 2;
+  }
+
+  function scanCode(start, stopAtClosingParen = false) {
+    let depth = stopAtClosingParen ? 1 : 0;
+    let index = start;
+    while (index < source.length) {
+      if (source.startsWith('<#', index)) {
+        index = scanBlockComment(index);
+        continue;
+      }
+      if (source[index] === '#' && isLineCommentStart(index)) {
+        index = scanLineComment(index);
+        continue;
+      }
+      if (isHereStringStart(index)) {
+        index = scanHereString(index);
+        continue;
+      }
+      if (source[index] === "'" || source[index] === '"') {
+        index = scanQuoted(index, source[index]);
+        continue;
+      }
+      if (source[index] === '`') {
+        index = scanBacktickEscape(index, source.length, true);
+        continue;
+      }
+      keep(index);
+      if (stopAtClosingParen && source[index] === '(') depth += 1;
+      if (stopAtClosingParen && source[index] === ')') {
+        depth -= 1;
+        if (depth === 0) return index + 1;
+      }
+      index += 1;
+    }
+    if (stopAtClosingParen) errors.push(`unterminated subexpression at ${start - 2}`);
+    return source.length;
+  }
+
+  scanCode(0);
+  return Object.freeze({source:masked.join(''), errors:Object.freeze(errors)});
+}
+
+function s212FindForbiddenPowerShellCommandSurfaces(source) {
+  const lexical = s212MaskPowerShellNonExecutable(source);
+  const executable = lexical.source;
+  const findings = [];
+  const lexicalErrors = [...lexical.errors];
+  const braceKinds = [];
+  let commandStart = true;
+
+  const nextSignificantIndex = (start) => {
+    let index = start;
+    while (index < executable.length && /[\t \r\n]/u.test(executable[index])) index += 1;
+    return index;
+  };
+  const nextOriginalNonWhitespaceIndex = (start) => {
+    let index = start;
+    while (index < source.length && /[\t \r\n]/u.test(source[index])) index += 1;
+    return index;
+  };
+  const previousSignificantCharacter = (start) => {
+    let index = start;
+    while (index >= 0 && /[\t \r\n]/u.test(executable[index])) index -= 1;
+    return index >= 0 ? executable[index] : '';
+  };
+  const isAssignment = (index) => executable[index] === '=' &&
+    !/[=!<>]/u.test(executable[index - 1] ?? '') &&
+    !/[=>]/u.test(executable[index + 1] ?? '');
+  const isPowerShellLabelStart = (character) => /[\p{L}_]/u.test(character ?? '');
+  const isPowerShellLabelContinue = (character) =>
+    /[\p{L}\p{M}\p{Nd}_-]/u.test(character ?? '');
+  const isCommandTokenCharacter = (character) =>
+    /[\p{L}\p{M}\p{Nd}\p{Pc}_.:/\\%-]/u.test(character ?? '');
+  const isMergingRedirectionAmpersand = (index) => executable[index - 1] === '>' &&
+    /[0-9*]/u.test(executable[index - 2] ?? '') &&
+    /[0-9]/u.test(executable[index + 1] ?? '');
+  const codeEscapeWidth = (index) =>
+    source[index + 1] === '\r' && source[index + 2] === '\n' ? 3 : 2;
+  const escapedCodeCharacter = (index) => source[index + 1] ?? '';
+  const scanCommandToken = (start) => {
+    let index = start;
+    let normalized = '';
+    let usedCodeEscape = false;
+    while (index < executable.length) {
+      if (isCommandTokenCharacter(executable[index])) {
+        normalized += executable[index];
+        index += 1;
+        continue;
+      }
+      if (executable[index] === S212_POWERSHELL_CODE_ESCAPE &&
+          isCommandTokenCharacter(escapedCodeCharacter(index))) {
+        usedCodeEscape = true;
+        normalized += escapedCodeCharacter(index);
+        index += codeEscapeWidth(index);
+        continue;
+      }
+      break;
+    }
+    return {index, normalized, usedCodeEscape};
+  };
+  const scanMemberIdentifier = (start) => {
+    let index = start;
+    let normalized = '';
+    let usedCodeEscape = false;
+    while (index < executable.length) {
+      if (isPowerShellLabelContinue(executable[index])) {
+        normalized += executable[index];
+        index += 1;
+        continue;
+      }
+      if (executable[index] === S212_POWERSHELL_CODE_ESCAPE) {
+        usedCodeEscape = true;
+        if (isPowerShellLabelContinue(escapedCodeCharacter(index))) {
+          normalized += escapedCodeCharacter(index);
+        }
+        index += codeEscapeWidth(index);
+        continue;
+      }
+      break;
+    }
+    return {index, normalized, usedCodeEscape};
+  };
+  const scanBracedVariable = (start) => {
+    let index = start + 2;
+    while (index < executable.length) {
+      if (executable[index] === S212_POWERSHELL_CODE_ESCAPE) {
+        index += codeEscapeWidth(index);
+        continue;
+      }
+      if (executable[index] === '}') return index + 1;
+      if (executable[index] === '\r' || executable[index] === '\n') {
+        lexicalErrors.push(`unterminated braced variable at ${start}`);
+        return index;
+      }
+      index += 1;
+    }
+    lexicalErrors.push(`unterminated braced variable at ${start}`);
+    return executable.length;
+  };
+  const addFinding = (label, index, token) => findings.push(Object.freeze({
+    label, index, token,
+  }));
+
+  const memberDelimiterPattern = /(?:::|\.)\s*/gu;
+  for (const match of executable.matchAll(memberDelimiterPattern)) {
+    const memberStart = match.index + match[0].length;
+    const member = scanMemberIdentifier(memberStart);
+    const originalMemberStart = nextOriginalNonWhitespaceIndex(memberStart);
+    if (member.normalized.length === 0 &&
+        /[$('"`@{\[]/u.test(source[originalMemberStart] ?? '')) {
+      addFinding('dynamic .NET/member invocation', originalMemberStart,
+        source.slice(originalMemberStart, Math.min(source.length, originalMemberStart + 32)));
+    }
+    if (member.usedCodeEscape && member.normalized.length > 0 &&
+        executable[nextSignificantIndex(member.index)] === '(') {
+      addFinding('PowerShell code escape in executable member identifier',
+        memberStart, source.slice(memberStart, member.index));
+    }
+    if (member.normalized.length > 0 &&
+        executable[nextSignificantIndex(member.index)] === '(' &&
+        !S212_DOCUMENTED_FACTORY_ALLOWED_MEMBER_CALLS.has(
+          member.normalized.toLowerCase())) {
+      addFinding('unapproved .NET/member invocation', memberStart,
+        source.slice(memberStart, member.index));
+    }
+  }
+
+  const processTypePattern =
+    /\[\s*(?:(?:system\s*\.\s*)?diagnostics\s*\.\s*)?(?:process\s*\]\s*::\s*start\b|processstartinfo\s*\])/igu;
+  for (const match of executable.matchAll(processTypePattern)) {
+    addFinding('.NET process launch', match.index, match[0]);
+  }
+  const processCapableInstanceStartPattern = /\.\s*start\s*\(/igu;
+  for (const match of executable.matchAll(processCapableInstanceStartPattern)) {
+    addFinding('.NET/process-capable instance launch', match.index, match[0]);
+  }
+  const powershellExecutionTypePattern =
+    /\[\s*(?:(?:system\s*\.\s*)?management\s*\.\s*automation\s*\.\s*)?powershell\s*\]\s*::\s*create\b/igu;
+  for (const match of executable.matchAll(powershellExecutionTypePattern)) {
+    addFinding('.NET PowerShell script execution', match.index, match[0]);
+  }
+  const runspaceExecutionTypePattern =
+    /\[\s*(?:(?:system\s*\.\s*)?management\s*\.\s*automation\s*\.\s*runspaces\s*\.\s*)?runspacefactory\s*\]\s*::\s*create(?:runspace|runspacepool)\b/igu;
+  for (const match of executable.matchAll(runspaceExecutionTypePattern)) {
+    addFinding('.NET PowerShell runspace execution', match.index, match[0]);
+  }
+  const scriptExecutionMethodPattern =
+    /\.\s*(?:addscript|addcommand|begininvoke|invokeasync|invokescript|invokereturnasis|invokewithcontext|newscriptblock|createnestedpipeline)\s*\(/igu;
+  for (const match of executable.matchAll(scriptExecutionMethodPattern)) {
+    addFinding('.NET PowerShell script/runspace method execution', match.index, match[0]);
+  }
+  const scriptBlockConstructionPattern =
+    /\[\s*(?:(?:system\s*\.\s*)?management\s*\.\s*automation\s*\.\s*)?scriptblock\s*\]\s*::\s*create\b/igu;
+  for (const match of executable.matchAll(scriptBlockConstructionPattern)) {
+    addFinding('.NET PowerShell ScriptBlock construction', match.index, match[0]);
+  }
+  const allowedFactoryInvokeStart = executable.indexOf(EXPECTED_WINDOWS_FACTORY_INVOCATION);
+  const allowedFactoryInvokeDot = allowedFactoryInvokeStart < 0 ? -1 :
+    allowedFactoryInvokeStart + EXPECTED_WINDOWS_FACTORY_INVOCATION.indexOf('.Invoke(');
+  const reflectionInvokePattern = /\.\s*invoke\s*\(/igu;
+  for (const match of executable.matchAll(reflectionInvokePattern)) {
+    if (match.index !== allowedFactoryInvokeDot ||
+        match[0] !== '.Invoke(' ||
+        countLiteral(executable, EXPECTED_WINDOWS_FACTORY_INVOCATION) !== 1) {
+      addFinding('.NET reflection/method invocation', match.index, match[0]);
+    }
+  }
+  const reflectionExecutionPattern =
+    /(?:::|\.)\s*(?:invokemember|createdelegate|dynamicinvoke)\s*\(/igu;
+  for (const match of executable.matchAll(reflectionExecutionPattern)) {
+    addFinding('.NET reflection/delegate execution', match.index, match[0]);
+  }
+
+  for (let index = 0; index < executable.length;) {
+    const character = executable[index];
+    if (character === '\n' || character === '\r' || character === ';' ||
+        character === '|') {
+      commandStart = true;
+      index += 1;
+      continue;
+    }
+    if (character === '{') {
+      braceKinds.push(previousSignificantCharacter(index - 1) === '@' ? 'hashtable' : 'script');
+      commandStart = true;
+      index += 1;
+      continue;
+    }
+    if (character === '}') {
+      braceKinds.pop();
+      commandStart = true;
+      index += 1;
+      continue;
+    }
+    if (character === '(') {
+      commandStart = true;
+      index += 1;
+      continue;
+    }
+    if (isAssignment(index)) {
+      commandStart = true;
+      index += 1;
+      continue;
+    }
+    if (/[\t ]/u.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (commandStart && character === ':' &&
+        isPowerShellLabelStart(executable[index + 1])) {
+      index += 2;
+      while (index < executable.length &&
+             isPowerShellLabelContinue(executable[index])) {
+        index += 1;
+      }
+      continue;
+    }
+    if (character === '&' && executable[index - 1] !== '&' &&
+        executable[index + 1] !== '&' && !isMergingRedirectionAmpersand(index)) {
+      addFinding('call operator', index, '&');
+      commandStart = true;
+      index += 1;
+      continue;
+    }
+    if (character === '$') {
+      commandStart = false;
+      if (executable[index + 1] === '{') {
+        index = scanBracedVariable(index);
+        continue;
+      }
+      index += 1;
+      while (index < executable.length && /[\w?:]/u.test(executable[index])) index += 1;
+      continue;
+    }
+    if (character === S212_POWERSHELL_CODE_ESCAPE &&
+        !isCommandTokenCharacter(escapedCodeCharacter(index))) {
+      commandStart = false;
+      index += codeEscapeWidth(index);
+      continue;
+    }
+    if (!isCommandTokenCharacter(character) &&
+        !(character === S212_POWERSHELL_CODE_ESCAPE &&
+          isCommandTokenCharacter(escapedCodeCharacter(index)))) {
+      if (commandStart && character.codePointAt(0) > 0x7f) {
+        addFinding('unrecognized non-ASCII command start', index, character);
+      }
+      commandStart = false;
+      index += 1;
+      continue;
+    }
+
+    const tokenStart = index;
+    const scannedToken = scanCommandToken(index);
+    index = scannedToken.index;
+    const token = scannedToken.normalized;
+    if (!commandStart) continue;
+    const expressionToken = token.toLowerCase();
+    if (/^(?:0|[1-9][0-9]*)$/u.test(expressionToken) || expressionToken === '-not' ||
+        (expressionToken === '.getnewclosure' &&
+         previousSignificantCharacter(tokenStart - 1) === '}' &&
+         executable.startsWith('()', index) &&
+         (index + 2 === executable.length || /[;\r\n]/u.test(executable[index + 2])))) {
+      commandStart = false;
+      continue;
+    }
+    const adjacentOriginal = source[index] ?? '';
+    if (scannedToken.usedCodeEscape ||
+        adjacentOriginal === '$' || adjacentOriginal === '`' ||
+        adjacentOriginal === "'" || adjacentOriginal === '"' ||
+        adjacentOriginal === '@') {
+      addFinding('dynamic command-token continuation', tokenStart,
+        source.slice(tokenStart, Math.min(source.length, index + 2)));
+    }
+    const next = nextSignificantIndex(index);
+    const hashtableKey = braceKinds.at(-1) === 'hashtable' && isAssignment(next);
+    if (hashtableKey) {
+      commandStart = false;
+      continue;
+    }
+    const commandName = token.toLowerCase();
+    const unqualifiedCommandName = commandName.slice(commandName.lastIndexOf('\\') + 1);
+    const forbiddenLabel = S212_DOCUMENTED_FACTORY_FORBIDDEN_COMMANDS.get(
+      unqualifiedCommandName);
+    if (forbiddenLabel) {
+      addFinding(forbiddenLabel, tokenStart, token);
+    } else if (!S212_DOCUMENTED_FACTORY_ALLOWED_KEYWORDS.has(commandName) &&
+               !S212_DOCUMENTED_FACTORY_ALLOWED_CMDLETS.has(commandName)) {
+      addFinding('unapproved command start/native resolution', tokenStart, token);
+    }
+    commandStart = false;
+  }
+  return Object.freeze({
+    lexicalErrors:Object.freeze(lexicalErrors),
+    findings:Object.freeze(findings),
+  });
+}
+
+function s212IntendedDocumentedFactorySelectionFixture() {
+  return documentedTypeResolveDiagnosticScript();
+}
+
+function assertS212DocumentedFactorySelectionIsBounded(source) {
+  const factoryEnter = typeResolveStageLine('documented', 'factory-search-enter');
+  const factoryReturn = typeResolveStageLine('documented', 'factory-search-return');
+  const selectionIndex = source.indexOf(EXPECTED_WINDOWS_FACTORY_SELECTION_SOURCE);
+  const invocationIndex = source.indexOf(EXPECTED_WINDOWS_FACTORY_INVOCATION);
+  assert.deepEqual({
+    exactSelectionCount:countLiteral(source, EXPECTED_WINDOWS_FACTORY_SELECTION_SOURCE),
+    candidateVariableCount:countLiteral(source, '$staticFactoryCandidates'),
+    directIndexCount:countLiteral(source, EXPECTED_WINDOWS_FACTORY_DIRECT_INDEX),
+    exactInvocationCount:countLiteral(source, EXPECTED_WINDOWS_FACTORY_INVOCATION),
+    ordered:source.indexOf(factoryEnter) < selectionIndex && selectionIndex >= 0 &&
+      selectionIndex < source.indexOf(factoryReturn) &&
+      source.indexOf(factoryReturn) < invocationIndex,
+  }, {
+    exactSelectionCount:1,
+    candidateVariableCount:2,
+    directIndexCount:1,
+    exactInvocationCount:1,
+    ordered:true,
+  }, 'S2.12 bounded documented TypeResolve factory selection');
+  const commandSurfaces = s212FindForbiddenPowerShellCommandSurfaces(source);
+  assert.deepEqual(commandSurfaces.lexicalErrors, [],
+    'S2.12 documented factory PowerShell is lexically closed');
+  if (commandSurfaces.findings.length > 0) {
+    const finding = commandSurfaces.findings[0];
+    assert.fail(`S2.12 forbidden documented factory control: ${finding.label} ` +
+      `at ${finding.index}: ${finding.token}`);
+  }
+}
+
+test('expected Windows no-dispatch late-bake remediation contract', () => {
+  assertS212NoDispatchLateBakeRemediationContract(windowsStreamPInvokeSource());
+});
+
+test('Windows no-dispatch late-bake detector rejects invalid states', () => {
+  const intended = s212IntendedNoDispatchLateBakeFixture();
+  assert.doesNotThrow(() => assertS212NoDispatchLateBakeRemediationContract(intended));
+
+  const mutants = [
+    replaceWindowsStreamSourceOnce(intended,
+      '} elseif ($typeResolveState.Requests -eq 0 -and',
+      '} elseif ($typeResolveState.Requests -ge 0 -and'),
+    replaceWindowsStreamSourceOnce(intended,
+      '    $null -eq $typeResolveState.Failure -and\n' +
+        '    $null -eq $typeResolveState.Type) {',
+      '    $null -eq $typeResolveState.Type) {'),
+    replaceWindowsStreamSourceOnce(intended,
+      '    $null -eq $typeResolveState.Type) {',
+      '    $null -ne $typeResolveState.Type) {'),
+    replaceWindowsStreamSourceOnce(intended,
+      '  $selectedStreamDataType = $typeResolveState.Type',
+      '  $selectedStreamDataType = $streamDataBuilder.CreateType()'),
+    replaceWindowsStreamSourceOnce(intended,
+      '  try {\n    $selectedStreamDataType = $streamDataBuilder.CreateType()\n  } catch {',
+      '  $selectedStreamDataType = $streamDataBuilder.CreateType()\n  if ($false) {'),
+    replaceWindowsStreamSourceOnce(intended,
+      '  if ($null -eq $selectedStreamDataType) {',
+      '  if ($false) {'),
+    replaceWindowsStreamSourceOnce(intended,
+      S212_SELECTED_CANONICAL_TYPE_REFERENCE,
+      S212_SELECTED_CANONICAL_TYPE_REFERENCE.replace(
+        '[Object]::ReferenceEquals(', '[Object]::Equals(')),
+    replaceWindowsStreamSourceOnce(intended,
+      '[Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType)',
+      '[Object]::Equals($streamDataType.DeclaringType, $nativeType)'),
+    replaceWindowsStreamSourceOnce(intended,
+      S212_SELECTED_OWNED_ASSEMBLY_IDENTITY,
+      '    -not [String]::Equals($selectedStreamDataType.Assembly.FullName, ' +
+        '$assemblyBuilder.FullName, [System.StringComparison]::Ordinal) -or'),
+    replaceWindowsStreamSourceOnce(intended,
+      S212_SELECTED_MODULE_REFERENCE,
+      S212_SELECTED_MODULE_REFERENCE.replace(
+        '[Object]::ReferenceEquals(', '[Object]::Equals(')),
+    replaceWindowsStreamSourceOnce(intended,
+      S212_TWO_MODE_SELECTION_SOURCE,
+      `${S212_TWO_MODE_SELECTION_SOURCE}\nAdd-Type -TypeDefinition $source`),
+    replaceWindowsStreamSourceOnce(intended,
+      S212_TWO_MODE_SELECTION_SOURCE,
+      `${S212_TWO_MODE_SELECTION_SOURCE}\nInvoke-Expression $source`),
+    replaceWindowsStreamSourceOnce(intended,
+      S212_TWO_MODE_SELECTION_SOURCE,
+      `${S212_TWO_MODE_SELECTION_SOURCE}\nwhile ($true) { break }`),
+    ...[
+      '$ignored = [System.IO.File]::ReadAllText($path)',
+      '$ignored = [IO.File]::ReadAllText($path)',
+      "Resolve-Path '.'",
+      'Out-File -FilePath $path',
+      "$ignored = [Diagnostics.ProcessStartInfo]::new('cmd.exe')",
+      'gEt-MoDuLe',
+      '$ignored = [System.Environment]::GetEnvironmentVariable(\'TEMP\')',
+      'Get-ChildItem HKCU:\\',
+      '$ignored = [ScriptBlock]::Create(\'Get-Date\').Invoke()',
+      '[Console]::WriteLine($selectedStreamDataType)',
+      '[System.Diagnostics.Process]::Start(\'cmd.exe\')',
+      'while($true) { break }',
+      'foreach($item in $items) { break }',
+      'do { break } while($false)',
+    ].map((addition) => s212AppendAfterCanonicalLookup(intended, addition)),
+    replaceWindowsStreamSourceOnce(intended,
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)',
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        "$nestedTypeFlags)\nGet-Item '.'"),
+    replaceWindowsStreamSourceOnce(intended,
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)',
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)\n$ignored = $env:TEMP'),
+    replaceWindowsStreamSourceOnce(intended,
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)',
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)\n' +
+        '$ignored = [Microsoft.Win32.Registry]::CurrentUser'),
+    replaceWindowsStreamSourceOnce(intended,
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)',
+      "$streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', " +
+        '$nestedTypeFlags)\n' +
+        '[Console]::Out.WriteLine($selectedStreamDataType)'),
+    s212MoveNativeSuccessGuardAfterCanonicalLookup(intended),
+    s212MoveSelectionBeforeHandlerRemoval(intended),
+  ];
+  for (const mutant of mutants) {
+    assert.throws(() => assertS212NoDispatchLateBakeRemediationContract(mutant));
+  }
+});
+
+test('S2.11 wrapper-aware detector is CRLF-stable', () => {
+  const originalReadFileSync = fs.readFileSync;
+  fs.readFileSync = function readFileSyncWithSyntheticCrlf(file, ...args) {
+    const content = originalReadFileSync.call(fs, file, ...args);
+    if (path.resolve(String(file)) !== path.resolve(__filename) ||
+        typeof content !== 'string') return content;
+    return content.replace(/\r?\n/gu, '\r\n');
+  };
+  try {
+    assertS211WrapperAwareDynamicAssemblyIdentity(
+      s211CurrentAssemblyIdentityContractSource());
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+});
+
+test('documented TypeResolve factory detector rejects forbidden control spellings', () => {
+  const intended = s212IntendedDocumentedFactorySelectionFixture();
+  assert.doesNotThrow(() => assertS212DocumentedFactorySelectionIsBounded(intended));
+
+  const factoryReturn = typeResolveStageLine('documented', 'factory-search-return');
+  for (const addition of [
+    'while($true) { break }',
+    'WhIlE($true) { break }',
+    'for($index = 0; $index -lt 1; $index++) { break }',
+    'foreach($item in $items) { break }',
+    'do { break } while($false)',
+    'sTaRt-SlEeP -Milliseconds 1',
+    "sTaRt-PrOcEsS 'cmd.exe'",
+    "[Diagnostics.Process]::Start('cmd.exe')",
+    "[System.Diagnostics.ProcessStartInfo]::new('cmd.exe')",
+    "[Process]::Start('cmd.exe')",
+    "[ProcessStartInfo]::new('cmd.exe')",
+    "$process = [Diagnostics.Process]::new(); $process.StartInfo.FileName = 'cmd.exe'; " +
+      '$null = $process.Start()',
+    "$runner = [System.Diagnostics.Process]::new(); " +
+      "$runner.StartInfo.FileName = 'cmd.exe'; $null = $runner.Start()",
+    "[Diagnostics.Process] $typed = New-Object System.Diagnostics.Process; " +
+      "$typed.StartInfo.FileName = 'cmd.exe'; $null = $typed.Start()",
+    "$script:process = New-Object -TypeName Diagnostics.Process; " +
+      "$null = $script:process.Start()",
+    "${process} = New-Object -TypeName System.Diagnostics.Process; " +
+      "$null = ${process}.Start()",
+    "([Diagnostics.Process]::new()).Start()",
+    "$processes = @(New-Object System.Diagnostics.Process); " +
+      "$processes[0].StartInfo.FileName = 'cmd.exe'; $null = $processes[0].Start()",
+    "$holder = @{ Process = New-Object System.Diagnostics.Process }; " +
+      "$holder.Process.StartInfo.FileName = 'cmd.exe'; $null = $holder.Process.Start()",
+    "$script:holders = @(@{ Process = New-Object System.Diagnostics.Process }); " +
+      "$null = $script:holders[0].Process.Start()",
+    "${global:processes} = @(New-Object System.Diagnostics.Process); " +
+      "$null = ${global:processes}[0].Start()",
+    "$processes = @(New-Object System.Diagnostics.Process); " +
+      "$null = (($processes[0])).Start()",
+    '$null = $stopwatch.Start()',
+    '$null = $timer.Start()',
+    "[System.Management.Automation.PowerShell]::Create().AddScript(" +
+      "'Start-Process cmd.exe').Invoke()",
+    "[PowerShell]::Create().AddCommand('Start-Process').Invoke()",
+    '$pipeline.AddScript($script).BeginInvoke()',
+    "$ExecutionContext.InvokeCommand.InvokeScript('Start-Process cmd.exe')",
+    "$ExecutionContext.InvokeCommand.NewScriptBlock('Start-Process cmd.exe').Invoke()",
+    "$callback = { return 1 }.GetNewClosure().InvokeReturnAsIs()",
+    "$callback = { param($functions,$variables) }.GetNewClosure().InvokeWithContext(" +
+      '$functions,$variables,@())',
+    "$method = 'Start'; $process = [Diagnostics.Process]::new(); " +
+      "$process.StartInfo.FileName = 'cmd.exe'; $null = $process.$method()",
+    "$method = 'Start'; $null = $process.${method}()",
+    "$method = 'Start'; $null = $process.$($method)()",
+    "$null = $process.('Start')()",
+    "$null = $process.'Start'()",
+    "$member = 'InvokeReturnAsIs'; $callback = { return 1 }.GetNewClosure(); " +
+      '$null = $callback.$member()',
+    "$method = 'Run'; $null = $shell.$method('cmd.exe')",
+    "$shell = [System.Activator]::CreateInstance(" +
+      "[type]::GetTypeFromProgID('WScript.Shell')); $null = $shell.Run('cmd.exe')",
+    "[ScriptBlock]::Create('Start-Process cmd.exe').Invoke()",
+    "[System.Management.Automation.ScriptBlock]::Create('Start-Process cmd.exe')",
+    "[System.Diagnostics.Process].GetMethod('Start',[Type[]]@([String])).Invoke(" +
+      "$null,@('cmd.exe'))",
+    "[Process].GetMethods() | Microsoft.PowerShell.Core\\Where-Object { " +
+      "$_.Name -eq 'Start' } | Microsoft.PowerShell.Core\\Where-Object { " +
+      "$_.Invoke($null, @('cmd.exe')) }",
+    "$methodInfo = [Process].GetMethod('Start'); $methodInfo.Invoke($null,@('cmd.exe'))",
+    "$methodInfo = [Process].GetMethod('Start'); $methodInfo.Inv`oke($null,@('cmd.exe'))",
+    "[System.Diagnostics.Process].InvokeMember('Start'," +
+      "[System.Reflection.BindingFlags]'Public,Static,InvokeMethod'," +
+      "$null,$null,@('cmd.exe'))",
+    "[System.Diagnostics.Process].Invo`keMember('Start'," +
+      "[System.Reflection.BindingFlags]'Public,Static,InvokeMethod'," +
+      "$null,$null,@('cmd.exe'))",
+    "$methodInfo = [Process].GetMethod('Start'); " +
+      "$methodInfo.CreateDelegate([Func[String,System.Diagnostics.Process]])." +
+      "DynamicInvoke('cmd.exe')",
+    "$methodInfo = [Process].GetMethod('Start'); " +
+      "$methodInfo.Create`Delegate([Func[String,System.Diagnostics.Process]])",
+    "$delegate = [Delegate]::CreateDelegate([Func[String,System.Diagnostics.Process]]," +
+      "[Process].GetMethod('Start',[Type[]]@([String]))); " +
+      "$delegate.DynamicInvoke('cmd.exe')",
+    "$delegate = [Delegate]::CreateDelegate([Func[String,System.Diagnostics.Process]]," +
+      "[Process].GetMethod('Start',[Type[]]@([String]))); " +
+      "$delegate.Dynamic`Invoke('cmd.exe')",
+    '[System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()',
+    '[RunspaceFactory]::CreateRunspacePool()',
+    'SeLeCt-ObJeCt -First 1',
+    'FoReAcH-ObJeCt { $_ }',
+    'select -First 1',
+    '% { $_ }',
+    '% -Process { $_ }',
+    'foreach { $_ }',
+    'foreach -Process { $_ }',
+    'sleep 1',
+    'Microsoft.PowerShell.Utility\\Start-Sleep 1',
+    'Where-Object { $_ }',
+    'Write-Output ok',
+    'Attacker\\Where-Object { $_ }',
+    'Attacker\\Write-Output ok',
+    'Write-Output$suffix',
+    "Write-Output$('suffix')",
+    'Microsoft.PowerShell.Utility\\Write-`Output ok',
+    'Microsoft.PowerShell.Utility\\Write-Output$suffix',
+    "Microsoft.PowerShell.Utility\\Write-Output$('suffix')",
+    "saps 'cmd.exe'",
+    "start 'cmd.exe'",
+    "Microsoft.PowerShell.Management\\Start-Process 'cmd.exe'",
+    "& 'cmd.exe'",
+    '& $command',
+    'cmd.exe /c exit',
+    'cmd /c exit',
+    'powershell -NoProfile -Command exit',
+    'pwsh -NoProfile -Command exit',
+    'notepad',
+    'whoami /all',
+    'ping 127.0.0.1',
+    'C:\\Windows\\System32\\cmd /c exit',
+    '.\\deep-work-native /probe',
+    'deep-work-native /probe',
+    'deep-work-native.COM /probe',
+    'deep-work-native.BAT /probe',
+    'deep-work-native.CMD /probe',
+    'ΔοκιμήFunction -Argument safe',
+    '測試別名 value',
+    '.\\скрипт.ps1 -Probe',
+    '도구.exe --probe',
+    '$null = $(while($true) { break })',
+    '$null = $(for($index = 0; $index -lt 1; $index++) { break })',
+    '$null = $(foreach($item in $items) { break })',
+    '$null = $(do { break } while($false))',
+    '$null = $(sleep 1)',
+    '$null = $(Start-Sleep -Milliseconds 1)',
+    "$null = $(saps 'cmd.exe')",
+    "$null = $(Start-Process 'cmd.exe')",
+    "$null = $(start 'cmd.exe')",
+    '$null = $(cmd.exe /c exit)',
+    '$null = $(cmd /c exit)',
+    "$null = $(& 'cmd.exe')",
+    '$null = $(% { $_ })',
+    '$null = $(foreach { $_ })',
+    '$null = "result $(Start-Sleep -Milliseconds 1)"',
+    '$items = % { $_ }',
+    '$items = % -Process { $_ }',
+    '$items = foreach { $_ }',
+    '$items | Microsoft.PowerShell.Core\\ForEach-Object -Process { $_ }',
+    '$result = while($true) { break }',
+    '$result = for($index = 0; $index -lt 1; $index++) { break }',
+    '$result = foreach($item in $items) { break }',
+    '$result = do { break } while($false)',
+    '$delay = sleep 1',
+    '$delay = Start-Sleep -Milliseconds 1',
+    "$process = saps 'cmd.exe'",
+    "$process = Start-Process 'cmd.exe'",
+    "$process = start 'cmd.exe'",
+    '$output = cmd.exe /c exit',
+    '$output = cmd /c exit',
+    "$output = & 'cmd.exe'",
+    '$literal = @"\n$(Start-Sleep -Milliseconds 1)\n"@',
+    'Start-`Sleep 1',
+    "s`aps 'cmd.exe'",
+    'cmd.`exe /c exit',
+    '$null = $(Start-`Sleep 1)',
+    '$null = "result $(s`aps \'cmd.exe\')"',
+    '$literal = @"\n$(cmd.`exe /c exit)\n"@',
+    "Start-$('Sleep') 1",
+    "cm$('d').exe /c exit",
+    "Microsoft.PowerShell.Utility\\Start-$('Sleep') 1",
+    ':outer while($true) { break }',
+    ':outer for($index = 0; $index -lt 1; $index++) { break }',
+    ':outer foreach($item in $items) { break }',
+    ':outer do { break } while($false)',
+    ':outer cmd /c exit',
+    ':외부 while($true) { break }',
+    ':Δοκιμή for($index = 0; $index -lt 1; $index++) { break }',
+    'Microsoft.PowerShell.Utility\\Write-Output `# escaped-comment-marker; Start-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output `"escaped-quote`"; Start-Sleep 1',
+  ]) {
+    const mutant = replaceWindowsStreamSourceOnce(intended, factoryReturn,
+      `${addition}\n${factoryReturn}`);
+    assert.throws(() => assertS212DocumentedFactorySelectionIsBounded(mutant),
+      /S2\.12 forbidden documented factory control:/u,
+      `S2.12 documented factory mutant must be rejected: ${addition}`);
+  }
+
+  for (const addition of [
+    '$selected = $true',
+    '$started = $true',
+    '$ready = $left -and $right',
+    '$equal = $left -eq $right',
+    '$notEqual = $left -ne $right',
+    '$record.start = $true',
+    '$property = $record.start',
+    '$property = $record.select',
+    '${sleep}',
+    '${start-process}',
+    '${sleep}.Length',
+    '${global:sleep}',
+    '${script:start-process}.Length',
+    '${env:PATH}',
+    '$global:sleep',
+    '$env:PATH',
+    "$process = [Diagnostics.Process]::new(); " +
+      "$process.StartInfo.FileName = 'cmd.exe'",
+    '$process = [Diagnostics.Process]::GetCurrentProcess(); $created = $process.StartTime',
+    '$method = $process.Start',
+    '$method = $processes[0].Start',
+    '$method = $holder.Process.Start',
+    '$metadata = $holder.Process.StartInfo',
+    '$startedAt = $holders[0].Process.StartTime',
+    '$null = $process.Restart()',
+    '$null = $holder.Process.Restart()',
+    '$method = $pipeline.AddScript',
+    "$literal = '[PowerShell]::Create().AddScript(\"Start-Process cmd.exe\").Invoke()'",
+    '# [RunspaceFactory]::CreateRunspace(); $pipeline.AddScript($script).Invoke()',
+    "$literal = 'cmd.exe sleep start-process foreach'",
+    '$literal = "cmd.exe sleep start-process foreach"',
+    '# cmd.exe; sleep 1; Start-Process; foreach',
+    '<# cmd.exe; sleep 1; Start-Process; foreach #>',
+    "@{ select = $true; start = $true; sleep = $false; foreach = $null }",
+    "$literal = @'\nsleep 1; Start-Process 'cmd.exe'\n'@",
+    '$literal = @"\nsleep 1; Start-Process \'cmd.exe\'\n"@',
+    '$literal = @"\n"@not-a-terminator; Start-Sleep 1\nsleep 1\n"@',
+    'Microsoft.PowerShell.Utility\\Write-Output `; Start-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output `| Start-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output `# Start-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output `"Start-Sleep 1`"',
+    'Microsoft.PowerShell.Utility\\Write-Output escaped` space Start-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output `\nStart-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output value#literal',
+    'Microsoft.PowerShell.Utility\\Write-Output value # Start-Sleep 1',
+    "Microsoft.PowerShell.Utility\\Write-Output $('safe')",
+    "$name = \"Start-$('Sleep')\"",
+    "Microsoft.PowerShell.Utility\\Write-Output value$('suffix')",
+    ':외부 Microsoft.PowerShell.Utility\\Write-Output ok',
+    ':Δοκιμή Microsoft.PowerShell.Utility\\Write-Output ok',
+    'if ($true) { Microsoft.PowerShell.Utility\\Write-Output ok }',
+    'try { Microsoft.PowerShell.Utility\\Write-Output ok } finally { ' +
+      'Microsoft.PowerShell.Utility\\Write-Output done }',
+    'param($value); Microsoft.PowerShell.Utility\\Write-Output $value',
+    'return $value',
+    "throw 'bounded diagnostic failure'",
+    'Microsoft.PowerShell.Utility\\Write-Output ok',
+    'Microsoft.PowerShell.Utility\\Write-Output ok 2>&1',
+  ]) {
+    const benign = replaceWindowsStreamSourceOnce(intended, factoryReturn,
+      `${addition}\n${factoryReturn}`);
+    assert.doesNotThrow(() => assertS212DocumentedFactorySelectionIsBounded(benign),
+      `S2.12 documented factory benign token must remain accepted: ${addition}`);
+  }
+
+  for (const addition of [
+    'Microsoft.PowerShell.Utility\\Write-Output value#literal; Start-Sleep 1',
+    'Microsoft.PowerShell.Utility\\Write-Output value#literal; cmd.exe /c exit',
+  ]) {
+    const mutant = replaceWindowsStreamSourceOnce(intended, factoryReturn,
+      `${addition}\n${factoryReturn}`);
+    assert.throws(() => assertS212DocumentedFactorySelectionIsBounded(mutant),
+      /S2\.12 forbidden documented factory control:/u,
+      `S2.12 mid-token hash must not hide executable control: ${addition}`);
+  }
+
+  for (const addition of ['${sleep', '${sleep`}']) {
+    const malformed = replaceWindowsStreamSourceOnce(intended, factoryReturn,
+      `${addition}\n${factoryReturn}`);
+    assert.throws(() => assertS212DocumentedFactorySelectionIsBounded(malformed),
+      /S2\.12 documented factory PowerShell is lexically closed/u,
+      `S2.12 malformed braced variable must fail closed: ${addition}`);
+  }
+});
+
+test('documented TypeResolve factory selection is bounded', () => {
+  assertS212DocumentedFactorySelectionIsBounded(documentedTypeResolveDiagnosticScript());
+});
 
 test('Windows pinned late-bake identity-axis outer normalizer preserves lower-layer contracts',
   () => {
@@ -5859,7 +7211,7 @@ test('fixed Windows stream helper TypeResolve diagnostics are closed marker-only
   assert.equal(hash(Buffer.from(scripts.dispatch, 'utf8')),
     '2f212bdb6ae76e75f32c9ab4956be457116f8bfb7df1a8a1184d6082aea3d8f8');
   assert.equal(hash(Buffer.from(scripts.pinned, 'utf8')),
-    '6dcd68e2b0b29321dedd10c5751e680f5d216e69e0d64ea9b9d5e1020bc121fa');
+    'd5fab60d944fb0a589b5ea7c990f1d203e180e8dd282d0d8f58767e2abe3703c');
   assert.equal(scripts.dispatch.includes(
     `$callback = {\n  param($sender, $eventArgs)\n${typeResolveStageLine('dispatch',
       'handler-entered', '  ')}`), true);

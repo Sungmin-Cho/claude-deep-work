@@ -12,7 +12,7 @@ $assemblyName = [System.Reflection.AssemblyName]::new('DeepWorkStreamInventoryNa
 $assemblyAccess = [System.Reflection.Emit.AssemblyBuilderAccess]::Run
 $staticFactoryCandidates = @(
   [System.Reflection.Emit.AssemblyBuilder].GetMethods() |
-    Where-Object {
+    Microsoft.PowerShell.Core\Where-Object {
       $_.Name -eq 'DefineDynamicAssembly' -and $_.IsStatic -and
       $_.GetParameters().Length -eq 2
     }
@@ -169,8 +169,23 @@ try {
 
 # DEEP_WORK_TYPE_AUTHENTICATION_BEGIN
 if ($nativeTypeFailure) { throw 'stream native type creation failed' }
-if ($typeResolveState.Requests -ne 1 -or $null -ne $typeResolveState.Failure -or
+$selectedStreamDataType = $null
+if ($typeResolveState.Requests -eq 1 -and
+    $null -eq $typeResolveState.Failure -and
+    $null -ne $typeResolveState.Type) {
+  $selectedStreamDataType = $typeResolveState.Type
+} elseif ($typeResolveState.Requests -eq 0 -and
+    $null -eq $typeResolveState.Failure -and
     $null -eq $typeResolveState.Type) {
+  try {
+    $selectedStreamDataType = $streamDataBuilder.CreateType()
+  } catch {
+    throw 'stream late nested type creation failed'
+  }
+  if ($null -eq $selectedStreamDataType) {
+    throw 'stream late nested type creation failed'
+  }
+} else {
   throw 'stream type resolution state invalid'
 }
 $nestedTypeFlags = [System.Reflection.BindingFlags]::Public -bor
@@ -179,9 +194,10 @@ $streamDataType = $nativeType.GetNestedType('WIN32_FIND_STREAM_DATA', $nestedTyp
 if ($null -eq $streamDataType -or
     -not [String]::Equals($streamDataType.FullName, $expectedStreamDataTypeName,
       [System.StringComparison]::Ordinal) -or
-    -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or
+    -not [Object]::ReferenceEquals($streamDataType, $selectedStreamDataType) -or
     -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or
-    -not [Object]::Equals($streamDataType.Assembly, $assemblyBuilder) -or
+    -not [Object]::Equals($selectedStreamDataType.Assembly, $assemblyBuilder) -or
+    -not [Object]::ReferenceEquals($streamDataType.Module, $selectedStreamDataType.Module) -or
     -not [String]::Equals($streamDataType.Module.ScopeName, $moduleBuilder.ScopeName,
       [System.StringComparison]::Ordinal)) {
   throw 'stream type identity invalid'

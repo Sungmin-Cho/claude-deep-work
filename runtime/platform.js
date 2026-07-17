@@ -1595,8 +1595,8 @@ function compareRemoveOwnedTemp(capability, expectedDigest) {
   return true;
 }
 
-const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '6f03bbb1cf647b6932e092d179cf82cb37cf357d1f4fbc1f4589952d7fee552b';
-const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = '2e90a951320445c7b93577bf086f8f3fc7fdf3ff7f80a16df880051eeab746af';
+const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '6384aecde1dabed4804ed4bcdbb412e5914d9dadb4d5327e55ee616ecd035415';
+const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = 'feab51e7d72e75438490593f2dc09d860a745f9b6b1a499663c20cdd9c5d372a';
 
 function resolveGitExecutable(environment = process.env, fsApi = fs) {
   const pathValue = typeof environment.PATH === 'string' ? environment.PATH : '';
