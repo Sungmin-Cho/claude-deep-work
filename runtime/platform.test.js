@@ -369,8 +369,10 @@ function replaceWindowsStreamSourceOnce(source, before, after) {
 
 function windowsStreamProbeAttestationLines() {
   return [
-    "if ($typeResolveState.Requests -ne 1 -or $null -ne $typeResolveState.Failure -or $null -eq $typeResolveState.Type) { throw 'probe resolver state invalid' }",
-    "if (-not [String]::Equals($streamDataType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA', [System.StringComparison]::Ordinal) -or -not [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -or -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or -not [Object]::Equals($streamDataType.Assembly, $assemblyBuilder)) { throw 'probe stream type identity invalid' }",
+    '$probeCallbackMode = $typeResolveState.Requests -eq 1 -and $null -eq $typeResolveState.Failure -and $null -ne $typeResolveState.Type -and [Object]::ReferenceEquals($streamDataType, $typeResolveState.Type) -and [Object]::ReferenceEquals($selectedStreamDataType, $typeResolveState.Type)',
+    '$probeNoDispatchMode = $typeResolveState.Requests -eq 0 -and $null -eq $typeResolveState.Failure -and $null -eq $typeResolveState.Type -and $null -ne $selectedStreamDataType',
+    "if (-not ($probeCallbackMode -or $probeNoDispatchMode)) { throw 'probe resolver state invalid' }",
+    "if (-not [String]::Equals($streamDataType.FullName, 'DeepWorkStreamInventoryNative+WIN32_FIND_STREAM_DATA', [System.StringComparison]::Ordinal) -or -not [Object]::ReferenceEquals($selectedStreamDataType, $streamDataType) -or -not [Object]::ReferenceEquals($streamDataType.DeclaringType, $nativeType) -or -not [Object]::Equals($streamDataType.Assembly, $assemblyBuilder)) { throw 'probe stream type identity invalid' }",
     "if (-not $streamDataType.IsValueType -or -not $streamDataType.IsNestedPublic -or -not $streamDataType.IsSealed -or -not $streamDataType.IsLayoutSequential -or -not $streamDataType.IsUnicodeClass) { throw 'probe stream type layout invalid' }",
     '$probeFields = @($streamDataType.GetFields([System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::DeclaredOnly))',
     "$probeStreamSize = $streamDataType.GetField('StreamSize')",
@@ -3572,7 +3574,7 @@ function assertPinnedTypeResolveRecords(records) {
         `pinned oracle late-bake ${label} terminal forbids post-terminal records`);
       assert.equal(records.length < 36, true,
         `pinned oracle late-bake ${label} failure path bound`);
-      return stages.length;
+      return {next:stages.length, completed:false};
     };
     if (stages[lateIndex] === 'late-bake-create-exception') {
       return terminal('create-exception');
@@ -3588,7 +3590,7 @@ function assertPinnedTypeResolveRecords(records) {
         'pinned oracle late-bake identity-axis terminal records forbid post-terminal records');
       assert.equal(records.length === 32, true,
         'pinned oracle late-bake identity-axis exact terminal records');
-      return stages.length;
+      return {next:stages.length, completed:false};
     }
     for (const [phase, authenticated, exception, mismatch] of lateBakePhases) {
       if (stages[lateIndex] === exception || stages[lateIndex] === mismatch) {
@@ -3600,11 +3602,11 @@ function assertPinnedTypeResolveRecords(records) {
     }
     assert.equal(stages[lateIndex], 'late-bake-completed',
       'pinned oracle late-bake completed');
-    assert.equal(lateIndex + 1, stages.length,
-      'pinned oracle late-bake completed forbids post-terminal records');
-    assert.equal(records.length === 36, true,
-      'pinned oracle late-bake exact completed path');
-    return stages.length;
+    lateIndex += 1;
+    assert.equal(records.length === 36 ||
+      records.length === 36 + TYPE_RESOLVE_PINNED_SUCCESS_SUFFIX.length, true,
+    'pinned oracle late-bake exact completed path');
+    return {next:lateIndex, completed:true};
   };
 
   let successfulState = false;
@@ -3616,7 +3618,10 @@ function assertPinnedTypeResolveRecords(records) {
     if (index < stages.length) {
       assert.equal(native === 'succeeded' && lateBakeApplicable, true,
         'pinned oracle late-bake applicability');
-      index = parseLateBakeSuffix(index);
+      const lateBake = parseLateBakeSuffix(index);
+      index = lateBake.next;
+      successfulState = native === 'succeeded' && lateBake.completed &&
+        index < stages.length;
     }
   } else if (groups.length === 1) {
     const outcomes = {
