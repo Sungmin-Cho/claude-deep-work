@@ -7801,6 +7801,7 @@ test('native Windows PowerShell 5.1 executes the fixed helper for exactly one ro
       'v1.0', 'powershell.exe');
     const helper = path.join(__dirname, 'windows-stream-inventory.ps1');
     const input = `${JSON.stringify({version:1, id:0, kind:'root', relative_path:null})}\n`;
+    const inputBytes = Buffer.from(input, 'utf8');
     const closedEnv = {
       SystemRoot:systemRoot,
       WINDIR:systemRoot,
@@ -7811,10 +7812,11 @@ test('native Windows PowerShell 5.1 executes the fixed helper for exactly one ro
     };
     const result = spawnSync(executable,
       ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-        '-File',helper,'-RootPath',root,'-ExpectedRows','1'], {
+        '-File',helper,'-RootPath',root,'-ExpectedRows','1',
+        '-ExpectedInputBytes',String(inputBytes.length)], {
         cwd:root,
         env:closedEnv,
-        input:Buffer.from(input, 'utf8'),
+        input:inputBytes,
         encoding:'utf8',
         shell:false,
         windowsHide:true,
@@ -7886,6 +7888,9 @@ test('Git attributes preserve exact raw Windows stream helper authority on check
   const helperBytes = fs.readFileSync(helperPath);
   assert.equal(hash(helperBytes), WINDOWS_STREAM_INVENTORY_HELPER_SHA256);
   const source = helperBytes.toString('utf8');
+  assert.match(source, /\[Console\]::OpenStandardInput\(\)/u);
+  assert.match(source, /\$inputStream\.Read\(\$inputBuffer, \$inputOffset, \$ExpectedInputBytes - \$inputOffset\)/u);
+  assert.doesNotMatch(source, /\[Console\]::In(?:\.|\b)/u);
   const begin = source.indexOf('# DEEP_WORK_PINVOKE_SOURCE_BEGIN');
   const end = source.indexOf('# DEEP_WORK_PINVOKE_SOURCE_END');
   const lineStart = source.indexOf('\n', begin) + 1;

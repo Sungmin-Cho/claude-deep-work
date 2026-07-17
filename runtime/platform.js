@@ -1595,7 +1595,7 @@ function compareRemoveOwnedTemp(capability, expectedDigest) {
   return true;
 }
 
-const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '05c4c58ce69280a322e81af2875521897376f3039acfb664832697ec0083e059';
+const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = 'c0fd02042548cc69dfd7d24848a85ffa1dabc2ee39e4827bfc16d873ea8c8e81';
 const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = 'feab51e7d72e75438490593f2dc09d860a745f9b6b1a499663c20cdd9c5d372a';
 
 function resolveGitExecutable(environment = process.env, fsApi = fs) {
@@ -1913,7 +1913,8 @@ function runWindowsStreamInventory(projectCapability, typedRows, fsApi, environm
   const executable = powershellPath(environment, fsApi);
   const projected = typedRows.map(({version, id, kind, relative_path}) =>
     JSON.stringify({version, id, kind, relative_path})).join('\n') + '\n';
-  if (Buffer.byteLength(projected) > WINDOWS_STREAM_INVENTORY_MAX_INPUT_BYTES) {
+  const projectedBytes = Buffer.from(projected);
+  if (projectedBytes.length > WINDOWS_STREAM_INVENTORY_MAX_INPUT_BYTES) {
     fail('worktree-manifest-stream-input', 'Windows stream inventory input is too large');
   }
   const tempCandidate = environment.TEMP || environment.TMP || os.tmpdir();
@@ -1931,11 +1932,12 @@ function runWindowsStreamInventory(projectCapability, typedRows, fsApi, environm
   };
   const request = JSON.stringify({
     spec:{executable, args:['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-      '-File',helper,'-RootPath',projectCapability.path,'-ExpectedRows',String(typedRows.length)]},
+      '-File',helper,'-RootPath',projectCapability.path,'-ExpectedRows',String(typedRows.length),
+      '-ExpectedInputBytes',String(projectedBytes.length)]},
     options:{platform:'win32', env:fixedEnv, timeoutMs:WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
       maxOutputBytes:WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
       cwd:projectCapability.path},
-    input:Buffer.from(projected).toString('base64'),
+    input:projectedBytes.toString('base64'),
   });
   const supervised = childProcess.spawnSync(process.execPath,
     [path.join(__dirname, 'process-supervisor.js'), '--windows-stream-inventory-supervisor'], {

@@ -158,10 +158,13 @@ async function prepareInitialRepository({projectCapability,sessionId,mode,baseRe
       return{mode,repositoryContext:{...after,repositoryMode:mode,worktreePurpose:'initial-session',worktreePath:projectCapability.path}};}
     const rows=parseWorktreePorcelain(String((await stashChecked(run,WORKTREE_LIST_ARGS,'initial-worktree-query')).stdout));
     const physicalCandidate=fs.realpathSync(candidate);const row=rows.filter((item)=>{try{return fs.realpathSync(item.path)===physicalCandidate;}catch{return false;}});
-    if(row.length!==1||row[0].head!==expected.baseOid||
-        row[0].branch!==`refs/heads/${expected.branch}`)fail('initial-repository-adoption');const ref=String((await stashChecked(run,
+    if(row.length!==1)fail('initial-repository-adoption',
+      `expected one physical worktree match, found ${row.length} of ${rows.length}`);
+    if(row[0].head!==expected.baseOid)fail('initial-repository-adoption','worktree HEAD mismatch');
+    if(row[0].branch!==`refs/heads/${expected.branch}`)fail('initial-repository-adoption','worktree branch mismatch');
+    const ref=String((await stashChecked(run,
       ['show-ref','--verify','--hash',`refs/heads/${expected.branch}`],'initial-worktree-ref')).stdout).trim();
-    if(ref!==expected.baseOid)fail('initial-repository-adoption');capability=issueInitialWorktreeCapability({projectRoot:projectCapability.path,
+    if(ref!==expected.baseOid)fail('initial-repository-adoption','branch ref mismatch');capability=issueInitialWorktreeCapability({projectRoot:projectCapability.path,
       candidate,sessionId,branch:expected.branch,baseRef:expected.baseOid,allowMissingLeaf:false});revalidatePathCapability(capability,
       'initial-worktree-adoption');return{mode,worktreeCapability:capability,repositoryContext:{headOid:expected.baseOid,
       branch:expected.branch,dirty:false,repositoryMode:mode,worktreePurpose:'initial-session',worktreePath:capability.path}};};

@@ -439,6 +439,8 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
         '-RootPath'];
       const expectedRows = Array.isArray(args) && /^\d{1,6}$/.test(args[10] || '')
         ? Number(args[10]) : null;
+      const expectedInputBytes = Array.isArray(args) && /^\d{1,8}$/.test(args[12] || '')
+        ? Number(args[12]) : null;
       const inputBytes = typeof request.input === 'string'
         ? Buffer.from(request.input, 'base64') : null;
       let inputRows = 0;
@@ -456,13 +458,16 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
           specKeys !== 'args,executable' || envKeys !== 'PATH,PSModulePath,SystemRoot,TEMP,TMP,WINDIR' ||
           request.options.platform !== 'win32' || request.options.timeoutMs !== 20_000 ||
           request.options.maxOutputBytes !== 67_108_864 || helperDigest !==
-            '05c4c58ce69280a322e81af2875521897376f3039acfb664832697ec0083e059' ||
+            'c0fd02042548cc69dfd7d24848a85ffa1dabc2ee39e4827bfc16d873ea8c8e81' ||
           typeof request.spec.executable !== 'string' ||
           path.win32.normalize(request.spec.executable).toLowerCase() !==
-            path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 11 ||
+            path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 13 ||
           exactPrefix.some((value, index) => args[index] !== value) || args[8] !== request.options.cwd ||
           args[9] !== '-ExpectedRows' || !Number.isSafeInteger(expectedRows) || expectedRows < 1 ||
-          expectedRows > 100_001 || inputRows !== expectedRows || !inputBytes ||
+          expectedRows > 100_001 || args[11] !== '-ExpectedInputBytes' ||
+          !Number.isSafeInteger(expectedInputBytes) || expectedInputBytes < 1 ||
+          expectedInputBytes > 67_108_864 || inputRows !== expectedRows || !inputBytes ||
+          inputBytes.length !== expectedInputBytes ||
           inputBytes.length === 0 || inputBytes[inputBytes.length - 1] !== 0x0a ||
           typeof request.input !== 'string' ||
           !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(request.input) ||

@@ -3,11 +3,13 @@ param(
   [string]$RootPath,
   [Parameter(Mandatory = $true)]
   [ValidateRange(1, 100001)]
-  [int]$ExpectedRows
+  [int]$ExpectedRows,
+  [Parameter(Mandatory = $true)]
+  [ValidateRange(1, 67108864)]
+  [int]$ExpectedInputBytes
 )
 
 $ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false, $true)
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)
 
 # DEEP_WORK_PINVOKE_SOURCE_BEGIN
@@ -363,9 +365,19 @@ function Get-CompleteStreamSet([string]$LiteralPath) {
   return $array
 }
 
+$inputBuffer = [Byte[]]::new($ExpectedInputBytes)
+$inputStream = [Console]::OpenStandardInput()
+$inputOffset = 0
+while ($inputOffset -lt $ExpectedInputBytes) {
+  $inputRead = $inputStream.Read($inputBuffer, $inputOffset, $ExpectedInputBytes - $inputOffset)
+  if ($inputRead -eq 0) { throw 'input ended before expected byte count' }
+  $inputOffset += $inputRead
+}
+$inputText = [System.Text.UTF8Encoding]::new($false, $true).GetString($inputBuffer)
+$inputReader = [System.IO.StringReader]::new($inputText)
 $root = [System.IO.Path]::GetFullPath($RootPath)
 for ($expectedId = 0; $expectedId -lt $ExpectedRows; $expectedId++) {
-  $line = [Console]::In.ReadLine()
+  $line = $inputReader.ReadLine()
   if ($null -eq $line) { throw 'input ended before expected row count' }
   if ([System.Text.Encoding]::UTF8.GetByteCount($line) -gt 32768) { throw 'input row exceeds byte limit' }
   $row = $line | ConvertFrom-Json -ErrorAction Stop
@@ -391,3 +403,4 @@ for ($expectedId = 0; $expectedId -lt $ExpectedRows; $expectedId++) {
     streams = @($streams)
   } | ConvertTo-Json -Compress -Depth 5
 }
+if ($null -ne $inputReader.ReadLine()) { throw 'input contains rows after expected row count' }
