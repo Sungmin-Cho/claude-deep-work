@@ -1,20 +1,5 @@
 'use strict';
-const fs = require('node:fs');
-const path = require('node:path');
-const { loadTemplate } = require('../templates/template-loader.js');
-const { loadFitness, validateFitness, runFitnessCheck } = require('../health/fitness/fitness-validator.js');
-
-// ---------------------------------------------------------------------------
-// review-check Sensor
-//
-// Two-layer sensor that runs AFTER lint and typecheck in SENSOR_RUN pipeline.
-//
-// Always-on layer: loads topology template's guides.phase3 as advisory feedback.
-//   - Skips only when topology is generic AND no rules.yaml AND no fitness.json.
-//
-// Fitness layer: loads .deep-review/fitness.json and runs all fitness rules
-//   against the full project (v1: full-project scope, not changedFiles).
-// ---------------------------------------------------------------------------
+const sensorRuntime = require('../runtime/sensor-runtime.js');
 
 /**
  * Run review-check sensor against a project.
@@ -23,85 +8,11 @@ const { loadFitness, validateFitness, runFitnessCheck } = require('../health/fit
  * @param {object} [options]
  * @param {string} [options.topology] - Topology ID (e.g. 'nextjs-app', 'generic')
  * @param {string[]} [options.changedFiles] - Changed files (reserved for v2 scoping)
- * @returns {{
- *   status: 'completed'|'not_applicable'|'disabled',
- *   alwaysOn: object|null,
- *   fitness: object|null,
- *   violations: object[],
- *   hasRequired: boolean
- * }}
+ * @param {object} [refactorContext] - Optional contextual journal metadata
+ * @returns {object|Promise<object>}
  */
-function runReviewCheck(projectRoot, options = {}) {
-  const { topology } = options;
-  const violations = [];
-
-  // Config disable check
-  try {
-    const configPath = path.join(projectRoot, '.deep-work', 'config.json');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    if (config.review_check === false) {
-      return { status: 'disabled', alwaysOn: null, fitness: null, violations: [], hasRequired: false };
-    }
-  } catch { /* no config — proceed */ }
-
-  // Always-on layer
-  const template = loadTemplate(topology || 'generic');
-  const isGeneric = (topology || 'generic') === 'generic';
-  const hasGuides = template.guides?.phase3?.length > 0 && !isGeneric;
-
-  // Fitness layer
-  const fitnessData = loadFitness(projectRoot);
-
-  // All sources missing → not_applicable
-  if (!hasGuides && !fitnessData) {
-    return { status: 'not_applicable', alwaysOn: null, fitness: null, violations: [], hasRequired: false };
-  }
-
-  let alwaysOn = null;
-  if (hasGuides) {
-    alwaysOn = {
-      guides: template.guides.phase3,
-      topology: template.display_name || topology,
-    };
-  }
-
-  let fitness = null;
-  if (fitnessData) {
-    const validation = validateFitness(fitnessData);
-    if (validation.valid || validation.validRules.length > 0) {
-      // Build a map of ruleId → severity from the validated rules
-      const severityMap = new Map(
-        validation.validRules.map(rule => [rule.id, rule.severity || 'advisory'])
-      );
-
-      // v1: full-project fitness check (advisory). changedFiles scoping is v2.
-      const fitnessResult = runFitnessCheck(projectRoot, validation.validRules);
-      fitness = {
-        total: fitnessResult.total,
-        passed: fitnessResult.passed,
-        failed: fitnessResult.failed,
-        results: fitnessResult.results,
-      };
-      for (const r of fitnessResult.results) {
-        if (!r.passed && r.status !== 'not_applicable') {
-          violations.push({
-            source: 'fitness',
-            ruleId: r.ruleId,
-            severity: severityMap.get(r.ruleId) || 'advisory',
-            details: r.violations || [],
-          });
-        }
-      }
-    }
-  }
-
-  return {
-    status: 'completed',
-    alwaysOn,
-    fitness,
-    violations,
-    hasRequired: violations.some(v => v.severity === 'required'),
-  };
+function runReviewCheck(projectRoot, options = {}, refactorContext) {
+  return sensorRuntime.runReviewCheck(projectRoot, options, refactorContext);
 }
 
 /**

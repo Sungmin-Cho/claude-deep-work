@@ -2,7 +2,9 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { selectSensorsForFiles, formatFeedback, buildSensorResult } = require('./run-sensors.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const { selectSensorsForFiles, runSensor, formatFeedback, buildSensorResult } = require('./run-sensors.js');
 
 // ── selectSensorsForFiles ──────────────────────────────────────────────────────
 
@@ -167,4 +169,11 @@ test('buildSensorResult: lint=available → all_not_applicable=false', () => {
   const result = buildSensorResult(eco);
 
   assert.equal(result.all_not_applicable, false);
+});
+
+test('sensor adapter accepts structured specs only and has no shell executor', async () => {
+  await assert.rejects(() => runSensor('npm test', 'generic-line', 'lint', 'required', 1),
+    /sensor-process-spec/);
+  const source = fs.readFileSync(path.join(__dirname, 'run-sensors.js'), 'utf8');
+  assert.doesNotMatch(source, /execSync|execFileSync|shell:\s*true/);
 });

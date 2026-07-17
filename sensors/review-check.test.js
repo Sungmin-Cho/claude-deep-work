@@ -8,8 +8,25 @@ const os = require('node:os');
 
 const { runReviewCheck, formatReviewCheckFeedback } = require('./review-check.js');
 
+test('review-check remains a pure route with no process specification', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'review-check.js'), 'utf8');
+  assert.doesNotMatch(source, /spawn|execSync|processSpec/);
+});
+
+test('review-check delegates execution to the runtime owner', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'review-check.js'), 'utf8');
+  assert.match(source, /require\(['"]\.\.\/runtime\/sensor-runtime\.js['"]\)/);
+  assert.match(
+    source,
+    /return sensorRuntime\.runReviewCheck\(projectRoot, options, refactorContext\)/
+  );
+  assert.doesNotMatch(source, /readFileSync|loadTemplate|runFitnessCheck/);
+});
+
 function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-review-check-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-review-check-test-'));
+  fs.mkdirSync(path.join(dir, '.git'));
+  return dir;
 }
 
 function cleanupDir(dir) {

@@ -1,0 +1,127 @@
+'use strict';
+
+const fs=require('node:fs');const path=require('node:path');const crypto=require('node:crypto');
+const {atomicWriteFile,issueProjectStateCapability}=require('./platform.js');
+const {updateFrontmatterText}=require('./frontmatter.js');
+const transaction=require('./transaction-runtime.js');
+const {beginOperation,recordOperationStage,completeOperation,resumeOperation,canonicalJson,sha256}=require('./operation-journal.js');
+
+function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
+function clone(value){return structuredClone(value);}
+function validateGateResults(gateResults){if(!gateResults||gateResults.complete!==true||!Array.isArray(gateResults.failedSlices)||
+  gateResults.failedSlices.length||Buffer.byteLength(canonicalJson(gateResults))>1_048_576)fail('gate-results','complete passing gate results required');
+  return clone(gateResults);}
+
+function pureRecordTestPass({state,gateResults,at}){validateGateResults(gateResults);if(state.current_phase!=='test')fail('test-phase');
+  if(!Number.isFinite(Date.parse(at)))fail('test-time');return {...clone(state),test_passed:true,test_completed_at:at,
+    gate_results_sha256:sha256(canonicalJson(gateResults))};}
+function recordTestPass({state,stateCapability,gateResults,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,at});
+  validateGateResults(gateResults);return transaction.journaledStateMutation({stateCapability,kind:'test-pass',
+    preconditions:{at,gateResultsSha256:sha256(canonicalJson(gateResults))},seam,
+    reducer:(fields)=>{const next=pureRecordTestPass({state:fields,gateResults,at});return {test_passed:next.test_passed,
+      test_completed_at:next.test_completed_at,gate_results_sha256:next.gate_results_sha256};}});}
+
+function failureTransition({state,plan,receipts,failedSlices,exhausted}){
+  if(!Array.isArray(failedSlices)||!failedSlices.length||new Set(failedSlices).size!==failedSlices.length||
+      failedSlices.some((id)=>!/^SLICE-\d{3}$/.test(id)))fail('failed-slices');
+  if(state.current_phase!=='test')fail('test-phase');const max=state.max_test_retries??3;
+  if(exhausted?(state.test_retry_count<max):(state.test_retry_count>=max))fail('test-retry-boundary');
+  const nextState={...clone(state),current_phase:'implement',implement_completed_at:null};
+  if(!exhausted)nextState.test_retry_count=(state.test_retry_count||0)+1;
+  const nextPlan=clone(plan);const nextReceipts=clone(receipts);const ids=new Set(failedSlices);
+  for(const id of ids)if(!(nextPlan.slices||[]).some((slice)=>slice.id===id))fail('failed-slice-plan');
+  for(const slice of nextPlan.slices||[])if(ids.has(slice.id))slice.checked=false;
+  for(const id of ids){if(!nextReceipts[id])fail('failed-slice-receipt');nextReceipts[id].status='invalidated';}
+  return {state:nextState,plan:nextPlan,receipts:nextReceipts};
+}
+
+function receiptCapability(directory,id){return transaction.issueSessionFileCapability({sessionCapability:directory.sessionCapability,
+  candidate:path.join(directory.path,`${id}.json`),allowedBasenames:[`${id}.json`],role:'slice-receipt'});}
+async function journaledFailure({stateCapability,planCapability,plan,receiptsDirCapability,failedSlices,at,exhausted,seam}){
+  if(!Number.isFinite(Date.parse(at)))fail('test-time');if(!Array.isArray(failedSlices)||!failedSlices.length||
+      new Set(failedSlices).size!==failedSlices.length||failedSlices.some((id)=>!/^SLICE-\d{3}$/.test(id)))fail('failed-slices');
+  const ids=[...failedSlices].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));const sessionId=
+    transaction.sessionIdFromState(stateCapability);const projectCapability=transaction.projectCapabilityFor(stateCapability);const root=
+    stateCapability.projectRoot;const operationLock=issueProjectStateCapability(root,path.join(root,'.claude',
+      `deep-work.${sessionId}.rank-operation.lock`),{allowMissingLeaf:true,role:'lock'});const journalLock=issueProjectStateCapability(root,
+      path.join(root,'.claude',`deep-work.${sessionId}.rank-journal.lock`),{allowMissingLeaf:true,role:'lock'});const receiptCaps=
+    Object.fromEntries(ids.map((id)=>[id,receiptCapability(receiptsDirCapability,id)]));const targetPaths=[planCapability.path,
+      ...Object.values(receiptCaps).map((cap)=>cap.path)].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+  const targets=targetPaths.map((target)=>({rank:transaction.RANKS.target,capability:issueProjectStateCapability(root,
+    path.join(root,'.claude',`deep-work.target.${crypto.createHash('sha256').update(path.relative(root,target)).digest('hex')}.lock`),
+    {allowMissingLeaf:true,role:'lock'})})).sort((a,b)=>Buffer.compare(Buffer.from(a.capability.path),Buffer.from(b.capability.path)));
+  const kind=exhausted?'test-exhaust':'test-retry';return transaction.withRankedLocks([
+    {rank:transaction.RANKS.session,capability:operationLock},{rank:transaction.RANKS.journal,capability:journalLock},
+    {rank:transaction.RANKS.state,capability:transaction.stateLock(stateCapability)},...targets],async()=>{
+    const preconditions={at,failedSlices:ids,exhausted:Boolean(exhausted)};const operation=await beginOperation({projectCapability,
+      sessionId,kind,preconditions});let pending=await resumeOperation({projectCapability,operationId:operation.operationId,sessionId,kind});
+    const stateText=fs.readFileSync(stateCapability.path,'utf8');const planBytes=transaction.readSessionFile(planCapability);const receiptBytes=
+      Object.fromEntries(ids.map((id)=>[id,transaction.readSessionFile(receiptCaps[id])]));let prepared=pending.stages?.find(
+      (row)=>row.stage==='stores-prepared')?.details?.owned;if(!prepared){const currentState=transaction.readState(stateCapability);let currentPlan;
+      try{currentPlan=JSON.parse(planBytes);}catch{fail('test-plan-json');}if(plan&&canonicalJson(plan)!==canonicalJson(currentPlan))fail('test-plan-changed');
+      const currentReceipts={};for(const id of ids)try{currentReceipts[id]=JSON.parse(receiptBytes[id]);}catch{fail('test-receipt-json');}
+      const changed=failureTransition({state:currentState,plan:currentPlan,receipts:currentReceipts,failedSlices:ids,exhausted});
+      const nextPlanBytes=Buffer.from(canonicalJson(changed.plan));const nextReceiptBytes=Object.fromEntries(ids.map((id)=>
+        [id,Buffer.from(canonicalJson(changed.receipts[id]))]));const patch={current_phase:'implement',implement_completed_at:null,
+        ...(!exhausted?{test_retry_count:changed.state.test_retry_count}:{})};const nextStateText=updateFrontmatterText(stateText,patch);
+      prepared={statePath:stateCapability.path,stateBeforeSha256:sha256(stateText),stateAfterSha256:sha256(nextStateText),
+        stateAfterFieldsSha256:sha256(canonicalJson(parseState(nextStateText))),planPath:planCapability.path,
+        planBeforeSha256:sha256(planBytes),planAfterSha256:sha256(nextPlanBytes),receiptRows:ids.map((id)=>({id,path:receiptCaps[id].path,
+          beforeSha256:sha256(receiptBytes[id]),afterSha256:sha256(nextReceiptBytes[id])})),nextTestRetryCount:changed.state.test_retry_count??null};
+      await recordOperationStage(operation,'stores-prepared',{owned:prepared});}
+    if(prepared.statePath!==stateCapability.path||prepared.planPath!==planCapability.path||canonicalJson(prepared.receiptRows.map(
+        (row)=>({id:row.id,path:row.path})))!==canonicalJson(ids.map((id)=>({id,path:receiptCaps[id].path}))))fail('test-store-identity');
+    const classify=(digest,before,after)=>digest===before?'before':digest===after?'after':fail('test-store-diverged');const planState=
+      classify(sha256(planBytes),prepared.planBeforeSha256,prepared.planAfterSha256);const receiptStates=Object.fromEntries(ids.map((id)=>{const row=
+        prepared.receiptRows.find((item)=>item.id===id);return[id,classify(sha256(receiptBytes[id]),row.beforeSha256,row.afterSha256)];}));
+    const stateStore=classify(sha256(stateText),prepared.stateBeforeSha256,prepared.stateAfterSha256);if(planState==='before'){
+      let current;try{current=JSON.parse(planBytes);}catch{fail('test-plan-json');}for(const slice of current.slices||[])if(ids.includes(slice.id))
+        slice.checked=false;const next=Buffer.from(canonicalJson(current));if(sha256(next)!==prepared.planAfterSha256)fail('test-plan-replay');
+      seam?.('before-plan-write',{operationId:operation.operationId});transaction.atomicWriteSessionFile(planCapability,next);
+      seam?.('after-plan-write-before-stage',{operationId:operation.operationId});}
+    await recordOperationStage(operation,'plan-written',{owned:{path:planCapability.path,sha256:prepared.planAfterSha256}});
+    for(const id of ids)if(receiptStates[id]==='before'){let current;try{current=JSON.parse(receiptBytes[id]);}catch{fail('test-receipt-json');}
+      current.status='invalidated';const next=Buffer.from(canonicalJson(current));const row=prepared.receiptRows.find((item)=>item.id===id);
+      if(sha256(next)!==row.afterSha256)fail('test-receipt-replay');transaction.atomicWriteSessionFile(receiptCaps[id],next);}
+    seam?.('after-receipt-write-before-stage',{operationId:operation.operationId});await recordOperationStage(operation,'receipt-written',
+      {owned:{rows:prepared.receiptRows.map((row)=>({id:row.id,path:row.path,sha256:row.afterSha256}))}});
+    const finalPlan=JSON.parse(transaction.readSessionFile(planCapability));const finalReceipts={};
+    for(const id of ids)finalReceipts[id]=JSON.parse(transaction.readSessionFile(receiptCaps[id]));const receiptSha256=sha256(canonicalJson(finalReceipts));
+    if(stateStore==='before'){const patch={current_phase:'implement',implement_completed_at:null,
+        ...(!exhausted?{test_retry_count:prepared.nextTestRetryCount}:{})};const next=updateFrontmatterText(stateText,patch);
+      if(sha256(next)!==prepared.stateAfterSha256)fail('test-state-replay');atomicWriteFile(stateCapability,next);
+      seam?.('after-state-write-before-stage',{operationId:operation.operationId});}
+    await recordOperationStage(operation,'state-written',{owned:{path:stateCapability.path,sha256:prepared.stateAfterSha256}});
+    const finalState=transaction.readState(stateCapability);if(sha256(canonicalJson(finalState))!==prepared.stateAfterFieldsSha256)
+      fail('test-state-postcondition');
+    const result={status:'completed',failedSlices:ids,planSha256:prepared.planAfterSha256,receiptSha256,
+      stateSha256:prepared.stateAfterFieldsSha256};const operationReceipt=await completeOperation(operation,result);return{state:finalState,
+      plan:finalPlan,receipts:finalReceipts,operationId:operation.operationId,operationReceipt};
+  });}
+function parseState(text){return require('./frontmatter.js').parseFrontmatter(text).fields;}
+function recordTestRetry(args){return args.stateCapability?journaledFailure({...args,exhausted:false}):failureTransition({...args,exhausted:false});}
+function recordTestExhaustion(args){return args.stateCapability?journaledFailure({...args,exhausted:true}):failureTransition({...args,exhausted:true});}
+
+function pureBeginMutationRound({state,round,survived}){if(state.current_phase!=='test'||![1,2,3].includes(round)||!survived||
+  !Array.isArray(survived.mutants)||Buffer.byteLength(canonicalJson(survived))>1_048_576)fail('mutation-round');
+  return {...clone(state),current_phase:'implement',mutation_testing:{...(state.mutation_testing||{}),active_round:round,survived:clone(survived)}};}
+function beginMutationRound({state,stateCapability,round,survived,seam}={}){if(!stateCapability)return pureBeginMutationRound({state,round,survived});
+  return transaction.journaledStateMutation({stateCapability,kind:'mutation-round',preconditions:{action:'begin',round,
+    survivedSha256:sha256(canonicalJson(survived))},seam,reducer:(fields)=>{const next=pureBeginMutationRound({state:fields,round,survived});
+      return {current_phase:next.current_phase,mutation_testing:JSON.stringify(next.mutation_testing)};}});}
+function pureEndMutationRound({state,round,verification}){const mutation=typeof state.mutation_testing==='string'?JSON.parse(state.mutation_testing):state.mutation_testing;
+  if(mutation?.active_round!==round||verification?.accepted!==true)fail('mutation-round');const next=clone(state);
+  next.current_phase='test';next.mutation_testing={...mutation,active_round:null};return next;}
+function endMutationRound({state,stateCapability,round,verification,seam}={}){if(!stateCapability)return pureEndMutationRound({state,round,verification});
+  return transaction.journaledStateMutation({stateCapability,kind:'mutation-round',preconditions:{action:'end',round,
+    verificationSha256:sha256(canonicalJson(verification))},seam,reducer:(fields)=>{const next=pureEndMutationRound({state:fields,round,verification});
+      return {current_phase:next.current_phase,mutation_testing:JSON.stringify(next.mutation_testing)};}});}
+function pureRecordMutationResult({state,result}){if(!result||!['completed','not-applicable'].includes(result.status))fail('mutation-result');
+  return {...clone(state),mutation_testing:clone(result)};}
+function recordMutationResult({state,stateCapability,result,seam}={}){if(!stateCapability)return pureRecordMutationResult({state,result});
+  return transaction.journaledStateMutation({stateCapability,kind:'mutation-round',preconditions:{action:'record',
+    resultSha256:sha256(canonicalJson(result))},seam,reducer:(fields)=>({mutation_testing:JSON.stringify(
+      pureRecordMutationResult({state:fields,result}).mutation_testing)})});}
+
+module.exports={recordTestPass,recordTestRetry,recordTestExhaustion,beginMutationRound,endMutationRound,recordMutationResult,
+  failureTransition};

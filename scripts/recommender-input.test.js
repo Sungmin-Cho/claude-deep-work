@@ -1,7 +1,13 @@
 // scripts/recommender-input.test.js
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
 const { sanitizeInput, MAX_TASK_BYTES, MAX_COMMITS, MAX_DIRS } = require('./recommender-input.js');
+
+test('recommender input compatibility API delegates to recommender-runtime', () => {
+  assert.match(fs.readFileSync(require.resolve('./recommender-input.js'), 'utf8'),
+    /require\(['"]\.\.\/runtime\/recommender-runtime\.js['"]\)/);
+});
 
 test('task_description 2KB cap + [truncated] marker', () => {
   const longTask = 'x'.repeat(5000);

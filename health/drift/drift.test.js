@@ -230,6 +230,12 @@ describe('scanStaleConfig', () => {
 // dependency-vuln tests
 // ==========================================================================
 const { parseNpmAudit, scanDependencyVuln } = require('./dependency-vuln.js');
+
+it('dependency audit is a structured health-runtime adapter, never a command-string executor', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'dependency-vuln.js'), 'utf8');
+  assert.match(source, /runtime\/health-runtime\.js/);
+  assert.doesNotMatch(source, /child_process|execFileSync|\.split\(\/\\s\+\//);
+});
 const { analyzeCoverageTrend } = require('./coverage-trend.js');
 
 describe('parseNpmAudit', () => {

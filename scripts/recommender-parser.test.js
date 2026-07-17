@@ -1,7 +1,13 @@
 // scripts/recommender-parser.test.js
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
 const { parseRecommendation } = require('./recommender-parser.js');
+
+test('recommendation parser compatibility API delegates to recommender-runtime', () => {
+  assert.match(fs.readFileSync(require.resolve('./recommender-parser.js'), 'utf8'),
+    /require\(['"]\.\.\/runtime\/recommender-runtime\.js['"]\)/);
+});
 
 const okOutput = '```json\n' + JSON.stringify({
   team_mode: { value: 'solo', reason: 'small task' },

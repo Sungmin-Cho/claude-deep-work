@@ -11,6 +11,12 @@ const { checkDependency } = require('./rule-checkers/dependency-checker.js');
 const { validateFitness } = require('./fitness-validator.js');
 const { generateFitnessRules, formatFitnessJson, isJsTsProject } = require('./fitness-generator.js');
 
+it('dependency-cruiser uses the structured health runtime without npx or shell shims', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'rule-checkers', 'dependency-checker.js'), 'utf8');
+  assert.match(source, /runtime\/health-runtime\.js/);
+  assert.doesNotMatch(source, /child_process|execFileSync|['"]npx['"]|\.cmd|\.bat/);
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

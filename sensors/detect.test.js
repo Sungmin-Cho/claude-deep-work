@@ -32,6 +32,8 @@ test('loadRegistry: loads registry.json, returns object with ecosystems', () => 
   assert.ok('typescript' in registry.ecosystems, 'ecosystems should include typescript');
   assert.ok('python' in registry.ecosystems, 'ecosystems should include python');
   assert.ok('javascript' in registry.ecosystems, 'ecosystems should include javascript');
+  assert.equal(registry.$schema, 'sensor-registry-v2');
+  assert.doesNotMatch(JSON.stringify(registry), /"(?:cmd|command)"\s*:/);
 });
 
 // Test 2: matchEcosystem require AND — tsconfig.json + package.json → match typescript
@@ -168,11 +170,12 @@ test('detectEcosystems avoids slow npx probes for unavailable npm tools', () => 
   try {
     touch(dir, 'package.json');
     fs.writeFileSync(registryPath, JSON.stringify({
+      $schema: 'sensor-registry-v2',
       ecosystems: {
         javascript: {
           detect: { any_of: ['package.json'] },
           file_extensions: ['.js'],
-          lint: { cmd: 'npx eslint --format json .', parser: 'eslint' },
+          lint: { processSpec: { kind: 'node-package-bin', package: 'eslint', bin: 'eslint', args: ['--format', 'json', '.'] }, parser: 'eslint' },
         },
       },
     }));
@@ -192,4 +195,9 @@ test('detectEcosystems avoids slow npx probes for unavailable npm tools', () => 
     cleanupDir(dir);
     cleanupDir(binDir);
   }
+});
+
+test('detect adapter contains no shell command execution path', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'detect.js'), 'utf8');
+  assert.doesNotMatch(source, /execSync|execFileSync\(['"](?:which|where)/);
 });

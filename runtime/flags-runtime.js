@@ -1,0 +1,56 @@
+'use strict';
+
+function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
+const ENUMS=Object.freeze({tdd:new Set(['strict','relaxed','coaching','spike']),
+  team:new Set(['solo','team']),exec:new Set(['inline','delegate'])});
+const RECOMMENDER_ALLOWLIST=/^(haiku|sonnet|opus)$/;const EXEC_ALLOWLIST=/^(inline|delegate)$/;
+const PROFILE_NAME_ALLOWLIST=/^[a-z0-9][a-z0-9_-]{0,30}$/i;const TDD_ALLOWLIST=/^(strict|relaxed|coaching|spike)$/;
+const RESUME_FROM_ALLOWLIST=/^(brainstorm|research|plan|implement|test)$/;const SESSION_ALLOWLIST=/^[\w.-]+$/;
+const WORKTREE_PATH_BLOCKLIST=/[;|&`$(){}[\]<>!#*?\\]/;
+
+function parseDeepWorkFlags(argumentTokens){
+  if(!Array.isArray(argumentTokens)||argumentTokens.some((token)=>typeof token!=='string'))fail('argument-array');
+  const result={tdd:null,team:null,positionals:[],execution:null};const seen=new Set();
+  for(const token of argumentTokens){
+    if(token==='--')continue;
+    if(!token.startsWith('--')){result.positionals.push(token);continue;}
+    const match=token.match(/^--(tdd|team|exec)=(.+)$/);
+    if(!match)fail('unknown-flag',token);
+    const [,key,value]=match;if(seen.has(key))fail('duplicate-flag',key);seen.add(key);
+    if(!ENUMS[key].has(value))fail('flag-enum',`${key}=${value}`);
+    if(key==='exec')result.execution=value;else result[key]=value;
+  }
+  return result;
+}
+function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=='string'))fail('argument-array');
+  const flags={profile:null,recommender:null,no_ask:false,no_recommender:false,team:false,zero_base:false,
+    skip_research:false,skip_brainstorm:false,skip_review:false,no_branch:false,skip_to_implement:false,
+    skip_integrate:false,setup:false,tdd_mode:null,resume_from:null,exec_mode:null,session:null,worktree:null,
+    cross_model:false,no_cross_model:false,force_rerun:false,task:'',warnings:[]};const task=[];
+  const bools={'--no-ask':'no_ask','--no-recommender':'no_recommender','--setup':'setup','--team':'team',
+    '--zero-base':'zero_base','--skip-research':'skip_research','--skip-brainstorm':'skip_brainstorm',
+    '--skip-review':'skip_review','--no-branch':'no_branch','--skip-to-implement':'skip_to_implement',
+    '--skip-integrate':'skip_integrate','--cross-model':'cross_model','--no-cross-model':'no_cross_model',
+    '--force-rerun':'force_rerun'};
+  for(const arg of args){if(arg==='--')continue;if(Object.hasOwn(bools,arg)){flags[bools[arg]]=true;continue;}
+    if(arg.startsWith('--profile=')){const v=arg.slice(10);if(!v)flags.warnings.push('--profile= 빈 값 — 무시');
+      else if(PROFILE_NAME_ALLOWLIST.test(v))flags.profile=v;else flags.warnings.push(`'${v}' 잘못된 프리셋 이름 — 영문/숫자/-/_만 허용 (≤31자), 무시`);}
+    else if(arg.startsWith('--tdd=')){const v=arg.slice(6);if(!v)flags.warnings.push('--tdd= 빈 값 — 무시. 허용: strict|relaxed|coaching|spike');
+      else if(TDD_ALLOWLIST.test(v))flags.tdd_mode=v;else flags.warnings.push(`'${v}' 허용되지 않는 tdd 모드 — 무시. 허용: strict|relaxed|coaching|spike`);}
+    else if(arg.startsWith('--exec=')){const v=arg.slice(7);if(!v)flags.warnings.push('--exec=가 빈 값 — 무시. 허용: inline|delegate');
+      else if(EXEC_ALLOWLIST.test(v))flags.exec_mode=v;else flags.warnings.push(`'${v}'은(는) 허용되지 않는 exec 모드 — 무시. 허용: inline|delegate`);}
+    else if(arg.startsWith('--recommender=')){const v=arg.slice(14);if(RECOMMENDER_ALLOWLIST.test(v))flags.recommender=v;
+      else flags.warnings.push(`'${v}'은(는) 허용되지 않는 recommender 모델 — sonnet으로 fallback. 허용: haiku|sonnet|opus`);}
+    else if(arg.startsWith('--resume-from=')){const v=arg.slice(14);if(!v)flags.warnings.push('--resume-from= 빈 값 — 무시. 허용: brainstorm|research|plan|implement|test');
+      else if(RESUME_FROM_ALLOWLIST.test(v))flags.resume_from=v;else flags.warnings.push(`'${v}' 허용되지 않는 resume phase — 무시. 허용: brainstorm|research|plan|implement|test`);}
+    else if(arg.startsWith('--session=')){const v=arg.slice(10);if(!v)flags.warnings.push('--session= 빈 값 — 무시');
+      else if(SESSION_ALLOWLIST.test(v))flags.session=v;else flags.warnings.push(`'${v}' 잘못된 session ID — 영문/숫자/dash/dot만 허용, 무시`);}
+    else if(arg.startsWith('--worktree=')){const v=arg.slice(11);if(!v)flags.warnings.push('--worktree= 빈 값 — 무시');
+      else if(WORKTREE_PATH_BLOCKLIST.test(v))flags.warnings.push(`'${v}' 잘못된 worktree 경로 — shell 메타문자 포함 불가, 무시`);else flags.worktree=v;}
+    else task.push(arg);
+  }
+  flags.task=task.join(' ');if(flags.no_recommender&&flags.recommender){flags.warnings.push('--no-recommender 활성 — --recommender 인자는 무시됨');flags.recommender=null;}
+  if(flags.no_ask&&flags.recommender){flags.warnings.push('--no-ask 활성 — recommender는 호출되지 않음');flags.recommender=null;}
+  if(!flags.recommender&&!flags.no_ask&&!flags.no_recommender)flags.recommender='sonnet';return flags;}
+module.exports={parseDeepWorkFlags,parseFlags,RECOMMENDER_ALLOWLIST,EXEC_ALLOWLIST,PROFILE_NAME_ALLOWLIST,
+  TDD_ALLOWLIST,RESUME_FROM_ALLOWLIST,SESSION_ALLOWLIST,WORKTREE_PATH_BLOCKLIST};

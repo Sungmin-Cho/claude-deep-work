@@ -1,0 +1,8 @@
+{
+  "name": "codex-apply-patch-wrapper",
+  "raw": {"session_id":"codex-2","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: src/a.js\n*** Add File: src/b.js\n*** End Patch\n"}},
+  "env": {"PLUGIN_ROOT":"/home/codex/.codex/plugins/deep-work"},
+  "canonicalTool": "write",
+  "host": "codex",
+  "targets": ["src/a.js","src/b.js"]
+}
