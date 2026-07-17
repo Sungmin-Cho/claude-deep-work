@@ -7836,6 +7836,63 @@ test('native Windows PowerShell 5.1 returns the fixed no-stream directory result
   } finally { remove(root); }
 });
 
+test('native Windows full stream helper stage probe localizes lifecycle stalls', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, () => {
+  const root = makeRepo('dw-native-win-helper-stages-');
+  try {
+    const helper = path.join(__dirname, 'windows-stream-inventory.ps1');
+    let script = fs.readFileSync(helper, 'utf8');
+    const stage = (name) =>
+      `[Console]::Out.WriteLine('{"version":1,"probe":"helper-stages","stage":"${name}"}'); [Console]::Out.Flush()`;
+    for (const [anchor, name] of [
+      ["$ErrorActionPreference = 'Stop'", 'started'],
+      ['# DEEP_WORK_PINVOKE_SOURCE_END', 'constructed'],
+      ['$inputText = [System.Text.UTF8Encoding]::new($false, $true).GetString($inputBuffer)',
+        'input-read'],
+      ['$row = $line | ConvertFrom-Json -ErrorAction Stop', 'row-parsed'],
+      ['$streams = Get-CompleteStreamSet (Convert-ToExtendedPath $literal)', 'inventory-returned'],
+      ['} | ConvertTo-Json -Compress -Depth 5', 'row-written'],
+    ]) {
+      script = replaceWindowsStreamSourceOnce(script, anchor, `${anchor}\n${stage(name)}`);
+    }
+    const scriptPath = path.join(root, 'helper-stages.ps1');
+    fs.writeFileSync(scriptPath, script);
+    const inputBytes = Buffer.from(
+      `${JSON.stringify({version:1, id:0, kind:'root', relative_path:null})}\n`, 'utf8');
+    const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+    const temp = process.env.TEMP || process.env.TMP || os.tmpdir();
+    const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell',
+      'v1.0', 'powershell.exe');
+    const result = spawnSync(executable,
+      ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+        '-File',scriptPath,'-RootPath',root,'-ExpectedRows','1',
+        '-ExpectedInputBytes',String(inputBytes.length)], {
+        cwd:root,
+        env:{SystemRoot:systemRoot, WINDIR:systemRoot, TEMP:temp, TMP:temp, PATH:'', PSModulePath:''},
+        input:inputBytes,
+        encoding:'utf8',
+        shell:false,
+        windowsHide:true,
+        timeout:WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
+        maxBuffer:WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
+      });
+    const expectedStages = ['started','constructed','input-read','row-parsed',
+      'inventory-returned','row-written'];
+    const diagnostic = JSON.stringify(nativeWindowsProbeEvidence(
+      'helper-stages', result, WINDOWS_STREAM_INVENTORY_TIMEOUT_MS, expectedStages));
+    assert.equal(result.error === undefined, true, diagnostic);
+    assert.equal(result.status === 0, true, diagnostic);
+    assert.equal(result.signal === null, true, diagnostic);
+    assert.equal(result.stderr === '', true, diagnostic);
+    const observed = result.stdout.split(/\r?\n/u).flatMap((line) => {
+      try { const row = JSON.parse(line); return row.probe === 'helper-stages' ? [row.stage] : []; }
+      catch { return []; }
+    });
+    assert.deepEqual(observed, expectedStages, diagnostic);
+  } finally { remove(root); }
+});
+
 test('native Windows PowerShell 5.1 executes the fixed helper for exactly one root row', {
   skip:process.platform !== 'win32' ? 'native Windows only' : false,
 }, () => {

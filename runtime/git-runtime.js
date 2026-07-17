@@ -29,8 +29,16 @@ const WORKTREE_LIST_ARGS=Object.freeze(['worktree','list','--porcelain','-z']);
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
 
 function samePortablePath(left,right,{allowMissing=false}={}){
-  try{return normalizeForCompare(fs.realpathSync(left),process.platform)===
-    normalizeForCompare(fs.realpathSync(right),process.platform);}
+  const identity=(stat)=>({dev:String(stat.dev),ino:String(stat.ino),mode:stat.mode,
+    type:stat.isDirectory()?'directory':stat.isFile()?'file':stat.isSymbolicLink()?'link':'other'});
+  const equal=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.mode===b.mode&&a.type===b.type;
+  try{const leftBefore=fs.lstatSync(left);const rightBefore=fs.lstatSync(right);
+    if(leftBefore.isSymbolicLink()||rightBefore.isSymbolicLink())return false;
+    fs.realpathSync(left);fs.realpathSync(right);
+    const leftAfter=fs.lstatSync(left);const rightAfter=fs.lstatSync(right);
+    return !leftAfter.isSymbolicLink()&&!rightAfter.isSymbolicLink()&&
+      equal(identity(leftBefore),identity(leftAfter))&&equal(identity(rightBefore),identity(rightAfter))&&
+      equal(identity(leftAfter),identity(rightAfter));}
   catch{if(!allowMissing)return false;return normalizeForCompare(path.resolve(left),process.platform)===
     normalizeForCompare(path.resolve(right),process.platform);}}
 
