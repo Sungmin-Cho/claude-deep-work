@@ -251,6 +251,11 @@ async function runWindows(spec, options) {
     let outputBytes = 0;
     let toolStarted = false;
     let toolResultSeen = false;
+    let outputStreamsRemaining = 2;
+    let resolveOutputStreams;
+    const outputStreamsEnded = new Promise((resolveOutput) => {
+      resolveOutputStreams = resolveOutput;
+    });
     const knownPids = new Set();
     const startedAt = Date.now();
     const timer = options.timeoutMs > 0 ? setTimeout(() => void finish('timeout', null),
@@ -262,6 +267,17 @@ async function runWindows(spec, options) {
         systemRoot:options.env.SystemRoot || options.env.SYSTEMROOT,
         knownPids:[...knownPids],
       });
+    const awaitOutputStreams = () => new Promise((resolveOutput, rejectOutput) => {
+      const drainTimer = setTimeout(() => rejectOutput(typedError('process-output-drain-failed',
+        'Windows supervisor output streams did not close after termination')), TREE_EXIT_CONFIRM_MS);
+      outputStreamsEnded.then(() => {
+        clearTimeout(drainTimer);
+        resolveOutput();
+      }, (error) => {
+        clearTimeout(drainTimer);
+        rejectOutput(error);
+      });
+    });
 
     function append(which, chunk) {
       const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -282,6 +298,7 @@ async function runWindows(spec, options) {
       if (timer) clearTimeout(timer);
       try {
         await terminate();
+        await awaitOutputStreams();
         settled = true;
         const timedOut = reason === 'timeout';
         resolve({
@@ -307,6 +324,12 @@ async function runWindows(spec, options) {
 
     supervisor.stdout.on('data', (chunk) => append('stdout', chunk));
     supervisor.stderr.on('data', (chunk) => append('stderr', chunk));
+    const outputStreamEnded = () => {
+      outputStreamsRemaining -= 1;
+      if (outputStreamsRemaining === 0) resolveOutputStreams();
+    };
+    supervisor.stdout.once('end', outputStreamEnded);
+    supervisor.stderr.once('end', outputStreamEnded);
     supervisor.on('message', (message) => {
       if (message && message.type === 'tool-started' && Number.isSafeInteger(message.pid) &&
           message.pid > 0) {
@@ -414,6 +437,14 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
       const args = request.spec.args;
       const exactPrefix = ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',helper,
         '-RootPath'];
+      const expectedRows = Array.isArray(args) && /^\d{1,6}$/.test(args[10] || '')
+        ? Number(args[10]) : null;
+      const inputBytes = typeof request.input === 'string'
+        ? Buffer.from(request.input, 'base64') : null;
+      let inputRows = 0;
+      if (inputBytes) {
+        for (const byte of inputBytes) if (byte === 0x0a) inputRows += 1;
+      }
       const requestKeys = request && typeof request === 'object' ? Object.keys(request).sort().join(',') : '';
       const optionKeys = request.options && typeof request.options === 'object'
         ? Object.keys(request.options).sort().join(',') : '';
@@ -425,14 +456,17 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
           specKeys !== 'args,executable' || envKeys !== 'PATH,PSModulePath,SystemRoot,TEMP,TMP,WINDIR' ||
           request.options.platform !== 'win32' || request.options.timeoutMs !== 20_000 ||
           request.options.maxOutputBytes !== 67_108_864 || helperDigest !==
-            '6384aecde1dabed4804ed4bcdbb412e5914d9dadb4d5327e55ee616ecd035415' ||
+            '05c4c58ce69280a322e81af2875521897376f3039acfb664832697ec0083e059' ||
           typeof request.spec.executable !== 'string' ||
           path.win32.normalize(request.spec.executable).toLowerCase() !==
-            path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 9 ||
+            path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 11 ||
           exactPrefix.some((value, index) => args[index] !== value) || args[8] !== request.options.cwd ||
+          args[9] !== '-ExpectedRows' || !Number.isSafeInteger(expectedRows) || expectedRows < 1 ||
+          expectedRows > 100_001 || inputRows !== expectedRows || !inputBytes ||
+          inputBytes.length === 0 || inputBytes[inputBytes.length - 1] !== 0x0a ||
           typeof request.input !== 'string' ||
           !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(request.input) ||
-          Buffer.from(request.input, 'base64').length > 67_108_864) {
+          inputBytes.length > 67_108_864) {
         throw typedError('process-spec-invalid', 'invalid closed Windows stream inventory request');
       }
       const result = await runSupervisedProcess(request.spec, {

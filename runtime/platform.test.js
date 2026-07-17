@@ -4493,6 +4493,44 @@ test('directory lock publishes and releases an authenticated claim without owned
   } finally { remove(root); }
 });
 
+test('directory lock retries when a canonical claim disappears during authenticated read', () => {
+  const root = makeRepo('dw-lock-release-race-');
+  try {
+    const lockPath = path.join(root, '.claude', 'release-race.lock');
+    const owner = createPlatformRuntimeForTest({nonceFactory:() => '1'.repeat(32)});
+    const ownerLock = owner.issueProjectStateCapability(root, lockPath,
+      {role:'lock', allowMissingLeaf:true});
+    let released = false;
+    let contenderResult = null;
+    assert.throws(() => owner.withDirectoryLock(ownerLock,
+      {timeoutMs:1_000, staleMs:200, heartbeatMs:25, processIdentity:'2'.repeat(32)}, () => {
+        const contender = createPlatformRuntimeForTest({nonceFactory:() => '3'.repeat(32),
+          fsImpl:{opendirSync(value, options) {
+            if (!released && value === lockPath) {
+              released = true;
+              const releasePath = `${lockPath}.release-race`;
+              fs.renameSync(lockPath, releasePath);
+              fs.rmSync(releasePath, {recursive:true, force:false});
+              for (const name of fs.readdirSync(`${lockPath}.claims`)) {
+                if (name.endsWith('.ticket')) fs.unlinkSync(path.join(`${lockPath}.claims`, name));
+              }
+            }
+            return fs.opendirSync(value, options);
+          }} });
+        const contenderLock = contender.issueProjectStateCapability(root, lockPath,
+          {role:'lock', allowMissingLeaf:true});
+        contenderResult = contender.withDirectoryLock(contenderLock,
+          {timeoutMs:1_000, staleMs:200, heartbeatMs:25, processIdentity:'4'.repeat(32)},
+          () => 'contender');
+        return 'owner';
+      }), /lock-(chain-invalid|ownership-lost)/);
+    assert.equal(released, true);
+    assert.equal(contenderResult, 'contender');
+    assert.equal(fs.existsSync(lockPath), false);
+    assert.deepEqual(fs.readdirSync(`${lockPath}.claims`), []);
+  } finally { remove(root); }
+});
+
 test('Windows canonical claim publication retries bounded transient access failures', () => {
   for (const [index, code] of ['EPERM', 'EACCES'].entries()) {
     const root = makeRepo(`dw-lock-win-rename-${code.toLowerCase()}-`);
@@ -4860,7 +4898,8 @@ test('process supervision removes a grandchild after normal completion and timeo
   const root = makeRepo();
   try {
     const {project} = caps(root);
-    for (const [mode, timeoutMs] of [['normal', 2_000], ['timeout', 150]]) {
+    for (const [mode, timeoutMs] of [['normal', 2_000],
+      ['timeout', process.platform === 'win32' ? 1_000 : 150]]) {
       const marker = path.join(root, `.claude/${mode}.pid`);
       const result = await spawnPortable({kind:'native-executable', executable:process.execPath,
         args:[path.join(fixtureRoot, 'process-tree-parent.js'), mode, marker]},
@@ -7772,7 +7811,7 @@ test('native Windows PowerShell 5.1 executes the fixed helper for exactly one ro
     };
     const result = spawnSync(executable,
       ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-        '-File',helper,'-RootPath',root], {
+        '-File',helper,'-RootPath',root,'-ExpectedRows','1'], {
         cwd:root,
         env:closedEnv,
         input:Buffer.from(input, 'utf8'),

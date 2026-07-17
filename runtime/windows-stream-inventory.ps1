@@ -1,6 +1,9 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$RootPath
+  [string]$RootPath,
+  [Parameter(Mandatory = $true)]
+  [ValidateRange(1, 100001)]
+  [int]$ExpectedRows
 )
 
 $ErrorActionPreference = 'Stop'
@@ -361,8 +364,9 @@ function Get-CompleteStreamSet([string]$LiteralPath) {
 }
 
 $root = [System.IO.Path]::GetFullPath($RootPath)
-$expectedId = 0
-while (($line = [Console]::In.ReadLine()) -ne $null) {
+for ($expectedId = 0; $expectedId -lt $ExpectedRows; $expectedId++) {
+  $line = [Console]::In.ReadLine()
+  if ($null -eq $line) { throw 'input ended before expected row count' }
   if ([System.Text.Encoding]::UTF8.GetByteCount($line) -gt 32768) { throw 'input row exceeds byte limit' }
   $row = $line | ConvertFrom-Json -ErrorAction Stop
   $properties = @($row.PSObject.Properties.Name | Sort-Object)
@@ -386,5 +390,4 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
     kind = [string]$row.kind
     streams = @($streams)
   } | ConvertTo-Json -Compress -Depth 5
-  $expectedId++
 }

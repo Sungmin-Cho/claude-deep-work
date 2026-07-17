@@ -114,6 +114,21 @@ test('native Windows supervisor delivers exact non-null stdin and EOF before too
   assert.deepEqual(observed, {bytes:expectedBytes, sha256:expectedSha256}, diagnostic);
 });
 
+test('native Windows supervisor drains trailing stdout before returning the tool result', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, async () => {
+  const outputBytes = 1_048_576;
+  const result = await runSupervisedProcess({executable:process.execPath,
+    args:['-e', `process.stdout.write('x'.repeat(${outputBytes}))`]}, {
+    platform:'win32', cwd:process.cwd(), env:{...process.env},
+    timeoutMs:20_000, maxOutputBytes:outputBytes + 1,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.stdout.length, outputBytes);
+  assert.equal(result.stdout, 'x'.repeat(outputBytes));
+  assert.equal(result.stderr, '');
+});
+
 test('Windows supervisor timeout preserves started, tool-result, and termination stages', async () => {
   const result = await runSupervisedProcess({executable:process.execPath,
     args:['-e', 'setInterval(() => {}, 1000)']}, {

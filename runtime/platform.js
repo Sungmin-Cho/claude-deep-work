@@ -1595,7 +1595,7 @@ function compareRemoveOwnedTemp(capability, expectedDigest) {
   return true;
 }
 
-const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '6384aecde1dabed4804ed4bcdbb412e5914d9dadb4d5327e55ee616ecd035415';
+const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '05c4c58ce69280a322e81af2875521897376f3039acfb664832697ec0083e059';
 const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = 'feab51e7d72e75438490593f2dc09d860a745f9b6b1a499663c20cdd9c5d372a';
 
 function resolveGitExecutable(environment = process.env, fsApi = fs) {
@@ -1931,7 +1931,7 @@ function runWindowsStreamInventory(projectCapability, typedRows, fsApi, environm
   };
   const request = JSON.stringify({
     spec:{executable, args:['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
-      '-File',helper,'-RootPath',projectCapability.path]},
+      '-File',helper,'-RootPath',projectCapability.path,'-ExpectedRows',String(typedRows.length)]},
     options:{platform:'win32', env:fixedEnv, timeoutMs:WINDOWS_STREAM_INVENTORY_TIMEOUT_MS,
       maxOutputBytes:WINDOWS_STREAM_INVENTORY_MAX_OUTPUT_BYTES,
       cwd:projectCapability.path},
@@ -2773,11 +2773,24 @@ function scanTicketOnlyClaims(lockCapability, claimsDir, claimsIdentity, runtime
 function tryRecoverCanonicalLock(lockCapability, claimsDir, claimsIdentity, options, runtime) {
   validateClaimsDirectory(claimsDir, claimsIdentity, runtime.fsApi);
   const targetIdentity = lockTargetIdentity(lockCapability);
+  const canonicalMissing = () => {
+    try { runtime.fsApi.lstatSync(lockCapability.path); return false; }
+    catch (error) {
+      if (error.code === 'ENOENT') return true;
+      throw error;
+    }
+  };
   let first;
   try { first = readCanonicalClaim(lockCapability.path, claimsDir, targetIdentity, runtime.fsApi); }
   catch (error) {
-    if (error.code === 'ENOENT') return false;
-    fail('lock-ambiguous', 'canonical lock metadata is missing or invalid', {cause:error});
+    if (error.code === 'ENOENT' || canonicalMissing()) return false;
+    try {
+      readCanonicalClaim(lockCapability.path, claimsDir, targetIdentity, runtime.fsApi);
+    } catch (retryError) {
+      if (retryError.code === 'ENOENT' || canonicalMissing()) return false;
+      fail('lock-ambiguous', 'canonical lock metadata is missing or invalid', {cause:retryError});
+    }
+    return false;
   }
   if (runtime.clock() - first.heartbeat.heartbeatAt <= options.staleMs ||
       !livenessDead(runtime, first.core)) return false;
