@@ -380,8 +380,9 @@ for ($expectedId = 0; $expectedId -lt $ExpectedRows; $expectedId++) {
   $line = $inputReader.ReadLine()
   if ($null -eq $line) { throw 'input ended before expected row count' }
   if ([System.Text.Encoding]::UTF8.GetByteCount($line) -gt 32768) { throw 'input row exceeds byte limit' }
-  $row = $line | ConvertFrom-Json -ErrorAction Stop
-  $properties = @($row.PSObject.Properties.Name | Sort-Object)
+  $row = Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject $line -ErrorAction Stop
+  $properties = [String[]]@($row.PSObject.Properties.Name)
+  [Array]::Sort($properties, [StringComparer]::Ordinal)
   if (($properties -join ',') -ne 'id,kind,relative_path,version') { throw 'input row has unknown or missing fields' }
   if ($row.version -ne 1 -or $row.id -ne $expectedId) { throw 'input row version or sequence is invalid' }
   if ($row.kind -notin @('root', 'directory', 'file')) { throw 'input row kind is invalid' }
@@ -396,11 +397,13 @@ for ($expectedId = 0; $expectedId -lt $ExpectedRows; $expectedId++) {
     $literal = [System.IO.Path]::Combine($root, $row.relative_path.Replace('/', '\'))
   }
   $streams = Get-CompleteStreamSet (Convert-ToExtendedPath $literal)
-  [ordered]@{
+  $outputRow = [ordered]@{
     version = 1
     id = [int]$row.id
     kind = [string]$row.kind
     streams = @($streams)
-  } | ConvertTo-Json -Compress -Depth 5
+  }
+  $json = Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $outputRow -Compress -Depth 5
+  [Console]::Out.WriteLine($json)
 }
 if ($null -ne $inputReader.ReadLine()) { throw 'input contains rows after expected row count' }

@@ -7850,9 +7850,10 @@ test('native Windows full stream helper stage probe localizes lifecycle stalls',
       ['# DEEP_WORK_PINVOKE_SOURCE_END', 'constructed'],
       ['$inputText = [System.Text.UTF8Encoding]::new($false, $true).GetString($inputBuffer)',
         'input-read'],
-      ['$row = $line | ConvertFrom-Json -ErrorAction Stop', 'row-parsed'],
+      ['$row = Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject $line -ErrorAction Stop',
+        'row-parsed'],
       ['$streams = Get-CompleteStreamSet (Convert-ToExtendedPath $literal)', 'inventory-returned'],
-      ['} | ConvertTo-Json -Compress -Depth 5', 'row-written'],
+      ['[Console]::Out.WriteLine($json)', 'row-written'],
     ]) {
       script = replaceWindowsStreamSourceOnce(script, anchor, `${anchor}\n${stage(name)}`);
     }
@@ -7994,6 +7995,11 @@ test('Git attributes preserve exact raw Windows stream helper authority on check
   assert.match(source, /\[Console\]::OpenStandardInput\(\)/u);
   assert.match(source, /\$inputStream\.Read\(\$inputBuffer, \$inputOffset, \$ExpectedInputBytes - \$inputOffset\)/u);
   assert.doesNotMatch(source, /\[Console\]::In(?:\.|\b)/u);
+  assert.match(source,
+    /Microsoft\.PowerShell\.Utility\\ConvertFrom-Json -InputObject \$line/u);
+  assert.match(source,
+    /Microsoft\.PowerShell\.Utility\\ConvertTo-Json -InputObject \$outputRow/u);
+  assert.doesNotMatch(source, /\|\s*(?:ConvertFrom-Json|ConvertTo-Json)\b/u);
   const begin = source.indexOf('# DEEP_WORK_PINVOKE_SOURCE_BEGIN');
   const end = source.indexOf('# DEEP_WORK_PINVOKE_SOURCE_END');
   const lineStart = source.indexOf('\n', begin) + 1;
