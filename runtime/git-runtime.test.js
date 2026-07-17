@@ -7,7 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { gitCapability, parseWorktreePorcelain, listWorktrees, prepareInitialRepository,
-  publishPullRequestWithinOperation,stashPublish,stashApply,stashDrop,delegatedRollback } = require('./git-runtime.js');
+  publishPullRequestWithinOperation,stashPublish,stashApply,stashDrop,delegatedRollback,
+  samePortablePath,isRuntimePath } = require('./git-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const {beginOperation}=require('./operation-journal.js');
 
@@ -54,6 +55,45 @@ test('worktree porcelain -z parser preserves path bytes without CRLF trimming', 
   assert.throws(() => parseWorktreePorcelain(
     `worktree ${rawPath}\0branch refs/heads/topic\0branch refs/heads/other\0\0`),
   /git-worktree-porcelain/);
+});
+
+function portableDirectoryStat({dev=1n,ino=1n,mode=16877n,symlink=false}={}){return{dev,ino,mode,
+  isDirectory:()=>!symlink,isFile:()=>false,isSymbolicLink:()=>symlink};}
+function portablePathFs({left=portableDirectoryStat(),right=portableDirectoryStat(),error,realpaths={left:'C:\\LONGNA~1',
+  right:'C:\\Long Name'}}={}){let lstatCalls=0;return{lstatSync(){if(error)throw error;lstatCalls+=1;
+      return lstatCalls%2===1?left:right;},realpathSync(value){return value==='left'?realpaths.left:realpaths.right;}};}
+
+test('portable path identity fails closed for zero identifiers, permission errors, and symlinks',()=>{
+  assert.equal(samePortablePath('left','right',{platform:'win32',fsApi:portablePathFs({
+    left:portableDirectoryStat({dev:0n,ino:0n}),right:portableDirectoryStat({dev:0n,ino:0n})})}),false);
+  const denied=Object.assign(new Error('denied'),{code:'EACCES'});
+  assert.equal(samePortablePath('C:\\Repo','c:\\repo',{allowMissing:true,platform:'win32',
+    fsApi:portablePathFs({error:denied})}),false);
+  assert.equal(samePortablePath('left','right',{platform:'win32',fsApi:portablePathFs({
+    left:portableDirectoryStat({symlink:true}),right:portableDirectoryStat()})}),false);
+});
+
+test('portable path identity accepts a stable short-name alias and rejects distinct identities',()=>{
+  assert.equal(samePortablePath('left','right',{platform:'win32',fsApi:portablePathFs()}),true);
+  assert.equal(samePortablePath('left','right',{platform:'win32',fsApi:portablePathFs({
+    left:portableDirectoryStat({ino:7n}),right:portableDirectoryStat({ino:8n})})}),false);
+});
+
+test('portable path lexical fallback is restricted to missing paths',()=>{
+  const missing=Object.assign(new Error('missing'),{code:'ENOENT'});const fsApi=portablePathFs({error:missing});
+  assert.equal(samePortablePath('C:\\Repo\\Worktree','c:/repo/worktree',{allowMissing:true,platform:'win32',fsApi}),true);
+  assert.equal(samePortablePath('C:\\Repo\\Worktree','c:/repo/other',{allowMissing:true,platform:'win32',fsApi}),false);
+  assert.equal(samePortablePath('C:\\Repo\\Worktree','c:/repo/worktree',{platform:'win32',fsApi}),false);
+});
+
+test('stash runtime classification admits only the emitted heartbeat staging grammar',()=>{
+  const nonce='a'.repeat(32);
+  assert.equal(isRuntimePath(`.claude/.deep-work.git.lock.heartbeat.json.tmp.2232.${nonce}`),true);
+  assert.equal(isRuntimePath(`.claude/.deep-work-sessions.json.lock.heartbeat.json.tmp.9.${nonce}`),true);
+  assert.equal(isRuntimePath('.claude/.deep-work-notes.md'),false);
+  assert.equal(isRuntimePath(`.claude/.deep-work.git.lock.heartbeat.json.tmp.0.${nonce}`),false);
+  assert.equal(isRuntimePath('.claude/.deep-work.git.lock.heartbeat.json.tmp.2232.not-a-nonce'),false);
+  assert.equal(isRuntimePath(`.claude/.deep-work.git.lock.heartbeat.json.tmp.2232.${nonce}.foreign`),false);
 });
 
 test('current-branch startup is zero mutation and authenticated', async () => {

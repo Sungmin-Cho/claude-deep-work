@@ -28,19 +28,25 @@ const WORKTREE_LIST_ARGS=Object.freeze(['worktree','list','--porcelain','-z']);
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
 
-function samePortablePath(left,right,{allowMissing=false}={}){
-  const identity=(stat)=>({dev:String(stat.dev),ino:String(stat.ino),mode:stat.mode,
-    type:stat.isDirectory()?'directory':stat.isFile()?'file':stat.isSymbolicLink()?'link':'other'});
-  const equal=(a,b)=>a.dev===b.dev&&a.ino===b.ino&&a.mode===b.mode&&a.type===b.type;
-  try{const leftBefore=fs.lstatSync(left);const rightBefore=fs.lstatSync(right);
-    if(leftBefore.isSymbolicLink()||rightBefore.isSymbolicLink())return false;
-    fs.realpathSync(left);fs.realpathSync(right);
-    const leftAfter=fs.lstatSync(left);const rightAfter=fs.lstatSync(right);
-    return !leftAfter.isSymbolicLink()&&!rightAfter.isSymbolicLink()&&
-      equal(identity(leftBefore),identity(leftAfter))&&equal(identity(rightBefore),identity(rightAfter))&&
-      equal(identity(leftAfter),identity(rightAfter));}
-  catch{if(!allowMissing)return false;return normalizeForCompare(path.resolve(left),process.platform)===
-    normalizeForCompare(path.resolve(right),process.platform);}}
+function samePortablePath(left,right,{allowMissing=false,fsApi=fs,platform=process.platform}={}){
+  const identity=(stat)=>{const dev=stat?.dev;const ino=stat?.ino;const mode=stat?.mode;
+    const positive=(value)=>typeof value==='bigint'?value>0n:Number.isSafeInteger(value)&&value>0;
+    if(stat?.isSymbolicLink?.()||!stat?.isDirectory?.()||
+        !['bigint','number'].includes(typeof dev)||!['bigint','number'].includes(typeof ino)||
+        !['bigint','number'].includes(typeof mode)||!positive(dev)||!positive(ino))return null;
+    return{dev:String(dev),ino:String(ino),mode:String(mode),type:'directory'};};
+  const equal=(a,b)=>Boolean(a&&b&&a.dev===b.dev&&a.ino===b.ino&&a.mode===b.mode&&a.type===b.type);
+  try{const leftBefore=fsApi.lstatSync(left,{bigint:true});const rightBefore=fsApi.lstatSync(right,{bigint:true});
+    const leftBeforeIdentity=identity(leftBefore);const rightBeforeIdentity=identity(rightBefore);
+    if(!leftBeforeIdentity||!rightBeforeIdentity)return false;
+    const leftReal=fsApi.realpathSync(left);const rightReal=fsApi.realpathSync(right);
+    if(typeof leftReal!=='string'||typeof rightReal!=='string'||!leftReal||!rightReal)return false;
+    const leftAfter=fsApi.lstatSync(left,{bigint:true});const rightAfter=fsApi.lstatSync(right,{bigint:true});
+    const leftAfterIdentity=identity(leftAfter);const rightAfterIdentity=identity(rightAfter);
+    return equal(leftBeforeIdentity,leftAfterIdentity)&&equal(rightBeforeIdentity,rightAfterIdentity)&&
+      equal(leftAfterIdentity,rightAfterIdentity);
+  }catch(error){if(!allowMissing||error?.code!=='ENOENT')return false;const pathApi=platform==='win32'?path.win32:path;
+    return normalizeForCompare(pathApi.resolve(left),platform)===normalizeForCompare(pathApi.resolve(right),platform);}}
 
 function resolveGit(){
   const search=(process.env.PATH||'').split(path.delimiter);
@@ -593,10 +599,14 @@ const STASH_PUSH_MAX_RECOVERY_ATTEMPTS=2;
 function stashDigest(value){return crypto.createHash('sha256').update(Buffer.isBuffer(value)?value:canonicalJson(value)).digest('hex');}
 function gitBlobOid(bytes,oidLength){const algorithm=oidLength===64?'sha256':'sha1';return crypto.createHash(algorithm)
   .update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex');}
-function isRuntimePath(relative){return relative==='.claude/deep-work-sessions.json'||
+function isDirectRuntimePath(relative){return relative==='.claude/deep-work-sessions.json'||
   relative==='.claude/deep-work-current-session'||relative.startsWith('.claude/deep-work.')||
-  relative.startsWith('.claude/.deep-work')||
+  relative==='.claude/deep-work-sessions.json.lock'||relative.startsWith('.claude/deep-work-sessions.json.lock/')||
+  relative.startsWith('.claude/deep-work-sessions.json.lock.')||
   relative==='.deep-work'||relative.startsWith('.deep-work/');}
+function isRuntimePath(relative){if(isDirectRuntimePath(relative))return true;
+  const staging=relative.match(/^\.claude\/\.([^/]+\.lock)\.heartbeat\.json\.tmp\.([1-9][0-9]*)\.([0-9a-f]{32})$/);
+  return Boolean(staging&&isDirectRuntimePath(`.claude/${staging[1]}`));}
 async function stashChecked(run,args,code='stash-git'){const result=await run(args);if(!result?.ok)fail(code,result?.stderr);return result;}
 function stashOwnedRunner(projectCapability,gitRunner){const native=gitRunner||((args,options)=>
   gitCapability(projectCapability).run(args,options));return(args)=>native(args,{lineEndingConversion:'disabled'});}
@@ -871,4 +881,4 @@ module.exports={NODE_AUTHORITY,gitCapability,parseWorktreePorcelain,listWorktree
   inspectInitialRepository,inspectForkRepository,createFork,scanCleanupCandidates,removeWorktree,deleteBranchExact,
   finishDiscardWithinOperation,finishMergeWithinOperation,repositoryContext,currentRepositoryContext,
   delegatedRollback,stashPublish,stashPublishUnderHeldLocks,stashApply,stashDrop,resolveForkWorktreeCapability,parseGitHubRemote,
-  publishPullRequestWithinOperation};
+  publishPullRequestWithinOperation,samePortablePath,isRuntimePath};
