@@ -455,7 +455,17 @@ function windowsStreamProbeScripts() {
       "if ($handle -eq $invalidHandle) { throw 'FindFirstStreamW returned an invalid handle' }",
       "if ($data.cStreamName -cne '::$DATA') { throw 'FindFirstStreamW returned an unexpected stream name' }",
       "if ([Int64]$data.StreamSize -ne [Int64]13) { throw 'FindFirstStreamW returned an unexpected stream size' }",
-      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"completed","method":"FindFirstStreamW","invalid_handle":false,"stream_name":"::$DATA","stream_size":13}')`,
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"first-returned","method":"FindFirstStreamW","invalid_handle":false,"stream_name":"::$DATA","stream_size":13}')`,
+      '$next = [Activator]::CreateInstance($streamDataType)',
+      '$nextArguments = [Object[]]@($handle, $next)',
+      '$hasNext = [Boolean]$findNextStream.Invoke($null, $nextArguments)',
+      "if ($hasNext) { throw 'FindNextStreamW returned an unexpected stream' }",
+      '$nextError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()',
+      "if ($nextError -ne 38) { throw 'FindNextStreamW returned an unexpected error' }",
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"next-returned","method":"FindNextStreamW","has_next":false,"win32_error":38}')`,
+      '$closed = [Boolean]$findClose.Invoke($null, [Object[]]@($handle))',
+      "if (-not $closed) { throw 'FindClose failed' }",
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"completed","method":"FindClose","closed":true}')`,
       '',
     ].join('\n');
   return {construct, invokeOnce, parameterBlock, pinvokeSource};
@@ -463,14 +473,16 @@ function windowsStreamProbeScripts() {
 
 function assertPinnedWindowsStreamProbeScript(script, {
   firstInvocationCount,
+  nextInvocationCount = 0,
+  closeInvocationCount = 0,
   literalPathParameter,
 }) {
   const bytes = Buffer.from(script, 'utf8');
   assert.equal(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), false);
   assert.equal(script.includes('\r'), false);
   assert.equal(countLiteral(script, '$findFirstStream.Invoke('), firstInvocationCount);
-  assert.equal(countLiteral(script, '$findNextStream.Invoke('), 0);
-  assert.equal(countLiteral(script, '$findClose.Invoke('), 0);
+  assert.equal(countLiteral(script, '$findNextStream.Invoke('), nextInvocationCount);
+  assert.equal(countLiteral(script, '$findClose.Invoke('), closeInvocationCount);
   const forbiddenPatterns = [
     /\bAdd-Type\b/gi,
     /\bGet-Item\b/gi,
@@ -7699,7 +7711,7 @@ test('native Windows PowerShell 5.1 constructs the pinned stream types without a
   } finally { remove(root); }
 });
 
-test('native Windows PowerShell 5.1 performs one fixed FindFirstStreamW call after pinned construction', {
+test('native Windows PowerShell 5.1 completes one fixed stream API lifecycle after pinned construction', {
   skip:process.platform !== 'win32' ? 'native Windows only' : false,
 }, () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-pinvoke-once-'));
@@ -7707,6 +7719,8 @@ test('native Windows PowerShell 5.1 performs one fixed FindFirstStreamW call aft
     const {invokeOnce, parameterBlock} = windowsStreamProbeScripts();
     assertPinnedWindowsStreamProbeScript(invokeOnce, {
       firstInvocationCount:1,
+      nextInvocationCount:1,
+      closeInvocationCount:1,
       literalPathParameter:parameterBlock,
     });
     const target = path.join(root, 'target.txt');
@@ -7723,12 +7737,15 @@ test('native Windows PowerShell 5.1 performs one fixed FindFirstStreamW call aft
       root,
       script:invokeOnce,
       literalPath,
-      expectedStageNames:['started','constructed','completed'],
+      expectedStageNames:['started','constructed','first-returned','next-returned','completed'],
       expectedRecords:[
         {version:1, probe:'invoke-once', stage:'started'},
         {version:1, probe:'invoke-once', stage:'constructed'},
-        {version:1, probe:'invoke-once', stage:'completed', method:'FindFirstStreamW',
+        {version:1, probe:'invoke-once', stage:'first-returned', method:'FindFirstStreamW',
           invalid_handle:false, stream_name:'::$DATA', stream_size:13},
+        {version:1, probe:'invoke-once', stage:'next-returned', method:'FindNextStreamW',
+          has_next:false, win32_error:38},
+        {version:1, probe:'invoke-once', stage:'completed', method:'FindClose', closed:true},
       ],
     });
   } finally { remove(root); }
