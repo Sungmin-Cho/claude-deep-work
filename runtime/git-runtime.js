@@ -11,6 +11,7 @@ const {
   issueForkWorktreeCapability,
   spawnPortable,
   canonicalizePortableProjectPathV1,
+  normalizeForCompare,
   parseGitWorktreePorcelainZ,
   WORKTREE_MANIFEST_MAX_ENTRIES,
   WORKTREE_MANIFEST_MAX_RELATIVE_PATH_BYTES,
@@ -26,6 +27,12 @@ const NODE_AUTHORITY=Object.freeze({runtime:'node',shell:false,authority:'git-ru
 const WORKTREE_LIST_ARGS=Object.freeze(['worktree','list','--porcelain','-z']);
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
+
+function samePortablePath(left,right,{allowMissing=false}={}){
+  try{return normalizeForCompare(fs.realpathSync(left),process.platform)===
+    normalizeForCompare(fs.realpathSync(right),process.platform);}
+  catch{if(!allowMissing)return false;return normalizeForCompare(path.resolve(left),process.platform)===
+    normalizeForCompare(path.resolve(right),process.platform);}}
 
 function resolveGit(){
   const search=(process.env.PATH||'').split(path.delimiter);
@@ -157,7 +164,7 @@ async function prepareInitialRepository({projectCapability,sessionId,mode,baseRe
       if(after.branch!==expected.branch||after.headOid!==expected.baseOid||after.dirty)fail('initial-repository-adoption');
       return{mode,repositoryContext:{...after,repositoryMode:mode,worktreePurpose:'initial-session',worktreePath:projectCapability.path}};}
     const rows=parseWorktreePorcelain(String((await stashChecked(run,WORKTREE_LIST_ARGS,'initial-worktree-query')).stdout));
-    const physicalCandidate=fs.realpathSync(candidate);const row=rows.filter((item)=>{try{return fs.realpathSync(item.path)===physicalCandidate;}catch{return false;}});
+    const row=rows.filter((item)=>samePortablePath(item.path,candidate));
     if(row.length!==1)fail('initial-repository-adoption',
       `expected one physical worktree match, found ${row.length} of ${rows.length}`);
     if(row[0].head!==expected.baseOid)fail('initial-repository-adoption','worktree HEAD mismatch');
@@ -202,8 +209,7 @@ async function inspectForkRepository({projectCapability,parentSessionId,childSes
   const rows=parseWorktreePorcelain(String((await stashChecked(run,WORKTREE_LIST_ARGS,'fork-worktree-query')).stdout));
   const ref=await run(['show-ref','--verify','--hash',`refs/heads/${branch}`]);return{parentSessionId,childSessionId,parentBranch,
     branch,baseOid,candidate,parentStateSha256:stashDigest(parentBytes),candidateExists:fs.existsSync(candidate),
-    branchOid:ref?.ok?String(ref.stdout).trim():null,registered:rows.some((row)=>{try{return fs.realpathSync(row.path)===
-      (fs.existsSync(candidate)?fs.realpathSync(candidate):candidate);}catch{return false;}})};}
+    branchOid:ref?.ok?String(ref.stdout).trim():null,registered:rows.some((row)=>samePortablePath(row.path,candidate))};}
 async function createFork({projectCapability,parentSessionId,childSessionId,parentStateCapability,operation,inspection,gitRunner,seam}={}){
   const expected=inspection||await inspectForkRepository({projectCapability,parentSessionId,childSessionId,parentStateCapability,gitRunner});
   if(!operation||operation.kind!=='fork-create'||operation.sessionId!==childSessionId)fail('fork-operation');
@@ -211,15 +217,14 @@ async function createFork({projectCapability,parentSessionId,childSessionId,pare
     operationId:operation.operationId,sessionId:childSessionId,kind:'fork-create'});const recorded=pending.stages?.find(
       (row)=>row.stage==='worktree-created')?.details?.owned;const adopt=async()=>{const rows=parseWorktreePorcelain(String((await stashChecked(run,
       WORKTREE_LIST_ARGS,'fork-worktree-query')).stdout));if(!fs.existsSync(expected.candidate))fail('fork-adoption');
-    const physical=fs.realpathSync(expected.candidate);const matches=rows.filter((row)=>{try{return fs.realpathSync(row.path)===physical;}catch{return false;}});
+    const matches=rows.filter((row)=>samePortablePath(row.path,expected.candidate));
     if(matches.length!==1||matches[0].head!==expected.baseOid||matches[0].branch!==`refs/heads/${expected.branch}`)fail('fork-adoption');
     const ref=String((await stashChecked(run,['show-ref','--verify','--hash',`refs/heads/${expected.branch}`],'fork-ref')).stdout).trim();
     if(ref!==expected.baseOid)fail('fork-adoption');const capability=issueForkWorktreeCapability({projectRoot:projectCapability.path,
       candidate:expected.candidate,sessionId:childSessionId,parentBranch:expected.parentBranch,branch:expected.branch,allowMissingLeaf:false});
     revalidatePathCapability(capability,'fork-adoption');return{worktreeCapability:capability,branch:expected.branch,path:capability.path,
       headOid:expected.baseOid,parentBranch:expected.parentBranch};};
-  if(recorded){let samePath=false;try{samePath=fs.realpathSync(recorded.path)===fs.realpathSync(expected.candidate);}catch{}
-    if(!samePath||recorded.branch!==expected.branch||recorded.headOid!==expected.baseOid)
+  if(recorded){if(!samePortablePath(recorded.path,expected.candidate)||recorded.branch!==expected.branch||recorded.headOid!==expected.baseOid)
       fail('fork-adoption');return adopt();}
   const called=pending.stages?.some((row)=>row.stage==='before-call-0');let created;if(called)created=await adopt();else{
     if(expected.candidateExists||expected.registered||expected.branchOid!==null)fail('fork-collision');const capability=issueForkWorktreeCapability({
@@ -242,15 +247,16 @@ function resolveForkWorktreeCapability({projectCapability,stateCapability,sessio
   if(fields.session_id!==undefined&&fields.session_id!==sessionId)fail('managed-worktree-state');
   const parentBranch=fields.parent_branch;const branch=fields.branch;const candidate=fields.worktree_path;
   if(typeof parentBranch!=='string'||typeof branch!=='string'||typeof candidate!=='string')fail('managed-worktree-state');
-  if(comparisonPath!==undefined&&path.resolve(comparisonPath)!==path.resolve(candidate))fail('managed-worktree-comparison');
+  if(comparisonPath!==undefined&&!samePortablePath(comparisonPath,candidate,{allowMissing:true}))fail('managed-worktree-comparison');
   const capability=issueForkWorktreeCapability({projectRoot:projectCapability.path,candidate,sessionId,parentBranch,
     branch,allowMissingLeaf:!fs.existsSync(candidate)});
   if(fs.existsSync(candidate))revalidatePathCapability(capability,'managed-worktree-resolve');return capability;
 }
 
 async function scanCleanupCandidates({projectCapability,registry}){
-  const rows=await listWorktrees(gitCapability(projectCapability));const registered=new Set(rows.map((row)=>row.path));
-  return Object.entries(registry.sessions||{}).filter(([,entry])=>entry.current_phase==='idle'&&entry.worktree_path&&registered.has(entry.worktree_path))
+  const rows=await listWorktrees(gitCapability(projectCapability));
+  return Object.entries(registry.sessions||{}).filter(([,entry])=>entry.current_phase==='idle'&&entry.worktree_path&&
+    rows.some((row)=>samePortablePath(row.path,entry.worktree_path)))
     .map(([sessionId,entry])=>({sessionId,path:entry.worktree_path,branch:entry.branch}));
 }
 
@@ -261,8 +267,8 @@ async function removeWorktree({projectCapability,worktreeCapability,force=false,
   const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));let pending=await resumeOperation({projectCapability,
     operationId:operation.operationId,sessionId:operation.sessionId,kind:operation.kind});const recorded=pending.stages?.find(
       (row)=>row.stage==='worktree-removed')?.details?.owned;const query=async()=>{const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      WORKTREE_LIST_ARGS,'cleanup-worktree-query')).stdout));const matches=rows.filter((row)=>{try{return fs.realpathSync(row.path)===
-        fs.realpathSync(worktreeCapability.path);}catch{return path.resolve(row.path)===path.resolve(worktreeCapability.path);}});return matches;};
+      WORKTREE_LIST_ARGS,'cleanup-worktree-query')).stdout));const matches=rows.filter((row)=>
+      samePortablePath(row.path,worktreeCapability.path,{allowMissing:true}));return matches;};
   if(recorded){if(recorded.path!==worktreeCapability.path)
       fail('cleanup-worktree-adoption');if(fs.existsSync(worktreeCapability.path)||(await query()).length)fail('cleanup-worktree-adoption');
     return{removed:true,path:worktreeCapability.path,adopted:true,head:recorded.head};}
@@ -311,8 +317,8 @@ async function finishDiscardWithinOperation({operation,projectCapability,stateCa
     return inspection;}
   let worktreeCapability=resolveForkWorktreeCapability({projectCapability,stateCapability,sessionId:operation.sessionId,
     comparisonPath:stateFields.worktree_path});if(!inspection){const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      WORKTREE_LIST_ARGS,'finish-discard-query')).stdout));const physical=fs.realpathSync(worktreeCapability.path);const matches=rows.filter(
-      (row)=>{try{return fs.realpathSync(row.path)===physical;}catch{return false;}});if(matches.length!==1||
+      WORKTREE_LIST_ARGS,'finish-discard-query')).stdout));const matches=rows.filter(
+      (row)=>samePortablePath(row.path,worktreeCapability.path));if(matches.length!==1||
       matches[0].branch!==`refs/heads/${worktreeCapability.branch}`)fail('finish-discard-identity');const status=String((await stashChecked(run,
       ['-C',worktreeCapability.path,'status','--porcelain=v1','-z','--untracked-files=all'],'finish-discard-status')).stdout||'');
     if(status.length&&!force)fail('finish-discard-dirty');inspection={status:'managed-worktree',force:Boolean(force),path:worktreeCapability.path,
@@ -391,8 +397,8 @@ async function finishMergeWithinOperation({operation,projectCapability,stateCapa
     return inspection;}
   const worktreeCapability=resolveForkWorktreeCapability({projectCapability,stateCapability,sessionId:operation.sessionId,
     comparisonPath:stateFields.worktree_path});if(!inspection){const rows=parseWorktreePorcelain(String((await stashChecked(run,
-      WORKTREE_LIST_ARGS,'finish-merge-query')).stdout));const physical=fs.realpathSync(worktreeCapability.path);const child=rows.filter(
-      (row)=>{try{return fs.realpathSync(row.path)===physical;}catch{return false;}});if(child.length!==1||
+      WORKTREE_LIST_ARGS,'finish-merge-query')).stdout));const child=rows.filter(
+      (row)=>samePortablePath(row.path,worktreeCapability.path));if(child.length!==1||
       child[0].branch!==`refs/heads/${worktreeCapability.branch}`)fail('finish-merge-child-identity');const baseBranch=stateFields.parent_branch;
     if(typeof baseBranch!=='string'||!baseBranch)fail('finish-merge-base-branch');await stashChecked(run,
       ['check-ref-format','--branch',baseBranch],'finish-merge-base-branch');const baseHead=String((await stashChecked(run,

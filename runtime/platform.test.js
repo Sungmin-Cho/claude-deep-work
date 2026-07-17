@@ -468,7 +468,22 @@ function windowsStreamProbeScripts() {
       `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-once","stage":"completed","method":"FindClose","closed":true}')`,
       '',
     ].join('\n');
-  return {construct, invokeOnce, parameterBlock, pinvokeSource};
+  const invokeDirectory = parameterBlock + prologue +
+    `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-directory","stage":"started"}')\n` +
+    pinvokeSource + [
+      ...attestation,
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-directory","stage":"constructed"}')`,
+      '$data = [Activator]::CreateInstance($streamDataType)',
+      '$firstArguments = [Object[]]@($LiteralPath, [Int32]0, $data, [UInt32]0)',
+      '$handle = [IntPtr]$findFirstStream.Invoke($null, $firstArguments)',
+      '$invalidHandle = [IntPtr]::new(-1)',
+      "if ($handle -ne $invalidHandle) { [void]$findClose.Invoke($null, [Object[]]@($handle)); throw 'directory unexpectedly exposed a data stream' }",
+      '$firstError = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()',
+      "if ($firstError -ne 38) { throw 'directory stream probe returned an unexpected error' }",
+      `[Console]::Out.WriteLine('{"version":1,"probe":"invoke-directory","stage":"completed","method":"FindFirstStreamW","invalid_handle":true,"win32_error":38}')`,
+      '',
+    ].join('\n');
+  return {construct, invokeOnce, invokeDirectory, parameterBlock, pinvokeSource};
 }
 
 function assertPinnedWindowsStreamProbeScript(script, {
@@ -550,7 +565,7 @@ function runNativeWindowsStreamProbe({
   expectedStageNames,
 }) {
   assert.equal(probe === 'construct' && literalPath === null ||
-    probe === 'invoke-once' && typeof literalPath === 'string', true);
+    ['invoke-once','invoke-directory'].includes(probe) && typeof literalPath === 'string', true);
   const scriptPath = path.join(root, `${probe}.ps1`);
   const args = literalPath === null ? [] : ['-LiteralPath',literalPath];
   const scriptBytes = Buffer.from(script, 'utf8');
@@ -7785,6 +7800,37 @@ test('native Windows PowerShell 5.1 completes one fixed stream API lifecycle aft
         {version:1, probe:'invoke-once', stage:'next-returned', method:'FindNextStreamW',
           has_next:false, win32_error:38},
         {version:1, probe:'invoke-once', stage:'completed', method:'FindClose', closed:true},
+      ],
+    });
+  } finally { remove(root); }
+});
+
+test('native Windows PowerShell 5.1 returns the fixed no-stream directory result', {
+  skip:process.platform !== 'win32' ? 'native Windows only' : false,
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-native-win-pinvoke-directory-'));
+  try {
+    const {invokeDirectory, parameterBlock} = windowsStreamProbeScripts();
+    assertPinnedWindowsStreamProbeScript(invokeDirectory, {
+      firstInvocationCount:1,
+      closeInvocationCount:1,
+      literalPathParameter:parameterBlock,
+    });
+    const canonical = fs.realpathSync.native(root);
+    const literalPath = canonical.startsWith('\\\\?\\') ? canonical
+      : canonical.startsWith('\\\\') ? `\\\\?\\UNC\\${canonical.slice(2)}`
+        : `\\\\?\\${canonical}`;
+    runNativeWindowsStreamProbe({
+      probe:'invoke-directory',
+      root,
+      script:invokeDirectory,
+      literalPath,
+      expectedStageNames:['started','constructed','completed'],
+      expectedRecords:[
+        {version:1, probe:'invoke-directory', stage:'started'},
+        {version:1, probe:'invoke-directory', stage:'constructed'},
+        {version:1, probe:'invoke-directory', stage:'completed', method:'FindFirstStreamW',
+          invalid_handle:true, win32_error:38},
       ],
     });
   } finally { remove(root); }
