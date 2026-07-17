@@ -434,6 +434,8 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
       const helperDigest = crypto.createHash('sha256').update(fs.readFileSync(helper)).digest('hex');
       const expectedExecutable = path.win32.join(request.options.env.SystemRoot, 'System32',
         'WindowsPowerShell', 'v1.0', 'powershell.exe');
+      const expectedModulePath = path.win32.join(request.options.env.SystemRoot, 'System32',
+        'WindowsPowerShell', 'v1.0', 'Modules');
       const args = request.spec.args;
       const exactPrefix = ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',helper,
         '-RootPath'];
@@ -462,6 +464,8 @@ if (process.argv[2] === '--windows-stream-inventory-supervisor') {
           typeof request.spec.executable !== 'string' ||
           path.win32.normalize(request.spec.executable).toLowerCase() !==
             path.win32.normalize(expectedExecutable).toLowerCase() || !Array.isArray(args) || args.length !== 13 ||
+          path.win32.normalize(request.options.env.PSModulePath).toLowerCase() !==
+            path.win32.normalize(expectedModulePath).toLowerCase() ||
           exactPrefix.some((value, index) => args[index] !== value) || args[8] !== request.options.cwd ||
           args[9] !== '-ExpectedRows' || !Number.isSafeInteger(expectedRows) || expectedRows < 1 ||
           expectedRows > 100_001 || args[11] !== '-ExpectedInputBytes' ||

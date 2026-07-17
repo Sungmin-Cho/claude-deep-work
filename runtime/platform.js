@@ -1928,7 +1928,8 @@ function runWindowsStreamInventory(projectCapability, typedRows, fsApi, environm
     TEMP:tempCandidate,
     TMP:tempCandidate,
     PATH:'',
-    PSModulePath:'',
+    PSModulePath:path.win32.join(environment.SystemRoot || environment.SYSTEMROOT,
+      'System32','WindowsPowerShell','v1.0','Modules'),
   };
   const request = JSON.stringify({
     spec:{executable, args:['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',

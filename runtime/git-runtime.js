@@ -595,6 +595,7 @@ function gitBlobOid(bytes,oidLength){const algorithm=oidLength===64?'sha256':'sh
   .update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex');}
 function isRuntimePath(relative){return relative==='.claude/deep-work-sessions.json'||
   relative==='.claude/deep-work-current-session'||relative.startsWith('.claude/deep-work.')||
+  relative.startsWith('.claude/.deep-work')||
   relative==='.deep-work'||relative.startsWith('.deep-work/');}
 async function stashChecked(run,args,code='stash-git'){const result=await run(args);if(!result?.ok)fail(code,result?.stderr);return result;}
 function stashOwnedRunner(projectCapability,gitRunner){const native=gitRunner||((args,options)=>

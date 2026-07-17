@@ -7870,7 +7870,8 @@ test('native Windows full stream helper stage probe localizes lifecycle stalls',
         '-File',scriptPath,'-RootPath',root,'-ExpectedRows','1',
         '-ExpectedInputBytes',String(inputBytes.length)], {
         cwd:root,
-        env:{SystemRoot:systemRoot, WINDIR:systemRoot, TEMP:temp, TMP:temp, PATH:'', PSModulePath:''},
+        env:{SystemRoot:systemRoot, WINDIR:systemRoot, TEMP:temp, TMP:temp, PATH:'',
+          PSModulePath:path.win32.join(systemRoot, 'System32','WindowsPowerShell','v1.0','Modules')},
         input:inputBytes,
         encoding:'utf8',
         shell:false,
@@ -7912,7 +7913,7 @@ test('native Windows PowerShell 5.1 executes the fixed helper for exactly one ro
       TEMP:temp,
       TMP:temp,
       PATH:'',
-      PSModulePath:'',
+      PSModulePath:path.win32.join(systemRoot, 'System32','WindowsPowerShell','v1.0','Modules'),
     };
     const result = spawnSync(executable,
       ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
