@@ -167,7 +167,7 @@ Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 s
 State에서 `model_routing.implement`와 `model_routing_meta` 확인.
 
 - **"main"**: 현재 대화 모델로 inline 실행 → Solo Slice Loop 진행
-- **pinned (concrete 또는 tier)** (`model_routing_meta.pinned.implement` 존재 또는 meta 부재): 해당 모델/tier로 Agent 위임 — 기존 동작
+- **pinned (concrete 또는 tier)** (`model_routing_meta.pinned.implement` 존재, 또는 meta 부재 AND state.model_routing.implement !== "auto"): 해당 모델/tier로 Agent 위임 — 기존 동작
 - **엔진 자동** (`model_routing_meta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석 (설계 §2.5):
 
 ```javascript
