@@ -11,6 +11,16 @@ const LOC_FILE_BYTE_CAP = 1024 * 1024;
 const SOURCE_EXTS = Object.freeze(['.js', '.ts', '.tsx', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go',
   '.rs', '.java', '.kt', '.swift', '.c', '.h', '.cc', '.cpp', '.hpp', '.cs', '.php', '.sh', '.ps1']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.claude', '.deep-work', '.deep-loop']);
+const ERRORS_CAP = 20;
+const TRUNCATED_MARKER = '…(truncated)';
+
+// errors 배열에 최대 ERRORS_CAP개까지만 기록. 초과분은 버리고 마지막에 truncated 마커를 1회만 남긴다
+// (무한 증가 방지 — 리뷰 Important-3).
+function pushError(errors, msg) {
+  if (errors.length && errors[errors.length - 1] === TRUNCATED_MARKER) return;
+  if (errors.length >= ERRORS_CAP - 1) { errors.push(TRUNCATED_MARKER); return; }
+  errors.push(msg);
+}
 
 function defaultGitLsFiles(root) {
   try {
@@ -19,12 +29,13 @@ function defaultGitLsFiles(root) {
   } catch { return null; }
 }
 
-function walkFiles(root, cap) {
+function walkFiles(root, cap, errors = []) {
   const out = []; const stack = [root];
   while (stack.length && out.length < cap) {
     const dir = stack.pop();
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch (e) { pushError(errors, `walk-dir: ${dir}: ${e.message}`); continue; }
     for (const e of entries) {
       if (out.length >= cap) break;
       if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) stack.push(path.join(dir, e.name)); }
@@ -38,13 +49,16 @@ function collectCodebaseSignals(root, deps = {}) {
   const gitLsFiles = deps.gitLsFiles || defaultGitLsFiles;
   const errors = [];
   let files = null;
-  const tracked = gitLsFiles(root);
+  let tracked = null;
+  try {
+    tracked = gitLsFiles(root);
+  } catch (e) { pushError(errors, `gitLsFiles: ${e.message}`); }
   if (Array.isArray(tracked)) files = tracked.map((f) => path.join(root, f));
   else {
     try {
       if (!fs.statSync(root).isDirectory()) throw new Error('not a directory');
-      files = walkFiles(root, FS_WALK_CAP);
-    } catch (e) { errors.push(`walk: ${e.message}`); }
+      files = walkFiles(root, FS_WALK_CAP, errors);
+    } catch (e) { pushError(errors, `walk: ${e.message}`); }
   }
   if (files === null) {
     return { tracked_files: null, loc_estimate: null, languages: null, has_tests: null, deps_count: null, errors };
@@ -58,7 +72,7 @@ function collectCodebaseSignals(root, deps = {}) {
       const st = fs.statSync(f);
       if (st.size > LOC_FILE_BYTE_CAP) continue;
       sampleLoc += fs.readFileSync(f, 'utf8').split('\n').length; sampled += 1;
-    } catch { /* 개별 파일 실패는 무시 — 샘플에서 제외 */ }
+    } catch (e) { pushError(errors, `loc-sample: ${path.basename(f)}: ${e.message}`); }
   }
   const locEstimate = sampled > 0 ? Math.round((sampleLoc / sampled) * sourceFiles.length) : null;
   const hasTests = files.some((f) => {
@@ -82,5 +96,5 @@ function classifyRepoScale(signals = {}) {
   return 'large';
 }
 
-module.exports = { SCALE_SMALL_MAX, SCALE_MEDIUM_MAX, FS_WALK_CAP, LOC_SAMPLE_CAP,
+module.exports = { SCALE_SMALL_MAX, SCALE_MEDIUM_MAX, FS_WALK_CAP, LOC_SAMPLE_CAP, LOC_FILE_BYTE_CAP,
   collectCodebaseSignals, classifyRepoScale };
