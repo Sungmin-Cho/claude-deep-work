@@ -204,6 +204,8 @@ temp path, e.g. `$WORK_DIR/.session-receipt.payload.json`:
 }
 ```
 
+> **v6.10.0**: state에 `model_routing_meta`가 있으면 payload에 `model_routing_meta` 필드로 그대로 포함한다(부재 시 필드 생략 — forward-compatible 옵셔널, 설계 §7). deep-suite payload-registry minor bump는 suite 측 후속 작업.
+
 `schema_version` MUST be the literal string `"1.0"`. Section 2-1 will add
 `quality_score`, `quality_breakdown`, and `quality_diagnostics` to this same
 payload temp file. Section 7's option-specific blocks update

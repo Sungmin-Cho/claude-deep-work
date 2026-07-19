@@ -162,13 +162,25 @@ Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 s
 
 **이 중 하나라도 해당되면**: 현재 작업을 멈추고, 해당 Red Flag의 "현실" 컬럼을 따르세요.
 
-## Model Routing
+## Model Routing (v6.10.0)
 
-State에서 `model_routing.implement` 확인 (기본: "sonnet").
+State에서 `model_routing.implement`와 `model_routing_meta` 확인.
 
-- **"main"**: 현재 대화 모델로 inline 실행 → 아래 Solo Slice Loop 진행
-- **특정 모델명** (sonnet/haiku/opus): 해당 모델로 Agent 위임
-- **"auto"**: slice size에 따라 모델 자동 선택 (S→haiku, M→sonnet, L→sonnet, XL→opus)
+- **"main"**: 현재 대화 모델로 inline 실행 → Solo Slice Loop 진행
+- **pinned concrete** (`model_routing_meta.pinned.implement` 존재 또는 meta 부재): 해당 모델로 Agent 위임 — 기존 동작
+- **엔진 자동** (`model_routing_meta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석 (설계 §2.5):
+
+```javascript
+const { sliceModelTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-routing-runtime.js");
+const { resolveTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js");
+const tier = sliceModelTier(state.model_routing_meta.tiers.implement, slice.size);
+const { model } = resolveTier(tier, state.model_routing_meta.runtime);
+// 세션 tier standard일 때: S→haiku, M/L→sonnet, XL→opus (기존 auto와 동일)
+// model === "main"이면 inline 실행
+```
+
+- **legacy "auto" 문자열** (meta 부재 구세션): `sonnet` 취급 + 1회 경고 — 기존 S/M/L/XL 표는 위 per-slice 규칙으로 대체됨.
+  (이 legacy 분기는 프롬프트 경로 산문 규칙이다 — Node 픽스처 고정 대상 아님. 설계 §8의 "픽스처로 고정" 항목 중 이 케이스만 산문 acceptance로 대체됨을 명시 — 리뷰 Low-6.)
 
 Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙을 프롬프트에 포함 (hook이 delegated agent에 미적용), slice당 10분 timeout.
 상세: Read("../shared/references/model-routing-guide.md")
@@ -188,7 +200,7 @@ Solo는 **모든 cluster를 단일 agent에 순차 위임**:
 ```
 Agent(
   subagent_type="deep-work:implement-slice-worker",
-  model=state.model_routing.implement,   // default "sonnet"
+  model=state.model_routing.implement,   // default "sonnet" — 엔진 자동 경로에서는 위 per-slice 해석 결과 model 사용
   prompt="cluster_ids=[C1,C2,...,Cn]; sequential;" +
          "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
          "delegation_snapshot=<hash>;" +
@@ -399,7 +411,7 @@ AskUserQuestion({
      description: cluster의 slice_ids + files + TDD 규칙 + Slice Review 규칙)
    - 그룹별 Agent 스폰 — **full worker contract 필수** (CA3 fix):
        Agent(subagent_type="deep-work:implement-slice-worker",
-             model=state.model_routing.implement,
+             model=state.model_routing.implement,  // 엔진 자동 경로에서는 위 per-slice 해석 결과 model 사용
              mode="bypassPermissions",  // hook이 team agent에 미적용 → Receipt 중심 검증
              prompt="cluster_id=<Ci>; cluster_ids=[slice_ids of Ci];" +
                     "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
@@ -422,7 +434,7 @@ AskUserQuestion({
    **full worker contract 필수** (CA3 fix — Section 2.1 Solo와 동일 구조):
    ```
    Agent(subagent_type="deep-work:implement-slice-worker",
-         model=state.model_routing.implement,
+         model=state.model_routing.implement,  // 엔진 자동 경로에서는 위 per-slice 해석 결과 model 사용
          prompt="cluster_id=<Ci>; cluster_ids=[slice_ids of Ci];" +
                 "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
                 "delegation_snapshot=<hash>;" +
