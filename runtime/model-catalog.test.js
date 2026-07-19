@@ -38,6 +38,15 @@ test('카탈로그 값 null(미pin) → main fail-safe + 경고', () => {
   }
 });
 
+test('codex 카탈로그 pin(Task 12 실기 검증) — 관측된 모델명과 일치', () => {
+  // ~/.codex/models_cache.json 실기 조사로 확정된 값. null로 되돌아가면(fail-safe 재진입)
+  // 아래 3개 assert가 실패해 회귀를 잡는다. 근거: .superpowers/sdd/task-12-report.md
+  assert.strictEqual(DEFAULT_CATALOG.codex.light, 'gpt-5.6-luna');
+  assert.strictEqual(DEFAULT_CATALOG.codex.standard, 'gpt-5.6-terra');
+  assert.strictEqual(DEFAULT_CATALOG.codex.deep, 'gpt-5.6-sol');
+  assert.deepStrictEqual(resolveTier('deep', 'codex'), { model: 'gpt-5.6-sol', warning: null });
+});
+
 test('잘못된 tier → main + 경고 (fail-safe, throw 금지)', () => {
   const r = resolveTier('opus', 'claude'); // concrete명은 tier가 아니다
   assert.strictEqual(r.model, 'main');
