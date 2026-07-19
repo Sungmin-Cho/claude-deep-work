@@ -170,9 +170,12 @@ State에서 `model_routing.implement`와 `model_routing_meta` 확인.
 - **pinned (concrete 또는 tier)** (`model_routing_meta.pinned.implement` 존재, 또는 meta 부재 AND state.model_routing.implement !== "auto"): 해당 모델/tier로 Agent 위임 — 기존 동작
 - **엔진 자동** (`model_routing_meta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석 (설계 §2.5):
 
+  > **fail-safe 선행 체크**: `model_routing_meta.tiers.implement === "main"` 또는 `model_routing_meta.error === true`(CLI 자동 결정 실패)이면 per-slice 해석을 하지 않고 **현재 세션 모델로 inline 실행**한다(설계 §3.1 error→main). 아래 per-slice 규칙은 tier가 light/standard/deep일 때만 적용.
+
 ```javascript
 const { sliceModelTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-routing-runtime.js");
 const { resolveTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js");
+// tiers.implement가 light/standard/deep일 때만 — main/error는 위에서 inline 처리됨
 const tier = sliceModelTier(state.model_routing_meta.tiers.implement, slice.size);
 const { model } = resolveTier(tier, state.model_routing_meta.runtime);
 // 세션 tier standard일 때: S→haiku, M/L→sonnet, XL→opus (기존 auto와 동일)

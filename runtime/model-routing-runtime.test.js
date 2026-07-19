@@ -220,6 +220,14 @@ test('per-slice 규칙: offset 시프트 + clamp + size 부재 fallback', () => 
   assert.strictEqual(sliceModelTier('standard', undefined), 'standard'); // size 부재 → 세션값
 });
 
+test("per-slice 규칙: 세션 tier 'main'은 size 무관 항상 main 유지 (final review #1 — fail-safe 붕괴 차단)", () => {
+  // tierIndex('main') === -1 → offset 재도출 시 light로 조용히 붕괴하던 버그의 회귀 방지.
+  // 'main'은 세션 모델 inline 실행을 의미하므로 per-slice 재도출 대상이 아니다.
+  assert.strictEqual(sliceModelTier('main', 'S'), 'main');
+  assert.strictEqual(sliceModelTier('main', 'XL'), 'main');
+  assert.strictEqual(sliceModelTier('main', undefined), 'main');
+});
+
 // --- Task 5: decideModelRouting (우선순위 + 해석 + meta) ---
 
 const { decideModelRouting } = require('./model-routing-runtime.js');

@@ -139,6 +139,9 @@ function sizeToTier(size) {
 }
 
 function sliceModelTier(sessionImplementTier, size) {
+  // 세션 tier가 tier 어휘가 아니면(main/error 등) per-slice 재도출을 하지 않고 그대로 반환 —
+  // 'main'(세션 모델 inline)이 tierIndex=-1로 인해 light로 붕괴하는 것을 차단 (final review #1)
+  if (tierIndex(sessionImplementTier) < 0) return sessionImplementTier;
   const base = sizeToTier(size);
   if (base === null) return sessionImplementTier;
   const offset = tierIndex(sessionImplementTier) - tierIndex('standard');

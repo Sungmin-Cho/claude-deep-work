@@ -364,6 +364,11 @@ Registry 등록: `register_session "$SESSION_ID" ...`
 
 ## 1-11. 세션 확인 표시
 
+> **근거 라인 분기**: `MR_OUT.meta.error === true`(CLI 자동 결정 실패 — fail-safe)이면 아래 "근거" 라인 대신
+> `근거: 자동 선택 실패 — 전 phase main(현재 세션 모델)로 fallback`을 표시하고 `MR_OUT.warnings`의 사유도 함께 보여준다.
+> 정상 meta(`{tiers, scale, signals_summary, difficulty, ...}`)일 때만 아래 scale/tracked_files/difficulty 근거를 표시한다
+> (fallback meta는 `{runtime, tiers, error}` 형태뿐이라 `scale`/`signals_summary`/`difficulty` 참조 시 undefined 렌더 — final review #2).
+
 ```
 Deep Work 세션이 시작되었습니다!
 
@@ -374,6 +379,7 @@ Deep Work 세션이 시작되었습니다!
 TDD 모드: strict / relaxed / coaching / spike
 모델 라우팅(자동): R=[model] P=main I=[model] T=[model]
   근거: [meta.scale] 코드베이스([meta.signals_summary.tracked_files] files) · 난이도 [meta.difficulty ?? "기준선"]
+  (또는 meta.error === true 시: 근거: 자동 선택 실패 — 전 phase main(현재 세션 모델)로 fallback)
   조정: --model-routing=implement=deep 형식 또는 /deep-slice model
 
 워크플로우:
