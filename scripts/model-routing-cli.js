@@ -89,8 +89,9 @@ function main() {
     const decision = decideModelRouting({ signals, taskText: args.task,
       difficulty: args.difficulty, runtime, pinned });
     decision.warnings = [...warnings, ...decision.warnings];
-    alreadyEmitted = true;
+    if (process.env.DEEP_WORK_MR_CLI_TEST_BAD_JSON === '1') decision.meta.cycle = decision; // test-only: JSON.stringify throw 유도
     process.stdout.write(JSON.stringify(decision));
+    alreadyEmitted = true;
   } catch (e) {
     emitFallback(warnings, e.message);
   }
