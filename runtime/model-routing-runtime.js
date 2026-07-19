@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { TIERS, MAIN } = require('./model-catalog.js');
 
 const SCALE_SMALL_MAX = 200;
 const SCALE_MEDIUM_MAX = 2000;
@@ -96,5 +97,54 @@ function classifyRepoScale(signals = {}) {
   return 'large';
 }
 
+const PHASES = Object.freeze(['brainstorm', 'research', 'plan', 'implement', 'test']);
+const DIFFICULTY = Object.freeze(['low', 'medium', 'high']);
+const NARROW_TASK_RE = /\b(fix|typo|oneline|one-line)\b|한\s*줄|오타/i;
+
+function tierIndex(tier) { return TIERS.indexOf(tier); }
+function shiftTier(tier, offset) {
+  const i = tierIndex(tier);
+  if (i < 0) return tier; // main 등 비-tier는 불변
+  return TIERS[Math.min(TIERS.length - 1, Math.max(0, i + offset))];
+}
+
+function baselineTiers(signals = {}, taskText = '') {
+  const scale = classifyRepoScale(signals);
+  const reasons = [`규모 ${scale} (tracked_files=${signals.tracked_files ?? 'null'})`];
+  const tiers = { brainstorm: MAIN, research: 'standard', plan: MAIN, implement: 'standard', test: 'light' };
+  if (scale === 'small') tiers.research = 'light';
+  if (scale === 'large') { tiers.implement = 'deep'; tiers.test = 'standard'; }
+  if (scale === 'large' && (signals.languages ?? 0) >= 4) {
+    tiers.research = 'deep'; reasons.push(`다언어(${signals.languages}) → research deep`);
+  }
+  if (scale === 'small' && NARROW_TASK_RE.test(String(taskText))) {
+    tiers.implement = 'light'; reasons.push('좁은 task 키워드 → implement light');
+  }
+  return { tiers, scale, reasons };
+}
+
+function applyDifficulty(tiers, difficulty) {
+  if (difficulty !== 'high' && difficulty !== 'low') return { ...tiers };
+  const offset = difficulty === 'high' ? 1 : -1;
+  const out = { ...tiers };
+  for (const phase of ['research', 'implement', 'test']) out[phase] = shiftTier(out[phase], offset);
+  return out;
+}
+
+function sizeToTier(size) {
+  if (size === 'S') return 'light';
+  if (size === 'M' || size === 'L') return 'standard';
+  if (size === 'XL') return 'deep';
+  return null;
+}
+
+function sliceModelTier(sessionImplementTier, size) {
+  const base = sizeToTier(size);
+  if (base === null) return sessionImplementTier;
+  const offset = tierIndex(sessionImplementTier) - tierIndex('standard');
+  return shiftTier(base, offset);
+}
+
 module.exports = { SCALE_SMALL_MAX, SCALE_MEDIUM_MAX, FS_WALK_CAP, LOC_SAMPLE_CAP, LOC_FILE_BYTE_CAP,
-  collectCodebaseSignals, classifyRepoScale };
+  collectCodebaseSignals, classifyRepoScale,
+  PHASES, DIFFICULTY, tierIndex, shiftTier, baselineTiers, applyDifficulty, sizeToTier, sliceModelTier };

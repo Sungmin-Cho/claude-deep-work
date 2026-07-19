@@ -155,3 +155,67 @@ test('errors 배열은 최대 20개로 캡되고 초과 시 truncated 마커 1�
     for (const blocked of blockedDirs) fs.chmodSync(blocked, 0o755);
   }
 });
+
+// --- Task 4: baseline tier + 난이도 보정 + per-slice 규칙 ---
+
+const { PHASES, DIFFICULTY, tierIndex, shiftTier, baselineTiers, applyDifficulty,
+  sizeToTier, sliceModelTier } = require('./model-routing-runtime.js');
+
+test('baseline 규칙표 (설계 §2.2 전 분기)', () => {
+  const small = baselineTiers({ tracked_files: 50 }, '작업');
+  assert.deepStrictEqual(small.tiers,
+    { brainstorm: 'main', research: 'light', plan: 'main', implement: 'standard', test: 'light' });
+  assert.strictEqual(small.scale, 'small');
+  const medium = baselineTiers({ tracked_files: 500 }, '작업');
+  assert.deepStrictEqual(medium.tiers,
+    { brainstorm: 'main', research: 'standard', plan: 'main', implement: 'standard', test: 'light' });
+  const large = baselineTiers({ tracked_files: 5000, languages: 2 }, '작업');
+  assert.deepStrictEqual(large.tiers,
+    { brainstorm: 'main', research: 'standard', plan: 'main', implement: 'deep', test: 'standard' });
+});
+
+test('대형+다언어(>=4) → research deep 상향', () => {
+  const b = baselineTiers({ tracked_files: 5000, languages: 4 }, '작업');
+  assert.strictEqual(b.tiers.research, 'deep');
+});
+
+test('소형+좁은 task 키워드 → implement light 하향', () => {
+  const b = baselineTiers({ tracked_files: 50 }, 'typo fix 한 줄 수정');
+  assert.strictEqual(b.tiers.implement, 'light');
+});
+
+test('난이도 보정: research/implement/test만 ±1, main 불변, clamp', () => {
+  const base = { brainstorm: 'main', research: 'standard', plan: 'main', implement: 'deep', test: 'light' };
+  const high = applyDifficulty(base, 'high');
+  assert.deepStrictEqual(high,
+    { brainstorm: 'main', research: 'deep', plan: 'main', implement: 'deep', test: 'standard' }); // deep은 상한 clamp
+  const low = applyDifficulty(base, 'low');
+  assert.deepStrictEqual(low,
+    { brainstorm: 'main', research: 'light', plan: 'main', implement: 'standard', test: 'light' }); // light 하한 clamp
+  assert.deepStrictEqual(applyDifficulty(base, 'medium'), base);
+  assert.deepStrictEqual(applyDifficulty(base, null), base); // 부재 → 무보정
+});
+
+test('sizeToTier 매핑', () => {
+  assert.strictEqual(sizeToTier('S'), 'light');
+  assert.strictEqual(sizeToTier('M'), 'standard');
+  assert.strictEqual(sizeToTier('L'), 'standard');
+  assert.strictEqual(sizeToTier('XL'), 'deep');
+  assert.strictEqual(sizeToTier('??'), null);
+  assert.strictEqual(sizeToTier(undefined), null);
+});
+
+test('per-slice 규칙 (설계 §2.5): 세션 standard = 기존 slice-size auto와 동일', () => {
+  assert.strictEqual(sliceModelTier('standard', 'S'), 'light');     // → haiku on Claude
+  assert.strictEqual(sliceModelTier('standard', 'M'), 'standard');  // → sonnet
+  assert.strictEqual(sliceModelTier('standard', 'L'), 'standard');
+  assert.strictEqual(sliceModelTier('standard', 'XL'), 'deep');     // → opus
+});
+
+test('per-slice 규칙: offset 시프트 + clamp + size 부재 fallback', () => {
+  assert.strictEqual(sliceModelTier('deep', 'S'), 'standard');  // +1 시프트
+  assert.strictEqual(sliceModelTier('deep', 'XL'), 'deep');     // 상한 clamp
+  assert.strictEqual(sliceModelTier('light', 'M'), 'light');    // -1 시프트
+  assert.strictEqual(sliceModelTier('light', 'S'), 'light');    // 하한 clamp
+  assert.strictEqual(sliceModelTier('standard', undefined), 'standard'); // size 부재 → 세션값
+});
