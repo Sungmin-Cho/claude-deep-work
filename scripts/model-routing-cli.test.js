@@ -34,3 +34,24 @@ test('pinned 형식 오류 항목은 경고 + 무시 (전체 거부 아님)', ()
   assert.strictEqual(r.model_routing.implement, 'opus');
   assert.ok(r.warnings.some((w) => /bogus/.test(w)));
 });
+
+test('fallback 경로: DEEP_WORK_MR_CLI_TEST_THROW=1이면 exit 0 + all-main fallback JSON', () => {
+  const out = execFileSync(process.execPath, [CLI, '--root', path.join(__dirname, '..'), '--task', 't',
+    '--runtime', 'claude'],
+    { encoding: 'utf8', env: { ...process.env, DEEP_WORK_MR_CLI_TEST_THROW: '1' } });
+  // (a) exit code 0 — execFileSync가 던지지 않고 여기까지 도달함으로써 확인됨
+  // (b) stdout이 유효 JSON 한 줄
+  const lines = out.split('\n').filter((l) => l.length > 0);
+  assert.strictEqual(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  // (c) model_routing의 전 phase가 'main'
+  for (const p of ['brainstorm', 'research', 'plan', 'implement', 'test']) {
+    assert.strictEqual(r.model_routing[p], 'main');
+  }
+  assert.ok(r.meta && r.meta.tiers);
+  for (const p of ['brainstorm', 'research', 'plan', 'implement', 'test']) {
+    assert.strictEqual(r.meta.tiers[p], 'main');
+  }
+  // (d) warnings에 cli-error: test-throw 포함
+  assert.ok(r.warnings.some((w) => w === 'cli-error: test-throw'));
+});
