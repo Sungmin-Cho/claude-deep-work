@@ -7,6 +7,27 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.10.0] — 2026-07-20 (automatic model selection — Claude Code / Codex)
+
+### Added
+
+- **5-key ask → 4-key**: `model_routing` is no longer asked. The engine decides per-phase
+  models from codebase scale + task difficulty (deterministic signals + recommender
+  `task_difficulty` ±1 adjustment; deterministic fallback when the recommender is unavailable).
+- **Runtime-neutral tiers**: `light`/`standard`/`deep`/`main` resolved via per-runtime catalog
+  (`runtime/model-catalog.js`). Codex sessions resolve to Codex models; unknown runtime
+  fails safe to `main` (session model). Claude model names never leak into Codex paths.
+- **Per-slice rule**: implement delegation resolves `clamp(sizeTier + difficulty offset)` —
+  identical to the legacy slice-size auto at `standard`.
+- **Overrides**: `--model-routing=implement=deep,test=light` flag, profile pinned concrete
+  values (respected, engine skipped), `/deep-slice model` unchanged.
+
+### Changed
+
+- **Back-compat**: `model_routing_meta` is optional; legacy `main→sonnet` migration now skips
+  engine-authored states (meta guard); old profiles keep working — `interactive_each_session`
+  is filtered unconditionally (`filterAskItems`).
+
 ## [6.9.4] — 2026-07-10 (hooks stdin wrapper contract — shared helper)
 
 ### Fixed
