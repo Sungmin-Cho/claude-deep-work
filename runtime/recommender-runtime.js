@@ -1,10 +1,12 @@
 'use strict';
 
 const MAX_TASK_BYTES=2048;const MAX_COMMITS=5;const MAX_DIRS=10;const MAX_DIR_LEN=30;
-const KEYS=Object.freeze(['team_mode','start_phase','tdd_mode','git','model_routing']);
+const KEYS=Object.freeze(['team_mode','start_phase','tdd_mode','git']);
 const ENUMS=Object.freeze({team_mode:['solo','team'],start_phase:['brainstorm','research','plan'],
   tdd_mode:['strict','coaching','relaxed','spike'],git:['worktree','new-branch','current-branch'],
   model_routing:['auto','default','custom']});
+const DIFFICULTY_ENUM=Object.freeze(['low','medium','high']);
+function filterAskItems(items){if(!Array.isArray(items))return[...KEYS];return items.filter((item)=>KEYS.includes(item));}
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
 function truncateBytes(value,max=MAX_TASK_BYTES){const input=String(value||'');const buffer=Buffer.from(input);const marker=Buffer.from('[truncated]');
   if(buffer.length<=max)return input;let end=Math.max(0,max-marker.length);while(end>0&&(buffer[end]&0xc0)===0x80)end-=1;
@@ -15,7 +17,7 @@ function buildRecommenderInput(value={}){return {task_description:truncateBytes(
   git_status:value.git_status||'clean',recent_commits:(value.recent_commits||[]).slice(0,MAX_COMMITS).map(String),
   top_level_dirs:(value.top_level_dirs||[]).filter((entry)=>typeof entry==='string'&&entry&&
     !entry.includes('..')&&!entry.startsWith('/')&&!/[\\:]/.test(entry)).slice(0,MAX_DIRS)
-    .map((entry)=>entry.slice(0,MAX_DIR_LEN))},ask_items:value.ask_items||[...KEYS],
+    .map((entry)=>entry.slice(0,MAX_DIR_LEN))},ask_items:filterAskItems(value.ask_items),
   current_defaults:value.current_defaults||{},capability:value.capability||detectCapability({is_git:false,
     worktree_supported:false,team_env_set:false})};}
 function parseRawRecommendation(raw){const text=String(raw);const fences=[...text.matchAll(/```json\s*([\s\S]*?)```/g)];
@@ -29,9 +31,11 @@ function parseRecommendation(raw,ctx={}){const fences=[...String(raw).matchAll(/
     const allowed=key==='model_routing'?['default','custom']:ENUMS[key];if(!allowed.includes(data[key].value))return{ok:false,fallback_reason:`enum violation: ${key}=${data[key].value}`};}
   const cap=ctx.capability||{};if(cap.team_mode_available!==true&&data.team_mode.value==='team')return{ok:false,fallback_reason:'capability: team_mode unavailable (or unset)'};
   if(cap.git_worktree!==true&&data.git.value==='worktree')return{ok:false,fallback_reason:'capability: worktree unavailable (or unset)'};
-  return{ok:true,data};}
+  const td=data.task_difficulty;const difficulty=td&&typeof td==='object'&&DIFFICULTY_ENUM.includes(td.value)&&typeof td.reason==='string'&&td.reason?{value:td.value,reason:td.reason}:null;
+  const out={};for(const key of KEYS)out[key]=data[key];out.task_difficulty=difficulty;
+  return{ok:true,data:out};}
 function validateRecommendation(raw,capability={}){const parsed=parseRawRecommendation(raw);
-  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||Object.keys(parsed).sort().join(',')!==[...KEYS].sort().join(','))fail('recommendation-schema');
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)||Object.keys(parsed).filter((k)=>k!=='task_difficulty'&&k!=='model_routing').sort().join(',')!==[...KEYS].sort().join(','))fail('recommendation-schema');
   const flat={};for(const key of KEYS){const row=parsed[key];if(typeof row==='string'){flat[key]=row;}
     else if(row&&typeof row==='object'&&!Array.isArray(row)&&typeof row.value==='string'&&typeof row.reason==='string'&&row.reason.trim())flat[key]=row.value;
     else fail('recommendation-schema');if(!ENUMS[key].includes(flat[key]))fail('recommendation-enum',`${key}=${flat[key]}`);}
@@ -54,6 +58,6 @@ function formatAskOptions({item,recommendation,default_value,enum_values,capabil
   recommendation:recommendation?{value:recommendation,reason:'runtime recommendation'}:null,default_value,enum_values,
   disabled_values:capabilityToDisabled(capability||{},item)});}
 
-module.exports={MAX_TASK_BYTES,MAX_COMMITS,MAX_DIRS,KEYS,ENUMS,truncateBytes,detectCapability,buildRecommenderInput,
-  parseRecommendation,parseRawRecommendation,validateRecommendation,capabilityToDisabled,pickEffectiveDefault,
-  formatOptions,formatAskOptions};
+module.exports={MAX_TASK_BYTES,MAX_COMMITS,MAX_DIRS,KEYS,ENUMS,DIFFICULTY_ENUM,truncateBytes,detectCapability,
+  buildRecommenderInput,filterAskItems,parseRecommendation,parseRawRecommendation,validateRecommendation,
+  capabilityToDisabled,pickEffectiveDefault,formatOptions,formatAskOptions};

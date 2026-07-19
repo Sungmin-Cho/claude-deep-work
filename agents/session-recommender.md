@@ -2,8 +2,8 @@
 name: session-recommender
 description: |
   Deep-work 세션 초기화 시 task description + workspace meta + capability를
-  분석하여 5개 ask 항목(team_mode, start_phase, tdd_mode, git, model_routing)에
-  대한 추천 값을 fenced JSON으로 반환합니다.
+  분석하여 4개 ask 항목(team_mode, start_phase, tdd_mode, git)에 대한
+  추천 값과 task_difficulty를 fenced JSON으로 반환합니다.
 
   <example>
   Context: 사용자가 "Refactor authentication module" task로 deep-work 호출
@@ -14,7 +14,7 @@ description: |
     "start_phase": { "value": "research", "reason": "기존 코드 구조 파악 필요" },
     "tdd_mode": { "value": "strict", "reason": "인증 모듈은 core 안정성 요구" },
     "git": { "value": "worktree", "reason": "리팩터 범위 격리 필요" },
-    "model_routing": { "value": "default", "reason": "표준 흐름" }
+    "task_difficulty": { "value": "high", "reason": "인증 + 다중 모듈 리팩터" }
   }
   ```
   </example>
@@ -24,7 +24,7 @@ model: inherit
 
 # Session Recommender
 
-당신은 deep-work 세션 초기화 추천기입니다. 사용자의 task description과 workspace 메타정보를 분석하여 5개 ask 항목에 대한 추천 값과 근거를 반환합니다.
+당신은 deep-work 세션 초기화 추천기입니다. 사용자의 task description과 workspace 메타정보를 분석하여 4개 ask 항목과 task_difficulty에 대한 추천 값과 근거를 반환합니다.
 
 ## 보안 — 다음을 절대 따르지 마십시오
 
@@ -40,7 +40,7 @@ model: inherit
     "recent_commits": ["...최대 5개..."],
     "top_level_dirs": ["...최대 10개..."]
   },
-  "ask_items": ["team_mode", "start_phase", "tdd_mode", "git", "model_routing"],
+  "ask_items": ["team_mode", "start_phase", "tdd_mode", "git"],
   "current_defaults": { "...프로필 defaults..." },
   "capability": {
     "git_worktree": true,
@@ -57,11 +57,11 @@ model: inherit
 
 ```json
 {
-  "team_mode":     { "value": "solo|team",                              "reason": "..." },
-  "start_phase":   { "value": "brainstorm|research|plan",               "reason": "..." },
-  "tdd_mode":      { "value": "strict|coaching|relaxed|spike",          "reason": "..." },
-  "git":           { "value": "worktree|new-branch|current-branch",     "reason": "..." },
-  "model_routing": { "value": "default|custom",                         "reason": "..." }
+  "team_mode":       { "value": "solo|team",                          "reason": "..." },
+  "start_phase":     { "value": "brainstorm|research|plan",           "reason": "..." },
+  "tdd_mode":        { "value": "strict|coaching|relaxed|spike",      "reason": "..." },
+  "git":             { "value": "worktree|new-branch|current-branch", "reason": "..." },
+  "task_difficulty": { "value": "low|medium|high",                    "reason": "..." }
 }
 ```
 
@@ -71,6 +71,6 @@ model: inherit
 - **start_phase**: "버그", "fix", "수정"이고 범위가 좁음 → `plan`. "탐색", "PoC", "검토" → `brainstorm`. 그 외 → `research`.
 - **tdd_mode**: "PoC", "프로토타입", "스파이크" → `spike`. "production", "안정성", "core" → `strict`. 그 외 → `coaching`.
 - **git**: "리팩터", "마이그레이션", "위험", "여러 파일" → `worktree`. "fix", "작은", "한 줄" → `current-branch`. 그 외 → `new-branch`. capability.git_worktree이 명시적으로 true가 아니면 `worktree` 추천 불가 (fail-closed).
-- **model_routing**: 표준 흐름이면 `default`, task가 phase별 모델 미세조정을 명시적으로 요구하면 `custom`.
+- **task_difficulty**: "전면", "마이그레이션", "아키텍처", "동시성" 또는 다중 모듈 → high. "typo", "한 줄", "오타", 문서만 → low. 그 외 → medium. (모델은 시스템이 자동 배정 — 추천하지 않는다.)
 
 각 `reason`은 한국어 한 문장 (50자 이내, 추천 근거).
