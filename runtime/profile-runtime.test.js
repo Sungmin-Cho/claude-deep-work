@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {spawn}=require('node:child_process');
-const { migrateProfile, loadProfile, updateProfile } = require('./profile-runtime.js');
+const { migrateProfile, loadProfile, updateProfile, createV3Profile, loadV3Profile, v2TextToV3Text } = require('./profile-runtime.js');
 
 test('profile v3 migration and update preserve unselected presets', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-profile-'));
@@ -39,4 +39,30 @@ test('profile owner is target-derived across processes and prevents different-pr
     child.on('message',(message)=>{if(message?.ok!==true)reject(new Error(message?.error||stderr));});child.once('exit',(code)=>code===0?resolve():
       reject(new Error(stderr||`profile worker exited ${code}`)));child.once('error',reject);})));assert.deepEqual(
     Object.keys(loadProfile(file).presets).sort(),['one','three','two']);
+});
+
+test('신규 v3 프로필: ask 목록에 model_routing 없음 + defaults는 auto 스칼라', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-prof-'));
+  const p = path.join(dir, 'profile.yaml');
+  createV3Profile(p, 'solo-strict');
+  const text = fs.readFileSync(p, 'utf8');
+  assert.ok(!/interactive_each_session:[\s\S]*?- model_routing/.test(
+    text.slice(0, text.indexOf('defaults:'))));
+  assert.match(text, /model_routing: auto/);
+  assert.ok(!/model_routing:\n\s+brainstorm:/.test(text)); // per-phase 블록 아님
+  const loaded = loadV3Profile(p);
+  assert.strictEqual(loaded.defaults.model_routing, 'auto');
+  assert.ok(!loaded.interactive_each_session.includes('model_routing'));
+  const full = loadProfile(p); // presets['solo-strict']를 통한 nested 접근도 동일하게 검증 (brief 원문 형태)
+  assert.strictEqual(full.presets['solo-strict'].defaults.model_routing, 'auto');
+  assert.ok(!full.presets['solo-strict'].interactive_each_session.includes('model_routing'));
+});
+
+test('v2TextToV3Text: 변환 출력에도 model_routing 부재 + auto 스칼라 (fallback 경로)', () => {
+  const v2 = 'version: 2\ndefault_preset: solo\npresets:\n  solo:\n    team_mode: solo\n';
+  const { text } = v2TextToV3Text(v2);
+  assert.ok(!/interactive_each_session:[\s\S]*?- model_routing/.test(
+    text.slice(0, text.indexOf('defaults:'))));
+  assert.match(text, /model_routing: auto/);
+  assert.ok(!/model_routing:\n\s+brainstorm:/.test(text));
 });

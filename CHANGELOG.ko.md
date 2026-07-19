@@ -7,6 +7,27 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.10.0] — 2026-07-20 (자동 모델 선택 — Claude Code / Codex)
+
+### Added
+
+- **5-key ask → 4-key**: `model_routing`을 더 이상 묻지 않습니다. 엔진이 코드베이스 규모 + 태스크
+  난이도(결정론적 신호 + 추천 에이전트의 `task_difficulty` ±1 보정, 추천 에이전트 부재 시 결정론적
+  fallback)로 phase별 모델을 결정합니다.
+- **런타임 중립 tier**: `light`/`standard`/`deep`/`main`을 런타임별 카탈로그(`runtime/model-catalog.js`)
+  로 resolve합니다. Codex 세션은 Codex 모델로 resolve되고, 알 수 없는 런타임은 안전하게 `main`(세션
+  모델)으로 fail-safe합니다. Claude 모델명이 Codex 경로로 새어나가지 않습니다.
+- **Per-slice 규칙**: implement 위임이 `clamp(sizeTier + difficulty offset)`으로 resolve됩니다 —
+  기존 slice-size 자동 선택(`standard` 고정)과 동일한 결과를 유지합니다.
+- **오버라이드**: `--model-routing=implement=deep,test=light` 플래그, 프로필에 고정된 구체 값(그대로
+  존중되며 엔진은 스킵됨), `/deep-slice model`은 변경 없음.
+
+### Changed
+
+- **하위호환**: `model_routing_meta`는 optional입니다; 레거시 `main→sonnet` 마이그레이션은 이제
+  엔진이 작성한 state를 스킵합니다(meta 가드); 기존 프로필은 계속 동작하며 — `interactive_each_session`
+  은 무조건 필터링됩니다(`filterAskItems`).
+
 ## [6.9.4] — 2026-07-10 (hooks stdin wrapper 계약 — 공유 헬퍼)
 
 ### Fixed

@@ -29,9 +29,9 @@ function v2TextToV3Text(text){const issues=detectUnsupportedV2Schema(text);if(is
   const defaultPreset=(text.match(/^default_preset:\s*(\S+)/m)||[])[1]||'solo-strict';const presets=parseV2Presets(text);
   const out=['version: 3',`default_preset: ${defaultPreset}`,'presets:'];const fallback={team_mode:['      team_mode: solo'],
     start_phase:['      start_phase: research'],tdd_mode:['      tdd_mode: strict'],git:['      git:','        use_worktree: false','        use_branch: true'],
-    model_routing:['      model_routing:','        brainstorm: main','        research: sonnet','        plan: main','        implement: sonnet','        test: haiku']};
+    model_routing:['      model_routing: auto']};
   for(const [name,preset] of Object.entries(presets)){out.push(`  ${name}:`,...preset.auto,'    interactive_each_session:',
-      '      - team_mode','      - start_phase','      - tdd_mode','      - git','      - model_routing','    defaults:');
+      '      - team_mode','      - start_phase','      - tdd_mode','      - git','    defaults:');
     for(const key of DEFAULT_KEYS)out.push(...(preset.defaults[key]||fallback[key]));}
   return{text:out.join('\n')+'\n',warnings:[]};}
 function isStaleLock(lockPath){try{const pid=Number(fs.readFileSync(lockPath,'utf8').trim());if(!Number.isFinite(pid)||pid<=0)return true;
@@ -48,7 +48,7 @@ function durableReplace(profilePath,text,label){const temporary=path.join(path.d
     catch(error){if(!['EINVAL','ENOTSUP','EPERM','EISDIR'].includes(error.code))throw error;}finally{if(dirfd!==undefined)fs.closeSync(dirfd);}}
   finally{if(!renamed)try{fs.unlinkSync(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}}}
 function createV3Profile(profilePath,defaultPreset='solo-strict'){if(!PRESET_RE.test(defaultPreset))throw new Error(`잘못된 프리셋 이름: ${defaultPreset} (영문/숫자/-/_만 허용, ≤31자)`);
-  fs.mkdirSync(path.dirname(profilePath),{recursive:true});const text=`version: 3\ndefault_preset: ${defaultPreset}\npresets:\n  ${defaultPreset}:\n    label: ${defaultPreset==='solo-strict'?'Solo + Strict TDD':defaultPreset}\n    description: 사용자 정의 프리셋\n    project_type: zero-base\n    cross_model_preference:\n      use_codex: false\n      use_gemini: false\n    auto_update: prompt\n    interactive_each_session:\n      - team_mode\n      - start_phase\n      - tdd_mode\n      - git\n      - model_routing\n    defaults:\n      team_mode: solo\n      start_phase: research\n      tdd_mode: strict\n      git:\n        use_worktree: false\n        use_branch: true\n      model_routing:\n        brainstorm: main\n        research: sonnet\n        plan: main\n        implement: sonnet\n        test: haiku\n`;
+  fs.mkdirSync(path.dirname(profilePath),{recursive:true});const text=`version: 3\ndefault_preset: ${defaultPreset}\npresets:\n  ${defaultPreset}:\n    label: ${defaultPreset==='solo-strict'?'Solo + Strict TDD':defaultPreset}\n    description: 사용자 정의 프리셋\n    project_type: zero-base\n    cross_model_preference:\n      use_codex: false\n      use_gemini: false\n    auto_update: prompt\n    interactive_each_session:\n      - team_mode\n      - start_phase\n      - tdd_mode\n      - git\n    defaults:\n      team_mode: solo\n      start_phase: research\n      tdd_mode: strict\n      git:\n        use_worktree: false\n        use_branch: true\n      model_routing: auto\n`;
   durableReplace(profilePath,text,'create');
   return{created:true,default_preset:defaultPreset};}
 function migrateProfileCoreUnlocked(profilePath,opts={}){if(!fs.existsSync(profilePath))return{migrated:false,reason:'not-found'};

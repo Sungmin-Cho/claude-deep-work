@@ -111,4 +111,15 @@ describe('migrate-model-routing', () => {
     assert.deepEqual(result, { replaced: [], warnings: [] });
     // Should not throw ENOENT
   });
+
+  it('model_routing_meta 존재 state는 migration skip (엔진 fail-safe main 보호)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-mig-'));
+    const f = path.join(dir, 'state.md');
+    fs.writeFileSync(f, ['---', 'model_routing:', '  research: main', '  implement: main',
+      'model_routing_meta:', '  runtime: unknown', '---'].join('\n'));
+    const r = migrateStateFile(f);
+    assert.deepStrictEqual(r.replaced, []);
+    assert.strictEqual(r.skipped, 'model-routing-meta-present');
+    assert.match(fs.readFileSync(f, 'utf8'), /research: main/); // clobber 안 됨
+  });
 });

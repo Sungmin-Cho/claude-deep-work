@@ -26,6 +26,12 @@ function migrateStateFile(filePath) {
   const replaced = [];
   const warnings = [];
 
+  // M-2 (리뷰 Medium-2): 엔진이 쓴 state (model_routing_meta 존재)는 migration skip.
+  // fail-safe main을 legacy migration이 sonnet으로 clobber하지 않도록 차단.
+  if (/^model_routing_meta:/m.test(src)) {
+    return { replaced: [], warnings: [], skipped: 'model-routing-meta-present' };
+  }
+
   // N-R4: locate the model_routing: block by scanning line-by-line and
   // tracking indent. The block starts at a line `^model_routing:\s*$` (no
   // quote/value) and ends at the next line with shallower-or-equal indent

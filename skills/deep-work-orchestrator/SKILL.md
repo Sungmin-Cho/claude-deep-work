@@ -1,6 +1,6 @@
 ---
 name: deep-work-orchestrator
-description: "This skill should be used when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 5-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
+description: "This skill should be used when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 4-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
 user-invocable: true
 ---
 
@@ -22,6 +22,8 @@ user-invocable: true
 State load 직후, Step 3 dispatch 전에 migration helper 를 호출하여 `model_routing.{research,implement,test} == "main"` 값을 `"sonnet"` 으로 atomic 치환한다. `model_routing.plan` 은 migration 대상에서 제외 (Plan phase는 대화형 메인 세션이 설계상 필수 — spec §3 D1 W1).
 
 **호출 조건**: `$STATE_FILE`이 이미 존재할 때만 호출 (W-1.1 fix — 새 세션은 §1-9에서 state를 생성하므로 이 시점엔 파일이 없을 수 있음).
+
+> **v6.10.0 가드**: `migrateStateFile`은 state에 `model_routing_meta:`가 있으면 skip을 반환한다(자동 결정 엔진이 쓴 fail-safe `main` 보호 — 설계 §5). skip 시 알림 불필요.
 
 실행:
 ```bash
@@ -127,7 +129,7 @@ migrate_rc=$?
 - `migrate_rc` 비-zero → `$migrate_stderr` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지 (R3-C).
 - `MIGRATE_OUT` (JSON stdout):
   - `{ "migrated": true, "reason": "v2-to-v3" }` → 1회 안내:
-    > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 5개 항목(team/start/tdd/git/model)에 대해 LLM 추천 + 확인을 거칩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
+    > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 4개 항목(team/start/tdd/git)에 대해 LLM 추천 + 확인을 거칩니다. 모델은 코드베이스 규모·난이도로 자동 선택됩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
 
     이후 migrate warnings 표시:
     ```bash
@@ -140,7 +142,7 @@ migrate_rc=$?
     ```
   - `{ "migrated": false, "reason": "already-v3" }` → silent.
   - `{ "migrated": false, "reason": "not-found-created-v3" }` → 1회 안내:
-    > "신규 프로필 (v3 형식)을 작성했습니다: `$PROFILE_FILE`. 매 세션마다 5개 항목 ask + 추천이 진행됩니다. 빠른 경로: `--profile=solo-strict --no-ask`."
+    > "신규 프로필 (v3 형식)을 작성했습니다: `$PROFILE_FILE`. 매 세션마다 4개 항목 ask + 추천이 진행됩니다(모델은 자동 선택). 빠른 경로: `--profile=solo-strict --no-ask`."
 
 ### §1-3-3. v3 프로필 로더 호출
 
@@ -220,6 +222,7 @@ CAP=$(node -e '
 ````javascript
 const { sanitizeInput } = require("${CLAUDE_PLUGIN_ROOT}/scripts/recommender-input.js");
 const { parseRecommendation } = require("${CLAUDE_PLUGIN_ROOT}/scripts/recommender-parser.js");
+const { filterAskItems } = require("${CLAUDE_PLUGIN_ROOT}/runtime/recommender-runtime.js");
 
 const input = sanitizeInput({
   task_description: TASK_TEXT,
@@ -227,7 +230,7 @@ const input = sanitizeInput({
   top_level_dirs: TOP_DIRS,
   current_defaults: current_defaults,
   capability: CAPABILITY,
-  ask_items: PROFILE_DATA.interactive_each_session
+  ask_items: filterAskItems(PROFILE_DATA.interactive_each_session)  // v6.10.0: model_routing 영구 제거 (구프로필 포함)
 });
 
 let result;
@@ -250,13 +253,18 @@ try {
 }
 
 const parsed = parseRecommendation(result.text, { capability: input.capability });
+
+// v6.10.0: 자동 모델 결정(§1-8.5)의 난이도 입력. parsed.ok=false거나 task_difficulty 부재면 빈 값 → 무보정.
+const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.data.task_difficulty.value : "";
 ````
 
 `parsed.ok=false` 또는 30초 timeout → recommender skip + `(자동 추천 실패 — 직접 선택)` 라벨로 ask 진입.
 
 ### §1-4-3. interactive_each_session 항목별 AskUserQuestion (in-memory only)
 
-`PROFILE_DATA.interactive_each_session` 배열을 순회하며 각 항목별 AskUserQuestion. CLI 플래그로 이미 override된 항목은 건너뜀.
+> **v6.10.0**: 순회 전 `filterAskItems()`(recommender-runtime)를 적용한다 — 구프로필 `interactive_each_session`에 `model_routing`이 남아 있어도 ask하지 않는다(모델은 §1-8.5에서 자동 결정).
+
+`filterAskItems(PROFILE_DATA.interactive_each_session)` 배열을 순회하며 각 항목별 AskUserQuestion. CLI 플래그로 이미 override된 항목은 건너뜀.
 
 각 ask 항목별로 옵션 라벨 빌드:
 
@@ -309,11 +317,29 @@ Git repository인 경우:
 - Worktree 성공 시: `worktree_enabled: true`, `worktree_path`, `worktree_branch` state에 기록
 - 이후 모든 파일 작업은 worktree 절대 경로 기준
 
+## 1-8.5. 자동 모델 결정 (v6.10.0)
+
+모델 라우팅은 유저에게 묻지 않는다 — 엔진이 결정한다:
+
+```bash
+MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
+  --root "$PROJECT_ROOT" --task "$TASK_TEXT" \
+  --difficulty "${REC_TASK_DIFFICULTY:-}" \
+  --pinned "${FLAGS.model_routing:-}")
+```
+
+- `REC_TASK_DIFFICULTY`: §1-4-2 recommender 응답의 `task_difficulty.value` (없으면 빈 값 — 무보정).
+- `--runtime` 생략 시 CLI가 env로 자동 감지(`DEEP_WORK_RUNTIME` override 지원).
+- 프로필 defaults에 per-phase concrete 값이 남아 있으면(user-pinned) 해당 항목을
+  `--pinned`에 병합하되 CLI 플래그가 프로필보다 우선한다(설계 §2.4). 프로필 값이 `auto` 스칼라면 병합 없음.
+- `MR_OUT.model_routing` → §1-9 state의 `model_routing` 블록, `MR_OUT.meta` → `model_routing_meta` 블록.
+- `MR_OUT.warnings` 각 항목을 1회씩 표시.
+
 ## 1-9. State 파일 + Registry 생성 (atomic + 권한 600)
 
 `.claude/deep-work.{SESSION_ID}.md` 생성 (YAML frontmatter):
 - session_id, current_phase, task_description, work_dir
-- team_mode, tdd_mode, model_routing, worktree_*, cross_model_*
+- team_mode, tdd_mode, model_routing, model_routing_meta (옵셔널, v6.10.0), worktree_*, cross_model_*
 - 각 phase timestamp, test_retry_count, max_test_retries 등
 - **`recommendations: { ... }`** (v6.4.2 신규) — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
 - `execution_override: {FLAGS.exec_mode | null}` — v6.4.0 호환, deep-implement Section 1.5에서 read
@@ -338,6 +364,11 @@ Registry 등록: `register_session "$SESSION_ID" ...`
 
 ## 1-11. 세션 확인 표시
 
+> **근거 라인 분기**: `MR_OUT.meta.error === true`(CLI 자동 결정 실패 — fail-safe)이면 아래 "근거" 라인 대신
+> `근거: 자동 선택 실패 — 전 phase main(현재 세션 모델)로 fallback`을 표시하고 `MR_OUT.warnings`의 사유도 함께 보여준다.
+> 정상 meta(`{tiers, scale, signals_summary, difficulty, ...}`)일 때만 아래 scale/tracked_files/difficulty 근거를 표시한다
+> (fallback meta는 `{runtime, tiers, error}` 형태뿐이라 `scale`/`signals_summary`/`difficulty` 참조 시 undefined 렌더 — final review #2).
+
 ```
 Deep Work 세션이 시작되었습니다!
 
@@ -346,7 +377,10 @@ Deep Work 세션이 시작되었습니다!
 프리셋: [preset_name]
 작업 모드: Solo / Team
 TDD 모드: strict / relaxed / coaching / spike
-모델 라우팅: R=[model] P=main I=[model] T=[model]
+모델 라우팅(자동): R=[model] P=main I=[model] T=[model]
+  근거: [meta.scale] 코드베이스([meta.signals_summary.tracked_files] files) · 난이도 [meta.difficulty ?? "기준선"]
+  (또는 meta.error === true 시: 근거: 자동 선택 실패 — 전 phase main(현재 세션 모델)로 fallback)
+  조정: --model-routing=implement=deep 형식 또는 /deep-slice model
 
 워크플로우:
   Phase 0: deep-brainstorm  [← 현재 / ✅ 건너뜀]
