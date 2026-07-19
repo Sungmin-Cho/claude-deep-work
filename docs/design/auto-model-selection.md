@@ -194,9 +194,9 @@ codex:
 - **기존 migration**(v6.4.0 `main→sonnet`, `scripts/migrate-model-routing.js`)과의 상호작용(리뷰 Medium-2):
   이 스캐너는 state 파일의 `model_routing:` 블록을 **provenance 무관하게** 텍스트 스캔한다(pinned/엔진 값 구분 불가).
   엔진이 unknown-runtime fail-safe로 쓴 `main`을 resume 시 `sonnet`으로 clobber하면 안 되므로,
-  orchestrator Step 1-3의 migration 호출 조건에 **`model_routing_meta` 부재 시에만 실행** 가드를 추가한다
+  가드는 `migrateStateFile` 내부 조기 반환으로 구현(호출부 prose 가드보다 테스트 가능).
   (엔진이 쓴 state는 v6.10+이며 legacy `main` 사용자 선택이 존재할 수 없다 — fail-safe `main`은 의도된 값).
-  legacy 세션(meta 부재)에는 기존 migration이 그대로 적용된다. `migrate-model-routing.js` 자체는 무수정.
+  legacy 세션(meta 부재)에는 기존 migration이 그대로 적용된다.
 - **state 표현의 authoritative 확인**(리뷰 Low-5): 소비 경로가 읽는 것은 YAML `model_routing:` 블록이며,
   `model_routing_json` 스칼라 필드(slice-runtime `migrateModelRouting` 대상)는 migration 전용 orphan으로
   모델 선택에 소비되지 않는다. 엔진은 **YAML 블록에만** 쓴다.
