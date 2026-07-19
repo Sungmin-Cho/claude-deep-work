@@ -132,7 +132,7 @@ If `review_results` field exists (v5.5 legacy):
 - Migrate to `phase_review.{phase}.reviewed: true` for phases that have review data
 - Keep `review_results` for backward compatibility (read-only)
 
-> **모델 라우팅 재해석 (v6.10.0)**: state에 `model_routing_meta`가 있고 `meta.runtime`이 현재 감지 런타임(`node "${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js"` 기준 — CLI 없으므로 `node -e 'const{detectRuntime}=require(...);console.log(detectRuntime())'`)과 다르면, `meta.tiers`를 현재 런타임 카탈로그로 재해석해 `model_routing` 블록을 갱신하고 `meta.runtime`을 갱신한 뒤 1회 안내한다. meta 부재(구세션) → skip.
+> **모델 라우팅 재해석 (v6.10.0)**: state에 `model_routing_meta`가 있고 `meta.runtime`이 현재 감지 런타임(`node "${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js"` 기준 — CLI 없으므로 `node -e 'const{detectRuntime}=require("${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js");console.log(detectRuntime())'`)과 다르면, `meta.tiers`를 현재 런타임 카탈로그로 재해석해 `model_routing` 블록을 갱신하고 `meta.runtime`을 갱신한 뒤 1회 안내한다. meta 부재(구세션) → skip.
 
 ### 1.5. Worktree restoration (v4.1)
 

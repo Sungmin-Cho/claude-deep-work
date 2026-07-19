@@ -1,6 +1,6 @@
 ---
 name: deep-work-orchestrator
-description: "This skill should be used when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 5-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
+description: "This skill should be used when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 4-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
 user-invocable: true
 ---
 
@@ -129,7 +129,7 @@ migrate_rc=$?
 - `migrate_rc` 비-zero → `$migrate_stderr` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지 (R3-C).
 - `MIGRATE_OUT` (JSON stdout):
   - `{ "migrated": true, "reason": "v2-to-v3" }` → 1회 안내:
-    > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 5개 항목(team/start/tdd/git/model)에 대해 LLM 추천 + 확인을 거칩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
+    > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 4개 항목(team/start/tdd/git)에 대해 LLM 추천 + 확인을 거칩니다. 모델은 코드베이스 규모·난이도로 자동 선택됩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
 
     이후 migrate warnings 표시:
     ```bash
@@ -142,7 +142,7 @@ migrate_rc=$?
     ```
   - `{ "migrated": false, "reason": "already-v3" }` → silent.
   - `{ "migrated": false, "reason": "not-found-created-v3" }` → 1회 안내:
-    > "신규 프로필 (v3 형식)을 작성했습니다: `$PROFILE_FILE`. 매 세션마다 5개 항목 ask + 추천이 진행됩니다. 빠른 경로: `--profile=solo-strict --no-ask`."
+    > "신규 프로필 (v3 형식)을 작성했습니다: `$PROFILE_FILE`. 매 세션마다 4개 항목 ask + 추천이 진행됩니다(모델은 자동 선택). 빠른 경로: `--profile=solo-strict --no-ask`."
 
 ### §1-3-3. v3 프로필 로더 호출
 
@@ -253,6 +253,9 @@ try {
 }
 
 const parsed = parseRecommendation(result.text, { capability: input.capability });
+
+// v6.10.0: 자동 모델 결정(§1-8.5)의 난이도 입력. parsed.ok=false거나 task_difficulty 부재면 빈 값 → 무보정.
+const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.data.task_difficulty.value : "";
 ````
 
 `parsed.ok=false` 또는 30초 timeout → recommender skip + `(자동 추천 실패 — 직접 선택)` 라벨로 ask 진입.

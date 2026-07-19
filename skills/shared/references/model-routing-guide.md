@@ -8,10 +8,15 @@ phase별 tier(light/standard/deep/main)를 결정하고, 런타임(Claude Code/C
 
 ## 결정 흐름
 
-1. 결정론적 신호: tracked 파일 수(규모 분류 우선 신호), LOC 추정, 언어 수, 테스트 유무
-2. baseline 규칙표(§설계 2.2) → 3. recommender `task_difficulty`로 ±1 보정(실패 시 무보정)
-4. 런타임 카탈로그 해석: claude(light→haiku/standard→sonnet/deep→opus), codex(카탈로그 pin 값)
-5. 판별 불가 런타임/미pin 카탈로그 → `main`(세션 모델) fail-safe
+tier 결정에 실제로 쓰이는 신호는 tracked 파일 수(규모 분류)와 언어 수(대형 다언어 시 research
+상향) 두 가지뿐이다.
+
+1. 결정론적 신호 수집: tracked 파일 수(규모 분류 신호), 언어 수(다언어 판별 신호)
+2. LOC 추정·테스트 유무도 함께 수집되나, v1 tier 결정에는 사용되지 않는다(관측/향후용)
+3. baseline 규칙표(§설계 2.2) 적용
+4. recommender `task_difficulty`로 ±1 보정(실패 시 무보정)
+5. 런타임 카탈로그 해석: claude(light→haiku/standard→sonnet/deep→opus), codex(카탈로그 pin 값)
+6. 판별 불가 런타임/미pin 카탈로그 → `main`(세션 모델) fail-safe
 
 ## Override 우선순위 (강한 순)
 
@@ -33,4 +38,4 @@ phase별 tier(light/standard/deep/main)를 결정하고, 런타임(Claude Code/C
 
 - `model_routing` 필드 없는 구세션: 기존 기본값 경로.
 - `model_routing_meta` 없는 구세션: legacy migration(main→sonnet)이 그대로 적용되고 재해석은 skip.
-- 구프로필의 per-phase concrete 값: user-pinned로 존중(1회 안내).
+- 구프로필의 per-phase concrete 값은 user-pinned로 그대로 존중(엔진 skip).
