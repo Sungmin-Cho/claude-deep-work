@@ -17,6 +17,24 @@ test('codex 마커 > claude 마커 (codex 세션 안에서 claude 잔존 env 오
   assert.strictEqual(detectRuntime(env), 'codex');
 });
 
+test('impl-review H-1 회귀: CLAUDECODE는 claude-native 배타 마커라 codex companion의 CODEX_HOME을 이긴다', () => {
+  const env = { CLAUDECODE: '1', CODEX_HOME: '/x' };
+  assert.strictEqual(detectRuntime(env), 'claude');
+});
+
+test('impl-review H-1 회귀: CLAUDE_CODE_ENTRYPOINT도 claude-native 배타 마커로 CODEX_HOME을 이긴다', () => {
+  const env = { CLAUDE_CODE_ENTRYPOINT: 'cli', CODEX_HOME: '/x' };
+  assert.strictEqual(detectRuntime(env), 'claude');
+});
+
+test('정방향 보호 유지: CLAUDECODE 없는 순수 codex 세션은 CODEX_HOME으로 codex 판정', () => {
+  assert.strictEqual(detectRuntime({ CODEX_HOME: '/x' }), 'codex');
+});
+
+test('명시 override는 claude-native 배타 마커보다도 우선', () => {
+  assert.strictEqual(detectRuntime({ DEEP_WORK_RUNTIME: 'codex', CLAUDECODE: '1' }), 'codex');
+});
+
 test('claude 마커 단독', () => {
   assert.strictEqual(detectRuntime({ CLAUDE_PLUGIN_ROOT: '/p' }), 'claude');
   assert.strictEqual(detectRuntime({ CLAUDECODE: '1' }), 'claude');

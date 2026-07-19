@@ -131,17 +131,23 @@ LLM 보정과 중복 적용하지 않는다(이중 상향 방지).
 
 ### 3.1 감지 (detect-runtime)
 
-판별 순서 (첫 매치 승리):
+판별 순서 (첫 매치 승리) — **impl-review H-1로 구현 단계에서 아래와 같이 정정됨** (원 설계는
+"override > codex > claude > unknown"이었으나, Claude Code 세션이 codex companion의
+`CODEX_HOME`을 물려받는 병설 환경에서 codex로 오판되는 역방향 유출 버그가 실측되어 수정):
 
 1. `DEEP_WORK_RUNTIME` env — 명시 override (`claude`|`codex`, 그 외 값 무시+경고)
-2. Codex 마커 — `CODEX_HOME` 등 Codex CLI가 세팅하는 env (**구현 단계에서 실제 Codex 세션 실기 검증으로 마커 목록 pin**)
-3. Claude 마커 — `CLAUDE_PLUGIN_ROOT` / `CLAUDE_CODE_ENTRYPOINT` 등
-4. 판별 불가 → `unknown`
+2. Claude-native 배타 마커 — `CLAUDECODE` / `CLAUDE_CODE_ENTRYPOINT`(Claude Code만 세팅; codex-native
+   세션은 세팅하지 않음). codex companion의 `CODEX_HOME`을 물려받아도 이 그룹이 우선해 `claude`로 확정.
+3. Codex 마커 — `CODEX_HOME` 등 Codex CLI가 세팅하는 env (**구현 단계에서 실제 Codex 세션 실기 검증으로 마커 목록 pin**)
+4. 비배타 Claude 마커 — `CLAUDE_PLUGIN_ROOT` 등 (순수 codex 세션이 claude 잔존 env를 물려받는
+   정방향 오염 시나리오에서는 여전히 codex 마커가 우선한다)
+5. 판별 불가 → `unknown`
 
 ### 3.2 카탈로그 (model-catalog)
 
 ```yaml
-# 기본 카탈로그 (코드 내 상수) — 프로필 model_catalog: 블록으로 부분 override 가능
+# 기본 카탈로그 (코드 내 상수) — 프로필 model_catalog: override는 mergeCatalog로 모듈
+# 레벨 지원되나 CLI/프로필 end-to-end 배선은 향후 확장(v1 미배선, impl-review L-1)
 claude:
   light: haiku
   standard: sonnet

@@ -15,6 +15,8 @@ const DEFAULT_CATALOG = Object.freeze({
   codex: Object.freeze({ light: 'gpt-5.6-luna', standard: 'gpt-5.6-terra', deep: 'gpt-5.6-sol', main: MAIN }),
 });
 
+// 프로필 model_catalog: override는 여기서 모듈 레벨로 지원되나, CLI/프로필 파서의
+// end-to-end 배선은 v1 미배선 — 향후 확장(설계 §3.2, impl-review L-1).
 function mergeCatalog(override) {
   const merged = {};
   for (const runtime of Object.keys(DEFAULT_CATALOG)) {
