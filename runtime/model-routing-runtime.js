@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { TIERS, MAIN } = require('./model-catalog.js');
+const { TIERS, MAIN, resolveTier, mergeCatalog, concreteModelsFor, CATALOG_VERSION } = require('./model-catalog.js');
 
 const SCALE_SMALL_MAX = 200;
 const SCALE_MEDIUM_MAX = 2000;
@@ -145,6 +145,46 @@ function sliceModelTier(sessionImplementTier, size) {
   return shiftTier(base, offset);
 }
 
+function decideModelRouting({ signals = {}, taskText = '', difficulty = null, runtime = 'unknown',
+  catalogOverride = null, pinned = {} } = {}) {
+  const warnings = [];
+  const catalog = mergeCatalog(catalogOverride);
+  const base = baselineTiers(signals, taskText);
+  const tiers = applyDifficulty(base.tiers, DIFFICULTY.includes(difficulty) ? difficulty : null);
+  const appliedPinned = {};
+  const routing = {};
+  const runtimeConcrete = new Set(concreteModelsFor(runtime, catalog));
+  for (const phase of PHASES) {
+    const pin = pinned && typeof pinned === 'object' ? pinned[phase] : undefined;
+    if (pin !== undefined) {
+      if (phase === 'brainstorm' || phase === 'plan') {
+        warnings.push(`--model-routing: '${phase}'은 main 고정 — '${pin}' 무시`);
+      } else if (TIERS.includes(pin) || pin === MAIN) {
+        tiers[phase] = pin; appliedPinned[phase] = pin;
+      } else if (runtimeConcrete.has(pin)) {
+        routing[phase] = pin; appliedPinned[phase] = pin;
+      } else {
+        warnings.push(`--model-routing: '${pin}'은 ${runtime} 런타임의 모델/tier가 아님 — '${phase}' 자동값 사용`);
+      }
+    }
+    if (routing[phase] === undefined) {
+      const { model, warning } = resolveTier(tiers[phase], runtime, catalog);
+      routing[phase] = model;
+      if (warning) warnings.push(warning);
+    }
+  }
+  return {
+    model_routing: routing,
+    meta: { tiers, scale: base.scale, signals_summary: { tracked_files: signals.tracked_files ?? null,
+        loc_estimate: signals.loc_estimate ?? null, languages: signals.languages ?? null },
+      difficulty: DIFFICULTY.includes(difficulty) ? difficulty : null, reasons: base.reasons,
+      runtime, catalog_version: CATALOG_VERSION, pinned: appliedPinned,
+      decided_at: new Date().toISOString() },
+    warnings: [...new Set(warnings)], // unknown 런타임 등 phase 반복 경고 dedupe (리뷰 Low-5)
+  };
+}
+
 module.exports = { SCALE_SMALL_MAX, SCALE_MEDIUM_MAX, FS_WALK_CAP, LOC_SAMPLE_CAP, LOC_FILE_BYTE_CAP,
   collectCodebaseSignals, classifyRepoScale,
-  PHASES, DIFFICULTY, tierIndex, shiftTier, baselineTiers, applyDifficulty, sizeToTier, sliceModelTier };
+  PHASES, DIFFICULTY, tierIndex, shiftTier, baselineTiers, applyDifficulty, sizeToTier, sliceModelTier,
+  decideModelRouting };

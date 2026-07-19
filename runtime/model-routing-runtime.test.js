@@ -219,3 +219,60 @@ test('per-slice 규칙: offset 시프트 + clamp + size 부재 fallback', () => 
   assert.strictEqual(sliceModelTier('light', 'S'), 'light');    // 하한 clamp
   assert.strictEqual(sliceModelTier('standard', undefined), 'standard'); // size 부재 → 세션값
 });
+
+// --- Task 5: decideModelRouting (우선순위 + 해석 + meta) ---
+
+const { decideModelRouting } = require('./model-routing-runtime.js');
+
+test('엔진 자동 경로: claude 런타임 해석 + meta 병행 기록', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: '기능 추가',
+    difficulty: 'medium', runtime: 'claude' });
+  assert.deepStrictEqual(r.model_routing,
+    { brainstorm: 'main', research: 'sonnet', plan: 'main', implement: 'sonnet', test: 'haiku' });
+  assert.deepStrictEqual(r.meta.tiers,
+    { brainstorm: 'main', research: 'standard', plan: 'main', implement: 'standard', test: 'light' });
+  assert.strictEqual(r.meta.runtime, 'claude');
+  assert.strictEqual(typeof r.meta.catalog_version, 'number');
+  assert.strictEqual(typeof r.meta.decided_at, 'string');
+  assert.deepStrictEqual(r.warnings, []);
+});
+
+test('unknown 런타임 → 전 phase main + 경고 (설계 §3.1 fail-safe)', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'unknown' });
+  for (const phase of ['research', 'implement', 'test']) assert.strictEqual(r.model_routing[phase], 'main');
+  assert.ok(r.warnings.length >= 1);
+});
+
+test('pinned tier는 tier를 교체 후 해석', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'claude',
+    pinned: { implement: 'deep' } });
+  assert.strictEqual(r.model_routing.implement, 'opus');
+  assert.strictEqual(r.meta.tiers.implement, 'deep');
+  assert.deepStrictEqual(r.meta.pinned, { implement: 'deep' });
+});
+
+test('pinned concrete(현재 런타임)는 그대로 통과', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'claude',
+    pinned: { implement: 'opus' } });
+  assert.strictEqual(r.model_routing.implement, 'opus');
+});
+
+test('pinned concrete(런타임 불일치)는 거부+경고 후 자동값 (리뷰 Low-6)', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'codex',
+    pinned: { implement: 'opus' } });
+  assert.notStrictEqual(r.model_routing.implement, 'opus'); // codex 경로에 Claude명 유출 금지
+  assert.ok(r.warnings.some((w) => /opus/.test(w)));
+});
+
+test('brainstorm/plan pinned는 거부+경고 (main 고정)', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'claude',
+    pinned: { plan: 'opus' } });
+  assert.strictEqual(r.model_routing.plan, 'main');
+  assert.ok(r.warnings.some((w) => /plan/.test(w)));
+});
+
+test('catalogOverride 반영', () => {
+  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'claude',
+    catalogOverride: { claude: { standard: 'sonnet-next' } } });
+  assert.strictEqual(r.model_routing.research, 'sonnet-next');
+});
