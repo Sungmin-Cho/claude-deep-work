@@ -1,5 +1,7 @@
 'use strict';
 
+const { TIERS, MAIN, allConcreteModels } = require('./model-catalog.js');
+
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
 const ENUMS=Object.freeze({tdd:new Set(['strict','relaxed','coaching','spike']),
   team:new Set(['solo','team']),exec:new Set(['inline','delegate'])});
@@ -7,6 +9,15 @@ const RECOMMENDER_ALLOWLIST=/^(haiku|sonnet|opus)$/;const EXEC_ALLOWLIST=/^(inli
 const PROFILE_NAME_ALLOWLIST=/^[a-z0-9][a-z0-9_-]{0,30}$/i;const TDD_ALLOWLIST=/^(strict|relaxed|coaching|spike)$/;
 const RESUME_FROM_ALLOWLIST=/^(brainstorm|research|plan|implement|test)$/;const SESSION_ALLOWLIST=/^[\w.-]+$/;
 const WORKTREE_PATH_BLOCKLIST=/[;|&`$(){}[\]<>!#*?\\]/;
+const MODEL_ROUTING_PHASES=new Set(['brainstorm','research','plan','implement','test']);
+function parseModelRoutingValue(raw){const warnings=[];const entries=[];
+  const allowed=new Set([...TIERS,MAIN,...allConcreteModels()]);
+  for(const entry of String(raw||'').split(',')){
+    const m=entry.match(/^([a-z]+)=([A-Za-z0-9._-]+)$/);
+    if(!m||!MODEL_ROUTING_PHASES.has(m[1])||!allowed.has(m[2])){
+      warnings.push(`--model-routing 항목 '${entry}' 무효 — 무시. 형식: phase=tier|model (공백 불가)`);continue;}
+    entries.push(`${m[1]}=${m[2]}`);}
+  return{entries,warnings};}
 
 function parseDeepWorkFlags(argumentTokens){
   if(!Array.isArray(argumentTokens)||argumentTokens.some((token)=>typeof token!=='string'))fail('argument-array');
@@ -26,7 +37,7 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
   const flags={profile:null,recommender:null,no_ask:false,no_recommender:false,team:false,zero_base:false,
     skip_research:false,skip_brainstorm:false,skip_review:false,no_branch:false,skip_to_implement:false,
     skip_integrate:false,setup:false,tdd_mode:null,resume_from:null,exec_mode:null,session:null,worktree:null,
-    cross_model:false,no_cross_model:false,force_rerun:false,task:'',warnings:[]};const task=[];
+    cross_model:false,no_cross_model:false,force_rerun:false,model_routing:null,task:'',warnings:[]};const task=[];
   const bools={'--no-ask':'no_ask','--no-recommender':'no_recommender','--setup':'setup','--team':'team',
     '--zero-base':'zero_base','--skip-research':'skip_research','--skip-brainstorm':'skip_brainstorm',
     '--skip-review':'skip_review','--no-branch':'no_branch','--skip-to-implement':'skip_to_implement',
@@ -47,10 +58,13 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
       else if(SESSION_ALLOWLIST.test(v))flags.session=v;else flags.warnings.push(`'${v}' 잘못된 session ID — 영문/숫자/dash/dot만 허용, 무시`);}
     else if(arg.startsWith('--worktree=')){const v=arg.slice(11);if(!v)flags.warnings.push('--worktree= 빈 값 — 무시');
       else if(WORKTREE_PATH_BLOCKLIST.test(v))flags.warnings.push(`'${v}' 잘못된 worktree 경로 — shell 메타문자 포함 불가, 무시`);else flags.worktree=v;}
+    else if(arg.startsWith('--model-routing=')){const v=arg.slice(16);
+      const{entries,warnings:mw}=parseModelRoutingValue(v);flags.warnings.push(...mw);
+      flags.model_routing=entries.length?entries.join(','):null;}
     else task.push(arg);
   }
   flags.task=task.join(' ');if(flags.no_recommender&&flags.recommender){flags.warnings.push('--no-recommender 활성 — --recommender 인자는 무시됨');flags.recommender=null;}
   if(flags.no_ask&&flags.recommender){flags.warnings.push('--no-ask 활성 — recommender는 호출되지 않음');flags.recommender=null;}
   if(!flags.recommender&&!flags.no_ask&&!flags.no_recommender)flags.recommender='sonnet';return flags;}
-module.exports={parseDeepWorkFlags,parseFlags,RECOMMENDER_ALLOWLIST,EXEC_ALLOWLIST,PROFILE_NAME_ALLOWLIST,
-  TDD_ALLOWLIST,RESUME_FROM_ALLOWLIST,SESSION_ALLOWLIST,WORKTREE_PATH_BLOCKLIST};
+module.exports={parseDeepWorkFlags,parseFlags,parseModelRoutingValue,RECOMMENDER_ALLOWLIST,EXEC_ALLOWLIST,
+  PROFILE_NAME_ALLOWLIST,TDD_ALLOWLIST,RESUME_FROM_ALLOWLIST,SESSION_ALLOWLIST,WORKTREE_PATH_BLOCKLIST};
