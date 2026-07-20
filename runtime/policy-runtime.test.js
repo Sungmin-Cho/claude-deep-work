@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { compilePolicySnapshot, PROFILE_BY_CLASS, TIER_CATALOG, EFFORT_CATALOG,
-  DIFF_PHASES } = require('./policy-runtime.js');
+  REVIEW_POLICY, VERIFICATION_POLICY, DIFF_PHASES } = require('./policy-runtime.js');
 const { CLASS_ORDER } = require('./risk-runtime.js');
 
 test('A.1 매핑 고정', () => {
@@ -93,4 +93,36 @@ test('알 수 없는 class → standard fallback (fail-open)', () => {
   const snap = compilePolicySnapshot({ riskProfile: { class: 'wat' }, difficulty: null,
     runtime: 'unknown', actualRouting: {}, actualTiers: {}, actualPinned: {} });
   assert.strictEqual(snap.profile, 'standard');
+});
+
+// Task 2 리뷰 W1: A.2/A.3 정본 표 회귀 가드 + recommended_effort 값 고정
+test('A.2 effort catalog 고정 (정본 표 1:1)', () => {
+  assert.deepStrictEqual(EFFORT_CATALOG, {
+    lean: { author: 'medium', implementer: 'medium', reviewer: 'high' },
+    standard: { author: 'high', implementer: 'medium', reviewer: 'high' },
+    strict: { author: 'high', implementer: 'high', semantic_reviewer: 'xhigh', executability_reviewer: 'high' },
+    critical: { author: 'xhigh', implementer: 'high', semantic_reviewer: 'xhigh', executability_reviewer: 'xhigh', escalation: 'max' },
+  });
+});
+
+test('A.3 review/verification policy 고정 (정본 표 1:1)', () => {
+  assert.deepStrictEqual(REVIEW_POLICY, {
+    lean: '단일 리뷰', standard: '단일 강한 리뷰 + 필요 시 dual',
+    strict: '독립 dual 리뷰', critical: 'dual + adjudication + human gate',
+  });
+  assert.deepStrictEqual(VERIFICATION_POLICY, {
+    lean: '최소 검증 (기록 전용)', standard: '표준 검증',
+    strict: '강화 검증', critical: '전수 검증 + human gate',
+  });
+});
+
+test('routing_diff recommended_effort 값 고정 (§5.1 예시 대조)', () => {
+  const tiers = { research: 'standard', implement: 'standard', test: 'light' };
+  const std = compilePolicySnapshot({ riskProfile: { class: 'medium' }, difficulty: null,
+    runtime: 'claude', actualRouting: {}, actualTiers: tiers, actualPinned: {} });
+  assert.strictEqual(std.routing_diff.find((d) => d.phase === 'implement').recommended_effort, 'medium');
+  assert.strictEqual(std.routing_diff.find((d) => d.phase === 'research').recommended_effort, 'high');
+  const strict = compilePolicySnapshot({ riskProfile: { class: 'high' }, difficulty: null,
+    runtime: 'claude', actualRouting: {}, actualTiers: tiers, actualPinned: {} });
+  assert.strictEqual(strict.routing_diff.find((d) => d.phase === 'implement').recommended_effort, 'high');
 });
