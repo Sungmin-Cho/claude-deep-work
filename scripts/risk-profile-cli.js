@@ -34,12 +34,26 @@ function parseArgs(argv) {
 function readInput(inputFile, fs) {
   const raw = inputFile ? fs.readFileSync(inputFile, 'utf8') : fs.readFileSync(0, 'utf8');
   if (!raw.trim()) return {};
-  return JSON.parse(raw); // 실패 시 catch → fallback
+  const parsed = JSON.parse(raw); // 실패 시 catch → fallback
+  // 비객체(숫자/문자열/배열) 입력이 garbage 유효입력이 되지 않게 방어 (리뷰 I1)
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+}
+
+// slice_id는 artifact 파일명에 들어가므로 경로 구성 문자를 금지한다 (리뷰 W1 —
+// `../` 주입 시 risk-inputs/ 밖 임의 경로 쓰기가 가능했음). model-routing-cli의
+// parsePinned 값 sanitize 선례와 동일 접근이되 `..`는 명시 차단.
+function isSafeSliceId(id) {
+  return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && !id.includes('..');
 }
 
 function main() {
   const warnings = [];
   try {
+    // parseArgs는 의존성이 없으므로 require보다 먼저 실행 — 모듈 손상 시에도
+    // fallback JSON이 stage를 보존한다 (리뷰 I3).
+    const args = parseArgs(process.argv.slice(2));
+    stageForFallback = args.stage;
+
     const fs = require('node:fs');
     const path = require('node:path');
     const { decideRiskProfile, canonicalDigest, STAGES } = require('../runtime/risk-runtime.js');
@@ -47,12 +61,10 @@ function main() {
     const { collectCodebaseSignals } = require('../runtime/model-routing-runtime.js');
     if (process.env.DEEP_WORK_RISK_CLI_TEST_THROW === '1') throw new Error('test-throw');
 
-    const args = parseArgs(process.argv.slice(2));
-    stageForFallback = args.stage;
     if (!STAGES.includes(args.stage)) throw new Error(`--stage는 ${STAGES.join('|')} 중 하나여야 함`);
     const received = readInput(args.inputFile, fs);
-    if (args.stage === 'slice' && typeof received.slice_id !== 'string') {
-      throw new Error('slice stage는 slice_id가 필요함');
+    if (args.stage === 'slice' && !isSafeSliceId(received.slice_id)) {
+      throw new Error('slice stage는 유효한 slice_id가 필요함 (영숫자/._- 만 허용, ".." 금지)');
     }
 
     // 유효 입력 = 수신 입력 + 자체 재수집 signals (스펙 §4.2(3), §4.6)

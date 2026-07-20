@@ -93,3 +93,43 @@ test('fail-safe — 모듈 손상 시뮬레이션 (test-only hook)', () => {
   assert.strictEqual(parsed.risk_profile, null);
   assert.match(parsed.error, /test-throw/);
 });
+
+// ── Task 3 리뷰 반영 (W1/I1/I2): 경로 주입 차단 + fail-open 분기 커버리지
+test('W1 — slice_id 경로 주입은 fallback으로 거부 (파일 미기록)', () => {
+  const workDir = makeWorkDir();
+  const out = run(['--stage', 'slice', '--root', path.join(__dirname, '..'), '--work-dir', workDir],
+    { task_text: 'x', slice_id: '../../../PWNED' });
+  assert.strictEqual(out.risk_profile, null);
+  assert.match(out.error, /slice_id/);
+  assert.ok(!fs.existsSync(path.join(workDir, 'PWNED.json')));
+  assert.ok(!fs.existsSync(path.join(workDir, '..', 'PWNED.json')));
+  const inputsDir = path.join(workDir, 'risk-inputs');
+  assert.ok(!fs.existsSync(inputsDir) || fs.readdirSync(inputsDir).length === 0);
+});
+
+test('I1 — 비객체 JSON 입력(숫자)은 빈 입력으로 fail-open 처리', () => {
+  const workDir = makeWorkDir();
+  const out = JSON.parse(execFileSync(process.execPath,
+    [CLI, '--stage', 'provisional', '--root', path.join(__dirname, '..'), '--work-dir', workDir],
+    { input: '42', encoding: 'utf8' }));
+  assert.ok(out.risk_profile);
+  assert.strictEqual(out.risk_profile.class, 'low'); // 신호 전무 → 안전 기본값
+});
+
+test('I2 — artifact 쓰기 실패 시 fail-open 경고 + input_ref null (risk는 정상 산출)', () => {
+  const bogusWorkDir = path.join(makeWorkDir(), 'not-a-dir');
+  fs.writeFileSync(bogusWorkDir, 'file blocks mkdir'); // work-dir 경로가 파일 → mkdir ENOTDIR
+  const out = run(['--stage', 'provisional', '--root', path.join(__dirname, '..'), '--work-dir', bogusWorkDir],
+    { task_text: 'auth 권한 검사' });
+  assert.strictEqual(out.input_ref, null);
+  assert.ok(out.warnings.some((w) => /artifact 기록 실패/.test(w)));
+  assert.ok(out.risk_profile.class);
+});
+
+test('I2 — authoritative 출력은 based_on=authoritative를 부착', () => {
+  const workDir = makeWorkDir();
+  const out = run(['--stage', 'authoritative', '--root', path.join(__dirname, '..'), '--work-dir', workDir],
+    { task_text: 'x', evidence: { changed_paths: [], keywords: [], side_effects: [], evidence_refs: [] } });
+  assert.strictEqual(out.policy_snapshot.based_on, 'authoritative');
+  assert.strictEqual(out.policy_snapshot.compiled_at, out.risk_profile.decided_at);
+});
