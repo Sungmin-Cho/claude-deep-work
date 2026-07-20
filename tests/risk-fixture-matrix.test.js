@@ -7,7 +7,7 @@ const { PROFILE_BY_CLASS } = require('../runtime/policy-runtime.js');
 const FIXTURES = [
   // ── 제안서 §19.1 시나리오
   { name: 'README typo (en)', input: { stage: 'provisional', taskText: 'fix a typo in README' },
-    expected_class: 'low' },
+    expected_class: 'low', expected_profile: 'lean' },
   { name: 'README 오타 수정 (ko)', input: { stage: 'provisional', taskText: 'README 오타 수정' },
     expected_class: 'low' },
   { name: '작은 pure function 버그', input: { stage: 'provisional', taskText: 'fix off-by-one in formatDate helper' },
@@ -23,12 +23,12 @@ const FIXTURES = [
     evidence: { changed_paths: ['src/api/routes.js', 'src/api/handler.js', 'src/api/validators.js',
         'src/api/serializer.js', 'src/api/index.js'],
       keywords: ['public api', '응답 무결성 검증'], side_effects: ['deploy 필요'], evidence_refs: [] } },
-    expected_class: 'medium' },
+    expected_class: 'medium', expected_profile: 'standard' },
   { name: 'public schema 변경', input: { stage: 'authoritative', taskText: 'change public response schema — breaking change',
     evidence: { changed_paths: ['schemas/response.schema.json'], keywords: ['backward compat'], side_effects: [], evidence_refs: [] } },
     expected_class: 'high' }, // public-contract-break trigger
   { name: 'auth permission 조건 (en)', input: { stage: 'provisional', taskText: 'fix permission check in auth middleware' },
-    expected_class: 'high' }, // auth-boundary trigger
+    expected_class: 'high', expected_profile: 'strict' }, // auth-boundary trigger
   { name: '인증 권한 조건 (ko)', input: { stage: 'provisional', taskText: '인증 권한 조건 한 줄 수정' },
     expected_class: 'high' },
   { name: 'lease/state machine (en)', input: { stage: 'provisional', taskText: 'implement lease renewal state machine with retry' },
@@ -36,7 +36,7 @@ const FIXTURES = [
   { name: 'lease 상태 머신 (ko)', input: { stage: 'provisional', taskText: 'lease 갱신 상태 머신과 재시도 구현' },
     expected_class: 'high' },
   { name: 'destructive migration (en)', input: { stage: 'provisional', taskText: 'destructive schema migration dropping legacy table' },
-    expected_class: 'critical' }, // destructive-migration trigger
+    expected_class: 'critical', expected_profile: 'critical' }, // destructive-migration trigger
   { name: '파괴적 마이그레이션 (ko)', input: { stage: 'provisional', taskText: '레거시 테이블 삭제하는 파괴적 스키마 마이그레이션' },
     expected_class: 'critical' },
   { name: 'deploy/publish 자동화', input: { stage: 'provisional', taskText: 'CI에서 npm publish 자동화' },
@@ -72,6 +72,17 @@ const FIXTURES = [
     expected_class: 'high' }, // payment-financial + state-machine-concurrency
   { name: 'billing invoice (en)', input: { stage: 'provisional', taskText: 'change billing invoice rounding' },
     expected_class: 'high' },
+  // ── 경계 점수 (스펙 §8.1: 7/8, 10/11 — hard trigger 미발화 순수 점수 누적 경로)
+  // score 8 = ambiguity 2(불명확+탐색) + blast_radius 2(전체+리팩터) + irreversibility 2
+  // (마이그레이션+스키마 변경) + verification_difficulty 2(장애 주입+복구 검증).
+  // trigger 회피: destructive/drop/삭제, auth/결제/secret, lock/race/동시성, host 어휘 불사용.
+  { name: '경계 8점 — trigger 없는 high', input: { stage: 'provisional',
+    taskText: '불명확한 범위의 전체 리팩터 — 탐색 필요, 마이그레이션과 스키마 변경 동반, 장애 주입과 복구 검증 필요' },
+    expected_class: 'high', expected_profile: 'strict' },
+  // score 11 = 위 8점 + data_security_integrity 1(무결성) + external_side_effects 2(배포+merge).
+  { name: '경계 11점 — trigger 없는 critical', input: { stage: 'provisional',
+    taskText: '불명확한 범위의 전체 리팩터 — 탐색 필요, 마이그레이션과 스키마 변경 동반, 장애 주입과 복구 검증 필요, 데이터 무결성 영향, 배포와 merge 수반' },
+    expected_class: 'critical', expected_profile: 'critical' },
 ];
 
 test(`fixture matrix — ${FIXTURES.length}개 (>=20) 결정론 분류`, () => {
