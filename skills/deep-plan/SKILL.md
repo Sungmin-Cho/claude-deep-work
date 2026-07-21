@@ -177,6 +177,8 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 
 plan.md 작성 완료 직후 slice별 위험도를 shadow 계산한다. **plan.md 포맷은 변경하지 않는다** (스펙 §2 Non-goals — deep-implement 파서 보호). 실패는 slice 단위 fail-open.
 
+먼저 `PROJECT_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)"`를 설정한다 — 이 스킬 컨텍스트에 `PROJECT_ROOT`는 미정의이며, 미설정 시 CLI가 cwd로 fallback해 signals를 오수집한다 (Task 7 리뷰 W1과 동일 처방). 입력 파일은 `RISK_IN=$(mktemp)`로 만들고 각 호출 후 `rm -f "$RISK_IN"` 한다.
+
 각 SLICE-NNN에 대해:
 1. 입력 JSON: `{"task_text": "<slice 제목+outcome+steps 요약>", "slice_id": "SLICE-NNN", "evidence": {"changed_paths": <slice files 목록>, "keywords": [], "side_effects": [], "evidence_refs": []}}`
 2. `node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" --stage slice --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" --input-file "$RISK_IN"` 실행
