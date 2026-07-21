@@ -29,14 +29,9 @@ const POLICY_SHADOW = {
 const SLICE_SHADOW = { 'SLICE-001': { class: 'medium', score: 4, triggers: [], rationale: [],
   input_ref: { path: '/wd/risk-inputs/slice-SLICE-001.json', digest: 'sha256:xyz' } } };
 
-// session-store.js parseStoredObject와 동일 계약 (비공개 함수라 동일 로직 재기술)
-function parseStoredObjectContract(value) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  if (typeof value === 'string') {
-    try { const p = JSON.parse(value); if (p && typeof p === 'object' && !Array.isArray(p)) return p; } catch {}
-  }
-  return {};
-}
+// §5.2 Node 리더 계약 — 실제 session-store.parseStoredObject를 import해 고정한다
+// (Task 5 리뷰 W1: 복제본 검증은 drift를 못 잡음).
+const { parseStoredObject } = require('../runtime/session-store.js');
 
 test('§5.1 인코딩 round-trip — updateFrontmatterText → parseFrontmatter → 양쪽 리더', () => {
   const base = '---\nsession_id: s-test\ncurrent_phase: research\n---\nbody\n';
@@ -47,16 +42,21 @@ test('§5.1 인코딩 round-trip — updateFrontmatterText → parseFrontmatter 
   });
   const { fields } = parseFrontmatter(patched); // §5.1: frontmatter-invalid 없이 통과해야 함
   // Node 리더 경로 (§5.2)
-  assert.deepStrictEqual(parseStoredObjectContract(fields.risk_profile_json), RISK_PROFILE);
-  assert.deepStrictEqual(parseStoredObjectContract(fields.policy_shadow_json), POLICY_SHADOW);
-  assert.deepStrictEqual(parseStoredObjectContract(fields.slice_risk_shadow_json), SLICE_SHADOW);
-  // 스킬(LLM) 리더 경로 (§5.2)
+  assert.deepStrictEqual(parseStoredObject(fields.risk_profile_json), RISK_PROFILE);
+  assert.deepStrictEqual(parseStoredObject(fields.policy_shadow_json), POLICY_SHADOW);
+  assert.deepStrictEqual(parseStoredObject(fields.slice_risk_shadow_json), SLICE_SHADOW);
+  // 스킬(LLM) 리더 경로 (§5.2) — 3필드 전부 bare JSON.parse (Task 5 리뷰 I2)
   assert.deepStrictEqual(JSON.parse(fields.risk_profile_json), RISK_PROFILE);
+  assert.deepStrictEqual(JSON.parse(fields.policy_shadow_json), POLICY_SHADOW);
+  assert.deepStrictEqual(JSON.parse(fields.slice_risk_shadow_json), SLICE_SHADOW);
   // 기존 필드 보존
   assert.strictEqual(fields.session_id, 's-test');
 });
 
-test('2회 patch (provisional → authoritative 추가)에도 provisional 블록 보존 (§6, I5)', () => {
+// NOTE: 이 테스트는 인코딩 RMW 누적 안전성(기존 키 in-place 교체·중복 키 미생성)을 고정한다.
+// §6/I5의 "skill이 provisional을 spread해 보존" 자체는 스킬(LLM) 행위라 node:test 범위 밖 —
+// Task 7 스킬 리뷰에서 별도 확인한다 (Task 5 리뷰 I1).
+test('2회 patch (provisional → authoritative 추가) — 인코딩 RMW 누적 안전성', () => {
   const base = '---\nsession_id: s-test\n---\nbody\n';
   const step1 = updateFrontmatterText(base, {
     policy_shadow_json: JSON.stringify({ provisional: POLICY_SHADOW.provisional }) });
@@ -69,5 +69,5 @@ test('2회 patch (provisional → authoritative 추가)에도 provisional 블록
 });
 
 test('파싱 실패 fail-open — 손상 문자열은 {} (§5.2)', () => {
-  assert.deepStrictEqual(parseStoredObjectContract('{broken'), {});
+  assert.deepStrictEqual(parseStoredObject('{broken'), {});
 });

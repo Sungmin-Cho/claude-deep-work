@@ -781,4 +781,5 @@ module.exports = {
   cleanupSession,
   validateForkTarget,
   getForkGeneration,
+  parseStoredObject, // v6.11: §5.2 Node 리더 계약을 테스트가 실제 함수로 고정하기 위한 export
 };
