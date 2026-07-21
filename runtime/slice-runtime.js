@@ -171,6 +171,7 @@ function clearClusterTakeover(options){return mutateClusterTakeover({...options,
 
 function migrateModelRouting({stateCapability}) {
   return mutateState(stateCapability,(fields) => {
+    if (typeof fields.model_routing_meta_json === 'string' || fields.model_routing_meta !== undefined) return {};
     if (typeof fields.model_routing_json !== 'string') return {};
     let routing;
     try { routing=JSON.parse(fields.model_routing_json); } catch { return {}; }

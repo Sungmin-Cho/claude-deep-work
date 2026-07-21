@@ -46,7 +46,8 @@ process.on('uncaughtException', (e) => {
 });
 
 function parseArgs(argv) {
-  const out = { root: process.cwd(), task: '', difficulty: null, runtime: null, pinnedRaw: '' };
+  const out = { root: process.cwd(), task: '', difficulty: null, runtime: null, pinnedRaw: '',
+    riskClassRaw: null, policyModeRaw: null, floorBaselineRaw: null };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--root') out.root = argv[++i] || out.root;
@@ -54,8 +55,38 @@ function parseArgs(argv) {
     else if (a === '--difficulty') out.difficulty = argv[++i] || null;
     else if (a === '--runtime') out.runtime = argv[++i] || null;
     else if (a === '--pinned') out.pinnedRaw = argv[++i] || '';
+    else if (a === '--risk-class') out.riskClassRaw = argv[++i] || '';
+    else if (a === '--policy-mode') out.policyModeRaw = argv[++i] || '';
+    else if (a === '--floor-baseline') out.floorBaselineRaw = argv[++i] || '';
   }
   return out;
+}
+
+function parsePolicyArgs(args, warnings) {
+  let riskClass = null;
+  if (args.riskClassRaw !== null) {
+    if (['low', 'medium', 'high', 'critical'].includes(args.riskClassRaw)) riskClass = args.riskClassRaw;
+    else warnings.push(`--risk-class '${args.riskClassRaw}' 무효 — 무시`);
+  }
+  let policyMode = 'adaptive';
+  if (args.policyModeRaw !== null) {
+    if (['adaptive', 'shadow'].includes(args.policyModeRaw)) policyMode = args.policyModeRaw;
+    else warnings.push(`--policy-mode '${args.policyModeRaw}' 무효 — adaptive 사용`);
+  }
+  let floorBaseline = null;
+  if (args.floorBaselineRaw !== null) {
+    try {
+      const parsed = JSON.parse(args.floorBaselineRaw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('object required');
+      floorBaseline = {};
+      for (const phase of ['research', 'implement', 'test']) {
+        if (parsed[phase] === undefined) continue;
+        if (['light', 'standard', 'deep'].includes(parsed[phase])) floorBaseline[phase] = parsed[phase];
+        else warnings.push(`--floor-baseline.${phase} '${parsed[phase]}' 무효 — 무시`);
+      }
+    } catch (error) { warnings.push(`--floor-baseline JSON 파싱 실패 — 무시: ${error.message}`); }
+  }
+  return { riskClass, policyMode, floorBaseline };
 }
 
 function parsePinned(raw, warnings) {
@@ -86,8 +117,9 @@ function main() {
     detectedRuntime = runtime;
     const signals = collectCodebaseSignals(args.root);
     const pinned = parsePinned(args.pinnedRaw, warnings);
+    const policyArgs = parsePolicyArgs(args, warnings);
     const decision = decideModelRouting({ signals, taskText: args.task,
-      difficulty: args.difficulty, runtime, pinned });
+      difficulty: args.difficulty, runtime, pinned, ...policyArgs });
     decision.warnings = [...warnings, ...decision.warnings];
     if (process.env.DEEP_WORK_MR_CLI_TEST_BAD_JSON === '1') decision.meta.cycle = decision; // test-only: JSON.stringify throw 유도
     process.stdout.write(JSON.stringify(decision));

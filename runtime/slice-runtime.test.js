@@ -8,7 +8,7 @@ const path = require('node:path');
 const {execFileSync}=require('node:child_process');
 const { activateSlice, enterSliceSpike, setSliceModel, setExecutionOverride,
   setDelegationSnapshot, clearDelegationSnapshot, setClusterTakeover,
-  clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice } =
+  clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice,migrateModelRouting } =
   require('./slice-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const { parseFrontmatter } = require('./frontmatter.js');
@@ -75,6 +75,22 @@ test('model and execution values use closed enums and auto is never stored', asy
   assert.equal(fields.execution_override, null);
   assert.throws(() => setExecutionOverride({stateCapability:f.stateCapability, value:'auto'}),
     /execution-override/);
+});
+
+test('model routing migration preserves canonical meta state and still migrates legacy scalar state', async () => {
+  const canonical = setup();
+  fs.writeFileSync(canonical.state,
+    '---\nsession_id: s-aaaaaaaa\nmodel_routing_json: "{\\"research\\":\\"main\\"}"\nmodel_routing_meta_json: "{\\"runtime\\":\\"unknown\\"}"\n---\n');
+  await migrateModelRouting({ stateCapability: canonical.stateCapability });
+  let fields = parseFrontmatter(fs.readFileSync(canonical.state, 'utf8')).fields;
+  assert.equal(JSON.parse(fields.model_routing_json).research, 'main');
+
+  const legacy = setup();
+  fs.writeFileSync(legacy.state,
+    '---\nsession_id: s-aaaaaaaa\nmodel_routing_json: "{\\"research\\":\\"main\\"}"\n---\n');
+  await migrateModelRouting({ stateCapability: legacy.stateCapability });
+  fields = parseFrontmatter(fs.readFileSync(legacy.state, 'utf8')).fields;
+  assert.equal(JSON.parse(fields.model_routing_json).research, 'sonnet');
 });
 
 test('atomic state reducers participate in the global rank context',async()=>{
