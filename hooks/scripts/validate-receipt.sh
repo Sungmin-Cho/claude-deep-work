@@ -97,7 +97,7 @@ fi
 
 if [[ ! -d "$RECEIPTS_DIR" ]]; then
   check "receipts directory exists" "FAIL — $RECEIPTS_DIR not found"
-  printf '{"result":"fail","passed":%d,"total":%d,"errors":["receipts directory missing"]}\n' "$CHECKS_PASSED" "$CHECKS_TOTAL"
+  printf '{"result":"fail","passed":%d,"total":%d,"errors":["receipts directory missing"],"warnings":[]}\n' "$CHECKS_PASSED" "$CHECKS_TOTAL"
   exit 1
 fi
 
@@ -183,11 +183,11 @@ for w in "${WARNINGS[@]+"${WARNINGS[@]}"}"; do
   WARNINGS_STR="$WARNINGS_STR$w"
 done
 node -e "
-  const [,, result, passed, total, errorsStr, warningsStr] = process.argv;
+  const [, result, passed, total, errorsStr, warningsStr] = process.argv;
   const errors = errorsStr ? errorsStr.split('|||').filter(Boolean) : [];
   const warnings = warningsStr ? warningsStr.split('|||').filter(Boolean) : [];
   console.log(JSON.stringify({ result, passed: +passed, total: +total, errors, warnings }, null, 2));
 " "$RESULT" "$CHECKS_PASSED" "$CHECKS_TOTAL" "$ERRORS_STR" "$WARNINGS_STR" \
-  2>/dev/null || echo "{\"result\":\"$RESULT\",\"passed\":$CHECKS_PASSED,\"total\":$CHECKS_TOTAL}"
+  2>/dev/null || echo "{\"result\":\"$RESULT\",\"passed\":$CHECKS_PASSED,\"total\":$CHECKS_TOTAL,\"errors\":[],\"warnings\":[]}"
 
 [[ "$RESULT" == "pass" ]] && exit 0 || exit 1
