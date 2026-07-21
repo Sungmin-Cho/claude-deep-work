@@ -173,6 +173,18 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - `phase_review.plan` + `review_results.plan` 업데이트
 - `plan_completed_at`: ISO timestamp
 
+### Shadow slice risk (v6.11.0, 관찰 전용)
+
+plan.md 작성 완료 직후 slice별 위험도를 shadow 계산한다. **plan.md 포맷은 변경하지 않는다** (스펙 §2 Non-goals — deep-implement 파서 보호). 실패는 slice 단위 fail-open.
+
+각 SLICE-NNN에 대해:
+1. 입력 JSON: `{"task_text": "<slice 제목+outcome+steps 요약>", "slice_id": "SLICE-NNN", "evidence": {"changed_paths": <slice files 목록>, "keywords": [], "side_effects": [], "evidence_refs": []}}`
+2. `node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" --stage slice --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" --input-file "$RISK_IN"` 실행
+3. 성공: `slice_risk_shadow_json`의 해당 키에 `{class, score, triggers: <hard_triggers의 id 목록>, rationale, input_ref}` 기록 (기존 JSON 병합 재기록)
+4. 실패: `risk_profile_json`이 아직 없으면(예: v6.11 이전에 생성된 legacy/resume 세션 — v6.11 orchestrator는 init 시 §1-8.6이 provisional을 항상 기록) `{"schema_version":1,"errors":[]}` skeleton을 먼저 생성한 뒤, `risk_profile_json.errors`에 `{stage: "slice", message: "SLICE-NNN: <error>", at}` append — `slice_risk_shadow_json`은 성공한 slice만 보관한다 (스펙 §5.1)
+
+`--force-rerun`으로 plan.md가 재작성되면 이 계산도 재수행한다 (전체 재기록).
+
 **NOTE: `current_phase`를 변경하지 않는다.** Orchestrator가 리뷰+승인 후 변경.
 
 ## 완료 메시지
