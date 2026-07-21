@@ -9,5 +9,6 @@ plans/
 .deep-review/
 .deep-docs/
 .deep-memory/
+.deep-loop/
 .serena/
 --help
