@@ -249,15 +249,15 @@ describe('release metadata', () => {
     assert.equal(changelogKoCurrent.includes('runtime/model-catalog.js'), false,
       'CHANGELOG.ko.md 6.11.0 section must not absorb the 6.10.0 model-catalog note');
     // The prior release (6.9.4) section stays intact with its own stdin-contract
-    // regression-test citation; the 6.10.0 promotion must not clobber or absorb it.
+    // regression-test citation; the current (6.11.0) promotion must not clobber or absorb it.
     assert.ok(releaseSection(changelog, '6.9.4').includes('hooks-stdin-contract.test.js'),
       'CHANGELOG.md 6.9.4 section must retain the stdin-contract regression test');
     assert.ok(releaseSection(changelogKo, '6.9.4').includes('hooks-stdin-contract.test.js'),
       'CHANGELOG.ko.md 6.9.4 section must retain the stdin-contract regression test');
     assert.equal(changelogCurrent.includes('hooks-stdin-contract.test.js'), false,
-      'CHANGELOG.md 6.10.0 section must not absorb the 6.9.4 stdin-contract note');
+      'CHANGELOG.md 6.11.0 section must not absorb the 6.9.4 stdin-contract note');
     assert.equal(changelogKoCurrent.includes('hooks-stdin-contract.test.js'), false,
-      'CHANGELOG.ko.md 6.10.0 section must not absorb the 6.9.4 stdin-contract note');
+      'CHANGELOG.ko.md 6.11.0 section must not absorb the 6.9.4 stdin-contract note');
 
     // Last feature release (6.9.0) — deep-memory integration docs remain intact.
     const changelogRelease = releaseSection(changelog, featureVersion);
