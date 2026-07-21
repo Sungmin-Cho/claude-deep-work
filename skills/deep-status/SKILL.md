@@ -1,6 +1,6 @@
 ---
 name: deep-status
-description: "Use when the user wants to see the current deep-work session status and progress — dashboard, badge, tree, or routing to sub-pages (receipts / history / report / assumptions). Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Hub command that dispatches to deep-receipt (§6), deep-history (§7), deep-report (§8), deep-assumptions (§9) sub-skills via inline body Read. Supports `--compare` (fork comparison), `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`."
+description: "Use when the user wants to see the current deep-work session status and progress — dashboard, badge, tree, or routing to sub-pages (receipts / history / report / assumptions). Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Hub command that dispatches to deep-receipt (§6), deep-history (§7), deep-report (§8), deep-assumptions (§9) sub-skills via inline body Read. Supports `--compare` (fork comparison), `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`, `--risk`."
 user-invocable: true
 ---
 
@@ -23,6 +23,7 @@ user-invocable: true
 | `--history` | deep-history sub-skill 호출 (§7) |
 | `--report` | deep-report sub-skill 호출 (§8) |
 | `--assumptions` | deep-assumptions sub-skill 호출 (§9) |
+| `--risk` | Shadow risk/policy 표시 (v6.11.0, §13) |
 | `--all` | 4 sub-page 모두 순차 실행 |
 | `--tree` | Fork tree 출력 |
 | `--badge` | Shields.io 호환 badge 출력 |
@@ -108,6 +109,7 @@ Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, exec
 | `--assumptions` | Show assumption health report |
 | `--assumptions --verbose` | Per-signal per-session breakdown |
 | `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
+| `--risk` | Show shadow risk profile & policy recommendation (v6.11.0) |
 | `--badge` | Generate shields.io badge markdown |
 | `--tree` | Fork relationship tree visualization (v5.6) |
 | `--all` | Show all sessions dashboard (multi-session) + all flags |
@@ -492,4 +494,27 @@ If no finalized sessions exist:
 ```
 ℹ️ Badge 생성을 위해 최소 1개의 완료된 세션이 필요합니다.
    /deep-work로 세션을 시작하고 완료하면 badge가 생성됩니다.
+```
+
+### 13. `--risk` — Shadow Risk & Policy (v6.11.0)
+
+If `$ARGUMENTS` contains `--risk`:
+
+state에서 `risk_profile_json` / `policy_shadow_json` / `slice_risk_shadow_json` 스칼라를 읽어 `JSON.parse` 후 표시한다. 파싱 실패 시 경고 1줄 후 해당 블록 생략 (fail-open).
+
+**3필드 모두 부재 시**: "이 세션은 risk shadow 데이터가 없습니다 (v6.11 이전 세션)" 출력 후 종료.
+
+Policy 추천·Routing diff는 `policy_shadow_json`에 `authoritative`가 있으면 그것을, 없으면 `provisional`을 표시한다 (`based_on`으로 출처 표기).
+
+표시 형식:
+
+```text
+🔍 Shadow Risk (관찰 전용 — 라우팅·게이트 무영향)
+  Provisional:  <class> <score>/14 (confidence <val>) — <dimensions 중 0이 아닌 항목 요약>
+  Authoritative: <class> <score>/14 (confidence <val>) | hard triggers: <각 항목의 `.id` 목록 또는 없음>
+  History: <from> → <to> (<stage>, <reason>) — 항목별 1줄
+  Policy 추천: <profile> | 리뷰: <review_policy.recommended> | 검증: <verification_policy.recommended>
+  Routing diff (<based_on> 기준): phase별 1줄 — 일치 시 "= <tier>", 불일치 시 "<actual_tier> → 추천 <recommended_tier>", 제외 시 "(제외: <excluded_reason>)"
+  Slice risk: SLICE-NNN <class> <score>/14 — 항목별 1줄 (없으면 생략)
+  Errors: <stage>: <message> — 항목별 1줄 (없으면 생략)
 ```

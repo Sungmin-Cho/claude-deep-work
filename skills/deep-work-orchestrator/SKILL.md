@@ -335,11 +335,38 @@ MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
 - `MR_OUT.model_routing` → §1-9 state의 `model_routing` 블록, `MR_OUT.meta` → `model_routing_meta` 블록.
 - `MR_OUT.warnings` 각 항목을 1회씩 표시.
 
+## 1-8.6. Shadow risk profile — provisional (v6.11.0, 관찰 전용)
+
+§1-8.5 직후 위험도를 shadow 계산한다. **결과는 라우팅·게이트에 어떤 영향도 주지 않는다** — 기록·관찰 전용 (설계 스펙 `docs/superpowers/specs/2026-07-20-v6.11-shadow-risk-policy-design.md`).
+
+```bash
+RISK_IN=$(mktemp)
+# MR_OUT에서 model_routing/meta.tiers/meta.pinned를 추출해 입력 JSON 구성
+node -e '
+const mr = JSON.parse(process.argv[1]);
+process.stdout.write(JSON.stringify({
+  task_text: process.argv[2],
+  model_routing: mr.model_routing, tiers: mr.meta?.tiers ?? {}, pinned: mr.meta?.pinned ?? {},
+  difficulty: process.argv[3] || null, runtime: mr.meta?.runtime ?? "unknown" }));
+' "$MR_OUT" "$TASK_TEXT" "${REC_TASK_DIFFICULTY:-}" > "$RISK_IN"
+RISK_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
+  --stage provisional --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" --input-file "$RISK_IN")
+rm -f "$RISK_IN"
+```
+
+- `RISK_OUT.risk_profile`가 null이면(fail-open): `RISK_OUT.error`를 경고 1줄로 표시하고 §1-9에서 `risk_profile_json`을 `{"schema_version":1,"history":[],"errors":[{"stage":"provisional","message":"<error>","at":"<now ISO>"}]}`로 기록 후 계속 진행. **세션을 중단하지 않는다.**
+- 성공 시 §1-9 state에 다음 2개 frontmatter 스칼라(JSON 문자열 1줄)를 기록:
+  - `risk_profile_json`: `{"schema_version":1,"provisional":{...RISK_OUT.risk_profile, "input_ref": RISK_OUT.input_ref},"history":[],"errors":[]}`
+  - `policy_shadow_json`: `{"provisional": RISK_OUT.policy_snapshot}`
+- `RISK_OUT.warnings` 각 항목을 1회씩 표시.
+- 요약 1줄 표시: `Shadow risk: <class> <score>/14 (profile 추천: <profile>) — 관찰 전용, 라우팅 무영향`
+
 ## 1-9. State 파일 + Registry 생성 (atomic + 권한 600)
 
 `.claude/deep-work.{SESSION_ID}.md` 생성 (YAML frontmatter):
 - session_id, current_phase, task_description, work_dir
 - team_mode, tdd_mode, model_routing, model_routing_meta (옵셔널, v6.10.0), worktree_*, cross_model_*
+- **`risk_profile_json`, `policy_shadow_json`, `slice_risk_shadow_json`** (옵셔널, v6.11.0 — frontmatter JSON-string 스칼라, shadow 관찰 전용. phase-guard/gate enforcement에 영향 없음)
 - 각 phase timestamp, test_retry_count, max_test_retries 등
 - **`recommendations: { ... }`** (v6.4.2 신규) — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
 - `execution_override: {FLAGS.exec_mode | null}` — v6.4.0 호환, deep-implement Section 1.5에서 read

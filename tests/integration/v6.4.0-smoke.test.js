@@ -211,12 +211,12 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 6.10.0 with 6.9.0 feature docs intact', () => {
-    // 6.10.0 is a feature release (automatic model selection — Claude Code / Codex): the
+  it('active release metadata is bumped to 6.11.0 with 6.9.0 feature docs intact', () => {
+    // 6.11.0 is a feature release (Shadow Risk & Policy Engine — observation-only): the
     // three manifests track the current version, while the README "What's New" and
     // the deep-memory CHANGELOG attributions stay pinned to the prior feature
     // release (6.9.0), which this release does not rewrite.
-    const version = '6.10.0';        // current release — manifests
+    const version = '6.11.0';        // current release — manifests
     const featureVersion = '6.9.0';  // last feature release — README highlight + deep-memory notes
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -231,23 +231,33 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (6.10.0) — automatic model selection (runtime-neutral tier catalog).
+    // Current release (6.11.0) — shadow risk & policy engine (observation-only).
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.ok(changelogCurrent.includes('runtime/model-catalog.js'),
-      'CHANGELOG.md 6.10.0 section must cite the runtime model-catalog');
-    assert.ok(changelogKoCurrent.includes('runtime/model-catalog.js'),
-      'CHANGELOG.ko.md 6.10.0 section must cite the runtime model-catalog');
+    assert.ok(changelogCurrent.includes('runtime/risk-runtime.js'),
+      'CHANGELOG.md 6.11.0 section must cite the risk runtime');
+    assert.ok(changelogKoCurrent.includes('runtime/risk-runtime.js'),
+      'CHANGELOG.ko.md 6.11.0 section must cite the risk runtime');
+    // The prior release (6.10.0) section stays intact with its own model-catalog
+    // citation; the 6.11.0 promotion must not clobber or absorb it.
+    assert.ok(releaseSection(changelog, '6.10.0').includes('runtime/model-catalog.js'),
+      'CHANGELOG.md 6.10.0 section must retain the runtime model-catalog citation');
+    assert.ok(releaseSection(changelogKo, '6.10.0').includes('runtime/model-catalog.js'),
+      'CHANGELOG.ko.md 6.10.0 section must retain the runtime model-catalog citation');
+    assert.equal(changelogCurrent.includes('runtime/model-catalog.js'), false,
+      'CHANGELOG.md 6.11.0 section must not absorb the 6.10.0 model-catalog note');
+    assert.equal(changelogKoCurrent.includes('runtime/model-catalog.js'), false,
+      'CHANGELOG.ko.md 6.11.0 section must not absorb the 6.10.0 model-catalog note');
     // The prior release (6.9.4) section stays intact with its own stdin-contract
-    // regression-test citation; the 6.10.0 promotion must not clobber or absorb it.
+    // regression-test citation; the current (6.11.0) promotion must not clobber or absorb it.
     assert.ok(releaseSection(changelog, '6.9.4').includes('hooks-stdin-contract.test.js'),
       'CHANGELOG.md 6.9.4 section must retain the stdin-contract regression test');
     assert.ok(releaseSection(changelogKo, '6.9.4').includes('hooks-stdin-contract.test.js'),
       'CHANGELOG.ko.md 6.9.4 section must retain the stdin-contract regression test');
     assert.equal(changelogCurrent.includes('hooks-stdin-contract.test.js'), false,
-      'CHANGELOG.md 6.10.0 section must not absorb the 6.9.4 stdin-contract note');
+      'CHANGELOG.md 6.11.0 section must not absorb the 6.9.4 stdin-contract note');
     assert.equal(changelogKoCurrent.includes('hooks-stdin-contract.test.js'), false,
-      'CHANGELOG.ko.md 6.10.0 section must not absorb the 6.9.4 stdin-contract note');
+      'CHANGELOG.ko.md 6.11.0 section must not absorb the 6.9.4 stdin-contract note');
 
     // Last feature release (6.9.0) — deep-memory integration docs remain intact.
     const changelogRelease = releaseSection(changelog, featureVersion);
