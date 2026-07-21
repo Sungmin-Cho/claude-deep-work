@@ -10,6 +10,9 @@ const {
   RESUME_FROM_ALLOWLIST,
   SESSION_ALLOWLIST,
   WORKTREE_PATH_BLOCKLIST,
+  POLICY_ALLOWLIST,
+  RISK_ALLOWLIST,
+  REVIEW_ALLOWLIST,
 } = require('../runtime/flags-runtime.js');
 
 module.exports = {
@@ -21,6 +24,9 @@ module.exports = {
   RESUME_FROM_ALLOWLIST,
   SESSION_ALLOWLIST,
   WORKTREE_PATH_BLOCKLIST,
+  POLICY_ALLOWLIST,
+  RISK_ALLOWLIST,
+  REVIEW_ALLOWLIST,
 };
 
 if (require.main === module) {
