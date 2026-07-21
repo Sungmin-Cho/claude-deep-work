@@ -7,6 +7,15 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.11.0] — 2026-07-21 (Shadow Risk & Policy Engine — observation-only)
+
+- **risk-runtime**: 7-dimensional deterministic risk scoring + 9 hard triggers + canonical digest (`runtime/risk-runtime.js`)
+- **policy-runtime**: risk class → methodology profile + recommended tier/effort + routing_diff (tier-vs-tier, concrete pins excluded) (`runtime/policy-runtime.js`)
+- **risk-profile-cli**: fail-safe CLI — provisional/authoritative/slice stages with effective-input artifacts preserved under `$WORK_DIR/risk-inputs/` (`scripts/risk-profile-cli.js`)
+- **state**: `risk_profile_json`/`policy_shadow_json`/`slice_risk_shadow_json` frontmatter JSON-string scalars (optional — legacy readers unaffected)
+- **Observation surfaces**: `/deep-status --risk`, optional session-receipt `methodology_shadow`
+- **No enforcement**: model routing and gate behavior remain entirely unchanged (shadow-only). Design: `docs/superpowers/specs/2026-07-20-v6.11-shadow-risk-policy-design.md`
+
 ## [6.10.0] — 2026-07-20 (automatic model selection — Claude Code / Codex)
 
 ### Added

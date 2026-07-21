@@ -7,6 +7,15 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.11.0] — 2026-07-21 (Shadow Risk & Policy Engine — 관찰 전용)
+
+- **risk-runtime**: 7차원 결정론 위험도 스코어링 + hard trigger 9종 + canonical digest (`runtime/risk-runtime.js`)
+- **policy-runtime**: risk class → methodology profile + 권장 tier/effort + routing_diff(tier-vs-tier, concrete-pin 제외) (`runtime/policy-runtime.js`)
+- **risk-profile-cli**: fail-safe CLI — provisional/authoritative/slice 3단계, 유효 입력 artifact(`$WORK_DIR/risk-inputs/`) 보존 (`scripts/risk-profile-cli.js`)
+- **state**: `risk_profile_json`/`policy_shadow_json`/`slice_risk_shadow_json` frontmatter JSON-string 스칼라 (옵셔널 — 구버전 reader 무영향)
+- **관찰 표면**: `/deep-status --risk`, session receipt optional `methodology_shadow`
+- **enforcement 없음**: 모델 라우팅·게이트 동작 완전 무변경 (shadow-only). 설계: `docs/superpowers/specs/2026-07-20-v6.11-shadow-risk-policy-design.md`
+
 ## [6.10.0] — 2026-07-20 (자동 모델 선택 — Claude Code / Codex)
 
 ### Added
