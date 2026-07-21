@@ -40,6 +40,7 @@ function blockerQualificationMissing(finding) {
   if (!(typeof finding.failure_scenario === 'string' && finding.failure_scenario.trim())) missing.push('failure_scenario');
   if (!(typeof finding.verification === 'string' && finding.verification.trim())) missing.push('verification');
   if (!(Number.isFinite(finding.confidence) && finding.confidence > 0 && finding.confidence <= 1)) missing.push('confidence');
+  if (!(Array.isArray(finding.evidence) && finding.evidence.length > 0)) missing.push('evidence');
   return missing;
 }
 

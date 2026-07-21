@@ -93,6 +93,15 @@ test('model routing migration preserves canonical meta state and still migrates 
   assert.equal(JSON.parse(fields.model_routing_json).research, 'sonnet');
 });
 
+test('model routing migration raw-guards legacy nested canonical meta before frontmatter parsing', async () => {
+  const nested = setup();
+  const raw = '---\nsession_id: s-aaaaaaaa\nmodel_routing_json: "{\\"research\\":\\"main\\"}"\n'
+    + 'model_routing_meta:\n  runtime: unknown\n  tiers:\n    research: main\n---\n';
+  fs.writeFileSync(nested.state, raw);
+  await migrateModelRouting({ stateCapability: nested.stateCapability });
+  assert.equal(fs.readFileSync(nested.state, 'utf8'), raw);
+});
+
 test('atomic state reducers participate in the global rank context',async()=>{
   const f=setup();const outer=issueProjectStateCapability(f.root,path.join(f.root,'.claude','outer-target.lock'),
     {allowMissingLeaf:true,role:'lock'});await transaction.withRankedLocks([{rank:transaction.RANKS.target,capability:outer}],async()=>{

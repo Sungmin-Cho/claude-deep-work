@@ -288,6 +288,21 @@ availableChannels, tddMode, evaluatorModelOverride, policyMode, reviewModeOverri
 CLI 부재면 subagent를 쓴다. Low/Medium은 기존 advisory 동작을 유지한다. **High/Critical
 slice에서 Stage 2 blocker는 차단**하고 fix loop로 돌아가며, 소진 시 needs-human이다.
 
+Stage 2의 compiled reviewer를 소비할 때 tier는 `resolveTier(reviewer.tier, runtime)`로
+concrete `reviewer.model`에 해석하고, `reviewer.model`과 `reviewer.effort`를 빠뜨리지 않는다.
+`reviewer.channel === 'codex-cli'`이면 prompt를 dispatcher 소유 임시 파일로 만든 뒤 반드시
+다음 `scripts/deep-work-runtime.js` dispatcher route로 실행한다.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" review run \
+  --engine codex --prompt-file "$REVIEW_PROMPT_FILE" --timeout-ms 600000 --mode read-only \
+  --model "${reviewer.model}" --effort "${reviewer.effort}"
+```
+
+route 응답의 `effort_applied`, `effort_clamped`, `fallback_used`, `effort_failure`를 해당
+reviewer result와 receipt에 그대로 보존한다. subagent/gemini 경로는 protocol의
+unsupported-channel 기록 계약을 따른다.
+
 실행 순서는 `compileReviewPlan → reviewers 실행 → evaluateReviewExecution → (proceed 또는
 degraded-proceed에서) normalizeFinding → verdictFromFindings → writeFindings`다. canonical
 경로는 `$WORK_DIR/reviews/slice-SLICE-NNN-round<N>-findings.json`이다. reviewer 실패를

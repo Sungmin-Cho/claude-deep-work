@@ -69,6 +69,8 @@ async function reviewerProcess(engine,model){const toolchain=await platform.issu
 
 function withReasoningEffort(argv,mapped){const next=[...argv];const inputIndex=next.lastIndexOf('-');
   const insertion=inputIndex===-1?next.length:inputIndex;next.splice(insertion,0,'-c',`model_reasoning_effort=${mapped}`);return next;}
+function codexProbeArgv(argv){const commandIndex=argv.indexOf('exec');
+  return [...(commandIndex===-1?[]:argv.slice(0,commandIndex)),'debug','models','--bundled'];}
 async function executeReviewProcess({engine,resolved,prompt,timeoutMs,cwd,env,effort,model,
   runProcess=runSupervisedProcess,probeProcess=runSupervisedProcess}){
   const processOptions={cwd,timeoutMs,maxOutputBytes:1048576,env,input:prompt};
@@ -78,7 +80,7 @@ async function executeReviewProcess({engine,resolved,prompt,timeoutMs,cwd,env,ef
   if(!mapping){const result=await runProcess({executable:resolved.executable,args:resolved.argv},processOptions);
     return{...result,effort,effort_applied:false,effort_channel:'not-requested',effort_clamped:false,fallback_used:false};}
   let probe;
-  try{probe=await probeProcess({executable:resolved.executable,args:['debug','models','--bundled']},{
+  try{probe=await probeProcess({executable:resolved.executable,args:codexProbeArgv(resolved.argv)},{
     cwd,timeoutMs:Math.min(timeoutMs,10000),maxOutputBytes:1048576,env});}catch{probe=null;}
   const probeCorpus=probe?`${probe.stdout||''}\n${probe.stderr||''}`:'';
   if(!probe||probe.exitCode!==0||!new RegExp(`\\b${mapping.mapped}\\b`).test(probeCorpus)){

@@ -26,6 +26,19 @@
 1. 입력을 `compileReviewPlan(...)`에 전달한다. 반환된 reviewers, `rounds_max: 2`,
    `blind_first_round`, gate만 실행 권한이다.
 2. plan의 **reviewers 실행** 결과를 role/channel/required/status/report_ref와 함께 모은다.
+   각 reviewer의 concrete model은 명시적 `reviewer.model` 또는
+   `resolveTier(reviewer.tier, runtime)` 결과로 확정한다. `reviewer.channel === 'codex-cli'`이면
+   dispatcher 소유 prompt temp를 만들고 아래 route만 사용한다.
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" review run \
+     --engine codex --prompt-file "$REVIEW_PROMPT_FILE" --timeout-ms 600000 --mode read-only \
+     --model "${reviewer.model}" --effort "${reviewer.effort}"
+   ```
+
+   응답의 `effort_applied`, `effort_clamped`, `fallback_used`, `effort_failure`는 reviewer
+   result/state/receipt에 그대로 기록한다. codex-cli를 직접 spawn하거나 compiled model과
+   effort 중 하나를 생략하는 실행은 금지한다.
 3. 먼저 `evaluateReviewExecution(plan, reviewerResults)`을 호출한다. 실행 판정이 `pause`
    또는 `needs-human`이면 finding PASS를 계산하지 않고 멈춘다.
 4. `proceed` 또는 `degraded-proceed`에서만 각 raw finding을 `normalizeFinding`으로
@@ -35,6 +48,8 @@
 6. 매 round 결과는 `writeFindings({workDir, point, round, findings})`로 canonical
    `$WORK_DIR/reviews/<point>-round<N>-findings.json`에 기록한다. reviewer status,
    execution decision, degraded events, human ack는 `review_execution_json`에 병합한다.
+   이때 plan의 `gate.human_ack_required`를 point의 `human_ack_required`에도 보존해,
+   ack 전 자연 상태인 `human_ack: null`도 finish gate가 required point로 판정하게 한다.
 
 호출 순서를 한 줄로 고정하면 다음과 같다:
 `compileReviewPlan → reviewers 실행 → evaluateReviewExecution → normalizeFinding → verdictFromFindings → writeFindings`.

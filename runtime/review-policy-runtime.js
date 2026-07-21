@@ -232,7 +232,13 @@ function finishGateAllowed(reviewExecutionJson) {
   const state = reviewExecutionJson && typeof reviewExecutionJson === 'object' ? reviewExecutionJson : {};
   const points = state.points && typeof state.points === 'object' ? state.points : {};
   const missingAcks = Object.entries(points)
-    .filter(([, point]) => point?.human_ack?.required === true && !ackSatisfied(point.human_ack))
+    .filter(([, point]) => {
+      const plan = point?.review_plan || point?.plan || point;
+      const required = point?.human_ack?.required === true || point?.human_ack_required === true
+        || point?.human_gate?.required === true || plan?.risk_class === 'critical'
+        || plan?.profile === 'critical' || plan?.gate?.human_ack_required === true;
+      return required && !ackSatisfied(point?.human_ack);
+    })
     .map(([point]) => point).sort((a, b) => a.localeCompare(b, 'en'));
   const externalChangeLock = state.external_change_lock === true;
   return { allowed: !externalChangeLock && missingAcks.length === 0,

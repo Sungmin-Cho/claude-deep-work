@@ -65,8 +65,17 @@ test('slice review preserves stage crosswalk, blockers, blind delegation, and fi
   assert.match(implement, /High\/Critical[\s\S]*Stage\s*2[\s\S]*blocker[\s\S]*(?:차단|BLOCK)/i);
   assert.match(implement, /blind[\s\S]*입력 격리/);
   assert.match(implement, /writeFindings/);
+  assert.match(implement, /reviewer\.model[\s\S]*reviewer\.effort[\s\S]*deep-work-runtime\.js[\s\S]*review run/,
+    'Stage 2 must pass the compiled reviewer model and effort through the dispatcher review route');
   assert.match(worker, /writeFindings/);
   assert.match(worker, /findings_ref/);
+});
+
+test('canonical protocol defines the codex-cli dispatcher execution contract', () => {
+  const protocol = read('skills/shared/references/adaptive-review-protocol.md');
+  assert.match(protocol, /reviewer\.channel[\s\S]*codex-cli[\s\S]*deep-work-runtime\.js[\s\S]*review run/);
+  assert.match(protocol, /--model[\s\S]*reviewer\.model[\s\S]*--effort[\s\S]*reviewer\.effort/);
+  assert.match(protocol, /effort_applied[\s\S]*fallback_used/);
 });
 
 test('finding readers and finish gate use the canonical runtime functions', () => {

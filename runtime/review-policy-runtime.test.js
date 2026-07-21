@@ -27,17 +27,38 @@ function compile(riskClass, artifactKind, overrides = {}) {
 
 test('B.1 matrix pins all risk × artifact cells', () => {
   const expected = {
-    low: { document: ['single', 1], 'slice-diff': ['single', 1], 'cross-slice': ['single', 1], 'session-final': ['single', 1] },
-    medium: { document: ['single', 2], 'slice-diff': ['single', 2], 'cross-slice': ['single', 1], 'session-final': ['single', 1] },
-    high: { document: ['dual', 3], 'slice-diff': ['dual', 2], 'cross-slice': ['dual', 2], 'session-final': ['dual', 2] },
-    critical: { document: ['dual', 3], 'slice-diff': ['dual', 2], 'cross-slice': ['dual', 2], 'session-final': ['dual', 2] },
+    low: {
+      document: ['single', [['structural', 'subagent', 'standard', 'high', true]]],
+      'slice-diff': ['single', [['semantic', 'subagent', 'standard', 'high', true]]],
+      'cross-slice': ['single', [['semantic', 'subagent', 'standard', 'high', true]]],
+      'session-final': ['single', [['semantic', 'subagent', 'standard', 'high', true]]],
+    },
+    medium: {
+      document: ['single', [['structural', 'subagent', 'standard', 'high', true], ['semantic', 'subagent', 'standard', 'high', true]]],
+      'slice-diff': ['single', [['semantic', 'subagent', 'standard', 'high', true], ['executability', 'codex-cli', 'standard', 'high', false]]],
+      'cross-slice': ['single', [['semantic', 'subagent', 'deep', 'high', true]]],
+      'session-final': ['single', [['semantic', 'subagent', 'deep', 'high', true]]],
+    },
+    high: {
+      document: ['dual', [['structural', 'subagent', 'standard', 'xhigh', true], ['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'high', true]]],
+      'slice-diff': ['dual', [['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'high', true]]],
+      'cross-slice': ['dual', [['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'high', true]]],
+      'session-final': ['dual', [['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'high', true]]],
+    },
+    critical: {
+      document: ['dual', [['structural', 'subagent', 'standard', 'xhigh', true], ['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'xhigh', true]]],
+      'slice-diff': ['dual', [['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'xhigh', true]]],
+      'cross-slice': ['dual', [['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'xhigh', true]]],
+      'session-final': ['dual', [['semantic', 'subagent', 'deep', 'xhigh', true], ['executability', 'codex-cli', 'deep', 'xhigh', true]]],
+    },
   };
   assert.deepEqual(Object.keys(REVIEW_MATRIX), ['low', 'medium', 'high', 'critical']);
   for (const [risk, artifacts] of Object.entries(expected)) {
-    for (const [artifactKind, [mode, reviewerCount]] of Object.entries(artifacts)) {
+    for (const [artifactKind, [mode, reviewers]] of Object.entries(artifacts)) {
       const plan = compile(risk, artifactKind);
       assert.equal(plan.mode, mode, `${risk}:${artifactKind}:mode`);
-      assert.equal(plan.reviewers.length, reviewerCount, `${risk}:${artifactKind}:reviewers`);
+      assert.deepEqual(plan.reviewers.map(({ role, channel, tier, effort, required }) =>
+        [role, channel, tier, effort, required]), reviewers, `${risk}:${artifactKind}:reviewers`);
       assert.equal(plan.profile, { low: 'lean', medium: 'standard', high: 'strict', critical: 'critical' }[risk]);
       assert.equal(plan.source, 'risk');
     }
@@ -175,6 +196,18 @@ test('finishGateAllowed blocks external lock and reports every missing critical 
   assert.deepEqual(finishGateAllowed(execution), {
     allowed: true,
     blocking: { external_change_lock: false, missing_acks: [] },
+  });
+});
+
+test('finishGateAllowed treats a null human_ack on every critical review point as missing', () => {
+  const execution = { external_change_lock: false, points: {
+    final: { human_ack_required: true, human_ack: null },
+    plan: { risk_class: 'critical', human_ack: { required: true,
+      at: '2026-07-21T00:00:00.000Z', actor: 'human' } },
+  } };
+  assert.deepEqual(finishGateAllowed(execution), {
+    allowed: false,
+    blocking: { external_change_lock: false, missing_acks: ['final'] },
   });
 });
 

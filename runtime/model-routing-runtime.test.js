@@ -318,6 +318,8 @@ test('floorBaseline은 두 호출 사이 floor 단조성을 보장한다', () =>
   for (const phase of ['research', 'implement', 'test']) {
     assert.ok(tierIndex(second.meta.policy.floors_effective[phase]) >=
       tierIndex(first.meta.policy.floors_effective[phase]));
+    assert.ok(tierIndex(second.meta.tiers[phase]) >= tierIndex(first.meta.tiers[phase]),
+      `${phase} effective routing tier must be monotonic`);
   }
 });
 

@@ -96,6 +96,17 @@ test('unqualified blocker is demoted to major with an explicit demoted record', 
   assert.equal(validateFinding(finding), true);
 });
 
+test('blocker with an empty evidence array is demoted to major', () => {
+  const finding = normalizeFinding(rawFinding({ severity: 'critical', evidence: [] }),
+    { sourceScheme: 'review-gate-adversarial' });
+  assert.equal(finding.severity, 'major');
+  assert.deepEqual(finding.demoted, {
+    from: 'blocker',
+    to: 'major',
+    reason: 'blocker-qualification-missing:evidence',
+  });
+});
+
 test('dedupeFindings merges only exact structural keys and is order-deterministic', () => {
   const duplicate = rawFinding({ id: 'REV-SEMANTIC-002', evidence: ['b'], confidence: 0.8 });
   const first = rawFinding({ evidence: ['a'] });

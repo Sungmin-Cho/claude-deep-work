@@ -353,6 +353,18 @@ test('Codex effort probe success applies -c and records high effort as applied',
   assert.equal(result.fallback_used, false);
 });
 
+test('Codex effort probe preserves a Node package launcher argv prefix', async () => {
+  const probes = [];
+  await executeReviewProcess({ engine: 'codex',
+    resolved: { executable: process.execPath,
+      argv: ['/node_modules/@openai/codex/bin/codex.js','exec','--sandbox','read-only','-'] },
+    prompt: Buffer.from('review'), timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'high', model: 'gpt-5.6-sol',
+    probeProcess: async (spec) => { probes.push(spec); return reviewResult(0, 'medium high xhigh max'); },
+    runProcess: async () => reviewResult() });
+  assert.deepEqual(probes, [{ executable: process.execPath,
+    args: ['/node_modules/@openai/codex/bin/codex.js','debug','models','--bundled'] }]);
+});
+
 test('Codex max clamps to xhigh for non-gpt-5.6 and records the clamp', async () => {
   const runs = [];
   const result = await executeReviewProcess({ engine: 'codex',

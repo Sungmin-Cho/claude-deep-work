@@ -53,7 +53,10 @@ test('all eight routing readers use the shared scalar-first decode contract', ()
     'skills/deep-report/SKILL.md',
     'skills/shared/references/implementation-guide.md',
   ];
-  const directNestedAccess = /state\.model_routing\.(?:research|implement|test)|model_routing_meta\.tiers|state\.model_routing_meta/;
+  const directNestedAccess = /(?:state\.)?model_routing\.(?:research|implement|test)|model_routing_meta\.tiers|state\.model_routing_meta/;
+
+  assert.match('model_routing.implement', directNestedAccess,
+    'negative guard must catch bare model_routing.<phase> access');
 
   for (const reader of readers) {
     const body = read(reader);
