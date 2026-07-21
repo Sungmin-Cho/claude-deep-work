@@ -38,11 +38,23 @@ function runValidator(workDir, payloadExtra) {
   }
 }
 
+function parseSummary(output) {
+  const match = output.match(/\{\s*"result":[\s\S]*\}\s*$/);
+  assert.ok(match, `summary JSON not found in output: ${output}`);
+  return JSON.parse(match[0]);
+}
+
 test('vacuous 방지 — positional workDir이 실제로 소비된다 (receipts 유/무가 판정을 가른다)', () => {
   const broken = runValidator(makeFixtureDir({ withReceipts: false }), {});
   const healthy = runValidator(makeFixtureDir({ withReceipts: true }), {});
   assert.strictEqual(broken.code, 1, 'receipts/ 없는 fixture가 fail하지 않음 — baseline이 vacuous할 위험');
   assert.strictEqual(healthy.code, 0, 'receipts/ 있는 fixture가 pass하지 않음');
+  assert.deepStrictEqual(parseSummary(broken.out), {
+    result: 'fail', passed: 1, total: 2, errors: ['receipts directory missing'], warnings: [],
+  });
+  assert.deepStrictEqual(parseSummary(healthy.out), {
+    result: 'pass', passed: 7, total: 7, errors: [], warnings: [],
+  });
 });
 
 test('methodology_shadow 유/무가 validate-receipt.sh 판정을 바꾸지 않는다 (§8.3)', () => {
@@ -52,11 +64,13 @@ test('methodology_shadow 유/무가 validate-receipt.sh 판정을 바꾸지 않�
       hard_triggers: ['state-machine-concurrency'] },
     policy: { recommended_profile: 'strict', based_on: 'authoritative' },
     routing_diff_count: 1, errors_count: 0 } });
-  // 판정(exit code) 동일 — total/passed/result JSON 필드는 위에서 설명한 기존 결함으로
-  // 신뢰 불가하므로 비교하지 않는다.
   assert.strictEqual(withShadow.code, without.code,
     `unknown optional 필드가 판정을 바꿈: without=${without.code}(${without.out}) with=${withShadow.code}(${withShadow.out})`);
   assert.strictEqual(withShadow.code, 0, 'baseline 자체가 pass하지 않음 — 비교가 무의미');
+  assert.deepStrictEqual(parseSummary(withShadow.out), {
+    result: 'pass', passed: 7, total: 7, errors: [], warnings: [],
+  });
+  assert.deepStrictEqual(parseSummary(withShadow.out), parseSummary(without.out));
   // methodology_shadow 관련 오류 문자열이 없다 (파서가 unknown optional 필드를 무시).
   assert.ok(!/methodology_shadow/i.test(withShadow.out),
     `출력에 methodology_shadow 관련 오류 문자열이 있음: ${withShadow.out}`);

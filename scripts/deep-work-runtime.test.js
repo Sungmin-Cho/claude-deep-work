@@ -13,6 +13,8 @@ const { updateFrontmatterText } = require('../runtime/frontmatter.js');
 const { DISPATCHER_GRAMMAR, PHASE5_DISPATCHER_COMMANDS, DISPATCHER_HANDLERS,
   DISPATCHER_METADATA, validateGrammarContract, parseDispatcher, dispatch } =
   require('./deep-work-runtime.js');
+const { executeReviewProcess } = require('../runtime/dispatcher-routes.js');
+const { ROUTE_CONTRACTS } = require('./deep-work-route-contracts.js');
 
 const ROUTE_TIMESTAMP = '2026-07-13T00:00:00Z';
 
@@ -319,6 +321,99 @@ test('review prompt authority cannot be a raw worktree file', async () => {
   fs.writeFileSync(prompt, 'review me');
   await assert.rejects(() => dispatch(['review','run','--engine','codex','--prompt-file',prompt,
     '--timeout-ms','1000','--mode','read-only'], {cwd:root}), /owned-temp-route/);
+});
+
+test('review route accepts bounded effort/model flags and declares them in its contract', () => {
+  const parsed = parseDispatcher(['review','run','--engine','codex','--prompt-file','prompt.tmp',
+    '--timeout-ms','1000','--mode','read-only','--effort','xhigh','--model','gpt-5.6-sol']);
+  assert.equal(parsed.flags.effort, 'xhigh');
+  assert.equal(parsed.flags.model, 'gpt-5.6-sol');
+  assert.throws(() => parseDispatcher(['review','run','--engine','codex','--prompt-file','prompt.tmp',
+    '--timeout-ms','1000','--mode','read-only','--effort','extreme']), /invalid-enum/);
+  const contract = ROUTE_CONTRACTS.get('review run');
+  assert.ok(contract.readSet.includes('validated-effort'));
+  assert.ok(contract.readSet.includes('validated-review-model'));
+});
+
+function reviewResult(exitCode = 0, stdout = 'ok') {
+  return { exitCode, stdout, stderr: exitCode ? 'failed' : '' };
+}
+
+test('Codex effort probe success applies -c and records high effort as applied', async () => {
+  const runs = [];
+  const result = await executeReviewProcess({ engine: 'codex',
+    resolved: { executable: '/codex', argv: ['exec','--sandbox','read-only','--model','gpt-5.6-sol','-'] },
+    prompt: Buffer.from('review'), timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'high', model: 'gpt-5.6-sol',
+    probeProcess: async () => reviewResult(0, 'medium high xhigh max'),
+    runProcess: async (spec) => { runs.push(spec.args); return reviewResult(); } });
+  assert.deepEqual(runs, [['exec','--sandbox','read-only','--model','gpt-5.6-sol',
+    '-c','model_reasoning_effort=high','-']]);
+  assert.equal(result.effort_applied, true);
+  assert.equal(result.effort_clamped, false);
+  assert.equal(result.fallback_used, false);
+});
+
+test('Codex effort probe preserves a Node package launcher argv prefix', async () => {
+  const probes = [];
+  await executeReviewProcess({ engine: 'codex',
+    resolved: { executable: process.execPath,
+      argv: ['/node_modules/@openai/codex/bin/codex.js','exec','--sandbox','read-only','-'] },
+    prompt: Buffer.from('review'), timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'high', model: 'gpt-5.6-sol',
+    probeProcess: async (spec) => { probes.push(spec); return reviewResult(0, 'medium high xhigh max'); },
+    runProcess: async () => reviewResult() });
+  assert.deepEqual(probes, [{ executable: process.execPath,
+    args: ['/node_modules/@openai/codex/bin/codex.js','debug','models','--bundled'] }]);
+});
+
+test('Codex max clamps to xhigh for non-gpt-5.6 and records the clamp', async () => {
+  const runs = [];
+  const result = await executeReviewProcess({ engine: 'codex',
+    resolved: { executable: '/codex', argv: ['exec','--sandbox','read-only','-'] },
+    prompt: Buffer.from('review'), timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'max', model: 'gpt-5.5-codex',
+    probeProcess: async () => reviewResult(0, 'medium high xhigh'),
+    runProcess: async (spec) => { runs.push(spec.args); return reviewResult(); } });
+  assert.ok(runs[0].includes('model_reasoning_effort=xhigh'));
+  assert.equal(result.effort_applied, true);
+  assert.equal(result.effort_clamped, true);
+});
+
+test('Codex effort probe failure retries without the flag and records not applied', async () => {
+  const runs = [];
+  const result = await executeReviewProcess({ engine: 'codex',
+    resolved: { executable: '/codex', argv: ['exec','--sandbox','read-only','-'] },
+    prompt: Buffer.from('review'), timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'xhigh', model: 'gpt-5.6-sol',
+    probeProcess: async () => reviewResult(1),
+    runProcess: async (spec) => { runs.push(spec.args); return reviewResult(); } });
+  assert.deepEqual(runs, [['exec','--sandbox','read-only','-']]);
+  assert.equal(result.effort_applied, false);
+  assert.equal(result.fallback_used, true);
+  assert.equal(result.effort_failure, 'probe-failed');
+});
+
+test('Codex effort execution failure retries once without -c', async () => {
+  const runs = [];
+  const result = await executeReviewProcess({ engine: 'codex',
+    resolved: { executable: '/codex', argv: ['exec','--sandbox','read-only','-'] },
+    prompt: Buffer.from('review'), timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'high', model: 'gpt-5.6-sol',
+    probeProcess: async () => reviewResult(0, 'medium high xhigh max'),
+    runProcess: async (spec) => { runs.push(spec.args); return runs.length === 1 ? reviewResult(2) : reviewResult(); } });
+  assert.ok(runs[0].includes('model_reasoning_effort=high'));
+  assert.ok(!runs[1].some((arg) => arg.startsWith('model_reasoning_effort=')));
+  assert.equal(result.effort_applied, false);
+  assert.equal(result.fallback_used, true);
+  assert.equal(result.effort_failure, 'execution-failed');
+});
+
+test('Gemini review never receives effort and records unsupported-channel', async () => {
+  const runs = [];
+  const result = await executeReviewProcess({ engine: 'gemini',
+    resolved: { executable: '/gemini', argv: ['--approval-mode','plan'] }, prompt: Buffer.from('review'),
+    timeoutMs: 1000, cwd: '/repo', env: {}, effort: 'high', model: 'gemini-2',
+    probeProcess: async () => { throw new Error('must not probe'); },
+    runProcess: async (spec) => { runs.push(spec.args); return reviewResult(); } });
+  assert.deepEqual(runs, [['--approval-mode','plan']]);
+  assert.equal(result.effort_applied, false);
+  assert.equal(result.effort_channel, 'unsupported-channel');
 });
 
 test('owned-temp dispatcher allocates, writes, adopts, and compare-removes its derived path', async () => {

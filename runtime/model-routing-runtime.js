@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { TIERS, MAIN, resolveTier, mergeCatalog, concreteModelsFor, CATALOG_VERSION } = require('./model-catalog.js');
+const { PROFILE_BY_CLASS, EFFORT_CATALOG, TIER_CATALOG } = require('./policy-runtime.js');
 
 const SCALE_SMALL_MAX = 200;
 const SCALE_MEDIUM_MAX = 2000;
@@ -148,13 +149,56 @@ function sliceModelTier(sessionImplementTier, size) {
   return shiftTier(base, offset);
 }
 
+function maxTier(current, floor) {
+  if (tierIndex(current) < 0 || tierIndex(floor) < 0) return current;
+  return tierIndex(current) >= tierIndex(floor) ? current : floor;
+}
+
+function sliceModelTierWithRisk(sessionImplementTier, size, sliceRiskClass) {
+  const tier = sliceModelTier(sessionImplementTier, size);
+  const profile = PROFILE_BY_CLASS[sliceRiskClass];
+  if (!profile) return tier;
+  return maxTier(tier, TIER_CATALOG[profile].implement);
+}
+
 function decideModelRouting({ signals = {}, taskText = '', difficulty = null, runtime = 'unknown',
-  catalogOverride = null, pinned = {} } = {}) {
+  catalogOverride = null, pinned = {}, riskClass = null, policyMode = 'adaptive', floorBaseline = null,
+  now = null } = {}) {
   const warnings = [];
   const catalog = mergeCatalog(catalogOverride);
   const base = baselineTiers(signals, taskText);
   const tiers = applyDifficulty(base.tiers, DIFFICULTY.includes(difficulty) ? difficulty : null);
+  const beforeFloors = { ...tiers };
+  const validRiskClass = Object.hasOwn(PROFILE_BY_CLASS, riskClass) ? riskClass : null;
+  const validFloorBaseline = {};
+  if (floorBaseline && typeof floorBaseline === 'object' && !Array.isArray(floorBaseline)) {
+    for (const phase of ['research', 'implement', 'test']) {
+      if (TIERS.includes(floorBaseline[phase])) validFloorBaseline[phase] = floorBaseline[phase];
+    }
+  }
+  const hasPolicyInput = validRiskClass !== null || Object.keys(validFloorBaseline).length > 0;
+  const effectiveFloors = {};
+  if (policyMode !== 'shadow') {
+    if (validRiskClass !== null) {
+      const policyTiers = TIER_CATALOG[PROFILE_BY_CLASS[validRiskClass]];
+      for (const phase of ['research', 'implement', 'test']) {
+        tiers[phase] = maxTier(tiers[phase], policyTiers[phase]);
+        effectiveFloors[phase] = policyTiers[phase];
+      }
+    }
+    for (const phase of ['research', 'implement', 'test']) {
+      if (!validFloorBaseline[phase]) continue;
+      tiers[phase] = maxTier(tiers[phase], validFloorBaseline[phase]);
+      effectiveFloors[phase] = effectiveFloors[phase]
+        ? maxTier(effectiveFloors[phase], validFloorBaseline[phase]) : validFloorBaseline[phase];
+    }
+  }
+  const floorsApplied = {};
+  for (const phase of ['research', 'implement', 'test']) {
+    if (tiers[phase] !== beforeFloors[phase]) floorsApplied[phase] = { from: beforeFloors[phase], to: tiers[phase] };
+  }
   const appliedPinned = {};
+  const floorOverriddenByPin = {};
   const routing = {};
   const runtimeConcrete = new Set(concreteModelsFor(runtime, catalog));
   for (const phase of PHASES) {
@@ -169,6 +213,13 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
       } else {
         warnings.push(`--model-routing: '${pin}'은 ${runtime} 런타임의 모델/tier가 아님 — '${phase}' 자동값 사용`);
       }
+      let pinTier = TIERS.includes(pin) ? pin : null;
+      if (!pinTier && runtimeConcrete.has(pin)) {
+        pinTier = TIERS.find((tier) => resolveTier(tier, runtime, catalog).model === pin) || null;
+      }
+      if (effectiveFloors[phase] && pinTier && tierIndex(pinTier) < tierIndex(effectiveFloors[phase])) {
+        floorOverriddenByPin[phase] = true;
+      }
     }
     if (routing[phase] === undefined) {
       const { model, warning } = resolveTier(tiers[phase], runtime, catalog);
@@ -176,13 +227,26 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
       if (warning) warnings.push(warning);
     }
   }
+  const meta = { tiers, scale: base.scale, signals_summary: { tracked_files: signals.tracked_files ?? null,
+      loc_estimate: signals.loc_estimate ?? null, languages: signals.languages ?? null },
+    difficulty: DIFFICULTY.includes(difficulty) ? difficulty : null, reasons: base.reasons,
+    runtime, catalog_version: CATALOG_VERSION, pinned: appliedPinned,
+    decided_at: now === null ? new Date().toISOString() : (now instanceof Date ? now.toISOString() : new Date(now).toISOString()) };
+  if (hasPolicyInput) {
+    const effectiveRiskClass = validRiskClass || 'medium';
+    const profile = PROFILE_BY_CLASS[effectiveRiskClass];
+    meta.policy = { risk_class: validRiskClass, profile, mode: policyMode === 'shadow' ? 'shadow' : 'adaptive',
+      floors_applied: floorsApplied, floors_effective: effectiveFloors,
+      floor_overridden_by_pin: floorOverriddenByPin };
+    meta.efforts = {
+      research: { role: 'author', effort: EFFORT_CATALOG[profile].author },
+      implement: { role: 'implementer', effort: EFFORT_CATALOG[profile].implementer },
+      test: { role: 'implementer', effort: EFFORT_CATALOG[profile].implementer },
+    };
+  }
   return {
     model_routing: routing,
-    meta: { tiers, scale: base.scale, signals_summary: { tracked_files: signals.tracked_files ?? null,
-        loc_estimate: signals.loc_estimate ?? null, languages: signals.languages ?? null },
-      difficulty: DIFFICULTY.includes(difficulty) ? difficulty : null, reasons: base.reasons,
-      runtime, catalog_version: CATALOG_VERSION, pinned: appliedPinned,
-      decided_at: new Date().toISOString() },
+    meta,
     warnings: [...new Set(warnings)], // unknown 런타임 등 phase 반복 경고 dedupe (리뷰 Low-5)
   };
 }
@@ -190,4 +254,5 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
 module.exports = { SCALE_SMALL_MAX, SCALE_MEDIUM_MAX, FS_WALK_CAP, LOC_SAMPLE_CAP, LOC_FILE_BYTE_CAP,
   collectCodebaseSignals, classifyRepoScale,
   PHASES, DIFFICULTY, tierIndex, shiftTier, baselineTiers, applyDifficulty, sizeToTier, sliceModelTier,
+  maxTier, sliceModelTierWithRisk,
   decideModelRouting };

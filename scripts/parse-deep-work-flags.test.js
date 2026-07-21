@@ -307,3 +307,50 @@ test('C1: CLI entrypoint — quoted $ARGUMENTS 단일 문자열 split 후 플래
   // 메타문자가 task 본문에 그대로 보존됨 (shell injection 없음)
   assert.ok(out.task.includes('fix bug; rm -rf /'), `task should contain metacharacters, got: ${out.task}`);
 });
+
+test('--policy accepts adaptive and shadow', () => {
+  for (const policy of ['adaptive', 'shadow']) {
+    const r = parseFlags([`--policy=${policy}`, 'task']);
+    assert.strictEqual(r.policy, policy);
+    assert.strictEqual(r.task, 'task');
+    assert.deepStrictEqual(r.warnings, []);
+  }
+});
+
+test('--risk accepts every risk class', () => {
+  for (const risk of ['low', 'medium', 'high', 'critical']) {
+    const r = parseFlags([`--risk=${risk}`, 'task']);
+    assert.strictEqual(r.risk, risk);
+    assert.strictEqual(r.task, 'task');
+    assert.deepStrictEqual(r.warnings, []);
+  }
+});
+
+test('--review accepts auto, single, and dual', () => {
+  for (const review of ['auto', 'single', 'dual']) {
+    const r = parseFlags([`--review=${review}`, 'task']);
+    assert.strictEqual(r.review, review);
+    assert.strictEqual(r.task, 'task');
+    assert.deepStrictEqual(r.warnings, []);
+  }
+});
+
+test('adaptive routing flag defaults are stable when absent', () => {
+  const r = parseFlags(['existing task']);
+  assert.strictEqual(r.policy, 'adaptive');
+  assert.strictEqual(r.risk, null);
+  assert.strictEqual(r.review, 'auto');
+  assert.strictEqual(r.task, 'existing task');
+});
+
+test('invalid adaptive routing flags warn, are ignored, and never leak into task text', () => {
+  const r = parseFlags(['--policy=fast', '--risk=severe', '--review=triple', 'real task']);
+  assert.strictEqual(r.policy, 'adaptive');
+  assert.strictEqual(r.risk, null);
+  assert.strictEqual(r.review, 'auto');
+  assert.strictEqual(r.task, 'real task');
+  assert.strictEqual(r.warnings.length, 3);
+  assert.ok(r.warnings.some((warning) => warning.includes('--policy')));
+  assert.ok(r.warnings.some((warning) => warning.includes('--risk')));
+  assert.ok(r.warnings.some((warning) => warning.includes('--review')));
+});

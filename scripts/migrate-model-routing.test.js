@@ -122,4 +122,15 @@ describe('migrate-model-routing', () => {
     assert.strictEqual(r.skipped, 'model-routing-meta-present');
     assert.match(fs.readFileSync(f, 'utf8'), /research: main/); // clobber 안 됨
   });
+
+  it('model_routing_meta_json scalar 존재 state도 migration skip', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-mig-'));
+    const f = path.join(dir, 'state.md');
+    fs.writeFileSync(f, ['---', 'model_routing:', '  research: main',
+      'model_routing_meta_json: "{\\"runtime\\":\\"unknown\\"}"', '---'].join('\n'));
+    const r = migrateStateFile(f);
+    assert.deepStrictEqual(r.replaced, []);
+    assert.strictEqual(r.skipped, 'model-routing-meta-present');
+    assert.match(fs.readFileSync(f, 'utf8'), /research: main/);
+  });
 });

@@ -9,6 +9,7 @@ const artifact=require('./artifact-runtime.js');const report=require('./report-r
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
 const {runSupervisedProcess}=require('./process-supervisor.js');
+const {mapCodexReasoningEffort,staticEffortMetadata}=require('./review-policy-runtime.js');
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;error.validation=true;throw error;}
 function boundedFile(file,max=1_048_576){const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>max)fail('input-file-bounds');return fs.readFileSync(file);}
@@ -60,11 +61,41 @@ function stateForOwnedInput(cwd,file,expectedPurpose){const root=platform.resolv
   if(!match)fail('owned-temp-route',expectedPurpose);const state=platform.issueProjectStateCapability(root,
     path.join(root,'.claude',`deep-work.${match[1]}.md`),{role:'session-state'});const identified=identifyOwnedInput(state,target,expectedPurpose);
   if(identified.operationId!==match[2])fail('owned-temp-route',expectedPurpose);return{state,...identified};}
-async function reviewerProcess(engine){const toolchain=await platform.issueNodeToolchainCapability({nodeExecutable:process.execPath,
+async function reviewerProcess(engine,model){const toolchain=await platform.issueNodeToolchainCapability({nodeExecutable:process.execPath,
   home:os.homedir(),environment:{...process.env}});const request=engine==='codex'
-    ?{package:'@openai/codex',bin:'codex',args:['exec','--sandbox','read-only','-']}
+    ?{package:'@openai/codex',bin:'codex',args:['exec','--sandbox','read-only',...(model?['--model',model]:[]),'-']}
     :{package:'@google/gemini-cli',bin:'gemini',args:['--approval-mode','plan']};
   return platform.resolveNodePackageBin(toolchain,request);}
+
+function withReasoningEffort(argv,mapped){const next=[...argv];const inputIndex=next.lastIndexOf('-');
+  const insertion=inputIndex===-1?next.length:inputIndex;next.splice(insertion,0,'-c',`model_reasoning_effort=${mapped}`);return next;}
+function codexProbeArgv(argv){const commandIndex=argv.indexOf('exec');
+  return [...(commandIndex===-1?[]:argv.slice(0,commandIndex)),'debug','models','--bundled'];}
+async function executeReviewProcess({engine,resolved,prompt,timeoutMs,cwd,env,effort,model,
+  runProcess=runSupervisedProcess,probeProcess=runSupervisedProcess}){
+  const processOptions={cwd,timeoutMs,maxOutputBytes:1048576,env,input:prompt};
+  if(engine!=='codex'){const result=await runProcess({executable:resolved.executable,args:resolved.argv},processOptions);
+    return{...result,...staticEffortMetadata(engine==='gemini'?'gemini-cli':'subagent',effort),fallback_used:false};}
+  const mapping=mapCodexReasoningEffort(effort,model);
+  if(!mapping){const result=await runProcess({executable:resolved.executable,args:resolved.argv},processOptions);
+    return{...result,effort,effort_applied:false,effort_channel:'not-requested',effort_clamped:false,fallback_used:false};}
+  let probe;
+  try{probe=await probeProcess({executable:resolved.executable,args:codexProbeArgv(resolved.argv)},{
+    cwd,timeoutMs:Math.min(timeoutMs,10000),maxOutputBytes:1048576,env});}catch{probe=null;}
+  const probeCorpus=probe?`${probe.stdout||''}\n${probe.stderr||''}`:'';
+  if(!probe||probe.exitCode!==0||!new RegExp(`\\b${mapping.mapped}\\b`).test(probeCorpus)){
+    const result=await runProcess({executable:resolved.executable,args:resolved.argv},processOptions);
+    return{...result,effort:mapping.requested,effort_applied:false,effort_channel:'codex-cli',
+      effort_clamped:mapping.effort_clamped,fallback_used:true,effort_failure:'probe-failed'};}
+  let attempted;
+  try{attempted=await runProcess({executable:resolved.executable,args:withReasoningEffort(resolved.argv,mapping.mapped)},processOptions);}
+  catch{attempted=null;}
+  if(attempted&&attempted.exitCode===0)return{...attempted,effort:mapping.requested,mapped_effort:mapping.mapped,
+    effort_applied:true,effort_channel:'codex-cli',effort_clamped:mapping.effort_clamped,fallback_used:false};
+  const result=await runProcess({executable:resolved.executable,args:resolved.argv},processOptions);
+  return{...result,effort:mapping.requested,effort_applied:false,effort_channel:'codex-cli',
+    effort_clamped:mapping.effort_clamped,fallback_used:true,effort_failure:'execution-failed'};
+}
 
 async function enforceDispatcherPhase({entry,f,cwd}={}){
   if(!entry||!Array.isArray(entry.allowedPhases)||entry.allowedPhases.length===0)fail('dispatcher-phase-contract');
@@ -269,11 +300,11 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('git stash drop',({f,cwd})=>git.stashDrop({projectCapability:projectCapability(f,cwd),sessionId:f.session,operationId:f['operation-id']}));
   on('review run',async({f,cwd})=>{const source=stateForOwnedInput(cwd,f['prompt-file'],'review-prompt');
     const consumerOperationId=derivedOperationId('review-run',{session:sessionId(source.state),sourceOperationId:source.operationId,
-      engine:f.engine,timeoutMs:Number(f['timeout-ms']),mode:f.mode});const prompt=await ownedInput(source.state,f['prompt-file'],
-      'review-prompt',consumerOperationId);const resolved=await reviewerProcess(f.engine);const result=await runSupervisedProcess({
-      executable:resolved.executable,args:resolved.argv},{cwd:source.state.projectRoot,timeoutMs:Number(f['timeout-ms']),maxOutputBytes:1048576,
-      env:{...process.env},input:prompt.bytes});return{engine:f.engine,exitCode:result.exitCode,stdout:result.stdout,stderr:result.stderr,
-      promptSha256:prompt.sha256,consumerOperationId};});
+      engine:f.engine,timeoutMs:Number(f['timeout-ms']),mode:f.mode,effort:f.effort||null,model:f.model||null});
+    const prompt=await ownedInput(source.state,f['prompt-file'],'review-prompt',consumerOperationId);
+    const resolved=await reviewerProcess(f.engine,f.model);const result=await executeReviewProcess({engine:f.engine,resolved,
+      prompt:prompt.bytes,timeoutMs:Number(f['timeout-ms']),cwd:source.state.projectRoot,env:{...process.env},effort:f.effort,model:f.model});
+    return{engine:f.engine,...result,promptSha256:prompt.sha256,consumerOperationId};});
   on('sensor detect',({f,cwd})=>{const project=projectCapability(f,cwd);let registry=jsonFile(path.resolve(__dirname,'..','sensors','registry.json'));if(registry.$schema==='sensor-registry-v1')registry=sensor.migrateRegistryV1(registry);return sensor.detectSensors(project,registry);});
   on('sensor run',({f,cwd})=>sensor.runSensor({kind:f.kind,processSpec:jsonFile(resolveInput(f['process-spec-json'],cwd)),parser:f.parser,budgetMs:Number(f['budget-ms']),projectRoot:cwd,
     refactorContext:f.state?{sessionId:f.session,stateCapability:stateCapability(f,cwd),planCapability:sessionFile(stateCapability(f,cwd),f.plan),sliceId:f.slice,afterWriteOperationId:f['after-write-operation-id']}:undefined}));
@@ -301,5 +332,5 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('flags parse',({f,cwd})=>flagsRuntime.parseFlags(jsonFile(resolveInput(f['arguments-json'],cwd))));
   return handlers;}
 
-module.exports={buildDispatcherHandlers,enforceDispatcherPhase,
+module.exports={buildDispatcherHandlers,enforceDispatcherPhase,executeReviewProcess,
   helpers:{projectCapability,stateCapability,sessionCapability,sessionFile,readPlan,receiptsCapability,jsonFile}};

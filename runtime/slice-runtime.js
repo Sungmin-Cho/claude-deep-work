@@ -14,10 +14,11 @@ const MODELS = new Set(['haiku','sonnet','opus','main','auto']);
 
 function fail(code,message) { const error = new Error(`[${code}] ${message || code}`); error.code=code; throw error; }
 
-async function mutateState(stateCapability, reducer) {
+async function mutateState(stateCapability, reducer, { rawGuard = null } = {}) {
   revalidatePathCapability(stateCapability,'slice-state');const transaction=require('./transaction-runtime.js');
   return transaction.withRankedLocks([{rank:transaction.RANKS.state,capability:transaction.stateLock(stateCapability)}],() => {
     const text = fs.readFileSync(stateCapability.path,'utf8');
+    if (typeof rawGuard === 'function' && rawGuard(text)) return {};
     const parsed = parseFrontmatter(text);
     const patch = reducer(structuredClone(parsed.fields));
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) fail('state-reducer');
@@ -171,6 +172,7 @@ function clearClusterTakeover(options){return mutateClusterTakeover({...options,
 
 function migrateModelRouting({stateCapability}) {
   return mutateState(stateCapability,(fields) => {
+    if (typeof fields.model_routing_meta_json === 'string' || fields.model_routing_meta !== undefined) return {};
     if (typeof fields.model_routing_json !== 'string') return {};
     let routing;
     try { routing=JSON.parse(fields.model_routing_json); } catch { return {}; }
@@ -180,7 +182,7 @@ function migrateModelRouting({stateCapability}) {
       routing[key]='sonnet'; replaced.push(key);
     }
     return replaced.length ? {model_routing_json:JSON.stringify(routing)} : {};
-  });
+  }, { rawGuard: (text) => /^(?:model_routing_meta|model_routing_meta_json):/m.test(text) });
 }
 
 async function setDelegationSnapshot({stateCapability,planCapability,plan,assignment,snapshot,seam,_locksHeld=false}={}){

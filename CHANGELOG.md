@@ -7,6 +7,20 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.0] — 2026-07-21 (Adaptive Routing & Unified Review)
+
+### Added
+
+- **Adaptive tier floors and effort routing**: risk-aware policy floors now raise model tiers monotonically, preserve explicit pins as the final authority, and carry mapped Codex reasoning effort through the measured execution route with clamp and flag-free retry evidence.
+- **Unified review contract**: canonical policy and finding runtimes compile review plans, normalize and deduplicate findings, persist review rounds, and evaluate execution fail-closed. Legacy review documents are bounded shims, duplicate automatic review is removed, and Critical completion requires the declared human gate.
+- **Canonical state carriers**: `model_routing_json`, `model_routing_meta_json`, `methodology_policy_json`, and `review_execution_json` use JSON-string frontmatter scalars with scalar-first shared readers, legacy fallback, and migration guards that do not clobber canonical metadata.
+
+### Fixed
+
+- **v6.11 handoff items**: `runtime/risk-runtime.js` now separates text, per-path, text×path, and database path×path hard triggers (including segment-bounded auth matching); authoritative reuse extracts `routing_diff` deterministically from state; and receipt validation emits correct, consistent `errors`/`warnings` summary JSON under Node's `-e` argv contract.
+
+Design: `docs/design/v6-12-adaptive-routing-unified-review.md`
+
 ## [6.11.0] — 2026-07-21 (Shadow Risk & Policy Engine — observation-only)
 
 - **risk-runtime**: 7-dimensional deterministic risk scoring + 9 hard triggers + canonical digest (`runtime/risk-runtime.js`)

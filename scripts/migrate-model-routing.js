@@ -28,7 +28,7 @@ function migrateStateFile(filePath) {
 
   // M-2 (리뷰 Medium-2): 엔진이 쓴 state (model_routing_meta 존재)는 migration skip.
   // fail-safe main을 legacy migration이 sonnet으로 clobber하지 않도록 차단.
-  if (/^model_routing_meta:/m.test(src)) {
+  if (/^(?:model_routing_meta|model_routing_meta_json):/m.test(src)) {
     return { replaced: [], warnings: [], skipped: 'model-routing-meta-present' };
   }
 

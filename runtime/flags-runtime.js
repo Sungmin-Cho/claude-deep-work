@@ -8,6 +8,8 @@ const ENUMS=Object.freeze({tdd:new Set(['strict','relaxed','coaching','spike']),
 const RECOMMENDER_ALLOWLIST=/^(haiku|sonnet|opus)$/;const EXEC_ALLOWLIST=/^(inline|delegate)$/;
 const PROFILE_NAME_ALLOWLIST=/^[a-z0-9][a-z0-9_-]{0,30}$/i;const TDD_ALLOWLIST=/^(strict|relaxed|coaching|spike)$/;
 const RESUME_FROM_ALLOWLIST=/^(brainstorm|research|plan|implement|test)$/;const SESSION_ALLOWLIST=/^[\w.-]+$/;
+const POLICY_ALLOWLIST=/^(adaptive|shadow)$/;const RISK_ALLOWLIST=/^(low|medium|high|critical)$/;
+const REVIEW_ALLOWLIST=/^(auto|single|dual)$/;
 const WORKTREE_PATH_BLOCKLIST=/[;|&`$(){}[\]<>!#*?\\]/;
 const MODEL_ROUTING_PHASES=new Set(['brainstorm','research','plan','implement','test']);
 function parseModelRoutingValue(raw){const warnings=[];const entries=[];
@@ -37,7 +39,8 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
   const flags={profile:null,recommender:null,no_ask:false,no_recommender:false,team:false,zero_base:false,
     skip_research:false,skip_brainstorm:false,skip_review:false,no_branch:false,skip_to_implement:false,
     skip_integrate:false,setup:false,tdd_mode:null,resume_from:null,exec_mode:null,session:null,worktree:null,
-    cross_model:false,no_cross_model:false,force_rerun:false,model_routing:null,task:'',warnings:[]};const task=[];
+    cross_model:false,no_cross_model:false,force_rerun:false,model_routing:null,
+    policy:'adaptive',risk:null,review:'auto',task:'',warnings:[]};const task=[];
   const bools={'--no-ask':'no_ask','--no-recommender':'no_recommender','--setup':'setup','--team':'team',
     '--zero-base':'zero_base','--skip-research':'skip_research','--skip-brainstorm':'skip_brainstorm',
     '--skip-review':'skip_review','--no-branch':'no_branch','--skip-to-implement':'skip_to_implement',
@@ -61,10 +64,20 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
     else if(arg.startsWith('--model-routing=')){const v=arg.slice(16);
       const{entries,warnings:mw}=parseModelRoutingValue(v);flags.warnings.push(...mw);
       flags.model_routing=entries.length?entries.join(','):null;}
+    else if(arg.startsWith('--policy=')){const v=arg.slice(9);
+      if(POLICY_ALLOWLIST.test(v))flags.policy=v;
+      else flags.warnings.push(`--policy '${v}' 무효 — 무시. 허용: adaptive|shadow`);}
+    else if(arg.startsWith('--risk=')){const v=arg.slice(7);
+      if(RISK_ALLOWLIST.test(v))flags.risk=v;
+      else flags.warnings.push(`--risk '${v}' 무효 — 무시. 허용: low|medium|high|critical`);}
+    else if(arg.startsWith('--review=')){const v=arg.slice(9);
+      if(REVIEW_ALLOWLIST.test(v))flags.review=v;
+      else flags.warnings.push(`--review '${v}' 무효 — 무시. 허용: auto|single|dual`);}
     else task.push(arg);
   }
   flags.task=task.join(' ');if(flags.no_recommender&&flags.recommender){flags.warnings.push('--no-recommender 활성 — --recommender 인자는 무시됨');flags.recommender=null;}
   if(flags.no_ask&&flags.recommender){flags.warnings.push('--no-ask 활성 — recommender는 호출되지 않음');flags.recommender=null;}
   if(!flags.recommender&&!flags.no_ask&&!flags.no_recommender)flags.recommender='sonnet';return flags;}
 module.exports={parseDeepWorkFlags,parseFlags,parseModelRoutingValue,RECOMMENDER_ALLOWLIST,EXEC_ALLOWLIST,
-  PROFILE_NAME_ALLOWLIST,TDD_ALLOWLIST,RESUME_FROM_ALLOWLIST,SESSION_ALLOWLIST,WORKTREE_PATH_BLOCKLIST};
+  PROFILE_NAME_ALLOWLIST,TDD_ALLOWLIST,RESUME_FROM_ALLOWLIST,SESSION_ALLOWLIST,WORKTREE_PATH_BLOCKLIST,
+  POLICY_ALLOWLIST,RISK_ALLOWLIST,REVIEW_ALLOWLIST};

@@ -76,3 +76,18 @@ test('bad-json 경로: DEEP_WORK_MR_CLI_TEST_BAD_JSON=1이면 exit 0 + JSON.stri
   // (d) warnings에 cli-error: 포함 (circular reference로 인한 메시지)
   assert.ok(r.warnings.some((w) => /cli-error:/.test(w)));
 });
+
+test('risk-class/policy-mode/floor-baseline을 runtime으로 전달한다', () => {
+  const r = run(['--root', path.join(__dirname, '..'), '--runtime', 'claude', '--risk-class', 'high',
+    '--policy-mode', 'adaptive', '--floor-baseline', '{"test":"deep"}']);
+  assert.equal(r.meta.policy.risk_class, 'high');
+  assert.equal(r.meta.policy.floors_effective.test, 'deep');
+});
+
+test('잘못된 floor-baseline과 risk-class는 경고 후 fail-open한다', () => {
+  const r = run(['--root', path.join(__dirname, '..'), '--runtime', 'claude', '--risk-class', 'bogus',
+    '--floor-baseline', '{broken']);
+  assert.ok(r.warnings.some((warning) => /risk-class/.test(warning)));
+  assert.ok(r.warnings.some((warning) => /floor-baseline/.test(warning)));
+  assert.ok(!Object.hasOwn(r.meta, 'policy'));
+});

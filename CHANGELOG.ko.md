@@ -7,6 +7,20 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.12.0] — 2026-07-21 (Adaptive Routing & Unified Review)
+
+### Added
+
+- **적응형 tier floor와 effort 라우팅**: 위험도 정책 floor가 모델 tier를 단조 상향하고 명시적 pin을 최종 우선권으로 보존합니다. 실측 Codex 실행 경로에 reasoning effort를 전달하며, 클램프와 플래그 제거 재시도 결과를 증거로 기록합니다.
+- **통합 리뷰 계약**: 정본 policy/finding 런타임이 리뷰 계획 컴파일, finding 정규화·중복 제거, 라운드 영속, 실행 평가를 담당하며 실패 시 fail-closed합니다. 레거시 리뷰 문서는 제한된 shim으로 전환되고 중복 자동 리뷰는 제거되며, Critical 완료에는 선언된 human gate가 필요합니다.
+- **정본 state carrier**: `model_routing_json`, `model_routing_meta_json`, `methodology_policy_json`, `review_execution_json`을 JSON-string frontmatter 스칼라로 저장합니다. 모든 reader는 scalar-first 공통 규칙과 legacy fallback을 사용하고, 마이그레이션 가드는 정본 metadata를 덮어쓰지 않습니다.
+
+### Fixed
+
+- **v6.11 인계 항목**: `runtime/risk-runtime.js`의 hard trigger를 text·경로별·text×path·database path×path로 분리하고 auth를 세그먼트 경계로 제한했습니다. authoritative reuse는 state의 `routing_diff`를 결정론적으로 추출하며, receipt 검증은 Node `-e` argv 규약에 맞춰 정확하고 일관된 `errors`/`warnings` summary JSON을 emit합니다.
+
+설계: `docs/design/v6-12-adaptive-routing-unified-review.md`
+
 ## [6.11.0] — 2026-07-21 (Shadow Risk & Policy Engine — 관찰 전용)
 
 - **risk-runtime**: 7차원 결정론 위험도 스코어링 + hard trigger 9종 + canonical digest (`runtime/risk-runtime.js`)

@@ -24,7 +24,9 @@ user-invocable: true
    - worktree_path — $ARGUMENTS 우선, 없으면 state에서
    - team_mode — $ARGUMENTS 우선, 없으면 state에서
    - tdd_mode — $ARGUMENTS에 --tdd=MODE 우선, 없으면 state에서 (기본: strict)
-4. 추출: `work_dir`, `active_slice`, `tdd_state`, `model_routing.implement`, `evaluator_model`
+4. 추출: `work_dir`, `active_slice`, `tdd_state`, `evaluator_model`. 라우팅은
+   Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+   `decodedRouting`/`decodedRoutingMeta`를 만든 뒤 읽는다.
 5. Verify: `current_phase` = "implement", `plan_approved` = true
 6. `implement_started_at` 기록 (ISO timestamp)
 7. Read `state.execution_override` from state YAML frontmatter (R3-W4: orchestrator §1-3-1
@@ -164,20 +166,21 @@ Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 s
 
 ## Model Routing (v6.10.0)
 
-State에서 `model_routing.implement`와 `model_routing_meta` 확인.
+공통 decode 결과 `decodedRouting.implement`와 `decodedRoutingMeta`를 확인한다.
 
 - **"main"**: 현재 대화 모델로 inline 실행 → Solo Slice Loop 진행
-- **pinned (concrete 또는 tier)** (`model_routing_meta.pinned.implement` 존재, 또는 meta 부재 AND state.model_routing.implement !== "auto"): 해당 모델/tier로 Agent 위임 — 기존 동작
-- **엔진 자동** (`model_routing_meta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석 (설계 §2.5):
+- **pinned (concrete 또는 tier)** (`decodedRoutingMeta.pinned.implement` 존재, 또는 meta 부재 AND `decodedRouting.implement !== "auto"`): 해당 모델/tier로 Agent 위임 — 기존 동작
+- **엔진 자동** (`decodedRoutingMeta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석 (설계 §2.5):
 
-  > **fail-safe 선행 체크**: `model_routing_meta.tiers.implement === "main"` 또는 `model_routing_meta.error === true`(CLI 자동 결정 실패)이면 per-slice 해석을 하지 않고 **현재 세션 모델로 inline 실행**한다(설계 §3.1 error→main). 아래 per-slice 규칙은 tier가 light/standard/deep일 때만 적용.
+  > **fail-safe 선행 체크**: decoded meta의 implement tier가 `main`이거나 error가 true이면 per-slice 해석을 하지 않고 **현재 세션 모델로 inline 실행**한다(설계 §3.1 error→main). 아래 per-slice 규칙은 tier가 light/standard/deep일 때만 적용.
 
 ```javascript
-const { sliceModelTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-routing-runtime.js");
+const { sliceModelTierWithRisk } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-routing-runtime.js");
 const { resolveTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js");
 // tiers.implement가 light/standard/deep일 때만 — main/error는 위에서 inline 처리됨
-const tier = sliceModelTier(state.model_routing_meta.tiers.implement, slice.size);
-const { model } = resolveTier(tier, state.model_routing_meta.runtime);
+const sliceRiskClass = decodedSliceRisk[slice.id]?.class;
+const tier = sliceModelTierWithRisk(decodedRoutingMeta.tiers.implement, slice.size, sliceRiskClass);
+const { model } = resolveTier(tier, decodedRoutingMeta.runtime);
 // 세션 tier standard일 때: S→haiku, M/L→sonnet, XL→opus (기존 auto와 동일)
 // model === "main"이면 inline 실행
 ```
@@ -192,7 +195,7 @@ const { model } = resolveTier(tier, state.model_routing_meta.runtime);
   (이 legacy 분기는 프롬프트 경로 산문 규칙이다 — Node 픽스처 고정 대상 아님. 설계 §8의 "픽스처로 고정" 항목 중 이 케이스만 산문 acceptance로 대체됨을 명시 — 리뷰 Low-6.)
 
 Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙을 프롬프트에 포함 (hook이 delegated agent에 미적용), slice당 10분 timeout.
-상세: Read("../shared/references/model-routing-guide.md")
+상세 및 carrier decode 정본: Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)
 
 ## Section 2.1: Delegate Solo Path (v6.4.0)
 
@@ -209,7 +212,7 @@ Solo는 **모든 cluster를 단일 agent에 순차 위임**:
 ```
 Agent(
   subagent_type="deep-work:implement-slice-worker",
-  model=state.model_routing.implement,   // 엔진 자동 경로: cluster 대표 tier(max over slices) → resolveTier → model. pinned/legacy면 그대로.
+  model=decodedRouting.implement,   // 자동 경로는 cluster 대표 tier를 resolve한 값으로 교체. pinned/legacy면 그대로.
   prompt="cluster_ids=[C1,C2,...,Cn]; sequential;" +
          "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
          "delegation_snapshot=<hash>;" +
@@ -274,13 +277,42 @@ GREEN 후 센서 실행 (fast-fail 순서): lint → typecheck → review-check
 
 per-slice diff: `git diff $git_before_slice -- [slice files]`
 
-**Stage 1 — Spec Compliance** (Required):
-- Agent(evaluator_model): diff + spec_checklist + contract 검증
-- FAIL → 수정 + GREEN 확인 + 센서 재실행 (max 2 retries)
+Read(`../shared/references/adaptive-review-protocol.md`)하고
+`compileReviewPlan({artifactKind:'slice-diff', riskClass, sliceRiskClass, runtime,
+availableChannels, tddMode, evaluatorModelOverride, policyMode, reviewModeOverride})`를 호출한다.
 
-**Stage 2 — Code Quality** (Advisory):
-- Agent(evaluator_model): diff + Architecture Decision 검증
-- Critical finding → 수정 (max 1 retry)
+**Stage 1 — semantic role / Spec Compliance** (Required): diff + spec_checklist + contract를
+검증한다.
+
+**Stage 2 — executability role / Code Quality**: dual plan이면 codex-cli 우선, 단일 또는
+CLI 부재면 subagent를 쓴다. Low/Medium은 기존 advisory 동작을 유지한다. **High/Critical
+slice에서 Stage 2 blocker는 차단**하고 fix loop로 돌아가며, 소진 시 needs-human이다.
+
+`compileReviewPlan`은 codex-cli reviewer를 항상 `resolveTier(reviewer.tier, 'codex')`로,
+subagent reviewer를 세션 runtime으로 해석해 concrete `reviewer.model`을 확정한다. Stage 2
+소비자는 channel runtime을 다시 해석하지 않고 `reviewer.model`과 `reviewer.effort`를
+빠뜨리지 않는다.
+`reviewer.channel === 'codex-cli'`이면 prompt를 dispatcher 소유 임시 파일로 만든 뒤 반드시
+다음 `scripts/deep-work-runtime.js` dispatcher route로 실행한다.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" review run \
+  --engine codex --prompt-file "$REVIEW_PROMPT_FILE" --timeout-ms 600000 --mode read-only \
+  --model "${reviewer.model}" --effort "${reviewer.effort}"
+```
+
+route 응답의 `effort_applied`, `effort_clamped`, `fallback_used`, `effort_failure`를 해당
+reviewer result와 receipt에 그대로 보존한다. subagent/gemini 경로는 protocol의
+unsupported-channel 기록 계약을 따른다.
+
+실행 순서는 `compileReviewPlan → reviewers 실행 → evaluateReviewExecution → (proceed 또는
+degraded-proceed에서) normalizeFinding → verdictFromFindings → writeFindings`다. canonical
+경로는 `$WORK_DIR/reviews/slice-SLICE-NNN-round<N>-findings.json`이다. reviewer 실패를
+finding 없음으로 처리하지 않고 execution decision/degraded event를 receipt에 보존한다.
+
+Delegate dual의 blind는 **입력 격리**다. worker의 Stage 1 finding/판정을 부모 Stage 2
+prompt에 넣지 않고 diff, slice 계약, receipt만 전달하며 두 결과는 verdict 단계에서만
+합친다. reviewer는 수정하지 않고 작성자/구현자가 수정한다. `rounds_max: 2`를 넘기지 않는다.
 
 ### Step D: Receipt 수집 — legacy payload 구성
 
@@ -296,6 +328,14 @@ slice 종료 직전 (spec 검증 + slice review 완료 후):
 - **changes.git_diff**: `git diff git_before_slice..git_after_slice` 출력
 - sensor_results, spec_compliance, slice_review, harness_metadata
 - slice_confidence: done | done_with_concerns + concerns 배열
+
+#### Optional `review` evidence (v6.12.0)
+
+통합 리뷰를 실행한 slice는 legacy payload에 optional `review` 블록을 추가한다. 블록은
+`findings_ref`(canonical `$WORK_DIR/reviews/slice-SLICE-NNN-round<N>-findings.json`),
+reviewer별 `role`/`channel`/`status`/`fallback_used`/`effort`/`effort_applied`, 그리고
+최종 `verdict`를 보존한다. 리뷰를 실행하지 않은 구세션·spike receipt에서는 블록을
+생략한다. 이 optional 확장은 기존 verify-receipt 8개 항목의 판정 입력이 아니다.
 
 ### Step D-1: M3 Envelope Wrap (v6.5.0)
 
@@ -420,7 +460,7 @@ AskUserQuestion({
      description: cluster의 slice_ids + files + TDD 규칙 + Slice Review 규칙)
    - 그룹별 Agent 스폰 — **full worker contract 필수** (CA3 fix):
        Agent(subagent_type="deep-work:implement-slice-worker",
-             model=state.model_routing.implement,  // 엔진 자동 경로: cluster 대표 tier(max over slices) → resolveTier → model. pinned/legacy면 그대로.
+             model=decodedRouting.implement,  // 자동 경로는 cluster 대표 tier를 resolve한 값으로 교체. pinned/legacy면 그대로.
              mode="bypassPermissions",  // hook이 team agent에 미적용 → Receipt 중심 검증
              prompt="cluster_id=<Ci>; cluster_ids=[slice_ids of Ci];" +
                     "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
@@ -443,7 +483,7 @@ AskUserQuestion({
    **full worker contract 필수** (CA3 fix — Section 2.1 Solo와 동일 구조):
    ```
    Agent(subagent_type="deep-work:implement-slice-worker",
-         model=state.model_routing.implement,  // 엔진 자동 경로: cluster 대표 tier(max over slices) → resolveTier → model. pinned/legacy면 그대로.
+         model=decodedRouting.implement,  // 자동 경로는 cluster 대표 tier를 resolve한 값으로 교체. pinned/legacy면 그대로.
          prompt="cluster_id=<Ci>; cluster_ids=[slice_ids of Ci];" +
                 "work_dir=<$WORK_DIR>; plan_path=<$WORK_DIR/plan.md>;" +
                 "delegation_snapshot=<hash>;" +

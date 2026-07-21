@@ -22,7 +22,9 @@ user-invocable: true
 3. 조건 변수 확인:
    - worktree_path — $ARGUMENTS 우선, 없으면 state에서
    - team_mode — $ARGUMENTS 우선, 없으면 state에서
-4. 추출: `work_dir`, `test_retry_count`, `max_test_retries`, `model_routing.test`, `evaluator_model`
+4. 추출: `work_dir`, `test_retry_count`, `max_test_retries`, `evaluator_model`. 모델은
+   Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+   만든 `decodedRouting.test`를 사용한다.
 5. Verify: `current_phase` = "test", plan.md slice checklist 모두 `[x]`
 6. `test_started_at` 기록 (ISO timestamp)
 
@@ -50,7 +52,7 @@ user-invocable: true
 
 ## Model Routing
 
-`model_routing.test` 확인 (기본: "haiku"). "main"이 아니면 Agent 위임 (전체 test 지시 포함).
+`decodedRouting.test` 확인 (decode 실패 기본: "haiku"). "main"이 아니면 Agent 위임 (전체 test 지시 포함).
 "main" → 아래 inline 실행.
 
 # Section 2: Phase 실행
@@ -92,15 +94,21 @@ plan.md의 모든 SLICE-NNN에 대해 `$WORK_DIR/receipts/SLICE-NNN.json` 존재
 
 ### 4-1. Cross-Slice Spec Consistency (✅ Required)
 
-Agent(evaluator_model): 전체 receipt + plan.md 기반 cross-slice 일관성 검증.
-Phase 3에서 slice_review를 skip/self-review한 slice는 backfill(보완) review 포함.
-`done_with_concerns` slice는 extra scrutiny.
-결과: `$WORK_DIR/cross-slice-review.json`
+Read(`../shared/references/adaptive-review-protocol.md`)하고 전체 receipt + plan.md로
+`compileReviewPlan({artifactKind:'cross-slice', ...})`를 호출한다. Phase 3에서 review가
+빠진 slice는 backfill하고 `done_with_concerns`는 extra scrutiny한다. 이 gate는 Required다.
 
 ### 4-2. Cross-Slice Quality Review (⚠️ Advisory)
 
-Agent(evaluator_model): 전체 git diff + receipt 기반 cross-cutting quality 검증.
-backfill 대상 slice 포함. Advisory — 차단 없음.
+같은 plan의 reviewer로 전체 git diff + receipt의 cross-cutting quality를 검증한다. 4-2의
+gate 지위는 Advisory로 유지하되 High/Critical blocker는 사용자에게 required로 표면화한다.
+
+4-1/4-2의 통합 실행 순서는 `compileReviewPlan → reviewers 실행 →
+evaluateReviewExecution → (proceed/degraded-proceed에서) normalizeFinding →
+verdictFromFindings → writeFindings`다. 결과는
+`$WORK_DIR/reviews/cross-slice-round<N>-findings.json`에 보존하고 호환 요약 경로만
+`$WORK_DIR/cross-slice-review.json`로 유지한다. severity와 reviewer는 런타임 결과 외에
+별도 하드코딩하지 않는다.
 
 ### 4-3. Verification Evidence (✅ Required)
 

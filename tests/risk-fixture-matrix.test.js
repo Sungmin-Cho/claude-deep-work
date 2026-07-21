@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { decideRiskProfile } = require('../runtime/risk-runtime.js');
+const { decideRiskProfile, detectHardTriggers, scoreRiskDimensions } = require('../runtime/risk-runtime.js');
 const { PROFILE_BY_CLASS } = require('../runtime/policy-runtime.js');
 
 const FIXTURES = [
@@ -122,4 +122,69 @@ test('한/영 변형 쌍은 같은 class', () => {
     assert.strictEqual(decideRiskProfile(byName.get(en).input).class,
       decideRiskProfile(byName.get(ko).input).class, `${en} vs ${ko}`);
   }
+});
+
+function triggerIds(input) {
+  return detectHardTriggers(input).map((trigger) => trigger.id);
+}
+
+test('FN 보존 — destructive text와 db target path의 구조화 conjunction', () => {
+  const input = { taskText: 'drop the legacy records',
+    evidence: { changed_paths: ['db/schema.sql'] } };
+  const triggers = detectHardTriggers(input);
+  const destructive = triggers.find((trigger) => trigger.id === 'destructive-migration');
+  assert.ok(destructive);
+  assert.match(destructive.matched, /text:.*drop.*path:.*schema/iu);
+});
+
+test('FN 보존 — db-context path 집합의 destructive×target conjunction', () => {
+  const input = { taskText: 'refresh generated files',
+    evidence: { changed_paths: ['db/drop.js', 'db/schema.json'] } };
+  const triggers = detectHardTriggers(input);
+  const destructive = triggers.find((trigger) => trigger.id === 'destructive-migration');
+  assert.ok(destructive);
+  assert.match(destructive.matched, /paths:.*drop.*schema/iu);
+});
+
+test('FP 제거 — 서로 무관한 root paths는 destructive migration을 만들지 않는다', () => {
+  const input = { taskText: 'refresh generated files',
+    evidence: { changed_paths: ['drop-handler.js', 'schema.json'] } };
+  assert.ok(!triggerIds(input).includes('destructive-migration'));
+});
+
+test('단일 path TP — 한 경로 안의 인접 destructive migration 토큰은 유지된다', () => {
+  const input = { taskText: 'refresh generated files',
+    evidence: { changed_paths: ['drop-tables-migration.sql'] } };
+  assert.ok(triggerIds(input).includes('destructive-migration'));
+});
+
+test('external-destructive-action text×path conjunction은 정본 토큰 파티션을 따른다', () => {
+  const input = { taskText: 'revoke the obsolete access',
+    evidence: { changed_paths: ['ops/production/deploy.yml'] } };
+  const triggers = detectHardTriggers(input);
+  const external = triggers.find((trigger) => trigger.id === 'external-destructive-action');
+  assert.ok(external);
+  assert.match(external.matched, /text:.*revoke.*path:.*production/iu);
+});
+
+test('PATH_PATTERNS auth는 segment 경계를 지키고 oauth/author substring을 제외한다', () => {
+  for (const changedPath of ['src/oauth.js', 'src/author.js']) {
+    const scored = scoreRiskDimensions({ taskText: 'refactor handler',
+      evidence: { changed_paths: [changedPath] } });
+    assert.ok(!scored.rationale.some((reason) => reason.startsWith('path:auth')),
+      `${changedPath} produced path:auth`);
+  }
+  for (const changedPath of ['src/auth/session.js', 'src/auth.js']) {
+    const scored = scoreRiskDimensions({ taskText: 'refactor handler',
+      evidence: { changed_paths: [changedPath] } });
+    assert.ok(scored.rationale.some((reason) => reason.startsWith('path:auth')),
+      `${changedPath} did not produce path:auth`);
+  }
+});
+
+test('26종 matrix의 destructive-migration 진양성은 별도 보존된다', () => {
+  const fixture = FIXTURES.find((candidate) => candidate.name === 'destructive migration (en)');
+  const result = decideRiskProfile(fixture.input);
+  assert.equal(result.class, 'critical');
+  assert.ok(result.hard_triggers.some((trigger) => trigger.id === 'destructive-migration'));
 });

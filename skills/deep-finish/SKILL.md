@@ -204,7 +204,9 @@ temp path, e.g. `$WORK_DIR/.session-receipt.payload.json`:
 }
 ```
 
-> **v6.10.0**: state에 `model_routing_meta`가 있으면 payload에 `model_routing_meta` 필드로 그대로 포함한다(부재 시 필드 생략 — forward-compatible 옵셔널, 설계 §7). deep-suite payload-registry minor bump는 suite 측 후속 작업.
+> **v6.12.0**: Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+> routing carrier를 decode한다. decoded meta가 있으면 payload의 optional `model_routing_meta`
+> 필드에 포함하고, 부재/손상 시 생략한다. deep-suite payload-registry minor bump는 suite 측 후속 작업.
 
 `schema_version` MUST be the literal string `"1.0"`. Section 2-1 will add
 `quality_score`, `quality_breakdown`, and `quality_diagnostics` to this same
@@ -284,6 +286,35 @@ JSON 파싱 실패 시 경고 1줄 + 블록 생략 (fail-open).
 The final envelope wrap (Section 7-Z) consumes this payload as-is, so any
 field placed here ends up under `envelope.payload` in the wrapped receipt.
 
+### Optional `methodology_policy` and `review_execution` (v6.12.0)
+
+State의 `methodology_policy_json`과 `review_execution_json`을 각각 `JSON.parse`한다.
+유효한 필드만 session-receipt payload에 아래 optional 블록으로 추가하고, 부재 시
+해당 블록을 생략한다. 파싱 실패는 경고 1줄 후 블록만 생략하는 fail-open이며 기존
+`methodology_shadow` 블록은 그대로 유지한다.
+
+```yaml
+methodology_policy:
+  schema_version: 1
+  mode: adaptive
+  risk_class: high
+  profile: strict
+  floors_applied: { implement: { from: standard, to: deep } }
+review_execution:
+  schema_version: 1
+  points_summary:
+    final: { mode: dual, completed: 2, failed: 0, rounds: 1, verdict: PASS }
+  reviewer_failures:
+    - { point: final, role: executability, channel: codex-cli, reason: timeout, fallback_used: true }
+  degraded_events: []
+  risk_acceptances: []
+```
+
+`points_summary`는 각 point의 mode, 완료/실패 reviewer 수, rounds, verdict를 집계한다.
+`reviewer_failures`에는 실패/timeout/skipped reviewer와 실제 fallback 사용 여부를
+보존한다. 두 블록은 forward-compatible optional payload이므로 receipt schema version은
+계속 문자열 `"1.0"`을 사용한다.
+
 **Authoritative JSONL write**: After calculating the quality score, write the finalized session record to `harness-sessions.jsonl`. This is the authoritative write — it includes the `quality_score` field and `status: "finalized"`.
 
 **Read assumption snapshot**: Read `assumption_snapshot` from the state file (written at session init by deep-work.md — see Task 7). Include it in the JSONL entry.
@@ -360,6 +391,15 @@ If `slices.completed < slices.total`:
 ```
 
 The session receipt will include `"partial": true`.
+
+### 4a. Unified finish gate (v6.12)
+
+completion option을 제시하기 전에 state의 `review_execution_json`을 parse하고
+`finishGateAllowed(reviewExecutionJson)`을 호출한다. 반환값만 외부 변경 권한의 정본이다.
+`blocking.external_change_lock === true`이면 PR/merge/push 제안과 실행을 모두 차단한다.
+`blocking.missing_acks`의 각 review point를 사용자에게 표면화하고 필요한 Critical human ack를
+받은 뒤 state를 갱신해 함수를 다시 호출한다. allowed가 true가 되기 전에는 Section 5-7로
+진행하지 않는다. keep/discard처럼 외부 변경을 만들지 않는 종료도 잠금 사유를 숨기지 않는다.
 
 ### 5. Check gh CLI availability
 

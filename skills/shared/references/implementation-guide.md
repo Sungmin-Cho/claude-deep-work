@@ -132,7 +132,8 @@ A good implementation:
 모델 라우팅 활성화 시, Solo 모드의 비대화형 Phase는 Agent를 스폰하여 실행된다.
 
 ### 동작 방식
-1. state 파일에서 `model_routing.implement` 읽기 (기본값: sonnet)
+1. Read(`model-routing-guide.md#model-routing-state-decode-v612`)의 scalar-first 규칙으로
+   `decodedRouting.implement`를 읽기 (decode 실패 기본값: sonnet)
 2. Agent 스폰: 지정 모델로 전체 구현 지시를 위임
 3. Agent 완료 후 메인 세션에서 상태 업데이트
 
