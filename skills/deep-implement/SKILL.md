@@ -297,6 +297,14 @@ slice 종료 직전 (spec 검증 + slice review 완료 후):
 - sensor_results, spec_compliance, slice_review, harness_metadata
 - slice_confidence: done | done_with_concerns + concerns 배열
 
+#### Optional `review` evidence (v6.12.0)
+
+통합 리뷰를 실행한 slice는 legacy payload에 optional `review` 블록을 추가한다. 블록은
+`findings_ref`(canonical `$WORK_DIR/reviews/slice-SLICE-NNN-round<N>-findings.json`),
+reviewer별 `role`/`channel`/`status`/`fallback_used`/`effort`/`effort_applied`, 그리고
+최종 `verdict`를 보존한다. 리뷰를 실행하지 않은 구세션·spike receipt에서는 블록을
+생략한다. 이 optional 확장은 기존 verify-receipt 8개 항목의 판정 입력이 아니다.
+
 ### Step D-1: M3 Envelope Wrap (v6.5.0)
 
 legacy payload 구성 후, **`hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 (단일 writer 정책 — CLAUDE.md §v6.5.0 Writer 절).

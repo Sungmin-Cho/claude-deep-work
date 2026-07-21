@@ -110,6 +110,18 @@ Required payload JSON structure (all fields mandatory except where noted):
     "stage1": "pass|fail",
     "stage2": "pass|fail"
   },
+  "review": {
+    "findings_ref": "<optional — reviews/slice-SLICE-NNN-roundN-findings.json>",
+    "reviewers": [{
+      "role": "semantic|executability",
+      "channel": "subagent|codex-cli|gemini-cli|deep-review",
+      "status": "completed|failed|timeout|skipped",
+      "fallback_used": false,
+      "effort": "medium|high|xhigh|max",
+      "effort_applied": false
+    }],
+    "verdict": "PASS|BLOCK"
+  },
   "harness_metadata": {
     "model_id": "<your model>",
     "rework_count": 0,
@@ -120,6 +132,11 @@ Required payload JSON structure (all fields mandatory except where noted):
 
 `schema_version` MUST be the literal string `"1.0"` (not numeric `1.0`). The
 envelope validator rejects payload without `schema_version: "1.0"`.
+
+The optional `review` object records unified review evidence. Preserve its
+`findings_ref`, reviewer failure status, `fallback_used`, and `effort_applied` evidence;
+otherwise omit the whole block. Existing verify-receipt items ignore this forward-compatible
+extension.
 
 ### Step 2 — wrap the payload via the envelope helper
 

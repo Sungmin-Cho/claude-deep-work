@@ -284,6 +284,35 @@ JSON 파싱 실패 시 경고 1줄 + 블록 생략 (fail-open).
 The final envelope wrap (Section 7-Z) consumes this payload as-is, so any
 field placed here ends up under `envelope.payload` in the wrapped receipt.
 
+### Optional `methodology_policy` and `review_execution` (v6.12.0)
+
+State의 `methodology_policy_json`과 `review_execution_json`을 각각 `JSON.parse`한다.
+유효한 필드만 session-receipt payload에 아래 optional 블록으로 추가하고, 부재 시
+해당 블록을 생략한다. 파싱 실패는 경고 1줄 후 블록만 생략하는 fail-open이며 기존
+`methodology_shadow` 블록은 그대로 유지한다.
+
+```yaml
+methodology_policy:
+  schema_version: 1
+  mode: adaptive
+  risk_class: high
+  profile: strict
+  floors_applied: { implement: { from: standard, to: deep } }
+review_execution:
+  schema_version: 1
+  points_summary:
+    final: { mode: dual, completed: 2, failed: 0, rounds: 1, verdict: PASS }
+  reviewer_failures:
+    - { point: final, role: executability, channel: codex-cli, reason: timeout, fallback_used: true }
+  degraded_events: []
+  risk_acceptances: []
+```
+
+`points_summary`는 각 point의 mode, 완료/실패 reviewer 수, rounds, verdict를 집계한다.
+`reviewer_failures`에는 실패/timeout/skipped reviewer와 실제 fallback 사용 여부를
+보존한다. 두 블록은 forward-compatible optional payload이므로 receipt schema version은
+계속 문자열 `"1.0"`을 사용한다.
+
 **Authoritative JSONL write**: After calculating the quality score, write the finalized session record to `harness-sessions.jsonl`. This is the authoritative write — it includes the `quality_score` field and `status: "finalized"`.
 
 **Read assumption snapshot**: Read `assumption_snapshot` from the state file (written at session init by deep-work.md — see Task 7). Include it in the JSONL entry.
