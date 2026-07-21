@@ -317,56 +317,80 @@ Git repository인 경우:
 - Worktree 성공 시: `worktree_enabled: true`, `worktree_path`, `worktree_branch` state에 기록
 - 이후 모든 파일 작업은 worktree 절대 경로 기준
 
-## 1-8.5. 자동 모델 결정 (v6.10.0)
+## 1-8.5. Provisional risk-only → adaptive 모델 결정 (v6.12.0)
 
-모델 라우팅은 유저에게 묻지 않는다 — 엔진이 결정한다:
+모델 라우팅은 유저에게 묻지 않는다. 동일한 유효 입력을 쓰는 다음 3단계를 순서대로
+실행한다. `REC_TASK_DIFFICULTY`는 §1-4-2의 `task_difficulty.value`이며 부재 시 빈 값이다.
 
-```bash
-MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
-  --root "$PROJECT_ROOT" --task "$TASK_TEXT" \
-  --difficulty "${REC_TASK_DIFFICULTY:-}" \
-  --pinned "${FLAGS.model_routing:-}")
-```
-
-- `REC_TASK_DIFFICULTY`: §1-4-2 recommender 응답의 `task_difficulty.value` (없으면 빈 값 — 무보정).
-- `--runtime` 생략 시 CLI가 env로 자동 감지(`DEEP_WORK_RUNTIME` override 지원).
-- 프로필 defaults에 per-phase concrete 값이 남아 있으면(user-pinned) 해당 항목을
-  `--pinned`에 병합하되 CLI 플래그가 프로필보다 우선한다(설계 §2.4). 프로필 값이 `auto` 스칼라면 병합 없음.
-- `MR_OUT.model_routing` → §1-9 state의 `model_routing` 블록, `MR_OUT.meta` → `model_routing_meta` 블록.
-- `MR_OUT.warnings` 각 항목을 1회씩 표시.
-
-## 1-8.6. Shadow risk profile — provisional (v6.11.0, 관찰 전용)
-
-§1-8.5 직후 위험도를 shadow 계산한다. **결과는 라우팅·게이트에 어떤 영향도 주지 않는다** — 기록·관찰 전용 (설계 스펙 `docs/superpowers/specs/2026-07-20-v6.11-shadow-risk-policy-design.md`).
+**1단계 — provisional risk-only:**
 
 ```bash
 RISK_IN=$(mktemp)
-# MR_OUT에서 model_routing/meta.tiers/meta.pinned를 추출해 입력 JSON 구성
+node -e 'process.stdout.write(JSON.stringify({task_text:process.argv[1],difficulty:process.argv[2]||null}))' \
+  "$TASK_TEXT" "${REC_TASK_DIFFICULTY:-}" > "$RISK_IN"
+RISK_ONLY_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
+  --stage provisional --risk-only --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" \
+  --input-file "$RISK_IN")
+RISK_CLASS=$(printf '%s' "$RISK_ONLY_OUT" | node -e \
+  'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.risk_profile?.class||"")')
+RISK_INPUT_REF=$(printf '%s' "$RISK_ONLY_OUT" | node -e \
+  'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.input_ref?.path||"")')
+```
+
+`FLAGS.risk`가 있으면 해당 class를 `RISK_CLASS`에 적용한다. 자동/기존 class보다 낮은
+override는 확인을 받은 뒤에만 적용하고 `review_execution_json.risk_acceptances`에
+`{from,to,reason,at,scope:"session"}`를 append한다. 상향은 즉시 적용한다.
+
+**2단계 — risk-aware routing:**
+
+```bash
+POLICY_MODE="${FLAGS.policy:-adaptive}"
+MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
+  --root "$PROJECT_ROOT" --task "$TASK_TEXT" \
+  --difficulty "${REC_TASK_DIFFICULTY:-}" --pinned "${FLAGS.model_routing:-}" \
+  --risk-class "$RISK_CLASS" --policy-mode "$POLICY_MODE")
+```
+
+프로필의 per-phase concrete pin은 `--pinned`에 병합하되 CLI pin이 우선한다. `MR_OUT.meta.policy.floor_overridden_by_pin`에 true가 있고 risk class가
+`high` 또는 `critical`이면 `⚠️ 사용자 pin이 <phase> policy floor보다 낮습니다`를 phase별
+1회 표면화한다. pin은 최종 우선이며 이 경고가 실행을 차단하지는 않는다.
+
+## 1-8.6. Provisional policy snapshot (v6.12.0)
+
+**3단계 — 기존 policy snapshot, signals 재사용:** 2단계 결과의 routing을 신선하게
+입력에 추가하고 1단계 artifact의 signals만 재사용한다.
+
+```bash
 node -e '
-const mr = JSON.parse(process.argv[1]);
-process.stdout.write(JSON.stringify({
-  task_text: process.argv[2],
-  model_routing: mr.model_routing, tiers: mr.meta?.tiers ?? {}, pinned: mr.meta?.pinned ?? {},
-  difficulty: process.argv[3] || null, runtime: mr.meta?.runtime ?? "unknown" }));
+const mr=JSON.parse(process.argv[1]);
+process.stdout.write(JSON.stringify({task_text:process.argv[2],
+  model_routing:mr.model_routing,tiers:mr.meta?.tiers??{},pinned:mr.meta?.pinned??{},
+  difficulty:process.argv[3]||null,runtime:mr.meta?.runtime??"unknown"}));
 ' "$MR_OUT" "$TASK_TEXT" "${REC_TASK_DIFFICULTY:-}" > "$RISK_IN"
 RISK_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
-  --stage provisional --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" --input-file "$RISK_IN")
+  --stage provisional --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" \
+  --input-file "$RISK_IN" --reuse-input "$RISK_INPUT_REF")
 rm -f "$RISK_IN"
 ```
 
-- `RISK_OUT.risk_profile`가 null이면(fail-open): `RISK_OUT.error`를 경고 1줄로 표시하고 §1-9에서 `risk_profile_json`을 `{"schema_version":1,"history":[],"errors":[{"stage":"provisional","message":"<error>","at":"<now ISO>"}]}`로 기록 후 계속 진행. **세션을 중단하지 않는다.**
-- 성공 시 §1-9 state에 다음 2개 frontmatter 스칼라(JSON 문자열 1줄)를 기록:
-  - `risk_profile_json`: `{"schema_version":1,"provisional":{...RISK_OUT.risk_profile, "input_ref": RISK_OUT.input_ref},"history":[],"errors":[]}`
-  - `policy_shadow_json`: `{"provisional": RISK_OUT.policy_snapshot}`
-- `RISK_OUT.warnings` 각 항목을 1회씩 표시.
-- 요약 1줄 표시: `Shadow risk: <class> <score>/14 (profile 추천: <profile>) — 관찰 전용, 라우팅 무영향`
+- 두 risk 호출의 구조화 `errors`를 `risk_profile_json.errors`에 보존한다. 실패는 경고 후
+  fail-open하며 세션을 중단하지 않는다.
+- `RISK_OUT.policy_snapshot`은 `policy_shadow_json.provisional`로 기존 관찰 연속성을
+  유지한다.
+- `MR_OUT.meta.policy`와 `MR_OUT.meta.efforts`로 실제 적용 정책인
+  `methodology_policy_json`을 구성한다. `mode`, `risk_class`, `profile`, `based_on`,
+  `floors_applied`, `floors_effective`, `floor_overridden_by_pin`, `efforts`, `decided_at`을
+  기록하고 `FLAGS.review`을 `review_mode_override`로 기록한다.
 
 ## 1-9. State 파일 + Registry 생성 (atomic + 권한 600)
 
 `.claude/deep-work.{SESSION_ID}.md` 생성 (YAML frontmatter):
 - session_id, current_phase, task_description, work_dir
-- team_mode, tdd_mode, model_routing, model_routing_meta (옵셔널, v6.10.0), worktree_*, cross_model_*
+- team_mode, tdd_mode, worktree_*, cross_model_*
+- **`model_routing_json`**: `JSON.stringify(MR_OUT.model_routing)`로 만든 한 줄 JSON-string 스칼라
+- **`model_routing_meta_json`**: `JSON.stringify(MR_OUT.meta)`로 만든 한 줄 JSON-string 스칼라
 - **`risk_profile_json`, `policy_shadow_json`, `slice_risk_shadow_json`** (옵셔널, v6.11.0 — frontmatter JSON-string 스칼라, shadow 관찰 전용. phase-guard/gate enforcement에 영향 없음)
+- **`methodology_policy_json`, `review_execution_json`** (옵셔널, v6.12.0). `--policy`/`--risk`/`--review` 결정과 하향 승인 `risk_acceptances`를 위 §1-8.5/8.6 shape로 기록한다.
 - 각 phase timestamp, test_retry_count, max_test_retries 등
 - **`recommendations: { ... }`** (v6.4.2 신규) — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
 - `execution_override: {FLAGS.exec_mode | null}` — v6.4.0 호환, deep-implement Section 1.5에서 read
@@ -489,13 +513,11 @@ Skill("deep-research", args=ARGS)
 
 완료 후: **Review + Approval Workflow 실행** (문서 수정 승인 단계).
 
-Phase Skill 완료 후:
-1. 산출물 Read → Auto Review (subagent + codex)
-2. Main 에이전트가 findings 판단 → 동의/비동의 분류
-3. 1차 승인: 수정 항목을 사용자에게 제시 (AskUserQuestion — 문서 수정 대상)
-4. 승인된 항목 반영
-5. 2차 승인: 최종 문서 확인 (AskUserQuestion — 문서 최종 승인)
-→ 상세: Read("../shared/references/review-approval-workflow.md")
+Phase Skill 완료 후 단일 리뷰 진입점만 실행한다:
+1. Read(`../shared/references/adaptive-review-protocol.md`) 후 document 입력을 조립한다.
+2. `compileReviewPlan` 결과대로 reviewers 실행과 execution/finding 판정을 수행한다.
+3. 통과 후에만 Read(`../shared/references/review-approval-workflow.md`)의 Step 4-6 승인 UX로
+   이동한다. 이 workflow는 자동 리뷰를 다시 실행하지 않는다.
 
 문서 최종 승인 후 → State 부분 업데이트:
 - `research_approved: true` (Resume fast-path baseline — v6.3.1 NC1 fix)
@@ -545,8 +567,9 @@ AskUserQuestion:
 
 Skill("deep-plan", args=ARGS)
 
-완료 후: **Review + Approval Workflow 실행** (Research와 동일 패턴 — 문서 수정 승인).
-→ 상세: Read("../shared/references/review-approval-workflow.md")
+완료 후 Read(`../shared/references/adaptive-review-protocol.md`)의 document 단일 진입에서
+`compileReviewPlan` 결과를 실행한다. 실행 판정과 finding verdict 통과 후에만
+Read(`../shared/references/review-approval-workflow.md`) Step 4-6 승인 UX로 이동한다.
 
 문서 최종 승인 후 → State 부분 업데이트:
 - `plan_approved: true`

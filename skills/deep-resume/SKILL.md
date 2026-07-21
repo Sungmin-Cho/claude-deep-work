@@ -102,6 +102,17 @@ Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where 
 
 From the resolved state file, extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, `preset`, `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `auto_loop_enabled` from the YAML frontmatter.
 
+#### 신규 state 필드 복원 (v6.12)
+
+- Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+  `decodedRouting`/`decodedRoutingMeta`를 복원한다.
+- `methodology_policy_json`과 `review_execution_json`을 각각 `JSON.parse`해 policy mode,
+  risk class, review mode override, floor baseline, channels, human ack,
+  external change lock, risk acceptances를 복원한다. 부재/손상은 `{}`로 fail-open하고
+  기존 세션 기본값을 유지한다.
+- `risk_profile_json`, `policy_shadow_json`, `slice_risk_shadow_json`도 같은 JSON-string
+  규칙으로 복원한다. resume 인자가 state의 명시 값을 변경하지 않는 한 원래 값을 보존한다.
+
 - `execution_override: inline | delegate | null` (v6.4.0 — sets decide_execution_mode override for inline escape hatches)
 - `active_cluster_takeover: "<cluster_id>" | null` (v6.4.0 — debug takeover 중 세션 중단 시, resume 하면 해당 cluster를 inline으로 이어 실행)
 - `delegation_snapshot: "<git hash>" | null` (v6.4.0 C-1.1 — delegate 진입 직전 capture된 commit hash. verify-receipt pass 시 null로 clear. resume 시 non-null이면 "verify-receipt fail 후 interrupt" 신호로 해석되어 Rollback Protocol AskUserQuestion을 재표시한다.)
@@ -132,8 +143,11 @@ If `review_results` field exists (v5.5 legacy):
 - Migrate to `phase_review.{phase}.reviewed: true` for phases that have review data
 - Keep `review_results` for backward compatibility (read-only)
 
-> **모델 라우팅 재해석 (v6.10.0)**: state에 `model_routing_meta`가 있고 `meta.runtime`이 현재 감지 런타임(`node "${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js"` 기준 — CLI 없으므로 `node -e 'const{detectRuntime}=require("${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js");console.log(detectRuntime())'`)과 다르면, `meta.tiers`를 현재 런타임 카탈로그로 재해석해 `model_routing` 블록을 갱신하고 `meta.runtime`을 갱신한 뒤 1회 안내한다. meta 부재(구세션) → skip.
-> runtime 변경 시 `meta.pinned`의 concrete 모델명(예: Claude `opus`)은 새 런타임에서 실행 불가하므로 드롭되고, 해당 phase는 재해석된 tier 값을 사용한다(1회 안내) — final review #4.
+> **모델 라우팅 재해석 (v6.12.0)**: `decodedRoutingMeta.runtime`이 현재 감지 런타임
+> (`node "${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js"`)과 다르면 decoded tiers를 현재
+> 카탈로그로 재해석한다. 결과는 `model_routing_json`/`model_routing_meta_json` JSON-string
+> 스칼라로 atomic 갱신하고 1회 안내한다. decoded meta 부재는 skip한다. runtime 변경 시
+> concrete pin은 드롭하고 해당 phase는 재해석된 tier를 사용한다(1회 안내).
 
 ### 1.5. Worktree restoration (v4.1)
 
@@ -191,7 +205,9 @@ Based on the current phase, load the relevant artifacts to restore AI context:
     - If `review_results.plan.judgments_timestamp` exists: note "종합 판단 완료, 사용자 확인 대기"
     - Otherwise: note "리뷰 진행 중"
   - If `"completed"`: note "리뷰 완료됨"
-  - Read `$WORK_DIR/plan-review.json` and `$WORK_DIR/plan-cross-review.json` if they exist
+  - Review finding은 `readFindings({workDir: WORK_DIR, point: "plan", round})`로 복원한다.
+    canonical 우선/legacy fallback과 `source:'legacy'`를 보존하며 raw cross-review 파일을
+    직접 선택하지 않는다. structural `plan-review.json`은 점수 요약에만 사용한다.
 
 #### Phase: `implement`
 

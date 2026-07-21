@@ -46,6 +46,14 @@ parent relies on your receipts for verification.
     delegated context; coach observations go to receipt.notes instead)
 - evaluator_model (for Slice Review Stage 1/2)
 
+## Unified slice review record (v6.12)
+
+Read `skills/shared/references/adaptive-review-protocol.md`. Worker는 Stage 1 semantic finding을
+정규화하고 `writeFindings`로 canonical slice point에 기록한다. receipt의 optional
+`review.findings_ref`에는 그 경로와 reviewer status/fallback/effort evidence를 넣는다.
+dual plan의 Stage 2 executability는 부모가 worker 완료 후 실행한다. 부모 prompt에 worker
+finding을 넣지 않는 blind 입력 격리 계약을 유지한다.
+
 # Output (required per slice)
 
 Before each slice: record `git_before_slice = git rev-parse HEAD`.

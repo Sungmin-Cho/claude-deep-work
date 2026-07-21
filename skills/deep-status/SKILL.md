@@ -147,7 +147,9 @@ Read the resolved state file (from Step 1) to get session state.
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
 
-Read `model_routing` from the state file. If missing, show defaults (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku for model routing).
+Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
+scalar-first 규칙으로 `decodedRouting`을 만든다. decode 실패 시 기본값
+(Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku)을 표시한다.
 
 Read `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `plan_review_max_retries` from the state file. If missing, default to: evaluator_model="없음", assumption_adjustments=[] (empty), skipped_phases=[] (empty), plan_review_retries=0, plan_review_max_retries=3.
 
@@ -161,7 +163,10 @@ Read the following files if they exist:
 - `$WORK_DIR/file-changes.log` — check if it exists
 - `$WORK_DIR/plan-diff.md` — check if it exists
 - Read `review_state`, `cross_model_enabled`, and `review_results` from state file
-- Read `$WORK_DIR/brainstorm-review.json`, `$WORK_DIR/research-review.json`, `$WORK_DIR/plan-review.json`, `$WORK_DIR/plan-cross-review.json` if they exist
+- Review finding은 `readFindings({workDir, point, round})`로 읽는다. canonical reviews 경로를
+  우선하며 함수가 제공하는 legacy fallback(`phase-cross-review.json` →
+  `adversarial-review.json`)과 `source:'legacy'` 표기를 그대로 표시한다. structural 호환
+  `${phase}-review.json`은 점수 요약에만 사용한다.
 
 ### 2-1. Read sensor data
 

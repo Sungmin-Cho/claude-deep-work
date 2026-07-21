@@ -185,6 +185,11 @@ plan.md 작성 완료 직후 slice별 위험도를 shadow 계산한다. **plan.m
 3. 성공: `slice_risk_shadow_json`의 해당 키에 `{class: RISK_OUT.risk_profile.class, score: RISK_OUT.risk_profile.score, triggers: RISK_OUT.risk_profile.hard_triggers의 id 목록, rationale: RISK_OUT.risk_profile.rationale, input_ref: RISK_OUT.input_ref}` 기록 — `input_ref`는 risk_profile 내부가 아니라 **top-level RISK_OUT.input_ref**다 (CLI 출력 계약). (기존 JSON 병합 재기록)
 4. 실패: `risk_profile_json`이 아직 없으면(예: v6.11 이전에 생성된 legacy/resume 세션 — v6.11 orchestrator는 init 시 §1-8.6이 provisional을 항상 기록) `{"schema_version":1,"history":[],"errors":[]}` skeleton을 먼저 생성한 뒤 (§5.1 canonical shape — deep-research/orchestrator writer와 동일 3-key), `risk_profile_json.errors`에 `{stage: "slice", message: "SLICE-NNN: <error>", at}` append — `slice_risk_shadow_json`은 성공한 slice만 보관한다 (스펙 §5.1)
 
+이 기록은 Implement의 모델 소비 연결점이다. deep-implement는 각 slice에서
+`sliceModelTierWithRisk(sessionTier, slice.size, slice_risk_shadow_json["SLICE-NNN"].class)`를
+호출한다. slice class가 없으면 helper가 기존 `sliceModelTier`와 같은 결과를 내므로 legacy와
+fail-open 동작은 보존된다.
+
 `--force-rerun`으로 plan.md가 재작성되면 이 계산도 재수행한다 — 이때 `slice_risk_shadow_json`은 병합이 아니라 **현재 plan.md의 slice 집합만으로 새 객체를 구성해 통째로 교체(replace)** 한다. 제거된 slice의 이전 결과가 유령 항목으로 잔존하면 `/deep-status --risk`가 plan에 없는 slice를 표시하게 된다 (Task 8 리뷰 W1).
 
 **NOTE: `current_phase`를 변경하지 않는다.** Orchestrator가 리뷰+승인 후 변경.

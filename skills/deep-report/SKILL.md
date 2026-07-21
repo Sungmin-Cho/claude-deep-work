@@ -131,6 +131,9 @@ Write `$WORK_DIR/report.md` with the following structure:
 | Model Routing | Research: [model], Plan: 현재 세션, Implement: [model], Test: [model] |
 | Assumption Adjustments | [list of assumption adjustments applied, or "None"] |
 
+Model Routing 행은 Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
+scalar-first decode 결과로 채운다. decode 실패 시 phase 기본값을 사용하고 경고를 보고서에 남긴다.
+
 ## Phase Duration
 | Phase | Started | Completed | Duration |
 |-------|---------|-----------|----------|
