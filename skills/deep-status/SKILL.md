@@ -23,6 +23,7 @@ user-invocable: true
 | `--history` | deep-history sub-skill 호출 (§7) |
 | `--report` | deep-report sub-skill 호출 (§8) |
 | `--assumptions` | deep-assumptions sub-skill 호출 (§9) |
+| `--risk` | Shadow risk/policy 표시 (v6.11.0, §10) |
 | `--all` | 4 sub-page 모두 순차 실행 |
 | `--tree` | Fork tree 출력 |
 | `--badge` | Shields.io 호환 badge 출력 |
@@ -108,6 +109,7 @@ Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, exec
 | `--assumptions` | Show assumption health report |
 | `--assumptions --verbose` | Per-signal per-session breakdown |
 | `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
+| `--risk` | Show shadow risk profile & policy recommendation (v6.11.0) |
 | `--badge` | Generate shields.io badge markdown |
 | `--tree` | Fork relationship tree visualization (v5.6) |
 | `--all` | Show all sessions dashboard (multi-session) + all flags |
@@ -386,6 +388,25 @@ Sub-flags:
 - `--verbose`: Show per-signal per-session breakdown (equivalent to `/deep-assumptions report --verbose`)
 - `--rebuild`: Regenerate JSONL from receipt files, then show report (equivalent to `/deep-assumptions --rebuild`)
 - No sub-flag: Show default health report (equivalent to `/deep-assumptions report`)
+
+## 10. `--risk` — Shadow Risk & Policy (v6.11.0)
+
+state에서 `risk_profile_json` / `policy_shadow_json` / `slice_risk_shadow_json` 스칼라를 읽어 `JSON.parse` 후 표시한다. 파싱 실패 시 경고 1줄 후 해당 블록 생략 (fail-open).
+
+**3필드 모두 부재 시**: "이 세션은 risk shadow 데이터가 없습니다 (v6.11 이전 세션)" 출력 후 종료.
+
+표시 형식:
+
+```text
+🔍 Shadow Risk (관찰 전용 — 라우팅·게이트 무영향)
+  Provisional:  <class> <score>/14 (confidence <val>) — <dimensions 중 0이 아닌 항목 요약>
+  Authoritative: <class> <score>/14 (confidence <val>) | hard triggers: <id 목록 또는 없음>
+  History: <from> → <to> (<stage>, <reason>) — 항목별 1줄
+  Policy 추천: <profile> | 리뷰: <review_policy.recommended> | 검증: <verification_policy.recommended>
+  Routing diff (<based_on> 기준): phase별 1줄 — 일치 시 "= <tier>", 불일치 시 "<actual_tier> → 추천 <recommended_tier>", 제외 시 "(제외: <excluded_reason>)"
+  Slice risk: SLICE-NNN <class> <score>/14 — 항목별 1줄 (없으면 생략)
+  Errors: <stage>: <message> — 항목별 1줄 (없으면 생략)
+```
 
 ### 10. --all: All Sessions Dashboard + Everything
 
