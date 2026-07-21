@@ -354,7 +354,7 @@ RISK_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
 rm -f "$RISK_IN"
 ```
 
-- `RISK_OUT.risk_profile`가 null이면(fail-open): `RISK_OUT.error`를 경고 1줄로 표시하고 §1-9에서 `risk_profile_json`을 `{"schema_version":1,"errors":[{"stage":"provisional","message":"<error>","at":"<now ISO>"}]}`로 기록 후 계속 진행. **세션을 중단하지 않는다.**
+- `RISK_OUT.risk_profile`가 null이면(fail-open): `RISK_OUT.error`를 경고 1줄로 표시하고 §1-9에서 `risk_profile_json`을 `{"schema_version":1,"history":[],"errors":[{"stage":"provisional","message":"<error>","at":"<now ISO>"}]}`로 기록 후 계속 진행. **세션을 중단하지 않는다.**
 - 성공 시 §1-9 state에 다음 2개 frontmatter 스칼라(JSON 문자열 1줄)를 기록:
   - `risk_profile_json`: `{"schema_version":1,"provisional":{...RISK_OUT.risk_profile, "input_ref": RISK_OUT.input_ref},"history":[],"errors":[]}`
   - `policy_shadow_json`: `{"provisional": RISK_OUT.policy_snapshot}`
