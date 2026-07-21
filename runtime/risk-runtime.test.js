@@ -38,6 +38,13 @@ test('detectHardTriggers — 한/영 렉시콘', () => {
   assert.deepStrictEqual(none, []);
 });
 
+// 스펙 §4.3 계약 — hard trigger 발화 시 rationale에 trigger ID와 매칭 근거가 기록되어야 한다.
+test('decideRiskProfile — hard trigger 발화 시 rationale에 trigger 항목 기록 (스펙 §4.3)', () => {
+  const r = decideRiskProfile({ stage: 'provisional',
+    taskText: 'fix permission check in auth middleware', signals: {}, evidence: {} });
+  assert.ok(r.rationale.some((l) => l.startsWith('trigger:auth-boundary')));
+});
+
 test('scoreRiskDimensions — 키워드 매칭과 rationale 형식', () => {
   const r = scoreRiskDimensions({ taskText: 'lease renewal retry 로직', signals: {}, evidence: {} });
   assert.strictEqual(r.dimensions.concurrency_statefulness, 2); // lease + retry = 2건

@@ -41,6 +41,13 @@ const FIXTURES = [
     expected_class: 'critical' },
   { name: 'deploy/publish 자동화', input: { stage: 'provisional', taskText: 'CI에서 npm publish 자동화' },
     expected_class: 'critical' }, // external-destructive-action trigger
+  // taskText와 evidence.keywords에 분산된 evidence — textCorpus/corpusWithPaths가
+  // 공백으로 결합되어야 destructive-migration trigger의 .{0,20}이 필드 경계를
+  // 넘어 매칭된다 (개행 결합 시 오분류: critical 기대인데 low로 떨어짐).
+  { name: '분산 evidence — destructive migration', input: { stage: 'authoritative',
+    taskText: 'drop the legacy table',
+    evidence: { changed_paths: [], keywords: ['migration'], side_effects: [], evidence_refs: [] } },
+    expected_class: 'critical', expected_profile: 'critical' },
   // 산출 근거 (shipped 렉시콘 기준, 총 4점 — medium 4~7 대역): blast_radius=2
   // (keyword:global "전체" + keyword:refactor "리팩터"/"refactor" → 2건, cap 2) +
   // verification_difficulty=1 (signal:has_tests=false) + irreversibility=1

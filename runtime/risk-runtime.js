@@ -79,7 +79,12 @@ function textCorpus({ taskText, evidence }) {
   for (const key of ['keywords', 'side_effects']) {
     if (Array.isArray(ev[key])) parts.push(...ev[key].filter((v) => typeof v === 'string'));
   }
-  return parts.join('\n');
+  // 공백 결합(개행 아님): 복합 hard trigger 정규식(.{0,N})이 taskText와
+  // evidence 필드 경계를 넘어 분산 evidence를 매칭할 수 있어야 한다
+  // (예: taskText "drop the legacy table" + keywords ["migration"]).
+  // 개행 결합이면 `.`이 줄바꿈을 건너지 못해 오분류가 발생했다. 거리 캡
+  // .{0,N}이 스퍼리어스 확산은 이미 제한하므로 공백 결합이 안전하다.
+  return parts.join(' ');
 }
 
 function scoreRiskDimensions({ taskText, signals, evidence } = {}) {
@@ -126,7 +131,9 @@ function detectHardTriggers({ taskText, evidence } = {}) {
   const corpus = textCorpus({ taskText, evidence });
   const ev = evidence && typeof evidence === 'object' ? evidence : {};
   const paths = Array.isArray(ev.changed_paths) ? ev.changed_paths.filter((p) => typeof p === 'string') : [];
-  const corpusWithPaths = `${corpus}\n${paths.join('\n')}`;
+  // textCorpus와 동일하게 공백 결합 — 결합자 불일치는 changed_paths 기반
+  // 분산 evidence 매칭도 동일하게 끊어버리므로 여기도 통일한다.
+  const corpusWithPaths = `${corpus} ${paths.join(' ')}`;
   const out = [];
   for (const [id, minClass, pattern] of HARD_TRIGGERS) {
     const m = corpusWithPaths.match(pattern);
@@ -194,9 +201,14 @@ function decideRiskProfile({ stage, taskText, signals, evidence, priorProfile } 
   }
   // input_digest는 이 모듈이 반환하지 않는다 — CLI가 canonicalDigest(effective)로 1회 계산해
   // input_ref.digest와 함께 부착한다 (재현 계약 §4.6, P1 fix). canonicalDigest export는 유지.
+  // 스펙 §4.3 — hard trigger가 발화하면 trigger ID와 매칭 근거 문자열을 rationale에도
+  // 기록한다 (hard_triggers 필드는 구조화 데이터, rationale은 사람이 읽는 근거 로그 —
+  // 둘 다 계약 대상). 순수성/결정론 유지: Date/random 미사용, 입력에서만 파생.
+  const rationale = [...scored.rationale,
+    ...hardTriggers.map((t) => `trigger:${t.id} → min ${t.min_class} (matched: "${t.matched}")`)];
   return { stage: effectiveStage, class: cls, score, confidence,
     dimensions: scored.dimensions, hard_triggers: hardTriggers,
-    rationale: scored.rationale, transition };
+    rationale, transition };
 }
 
 module.exports = { CLASS_ORDER, DIMENSIONS, STAGES, KEYWORD_LEXICON, PATH_PATTERNS,
