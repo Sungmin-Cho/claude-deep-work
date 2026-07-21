@@ -258,6 +258,33 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - `phase_review.research` + `review_results.research` 업데이트
 - `cross_project_memory`: `{brief_path, brief_mtime, brief_stale, cited_memory_ids[]}` — Cross-Plugin Context의 Deep-Memory Brief Context 처리 결과 (부재 시 `{null, null, false, []}`)
 
+### Shadow risk — authoritative (v6.11.0, 관찰 전용)
+
+research.md 완성 직후, Orchestrator 복귀 전에 수행한다. **실패해도 Research Exit Gate에 영향 없음** — 경고 1줄 + errors 기록 후 계속 (fail-open).
+
+1. research.md 소견에서 구조화 evidence JSON을 작성한다 (스킬이 추출, 입력 전문은 CLI가 artifact로 보존):
+   - `changed_paths`: 변경(예정) 파일 경로 목록
+   - `keywords`: 위험 관련 키워드 (lease/lock/retry/auth/migration 등 원문 그대로)
+   - `side_effects`: 외부 side effect 서술 목록
+   - `evidence_refs`: `research.md#<앵커>` 목록
+2. state에서 `model_routing`/`tiers`/`pinned`를 인코딩-무관하게 추출한다 (라우팅 필드는 세션 생성 경로에 따라 `model_routing_json`/`model_routing_meta_json` JSON-string 스칼라로 존재할 수도, `model_routing:`/`model_routing_meta:` YAML 블록으로 존재할 수도 있다 — `runtime/slice-runtime.js`의 `migrateModelRouting`은 전자를, orchestrator §1-9 서술은 후자를 쓴다. **`model_routing_meta_json`은 repo 전수 grep 기준 미확정 후보 필드명이다 — 구현 착수 전 실제 세션 state 실물(샘플 세션 파일 또는 세션 생성 경로의 실제 persist 코드)에서 `model_routing_meta`가 저장되는 실제 필드명을 먼저 확인하고, 아래 판별 순서를 확인된 실제 필드명 기준으로 적용한다.** 실제 필드명은 세션 생성 경로별로 다를 수 있으므로 아래 순서로 판별한다):
+   - (a) state에 `model_routing_json`/`model_routing_meta_json`(위에서 확인한 실제 필드명) 스칼라가 있으면 `JSON.parse`로 `model_routing`/`tiers`(`.tiers`)/`pinned`(`.pinned`, 없으면 `{}`)를 추출한다.
+   - (b) 없으면 `model_routing:`/`model_routing_meta:` YAML 블록을 스킬(LLM)이 직접 읽어 동일하게 `model_routing`/`tiers`/`pinned`를 추출한다. **§5.1 원리상 frontmatter 중첩 블록은 정상 세션에서 드묾 — state 본문 등 다른 위치에 있을 수 있어 스킬이 파일 전문에서 탐색한다.**
+   - (c) `tiers` 또는 `pinned`를 끝내 얻지 못한 모든 경우(둘 다 결측이거나, `model_routing`만 있고 `model_routing_meta`가 부재해 `tiers`/`pinned`만 부분결측인 경우 포함) — 얻지 못한 값은 `{}`로 채워 진행하되 **가시 경고 1줄을 반드시 출력**한다: `model routing 정보를 찾지 못해 routing_diff가 전 phase 제외 처리됩니다`(부분결측 시에도 동일 경고 문구를 사용한다). 이 경우 `risk_profile_json.errors`에는 기록하지 않는다 (위험도 계산 자체는 성공 — routing_diff만 공집합이 됨).
+   - `risk_profile_json`의 `provisional.class` → `prior_profile: {"class": "<값>"}`.
+3. 입력 JSON `{task_text, evidence, model_routing, tiers, pinned, difficulty, runtime, prior_profile}`을 임시 파일로 저장 후 실행:
+
+```bash
+RISK_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
+  --stage authoritative --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" --input-file "$RISK_IN")
+```
+
+4. 성공 시 state 갱신 (기존 JSON을 읽어 병합 후 한 줄 JSON 문자열로 재기록):
+   - `risk_profile_json`: `authoritative` 키에 `{...RISK_OUT.risk_profile, "input_ref": RISK_OUT.input_ref, "evidence_refs": <evidence_refs>}` 추가. `RISK_OUT.risk_profile.transition`이 null이 아니면 `history`에 `{from, to, stage: "authoritative", reason, at: <decided_at>}` append (스펙 §4.1 — append는 호출자 책임).
+   - `policy_shadow_json`: `authoritative` 키에 `RISK_OUT.policy_snapshot` 추가 — **`provisional` 키는 덮어쓰지 않고 보존** (스펙 §6).
+5. 실패 시(`risk_profile: null`): `risk_profile_json.errors`에 `{stage: "authoritative", message, at}` append, 경고 1줄, 계속 진행.
+6. 요약 1줄: `Shadow risk: <provisional class> → <authoritative class> (profile 추천: <profile>)`
+
 **NOTE: `current_phase`를 변경하지 않는다.** Orchestrator가 리뷰+승인 후 변경.
 
 ## 완료 메시지
