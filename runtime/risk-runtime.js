@@ -84,7 +84,11 @@ function textCorpus({ taskText, evidence }) {
   // (예: taskText "drop the legacy table" + keywords ["migration"]).
   // 개행 결합이면 `.`이 줄바꿈을 건너지 못해 오분류가 발생했다. 거리 캡
   // .{0,N}이 스퍼리어스 확산은 이미 제한하므로 공백 결합이 안전하다.
-  return parts.join(' ');
+  // FR2-1: part 자체(taskText/evidence 원문)에 개행이 내장된 경우 결합자를
+  // 공백으로 바꿔도 그 개행은 남아 .{0,N}을 여전히 막는다 (예: taskText
+  // "drop the legacy table\n" + keywords ["migration"]). join(" ") 전에
+  // 각 part의 공백류(개행 포함)를 단일 스페이스로 정규화해 이를 해소한다.
+  return parts.map((part) => part.replace(/\s+/gu, ' ')).join(' ');
 }
 
 function scoreRiskDimensions({ taskText, signals, evidence } = {}) {
@@ -133,7 +137,9 @@ function detectHardTriggers({ taskText, evidence } = {}) {
   const paths = Array.isArray(ev.changed_paths) ? ev.changed_paths.filter((p) => typeof p === 'string') : [];
   // textCorpus와 동일하게 공백 결합 — 결합자 불일치는 changed_paths 기반
   // 분산 evidence 매칭도 동일하게 끊어버리므로 여기도 통일한다.
-  const corpusWithPaths = `${corpus} ${paths.join(' ')}`;
+  // FR2-1: corpus는 textCorpus에서 이미 정규화됐지만 paths도 동일 규칙(공백류
+  // → 단일 스페이스)으로 정규화해 결합 후 결과가 일관되게 유지되도록 한다.
+  const corpusWithPaths = `${corpus} ${paths.map((p) => p.replace(/\s+/gu, ' ')).join(' ')}`;
   const out = [];
   for (const [id, minClass, pattern] of HARD_TRIGGERS) {
     const m = corpusWithPaths.match(pattern);

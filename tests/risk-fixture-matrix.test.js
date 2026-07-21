@@ -48,6 +48,12 @@ const FIXTURES = [
     taskText: 'drop the legacy table',
     evidence: { changed_paths: [], keywords: ['migration'], side_effects: [], evidence_refs: [] } },
     expected_class: 'critical', expected_profile: 'critical' },
+  // FR2-1: taskText 자체에 개행이 내장된 경우(결합자가 공백이어도 part 내부
+  // 개행은 그대로 남아 .{0,N}을 막는다) — part별 정규화로 해소되어야 한다.
+  { name: '내장 개행 — destructive migration', input: { stage: 'authoritative',
+    taskText: 'drop the legacy table\n',
+    evidence: { changed_paths: [], keywords: ['migration'], side_effects: [], evidence_refs: [] } },
+    expected_class: 'critical', expected_profile: 'critical' },
   // 산출 근거 (shipped 렉시콘 기준, 총 4점 — medium 4~7 대역): blast_radius=2
   // (keyword:global "전체" + keyword:refactor "리팩터"/"refactor" → 2건, cap 2) +
   // verification_difficulty=1 (signal:has_tests=false) + irreversibility=1
