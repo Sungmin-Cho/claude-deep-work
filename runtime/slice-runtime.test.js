@@ -8,7 +8,7 @@ const path = require('node:path');
 const {execFileSync}=require('node:child_process');
 const { activateSlice, enterSliceSpike, setSliceModel, setExecutionOverride,
   setDelegationSnapshot, clearDelegationSnapshot, setClusterTakeover,
-  clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice,migrateModelRouting } =
+  clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice,migrateModelRouting,mutateState } =
   require('./slice-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const { parseFrontmatter } = require('./frontmatter.js');
@@ -100,6 +100,17 @@ test('model routing migration raw-guards legacy nested canonical meta before fro
   fs.writeFileSync(nested.state, raw);
   await migrateModelRouting({ stateCapability: nested.stateCapability });
   assert.equal(fs.readFileSync(nested.state, 'utf8'), raw);
+});
+
+test('mutateState rawGuard short-circuit returns an empty object without rewriting state', async () => {
+  const f = setup();
+  const before = fs.readFileSync(f.state, 'utf8');
+  const result = await mutateState(f.stateCapability, () => ({ active_slice: 'SLICE-001' }), {
+    rawGuard: () => true,
+  });
+
+  assert.deepEqual(result, {});
+  assert.equal(fs.readFileSync(f.state, 'utf8'), before);
 });
 
 test('atomic state reducers participate in the global rank context',async()=>{

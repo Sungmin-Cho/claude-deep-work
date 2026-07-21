@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { PROFILE_BY_CLASS, EFFORT_CATALOG } = require('./policy-runtime.js');
 const { CLASS_ORDER } = require('./risk-runtime.js');
+const { resolveTier } = require('./model-catalog.js');
 
 const ARTIFACT_KINDS = Object.freeze(['document', 'slice-diff', 'cross-slice', 'session-final']);
 const REVIEW_MATRIX = Object.freeze({
@@ -66,11 +67,15 @@ function executabilityChannel(artifactKind, channels) {
   return 'subagent';
 }
 
-function makeReviewer({ role, tier, required, profile, artifactKind, channels, evaluatorModelOverride }) {
+function makeReviewer({ role, tier, required, profile, artifactKind, channels, runtime,
+  evaluatorModelOverride }) {
   const channel = role === 'executability' ? executabilityChannel(artifactKind, channels) : 'subagent';
   const reviewer = { role, channel, tier, effort: roleEffort(profile, role), required };
   if (channel === 'subagent' || channel === 'gemini-cli') Object.assign(reviewer, staticEffortMetadata(channel, reviewer.effort));
-  if (typeof evaluatorModelOverride === 'string' && evaluatorModelOverride) reviewer.model = evaluatorModelOverride;
+  if (channel === 'codex-cli') reviewer.model = resolveTier(tier, 'codex').model;
+  else if (channel === 'subagent') reviewer.model = typeof evaluatorModelOverride === 'string'
+      && evaluatorModelOverride ? evaluatorModelOverride : resolveTier(tier, runtime).model;
+  else if (typeof evaluatorModelOverride === 'string' && evaluatorModelOverride) reviewer.model = evaluatorModelOverride;
   return reviewer;
 }
 
@@ -131,7 +136,7 @@ function compileInternal(options, forceDefault = false) {
   const mode = override || defaultMode;
   if (override) descriptors = applyModeOverride(descriptors, artifactKind, override);
   const reviewers = descriptors.map((descriptor) => makeReviewer({ ...descriptor, profile, artifactKind,
-    channels, evaluatorModelOverride: options.evaluatorModelOverride }));
+    channels, runtime: options.runtime, evaluatorModelOverride: options.evaluatorModelOverride }));
   const unavailable = reviewers.filter((reviewer) => reviewer.channel === 'subagent' && channels.subagent === false)
     .map((reviewer) => reviewer.role);
   return {

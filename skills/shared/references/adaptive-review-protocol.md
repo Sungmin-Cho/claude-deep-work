@@ -26,9 +26,11 @@
 1. 입력을 `compileReviewPlan(...)`에 전달한다. 반환된 reviewers, `rounds_max: 2`,
    `blind_first_round`, gate만 실행 권한이다.
 2. plan의 **reviewers 실행** 결과를 role/channel/required/status/report_ref와 함께 모은다.
-   각 reviewer의 concrete model은 명시적 `reviewer.model` 또는
-   `resolveTier(reviewer.tier, runtime)` 결과로 확정한다. `reviewer.channel === 'codex-cli'`이면
-   dispatcher 소유 prompt temp를 만들고 아래 route만 사용한다.
+   `compileReviewPlan`이 각 reviewer의 concrete `reviewer.model`을 확정한다. codex-cli
+   channel은 항상 `resolveTier(reviewer.tier, 'codex')`, subagent channel은 세션 runtime의
+   `resolveTier(reviewer.tier, runtime)` 결과(명시적 evaluator override가 있으면 그 값)를
+   사용한다. 소비자는 channel runtime을 다시 해석하지 않는다. `reviewer.channel ===
+   'codex-cli'`이면 dispatcher 소유 prompt temp를 만들고 아래 route만 사용한다.
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" review run \

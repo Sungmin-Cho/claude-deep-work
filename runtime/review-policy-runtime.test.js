@@ -82,7 +82,7 @@ test('missing risk and shadow policy return default standard strength', () => {
   assert.equal(shadow.mode, 'single');
 });
 
-test('reviewModeOverride changes composition and evaluator model override reaches every reviewer', () => {
+test('reviewModeOverride changes composition without overriding the codex provider catalog', () => {
   const lowered = compile('high', 'slice-diff', { reviewModeOverride: 'single', evaluatorModelOverride: 'opus' });
   assert.equal(lowered.mode, 'single');
   assert.deepEqual(lowered.reviewers.map((reviewer) => reviewer.role), ['semantic']);
@@ -90,7 +90,18 @@ test('reviewModeOverride changes composition and evaluator model override reache
   const raised = compile('low', 'slice-diff', { reviewModeOverride: 'dual', evaluatorModelOverride: 'opus' });
   assert.equal(raised.mode, 'dual');
   assert.deepEqual(raised.reviewers.map((reviewer) => reviewer.role), ['semantic', 'executability']);
-  assert.ok(raised.reviewers.every((reviewer) => reviewer.model === 'opus'));
+  assert.equal(raised.reviewers.find((reviewer) => reviewer.channel === 'subagent').model, 'opus');
+  assert.equal(raised.reviewers.find((reviewer) => reviewer.channel === 'codex-cli').model, 'gpt-5.6-sol');
+});
+
+test('compiled reviewer models follow their execution channel without cross-runtime leakage', () => {
+  const plan = compile('high', 'slice-diff');
+  const semantic = plan.reviewers.find((reviewer) => reviewer.channel === 'subagent');
+  const executability = plan.reviewers.find((reviewer) => reviewer.channel === 'codex-cli');
+
+  assert.equal(semantic.model, 'opus');
+  assert.equal(executability.model, 'gpt-5.6-sol');
+  assert.notEqual(executability.model, 'opus');
 });
 
 test('document plans never assign deep-review under any risk/channel combination', () => {
