@@ -13,6 +13,9 @@ const {
   evaluateReviewExecution,
   finishGateAllowed,
   detectReviewChannels,
+  CODEX_REASONING_EFFORT_MAP,
+  mapCodexReasoningEffort,
+  staticEffortMetadata,
 } = require('./review-policy-runtime.js');
 
 const ALL_CHANNELS = Object.freeze({ subagent: true, codex_cli: true, gemini_cli: true, deep_review: true });
@@ -187,4 +190,35 @@ test('detectReviewChannels is deterministic with injected executable probe and i
   assert.deepEqual(calls, ['codex', 'gemini']);
   assert.deepEqual(detectReviewChannels({ runtime: 'codex', env: {}, probe: () => false }),
     { subagent: false, codex_cli: false, gemini_cli: false, deep_review: false });
+});
+
+test('B.3 Codex effort mapping is exact and max is model-gated', () => {
+  assert.deepEqual(CODEX_REASONING_EFFORT_MAP, {
+    medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max',
+  });
+  assert.deepEqual(mapCodexReasoningEffort('medium', 'gpt-5.6-sol'), {
+    requested: 'medium', mapped: 'medium', effort_clamped: false,
+  });
+  assert.deepEqual(mapCodexReasoningEffort('high', 'gpt-5.6-sol'), {
+    requested: 'high', mapped: 'high', effort_clamped: false,
+  });
+  assert.deepEqual(mapCodexReasoningEffort('xhigh', 'gpt-5.5-codex'), {
+    requested: 'xhigh', mapped: 'xhigh', effort_clamped: false,
+  });
+  assert.deepEqual(mapCodexReasoningEffort('max', 'gpt-5.6-sol'), {
+    requested: 'max', mapped: 'max', effort_clamped: false,
+  });
+  assert.deepEqual(mapCodexReasoningEffort('max', 'gpt-5.5-codex'), {
+    requested: 'max', mapped: 'xhigh', effort_clamped: true,
+  });
+  assert.equal(mapCodexReasoningEffort('low', 'gpt-5.6-sol'), null);
+});
+
+test('subagent and gemini channels permanently record effort_applied false', () => {
+  assert.deepEqual(staticEffortMetadata('subagent', 'high'), {
+    effort: 'high', effort_applied: false, effort_channel: 'unsupported-host',
+  });
+  assert.deepEqual(staticEffortMetadata('gemini-cli', 'xhigh'), {
+    effort: 'xhigh', effort_applied: false, effort_channel: 'unsupported-channel',
+  });
 });

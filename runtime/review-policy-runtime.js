@@ -19,6 +19,29 @@ const DEGRADED_MATRIX = Object.freeze({
   high: Object.freeze({ partial: 'pause', total: 'pause' }),
   critical: Object.freeze({ partial: 'pause', total: 'pause' }),
 });
+const CODEX_REASONING_EFFORT_MAP = Object.freeze({
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max',
+});
+
+function mapCodexReasoningEffort(effort, model) {
+  if (!Object.hasOwn(CODEX_REASONING_EFFORT_MAP, effort)) return null;
+  const maxSupported = effort === 'max' && typeof model === 'string' && /^gpt-5\.6(?:[-.]|$)/i.test(model);
+  const effortClamped = effort === 'max' && !maxSupported;
+  return {
+    requested: effort,
+    mapped: effortClamped ? 'xhigh' : CODEX_REASONING_EFFORT_MAP[effort],
+    effort_clamped: effortClamped,
+  };
+}
+
+function staticEffortMetadata(channel, effort) {
+  if (channel === 'subagent') return { effort, effort_applied: false, effort_channel: 'unsupported-host' };
+  if (channel === 'gemini-cli') return { effort, effort_applied: false, effort_channel: 'unsupported-channel' };
+  return { effort, effort_applied: false, effort_channel: 'runtime-required' };
+}
 
 function validRisk(value) {
   return CLASS_ORDER.includes(value);
@@ -46,6 +69,7 @@ function executabilityChannel(artifactKind, channels) {
 function makeReviewer({ role, tier, required, profile, artifactKind, channels, evaluatorModelOverride }) {
   const channel = role === 'executability' ? executabilityChannel(artifactKind, channels) : 'subagent';
   const reviewer = { role, channel, tier, effort: roleEffort(profile, role), required };
+  if (channel === 'subagent' || channel === 'gemini-cli') Object.assign(reviewer, staticEffortMetadata(channel, reviewer.effort));
   if (typeof evaluatorModelOverride === 'string' && evaluatorModelOverride) reviewer.model = evaluatorModelOverride;
   return reviewer;
 }
@@ -251,6 +275,9 @@ module.exports = {
   ARTIFACT_KINDS,
   REVIEW_MATRIX,
   DEGRADED_MATRIX,
+  CODEX_REASONING_EFFORT_MAP,
+  mapCodexReasoningEffort,
+  staticEffortMetadata,
   compileReviewPlan,
   evaluateReviewExecution,
   finishGateAllowed,

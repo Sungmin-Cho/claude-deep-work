@@ -83,7 +83,8 @@ const rows=[
   grammar('git stash publish',['session','purpose'],['include-untracked'],{purpose:['fork','slice-reset']}),
   grammar('git stash apply',['session','operation-id']),
   grammar('git stash drop',['session','operation-id']),
-  grammar('review run',['engine','prompt-file','timeout-ms','mode'],[],{engine:['codex','gemini'],mode:['read-only']}),
+  grammar('review run',['engine','prompt-file','timeout-ms','mode'],['effort','model'],{
+    engine:['codex','gemini'],mode:['read-only'],effort:['medium','high','xhigh','max']}),
   grammar('sensor detect',['project-root']),grammar('sensor run',['kind','process-spec-json','parser','budget-ms'],['state','session','plan','slice','after-write-operation-id'],{kind:['lint','typecheck','coverage','mutation'],parser:['eslint','tsc','ruff','stryker','clang-tidy','generic-json','generic-line','generic','mutation']}),
   grammar('sensor review-check',['project-root'],['topology','changed-files-json','state','session','plan','slice','after-write-operation-id']),
   grammar('topology detect',['project-root']),grammar('health fitness-proposal',['project-root']),
@@ -140,6 +141,7 @@ function parseDispatcher(argv){
   for(const name of ['snapshot','delegation-snapshot'])if(Object.hasOwn(flags,name)&&
     !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(flags[name]))fail('git-object-id',name);
   for(const name of ['base','base-ref'])if(Object.hasOwn(flags,name)&&!validGitRef(flags[name]))fail('git-ref',name);
+  if(entry.id==='review run'&&Object.hasOwn(flags,'model')&&!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(flags.model))fail('review-model');
   for(const [name,min,max] of [['timeout-ms',100,600000],['budget-ms',100,600000],['iteration',1,20]]){
     if(Object.hasOwn(flags,name)){const value=Number(flags[name]);if(!Number.isSafeInteger(value)||value<min||value>max)
       fail('numeric-bound',`${name}=${flags[name]}`);}}
