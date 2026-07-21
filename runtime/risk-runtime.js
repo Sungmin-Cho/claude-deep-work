@@ -54,7 +54,7 @@ const KEYWORD_LEXICON = Object.freeze({
 // ── 경로 패턴 (스펙 §4.2(2)) — evidence.changed_paths에 적용, 차원별 가점 1항목.
 const PATH_PATTERNS = Object.freeze([
   ['path:hooks-enforcement', /(^|\/)hooks\//u, 'blast_radius'],
-  ['path:auth', /(^|\/)(auth|iam|acl)[^/]*($|\/)|auth/u, 'data_security_integrity'],
+  ['path:auth', /(^|\/)(?:auth|iam|acl)(?=$|[._\/-])[^/]*(?:$|\/)/iu, 'data_security_integrity'],
   ['path:payment', /payment|billing/u, 'data_security_integrity'],
   ['path:migration-schema', /migration|schema/u, 'irreversibility'],
   ['path:ci-release', /(^|\/)\.github\/workflows\/|release|publish/u, 'external_side_effects'],
@@ -72,6 +72,17 @@ const HARD_TRIGGERS = Object.freeze([
   ['external-destructive-action', 'critical', /npm publish|force[- ]?push|(원격|remote|prod(uction)?).{0,12}(삭제|delete|destroy)|(publish|deploy|배포).{0,12}(자동화|automation)|auto[- ]?deploy/iu],
   ['unproven-recovery', 'critical', /복구 불가|rollback 불가|no rollback|unrecoverable|복구 절차 없/iu],
 ]);
+
+const STRUCTURED_CONJUNCTIONS = Object.freeze({
+  'destructive-migration': Object.freeze({
+    destructive: /\b(?:drop|delete|destroy|truncate)\b|삭제|파괴/iu,
+    target: /migration|schema|스키마|마이그레이션/iu,
+  }),
+  'external-destructive-action': Object.freeze({
+    destructive: /\b(?:delete|destroy|revoke|terminate)\b|삭제|해지|파기/iu,
+    target: /\b(?:remote|prod|production|external)\b|원격|외부|배포/iu,
+  }),
+});
 
 function textCorpus({ taskText, evidence }) {
   const ev = evidence && typeof evidence === 'object' ? evidence : {};
@@ -134,16 +145,53 @@ function scoreRiskDimensions({ taskText, signals, evidence } = {}) {
 function detectHardTriggers({ taskText, evidence } = {}) {
   const corpus = textCorpus({ taskText, evidence });
   const ev = evidence && typeof evidence === 'object' ? evidence : {};
-  const paths = Array.isArray(ev.changed_paths) ? ev.changed_paths.filter((p) => typeof p === 'string') : [];
-  // textCorpus와 동일하게 공백 결합 — 결합자 불일치는 changed_paths 기반
-  // 분산 evidence 매칭도 동일하게 끊어버리므로 여기도 통일한다.
-  // FR2-1: corpus는 textCorpus에서 이미 정규화됐지만 paths도 동일 규칙(공백류
-  // → 단일 스페이스)으로 정규화해 결합 후 결과가 일관되게 유지되도록 한다.
-  const corpusWithPaths = `${corpus} ${paths.map((p) => p.replace(/\s+/gu, ' ')).join(' ')}`;
+  const paths = Array.isArray(ev.changed_paths)
+    ? ev.changed_paths.filter((p) => typeof p === 'string').map((p) => p.replace(/\s+/gu, ' '))
+    : [];
+  const dbPaths = paths.filter((changedPath) => {
+    const basename = changedPath.split('/').pop() || '';
+    return /(^|\/)(?:db|migrations|prisma)\//iu.test(changedPath) ||
+      /\.sql$/iu.test(basename) || /^schema\./iu.test(basename) || /migration/iu.test(basename);
+  });
   const out = [];
   for (const [id, minClass, pattern] of HARD_TRIGGERS) {
-    const m = corpusWithPaths.match(pattern);
-    if (m) out.push({ id, min_class: minClass, matched: m[0] });
+    let matched = corpus.match(pattern)?.[0] || null;
+
+    if (!matched) {
+      for (const changedPath of paths) {
+        const pathMatch = changedPath.match(pattern);
+        if (pathMatch) {
+          matched = `path:${changedPath}:${pathMatch[0]}`;
+          break;
+        }
+      }
+    }
+
+    const conjunction = STRUCTURED_CONJUNCTIONS[id];
+    if (!matched && conjunction) {
+      const textMatch = corpus.match(conjunction.destructive);
+      const pathEvidence = paths
+        .map((changedPath) => ({ changedPath, match: changedPath.match(conjunction.target) }))
+        .find((entry) => entry.match);
+      if (textMatch && pathEvidence) {
+        matched = `text:${textMatch[0]} path:${pathEvidence.changedPath}:${pathEvidence.match[0]}`;
+      }
+    }
+
+    if (!matched && id === 'destructive-migration') {
+      const destructivePath = dbPaths
+        .map((changedPath) => ({ changedPath, match: changedPath.match(conjunction.destructive) }))
+        .find((entry) => entry.match);
+      const targetPath = dbPaths
+        .map((changedPath) => ({ changedPath, match: changedPath.match(conjunction.target) }))
+        .find((entry) => entry.match);
+      if (destructivePath && targetPath) {
+        matched = `paths:${destructivePath.changedPath}:${destructivePath.match[0]} ` +
+          `${targetPath.changedPath}:${targetPath.match[0]}`;
+      }
+    }
+
+    if (matched) out.push({ id, min_class: minClass, matched });
   }
   return out;
 }
