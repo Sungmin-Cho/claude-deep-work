@@ -259,6 +259,28 @@ Examples:
 (object with all 5 component scores + not_applicable flags), and
 `quality_diagnostics` (the 2 diagnostic metrics) to the
 **`$WORK_DIR/.session-receipt.payload.json` temp file** generated in Step 2.1.
+
+### Optional `methodology_shadow` (v6.11.0)
+
+state에 `risk_profile_json`이 존재하면 payload에 다음 optional 블록을 추가한다 (부재 시 생략 — forward-compatible, 스키마 registry 새 minor 불필요):
+
+```yaml
+methodology_shadow:
+  schema_version: 1
+  risk:
+    provisional_class: <risk_profile_json.provisional.class 또는 null>
+    authoritative_class: <risk_profile_json.authoritative.class 또는 null>
+    final_score: <authoritative.score ?? provisional.score ?? null>
+    hard_triggers: <authoritative.hard_triggers의 id 목록 ?? provisional 것 ?? []>
+  policy:
+    recommended_profile: <policy_shadow_json.authoritative.profile ?? .provisional.profile ?? null>
+    based_on: <해당 stage>
+  routing_diff_count: <위 stage routing_diff에서 excluded_reason 없이 actual_tier ≠ recommended_tier인 항목 수>
+  errors_count: <risk_profile_json.errors 배열 길이>
+```
+
+JSON 파싱 실패 시 경고 1줄 + 블록 생략 (fail-open).
+
 The final envelope wrap (Section 7-Z) consumes this payload as-is, so any
 field placed here ends up under `envelope.payload` in the wrapped receipt.
 
