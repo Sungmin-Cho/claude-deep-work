@@ -58,11 +58,28 @@ project-root/
 - regression command: [필요 시 전체 회귀 명령]
 - evidence to capture: [테스트 출력, 생성 파일 경로, 주요 expected output]
 
+## Spec Contract Binding
+
+```json
+{"schema_version":1,"mode":"strict-spec","created_by_version":"6.13.0","spec_contract":{"schema_version":1,"spec_id":"SPEC-EXAMPLE","spec_sha256":"[64-hex]","spec_approved_hash":"[64-hex]"},"risk_profile_sha256":"[64-hex]"}
+```
+
 ## Slice Checklist
 
 - [ ] SLICE-001: [Goal]
+  - outcome: [Observable vertical result]
   - files: [...]
   - depends_on: []
+  - integration_touchpoints: [CLI, state-store]
+  - requirements: [REQ-001]
+  - invariants: [INV-001]
+  - failure_modes: [FM-001]
+  - risk: { class: medium, score: 6, triggers: [state-machine] }
+  - negative_tests: [NEG-001]
+  - evidence_required: [GATE-targeted-tests, GATE-negative-tests]
+  - rollback: { method: revert-slice, verification: [GATE-recovery] }
+  - review_policy: single
+  - scope_expansion_trigger: [public API change]
   - failing_test: [...]
   - verification_cmd: [...]
   - expected_output: [...]

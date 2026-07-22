@@ -7,6 +7,21 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.13.0] — 2026-07-22 (Spec Contract & Evidence Policy)
+
+### Added
+
+- **실행 가능한 spec contract**: `runtime/contract-runtime.js`, read-only validator CLI, `/deep-spec`, 정본 spec/plan template이 digest로 결박된 requirement, invariant, failure matrix, slice 실행 coverage를 확립합니다.
+- **인증된 evidence package**: `runtime/evidence-runtime.js`가 제한된 command output을 메모리에서 캡처하고 persistence 전에 결정론적으로 redact합니다. contract/receipt/review/adapter producer를 인증하고 receipt schema `1.0`을 유지한 채 content-addressed EvidencePackageV2를 게시합니다.
+- **강제 verification/finish gate**: `runtime/verification-policy-runtime.js`가 risk profile별 closed monotonic gate catalog를 컴파일합니다. test/finish admission은 누락·stale·invalidated·redaction 실패 evidence와 승인되지 않은 residual risk를 거부합니다.
+
+### Reliability
+
+- same-base publication은 transaction 경계에서 record union을 결정론적으로 rebase하며, evidence journal stage는 crash/replay 검증과 함께 artifact/package/pointer 소유권을 기록합니다.
+- PR4/PR5/PR6 동작은 omission, sentinel redaction, adapter cleanup, receipt compatibility, lock order, 1,923-row logical matrix release blocker로 검증합니다.
+
+설계: `docs/design/v6-13-spec-contract-evidence-policy.md`
+
 ## [6.12.0] — 2026-07-21 (Adaptive Routing & Unified Review)
 
 ### Added

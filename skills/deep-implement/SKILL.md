@@ -45,6 +45,10 @@ user-invocable: true
 Read `$WORK_DIR/plan.md` → **Slice Checklist** 파싱. 각 slice:
 - id, goal, files, failing_test, verification_cmd, expected_output
 - spec_checklist, contract, acceptance_threshold, size, steps
+- strict-spec plan은 outcome, depends_on, integration_touchpoints, requirements,
+  invariants, failure_modes, risk, negative_tests, evidence_required, rollback,
+  review_policy, scope_expansion_trigger를 모두 전달한다. 누락/중복/잘못된 ID는
+  `runtime/contract-runtime.js:parsePlanContractMarkdown` 결과로 fail-closed한다.
 
 인라인 plan (state `skipped_phases` includes "plan"): SLICE-001만 존재, failing_test/contract 최소화 가능.
 
@@ -265,6 +269,21 @@ GREEN 후 센서 실행 (fast-fail 순서): lint → typecheck → review-check
 
 **relaxed mode**: RED 건너뜀, 직접 구현 후 검증.
 **spike mode**: TDD 없이 자유 구현. Receipt에 `tdd_state: SPIKE`. **merge 불가**.
+v6.13 strict-spec production slice에서는 SPIKE receipt/evidence를 completion,
+delegated result, test, finish proof로 사용할 수 없다. 학습 artifact만 보존하고
+production diff는 discard/isolate한 뒤 research/spec/plan을 갱신하고 새 strict
+slice를 RED부터 시작한다.
+
+### Stop/Replan trigger (v6.13)
+
+authoritative/slice risk 상승, `scope_expansion_trigger` 일치, 새 public
+contract/invariant/failure state/external side effect, unplanned mock, 한 slice의
+서로 다른 root cause 2개, 새 persistent transition을 발견하면 즉시 write를
+중단한다. runtime `phase invalidate-replan` route를 사용해 prior approval,
+verification plan/consumption, test result, evidence summary를 원자적으로
+invalidate하고 `receipt_invalidations_json`을 기록한다. Receipt 파일 자체를
+수정하거나 skill이 state 필드를 piecemeal patch해서는 안 된다. 이후
+`current_phase: research + subphase: spec`에서 재개한다.
 
 ### Step C: Spec/Contract 검증
 

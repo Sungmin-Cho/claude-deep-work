@@ -56,8 +56,10 @@ async function withRankedLocks(requests,callback){if(typeof callback!=='function
           await new Promise((resolve)=>setTimeout(resolve,2));}}
     });};
   return acquire(0);}
-async function journaledStateMutation({stateCapability,kind,preconditions={},slice,reducer,seam}={}){
+async function journaledStateMutation({stateCapability,kind,preconditions={},slice,reducer,seam,
+  prepareUnderLock,afterStateCommitUnderLock,retainCompletedJournal=false}={}){
   if(typeof reducer!=='function')fail('transaction-reducer');const sessionId=sessionIdFromState(stateCapability);
+  if(typeof retainCompletedJournal!=='boolean')fail('transaction-retain-journal');
   const projectCapability=projectCapabilityFor(stateCapability);
   const sessionRankLock=issueProjectStateCapability(stateCapability.projectRoot,
     path.join(stateCapability.projectRoot,'.claude',`deep-work.${sessionId}.rank-operation.lock`),
@@ -73,14 +75,19 @@ async function journaledStateMutation({stateCapability,kind,preconditions={},sli
     revalidatePathCapability(stateCapability,'transaction-state');let text=fs.readFileSync(stateCapability.path,'utf8');
     let pending=await resumeOperation({projectCapability,operationId:operation.operationId,sessionId,kind});let prepared=
       pending.stages?.find((row)=>row.stage==='state-prepared')?.details?.owned;let patch=null;let nextText=null;
+    const boundedContext=Object.freeze({operationId:operation.operationId,kind,sessionId,
+      recordStage:async(stage,details={})=>recordOperationStage(operation,stage,details),
+      resume:async()=>resumeOperation({projectCapability,operationId:operation.operationId,sessionId,kind})});
     const currentBytesSha256=sha256(text);if(prepared){if(prepared.statePath!==stateCapability.path||
         !/^[0-9a-f]{64}$/.test(prepared.beforeBytesSha256||'')||!/^[0-9a-f]{64}$/.test(prepared.afterBytesSha256||'')||
         !/^[0-9a-f]{64}$/.test(prepared.beforeStateSha256||'')||!/^[0-9a-f]{64}$/.test(prepared.afterStateSha256||'')||
         !/^[0-9a-f]{64}$/.test(prepared.patchSha256||''))fail('transaction-prepared');
       if(currentBytesSha256!==prepared.beforeBytesSha256&&currentBytesSha256!==prepared.afterBytesSha256)
         fail('transaction-state-diverged');}
+    if(prepareUnderLock!==undefined){if(typeof prepareUnderLock!=='function')fail('transaction-prepare-callback');
+      await prepareUnderLock(boundedContext);}
     if(!prepared||currentBytesSha256===prepared.beforeBytesSha256){const before=parseFrontmatter(text).fields;
-      patch=await reducer(structuredClone(before),Object.freeze({operationId:operation.operationId,kind}));
+      patch=await reducer(structuredClone(before),boundedContext);
       if(!patch||typeof patch!=='object'||Array.isArray(patch))fail('transaction-patch');nextText=updateFrontmatterText(text,patch);
       const computed={statePath:stateCapability.path,beforeBytesSha256:sha256(text),afterBytesSha256:sha256(nextText),
         beforeStateSha256:sha256(canonicalJson(before)),afterStateSha256:sha256(canonicalJson(parseFrontmatter(nextText).fields)),
@@ -89,10 +96,12 @@ async function journaledStateMutation({stateCapability,kind,preconditions={},sli
     if(currentBytesSha256===prepared.beforeBytesSha256){invokeSeam(seam,'before-state-write',{operationId:operation.operationId,kind,patch});
       atomicWriteFile(stateCapability,nextText);invokeSeam(seam,'after-state-write-before-stage',{operationId:operation.operationId,kind,patch});}
     await recordOperationStage(operation,'state-written',{owned:prepared});
+    if(afterStateCommitUnderLock!==undefined){if(typeof afterStateCommitUnderLock!=='function')fail('transaction-after-callback');
+      await afterStateCommitUnderLock(boundedContext);}
     invokeSeam(seam,'after-state-stage',{operationId:operation.operationId,kind,patch});
     const after=readState(stateCapability);if(sha256(canonicalJson(after))!==prepared.afterStateSha256)fail('transaction-state-postcondition');
     const receipt=await completeOperation(operation,{status:'completed',statePath:stateCapability.path,
-      stateSha256:prepared.afterStateSha256,patchSha256:prepared.patchSha256});
+      stateSha256:prepared.afterStateSha256,patchSha256:prepared.patchSha256},{retainJournal:retainCompletedJournal});
     return {...after,operationId:operation.operationId,operationReceipt:receipt};
   });
 }

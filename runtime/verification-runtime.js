@@ -45,6 +45,18 @@ async function resolveExecutable(executable,args,cwd,toolchainCapability){if(exe
 function validateExpected(checked,expectedOutcome,{sliceId,gateId}={}){if(!['must-pass','must-fail'].includes(expectedOutcome))fail('verification-outcome');
   if(Boolean(sliceId)===Boolean(gateId))fail('verification-target');if(gateId&&expectedOutcome!=='must-pass')fail('verification-gate-outcome');
   if(expectedOutcome==='must-fail'&&!checked.red_failure_literal)fail('verification-red-literal');}
+function byteSort(values){return [...values].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));}
+function deriveTddTrace({plan,target,sliceId,expectedOutcome}={}){
+  if(!target?.contract)return null;
+  const contract=target.contract;if(contract.id!==sliceId)fail('verification-trace-authority');
+  const gateId=expectedOutcome==='must-fail'?'GATE-tdd-red':'GATE-tdd-green';
+  if(expectedOutcome==='must-fail'&&!(contract.negative_tests||[]).length&&!String(contract.failing_test||'').trim())
+    fail('verification-trace-authority');
+  return{slice_id:sliceId,requirement_ids:byteSort(contract.requirements||[]),
+    invariant_ids:byteSort(contract.invariants||[]),failure_mode_ids:byteSort(contract.failure_modes||[]),
+    negative_test_ids:byteSort(contract.negative_tests||[]),gate_id:gateId,
+    contract_spec_sha256:plan.contract_binding?.spec_contract?.spec_sha256||null};
+}
 function resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expectedOutcome}={}){
   const expectedClass=state?.tdd_state==='PENDING'&&expectedOutcome==='must-fail'?'failing-test':
     state?.tdd_state==='RED_VERIFIED'&&expectedOutcome==='must-pass'?'production':
@@ -66,18 +78,20 @@ function resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expected
   }
   return {operationId,receiptSha256,writeClass:expectedClass,receipt,cap};
 }
-async function execute({checked,expectedOutcome,cwd,toolchainCapability}){const resolved=await resolveExecutable(checked.executable,checked.args,cwd,toolchainCapability);
+async function executeVerificationInMemory({checked,expectedOutcome,cwd,toolchainCapability,enforceOutcome=true}){const resolved=await resolveExecutable(checked.executable,checked.args,cwd,toolchainCapability);
   const result=await runSupervisedProcess({executable:resolved.file,args:resolved.args},{cwd,timeoutMs:checked.timeout_ms,
     maxOutputBytes:checked.max_output_bytes,env:{...process.env}});const full=Buffer.from(`${result.stdout}\0${result.stderr}`);
   const accepted=expectedOutcome==='must-pass'?result.exitCode===0&&!result.timedOut&&!result.outputOverflow:
     result.exitCode!==0&&!result.timedOut&&!result.outputOverflow&&`${result.stdout}\n${result.stderr}`.includes(checked.red_failure_literal);
-  if(!accepted){if(expectedOutcome==='must-fail'&&result.exitCode!==0)fail('red-evidence-mismatch');fail('verification-outcome-mismatch');}
+  if(enforceOutcome&&!accepted){if(expectedOutcome==='must-fail'&&result.exitCode!==0)fail('red-evidence-mismatch');fail('verification-outcome-mismatch');}
   const stat=fs.lstatSync(resolved.file);const currentIdentity=`${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
   if(resolved.identity!==currentIdentity)fail('verification-executable-drift');return {result,resolved,outputDigest:sha256(full)};}
 
-async function runVerification(args={}){const checked=validateVerificationSpec(args.spec);const hasBound=Boolean(args.stateCapability||args.planCapability);
+async function runVerification(args={}){if(args.strictSpec===true)fail('strict-spec-capture-required');
+  if(args.trace!==undefined)fail('verification-trace-authority');
+  const checked=validateVerificationSpec(args.spec);const hasBound=Boolean(args.stateCapability||args.planCapability);
   if(!hasBound){if(!['must-pass','must-fail'].includes(args.expectedOutcome))fail('verification-outcome');
-    if(args.expectedOutcome==='must-fail'&&!checked.red_failure_literal)fail('verification-red-literal');const ran=await execute({checked,
+    if(args.expectedOutcome==='must-fail'&&!checked.red_failure_literal)fail('verification-red-literal');const ran=await executeVerificationInMemory({checked,
       expectedOutcome:args.expectedOutcome,cwd:args.cwd||process.cwd(),toolchainCapability:args.toolchainCapability});
     const canonical={schema_version:1,spec_sha256:sha256(canonicalJson(checked)),expected_outcome:args.expectedOutcome,
       executable:ran.resolved.file,executable_identity:ran.resolved.identity,exit_code:ran.result.exitCode,signal:ran.result.signal,
@@ -90,6 +104,7 @@ async function runVerification(args={}){const checked=validateVerificationSpec(a
   const target=sliceId?(plan.slices||[]).find((row)=>row.id===sliceId):(plan.quality_gates||[]).find((row)=>row.id===gateId);
   if(!target)fail('verification-plan');if(target.verification_spec&&canonicalJson(validateVerificationSpec(target.verification_spec))!==canonicalJson(checked))
     fail('verification-spec-identity');const project=transaction.projectCapabilityFor(stateCapability);
+  const trace=sliceId?deriveTddTrace({plan,target,sliceId,expectedOutcome}):null;
   const planSha256=sha256(canonicalJson(plan));const write=sliceId?resolveAcceptedWrite({stateCapability,state,planSha256,
     sliceId,expectedOutcome}):null;const operation=await beginOperation({projectCapability:project,sessionId,kind:'verification-run',slice:sliceId,
     preconditions:{planSha256,specSha256:sha256(canonicalJson(checked)),sliceId:sliceId||null,gateId:gateId||null,expectedOutcome,
@@ -100,7 +115,7 @@ async function runVerification(args={}){const checked=validateVerificationSpec(a
   const journalCapability=platform.issueProjectStateCapability(project.path,journalPath,{role:'state'});
   const gitCapability=platform.issueProjectStateCapability(project.path,path.join(project.path,'.git'),{role:'git-root'});
   const manifestInput={projectCapability:project,gitCapability,runtimeExclusions:[journalCapability]};const pre=platform.captureWorktreeManifest(manifestInput);
-  const ran=await execute({checked,expectedOutcome,
+  const ran=await executeVerificationInMemory({checked,expectedOutcome,
     cwd:args.cwd||project.path,toolchainCapability:args.toolchainCapability});const post=platform.captureWorktreeManifest(manifestInput);
   if(pre.sha256!==post.sha256)fail('verification-side-effect');await recordOperationStage(operation,'after-call-before-stage',
     {owned:{exitCode:ran.result.exitCode,outputDigest:ran.outputDigest,postManifestSha256:post.sha256}});
@@ -109,7 +124,8 @@ async function runVerification(args={}){const checked=validateVerificationSpec(a
     executable_identity:ran.resolved.identity,exit_code:ran.result.exitCode,signal:ran.result.signal,termination:{timed_out:ran.result.timedOut,
       output_overflow:ran.result.outputOverflow},output_digest:ran.outputDigest,stdout:ran.result.stdout,stderr:ran.result.stderr,
     duration_ms:ran.result.durationMs,pre_manifest_sha256:pre.sha256,post_manifest_sha256:post.sha256,
-    write_operation_id:write?.operationId||null,write_receipt_sha256:write?.receiptSha256||null};
+    write_operation_id:write?.operationId||null,write_receipt_sha256:write?.receiptSha256||null,
+    contract_trace:trace};
   const resultSha256=sha256(canonicalJson(canonical));const resultPath=path.join(project.path,'.claude',
     `deep-work.${sessionId}.verification.${operation.operationId}.json`);const resultCapability=platform.issueProjectStateCapability(project.path,
       resultPath,{allowMissingLeaf:true,role:'state'});platform.atomicWriteFile(resultCapability,canonicalJson(canonical));
@@ -141,10 +157,12 @@ async function authenticateVerificationResult({stateCapability,planCapability,pl
       receipt.result.resultPath!==resultPath||receipt.result.resultSha256!==resultSha256)fail('verification-result-ledger');
   const expectedOutcome=state.tdd_state==='PENDING'?'must-fail':'must-pass';
   const checked=validateVerificationSpec(target.verification_spec);
+  const trace=deriveTddTrace({plan:lockedPlan,target,sliceId,expectedOutcome});
   if(result.schema_version!==1||result.session_id!==sessionId||result.plan_sha256!==planSha256||
       result.slice_id!==sliceId||result.gate_id!==null||result.spec_sha256!==sha256(canonicalJson(checked))||
       result.expected_outcome!==expectedOutcome||result.pre_manifest_sha256!==result.post_manifest_sha256||
-      !/^[0-9a-f]{64}$/.test(result.output_digest||''))fail('verification-result-authority');
+      !/^[0-9a-f]{64}$/.test(result.output_digest||'')||canonicalJson(result.contract_trace)!==canonicalJson(trace))
+    fail('verification-result-authority');
   if(expectedOutcome==='must-pass'&&result.exit_code!==0)fail('verification-result-outcome');
   if(expectedOutcome==='must-fail'&&(result.exit_code===0||!`${result.stdout}\n${result.stderr}`.includes(checked.red_failure_literal)))
     fail('verification-result-outcome');
@@ -156,5 +174,5 @@ async function authenticateVerificationResult({stateCapability,planCapability,pl
     operationId,expectedOutcome,write};
 }
 
-module.exports={validateVerificationSpec,migrateKnownVerificationSpec,runVerification,
+module.exports={validateVerificationSpec,migrateKnownVerificationSpec,runVerification,executeVerificationInMemory,deriveTddTrace,
   authenticateVerificationResult,resolveAcceptedWrite,LEGACY_SPECS};

@@ -24,6 +24,7 @@ const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatM
 const SESSION_RE = /^s-[0-9a-f]{8}$/;
 const NODE_AUTHORITY = Object.freeze({runtime:'node',shell:false,authority:'session-store-v1'});
 const LOCK_WAIT_ARRAY=new Int32Array(new SharedArrayBuffer(4));
+const ACTIVE_FINISH_CONTEXTS=new WeakMap();
 
 function fail(code, message) {
   const error = new Error(`[${code}] ${message || code}`);
@@ -140,7 +141,10 @@ function buildSessionState({sessionId,task,defaults={},profile={},repositoryCont
   const worktreeEnabled=repositoryMode==='worktree'||repositoryMode==='fork';
   if(worktreeEnabled&&(typeof repositoryContext.worktreePath!=='string'||!path.isAbsolute(repositoryContext.worktreePath)))
     fail('session-worktree-context');
-  return {schema_version:2,session_id:sessionId,task_description:task.trim(),current_phase:'brainstorm',
+  return {schema_version:2,session_id:sessionId,task_description:task.trim(),created_by_version:'6.13.0',
+    current_phase:'brainstorm',subphase:null,spec_policy_required:null,spec_completed_at:null,
+    spec_approved_hash:null,spec_contract_json:null,spec_gate_result_json:null,
+    verification_plan_json:null,verification_plan_sha256:null,plan_spec_gate_result_json:null,
     work_dir:workDir,repository_mode:repositoryMode,worktree_enabled:worktreeEnabled,
     worktree_path:worktreeEnabled?repositoryContext.worktreePath:null,
     branch:repositoryContext.branch||null,head_oid:repositoryContext.headOid||null,
@@ -405,6 +409,9 @@ async function migrateKnownSessionSchema({stateCapability,sessionId,_locksHeld=f
   if (![1,2].includes(version)) fail('session-schema-unknown');
   const patch={};if(version!==2)patch.schema_version=2;if(fields.session_id!==sessionId)patch.session_id=sessionId;
   if(fields.phase_review===undefined)patch.phase_review='{}';
+  for(const key of ['created_by_version','subphase','spec_policy_required','spec_completed_at','spec_approved_hash',
+    'spec_contract_json','spec_gate_result_json','verification_plan_json','verification_plan_sha256',
+    'plan_spec_gate_result_json'])if(fields[key]===undefined)patch[key]=null;
   const changedKeys=Object.keys(patch).sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
   if(!changedKeys.length)return {status:'current',schemaVersion:2,changedKeys:[]};
   atomicWriteFile(stateCapability,updateFrontmatterText(text,patch));
@@ -495,7 +502,14 @@ async function withFinishTransaction({sessionId,stateCapability,outcome},callbac
     {rank:transaction.RANKS.state,capability:transaction.stateLock(stateCapability)},
     {rank:transaction.RANKS.target,capability:issueProjectStateCapability(root,path.join(root,'.claude',
       `deep-work.${sessionId}.finish-target.lock`),{allowMissingLeaf:true,role:'lock'})}];
-  return transaction.withRankedLocks(locks,()=>callback({projectCapability,caps}));}
+  return transaction.withRankedLocks(locks,async()=>{const finishContext=Object.freeze({kind:'finish-context'});
+    const binding={sessionId,statePath:stateCapability.path,outcome,projectCapability,caps,active:true};
+    ACTIVE_FINISH_CONTEXTS.set(finishContext,binding);try{return await callback({projectCapability,caps,finishContext});}
+    finally{binding.active=false;}});}
+
+function validateActiveFinishContext(finishContext,{sessionId,stateCapability,outcome}={}){const binding=ACTIVE_FINISH_CONTEXTS.get(finishContext);
+  if(!binding||!binding.active||binding.sessionId!==sessionId||binding.statePath!==stateCapability?.path||binding.outcome!==outcome)
+    fail('finish-context-invalid');return Object.freeze({...binding});}
 
 async function finalizeWithinFinishOperation({operation,sessionId,stateCapability,outcome,seam,locksHeld=false,caps}={}){
   requireSessionId(sessionId);if(!operation||operation.sessionId!==sessionId||
@@ -775,6 +789,7 @@ module.exports = {
   recoverSessionWorktree,
   finalizeSession,
   withFinishTransaction,
+  validateActiveFinishContext,
   finalizeWithinFinishOperation,
   prepareSessionRepository,
   forkSession,

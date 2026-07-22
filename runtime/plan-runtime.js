@@ -24,6 +24,63 @@ function byteSort(values) {
 
 function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 
+function isTestPath(file) {
+  return /(?:^|\/)(?:tests?|__tests__|fixtures|__mocks__)(?:\/|$)|(?:\.test|\.spec)\.[^/]+$/i.test(file);
+}
+
+function parseStoredObject(value, code) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return structuredClone(value);
+  try { const parsed = JSON.parse(value); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed; }
+  catch {}
+  fail(code);
+}
+
+function compilePlanProjectionV1({planMarkdown, specContract, sliceRiskState} = {}) {
+  if (typeof planMarkdown !== 'string' || !planMarkdown.trim()) fail('plan-source');
+  const contractRuntime = require('./contract-runtime.js');
+  const specResult = contractRuntime.validateSpecContract(specContract, {riskClass:specContract?.risk_class});
+  if (!specResult.pass) fail('plan-spec-contract', specResult.errors.map((row)=>row.code).join(','));
+  const parsed = contractRuntime.parsePlanContractMarkdown(planMarkdown, {path:'plan.md',specIndex:specResult.index});
+  if (!parsed.binding || parsed.binding.mode !== 'strict-spec') fail('plan-binding');
+  const specSha256 = contractRuntime.specContractDigest(specContract);
+  if (parsed.binding.spec_contract?.spec_id !== specContract.spec_id ||
+      parsed.binding.spec_contract?.spec_sha256 !== specSha256 ||
+      !/^[0-9a-f]{64}$/.test(parsed.binding.spec_contract?.spec_approved_hash || '') ||
+      !/^[0-9a-f]{64}$/.test(parsed.binding.risk_profile_sha256 || '')) fail('plan-binding-identity');
+  const riskState = parseStoredObject(sliceRiskState || {}, 'plan-slice-risk');
+  const executionResult=contractRuntime.validateSpecContract(specContract,{riskClass:specContract.risk_class,
+    slices:parsed.slices});
+  if(!executionResult.pass)fail('plan-spec-execution',executionResult.errors.map((row)=>row.code).join(','));
+  const slices = parsed.slices.map((contract) => {
+    const projected = riskState[contract.id];
+    if (!projected || canonicalJson({class:projected.class,score:projected.score,triggers:projected.triggers}) !==
+        canonicalJson(contract.risk)) fail('plan-slice-risk', contract.id);
+    const files = validatePaths(contract.files, `${contract.id}.files`);
+    const failing = files.filter(isTestPath);
+    const production = files.filter((file)=>!isTestPath(file));
+    if (!failing.length || !production.length) fail('plan-scope-empty-class', contract.id);
+    return {id:contract.id,checked:false,scope_schema_version:1,files,
+      write_scope:{failing_test:failing,production,refactor:[]},contract};
+  });
+  const binding = {...parsed.binding,source_plan_sha256:sha256(Buffer.from(planMarkdown))};
+  return validatePlanScopeV1({schema_version:1,contract_binding:binding,slices});
+}
+
+function publishPlanProjectionV1({planCapability, projection} = {}) {
+  if (!planCapability || !projection) fail('plan-publish-input');
+  const checked = validatePlanScopeV1(projection);
+  const bytes = Buffer.from(canonicalJson(checked));
+  const transaction = require('./transaction-runtime.js');
+  transaction.revalidateSessionFile(planCapability);
+  if (path.basename(planCapability.path) !== 'plan.json') fail('plan-publish-target');
+  if (fs.existsSync(planCapability.path)) {
+    const current = transaction.readSessionFile(planCapability);
+    if (current.equals(bytes)) return {path:planCapability.path,sha256:sha256(bytes),projection:checked,adopted:true};
+  }
+  transaction.atomicWriteSessionFile(planCapability, bytes);
+  return {path:planCapability.path,sha256:sha256(bytes),projection:checked,adopted:false};
+}
+
 function exactKeys(value, expected) {
   return value && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).sort().join(',') === [...expected].sort().join(',');
@@ -69,6 +126,7 @@ function validatePlanScopeV1(input) {
     if (union.size !== files.length || files.some((entry) => !union.has(entry))) {
       fail('plan-scope-coverage');
     }
+    if (slice.contract) require('./contract-runtime.js').validateSliceContract(slice.contract,{legacy:false});
     return {...slice, files, write_scope:{failing_test:failing,production,refactor}};
   });
   return {...input,slices};
@@ -174,4 +232,6 @@ module.exports = {
   validateAssignment,
   publishDelegationScope,
   deriveScopedWriteAuthority,
+  compilePlanProjectionV1,
+  publishPlanProjectionV1,
 };

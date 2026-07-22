@@ -7,6 +7,21 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.0] — 2026-07-22 (Spec Contract & Evidence Policy)
+
+### Added
+
+- **Executable spec contracts**: `runtime/contract-runtime.js`, the read-only validator CLI, `/deep-spec`, and the canonical spec/plan templates establish digest-bound requirements, invariants, failure matrices, and slice execution coverage.
+- **Authenticated evidence packages**: `runtime/evidence-runtime.js` captures bounded command output in memory, applies deterministic redaction before persistence, authenticates contract/receipt/review/adapter producers, and publishes content-addressed EvidencePackageV2 records without changing receipt schema version `1.0`.
+- **Enforced verification and finish gates**: `runtime/verification-policy-runtime.js` compiles a closed, monotonic gate catalog by risk profile. Test and finish admission reject missing, stale, invalidated, or redaction-failed evidence and unaccepted residual risk.
+
+### Reliability
+
+- Same-base publication deterministically rebases record unions under the transaction boundary; evidence journal stages cover artifact, package, and pointer ownership with crash/replay checks.
+- Release-blocking omission, sentinel-redaction, adapter-cleanup, receipt compatibility, lock-order, and 1,923-row logical matrix tests cover PR4/PR5/PR6 behavior.
+
+Design: `docs/design/v6-13-spec-contract-evidence-policy.md`
+
 ## [6.12.0] — 2026-07-21 (Adaptive Routing & Unified Review)
 
 ### Added

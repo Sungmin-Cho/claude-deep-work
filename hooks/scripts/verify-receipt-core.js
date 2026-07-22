@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFileSync } = require('node:child_process');
+const { canonicalJson } = require('../../runtime/operation-journal.js');
 
 const VERIFICATION_ITEMS = Object.freeze([
   'file_existence',
@@ -11,6 +12,7 @@ const VERIFICATION_ITEMS = Object.freeze([
   'baseline_chain_continuity',
   'tdd_hard_fail',
   'verification_cmd_rerun',
+  'evidence_completeness',
 ]);
 
 // STRICT_TRANSITIONS must be a superset of phase-guard-core.js VALID_TRANSITIONS
@@ -125,6 +127,12 @@ function validateSensorResults(sensorResults, sliceId) {
   return errors;
 }
 
+function requiredEvidenceForSlice(slice) {
+  if (Array.isArray(slice?.evidence_required)) return slice.evidence_required;
+  if (Array.isArray(slice?.contract?.evidence_required)) return slice.contract.evidence_required;
+  return [];
+}
+
 function verifyReceipts({
   receipts,
   plan,
@@ -133,11 +141,17 @@ function verifyReceipts({
   skip_items = [],                                       // C7 — inline path partial verify
   skip_git_checks = false,
   skip_diff_match = false,
+  receipt_invalidations = [],
+  verification_plan = null,
+  committed_evidence = null,
+  artifact_root = null,
 } = {}) {
   const skip = new Set(skip_items);
   const errors = [];
   const slices = plan && Array.isArray(plan.slices) ? plan.slices : [];
   const bySliceId = new Map(slices.map((s) => [s.id, s]));
+  const governed=slices.filter((slice)=>requiredEvidenceForSlice(slice).length>0);
+  if(skip.has(9)&&governed.length)errors.push('[item 9] evidence completeness cannot be skipped for spec-governed evidence');
 
   // Item 1: file existence / count
   if (!skip.has(1) && receipts.length !== slices.length) {
@@ -203,6 +217,34 @@ function verifyReceipts({
         if (normalizeDiff(actual) !== normalizeDiff(r.changes.git_diff)) {
           errors.push(`[item 5] ${r.slice_id}: recorded changes.git_diff does not match actual git diff`);
         }
+      }
+    }
+
+    const requiredEvidence=requiredEvidenceForSlice(slice);
+    if(!skip.has(9)&&requiredEvidence.length){
+      const evidenceRuntime=require('../../runtime/evidence-runtime.js'),pointer=committed_evidence?.slice_packages?.[r.slice_id];
+      let committed=null;
+      if(!verification_plan||!artifact_root||!pointer?.package_ref||!pointer?.package_sha256){
+        errors.push(`[item 9] ${r.slice_id}: committed slice evidence authority missing`);
+      }else{
+        try{committed=evidenceRuntime.loadCommittedPackage(artifact_root,pointer,verification_plan);}
+        catch(error){errors.push(`[item 9] ${r.slice_id}: committed slice evidence invalid (${error.code||error.message})`);}
+      }
+      if(committed){
+        const validation=evidenceRuntime.validateEvidencePackage(committed,verification_plan,{artifactRoot:artifact_root});
+        if(!validation.pass)errors.push(`[item 9] ${r.slice_id}: committed slice evidence invalid (${validation.errors
+          .map((row)=>row.code).join(', ')})`);
+        if(committed.scope?.kind!=='slice'||committed.scope?.id!==r.slice_id)
+          errors.push(`[item 9] ${r.slice_id}: committed evidence is not the slice package`);
+        const embeddedValidation=evidenceRuntime.validateEvidencePackage(r.evidence,verification_plan,{artifactRoot:artifact_root});
+        if(!embeddedValidation.pass||r.evidence?.package_sha256!==pointer.package_sha256||
+            canonicalJson(r.evidence)!==canonicalJson(committed))
+          errors.push(`[item 9] ${r.slice_id}: embedded evidence claim is not the committed slice package`);
+        const satisfied=new Set(committed.completeness?.satisfied_gate_ids||[]),missing=requiredEvidence.filter((id)=>!satisfied.has(id));
+        if(committed.completeness?.complete!==true||missing.length)
+          errors.push(`[item 9] ${r.slice_id}: incomplete evidence${missing.length?`: ${missing.join(', ')}`:''}`);
+        if(evidenceRuntime.invalidatedReceiptEvidenceIds(committed,verification_plan,receipt_invalidations,
+          {sliceId:r.slice_id}).length)errors.push(`[item 9] ${r.slice_id}: evidence identity was invalidated`);
       }
     }
   }
@@ -292,6 +334,14 @@ module.exports = {
 function parsePlanMd(planMdPath) {
   const fs = require('node:fs');
   const src = fs.readFileSync(planMdPath, 'utf8');
+
+  // v6.13 strict plans share the pure contract parser with plan approval and
+  // the validation CLI. Legacy plans retain the historical minimal projection.
+  if (/^##\s+Spec\s+Contract\s+Binding\s*$/m.test(src)) {
+    return require('../../runtime/contract-runtime.js').parsePlanContractMarkdown(src, {
+      path: planMdPath,
+    });
+  }
 
   // Extract just the Slice Checklist section.
   // Two-step approach — avoids `\Z` (not valid in JS regex).
@@ -458,12 +508,22 @@ function parseStateFile(stateFilePath) {
 
   const state = {};
   // Top-level scalar fields we care about
-  const scalarFields = ['tdd_mode', 'team_mode', 'current_phase', 'execution_override'];
+  let parsedFields={};try{parsedFields=require('../../runtime/frontmatter.js').parseFrontmatter(src).fields;}catch{}
+  const scalarFields = ['tdd_mode', 'team_mode', 'current_phase', 'execution_override', 'work_dir',
+    'verification_plan_sha256'];
   for (const field of scalarFields) {
+    if(parsedFields[field]!==undefined){state[field]=parsedFields[field];continue;}
     const re = new RegExp(`^${field}:\\s*(["']?)([^"'\\s#\\n][^#\\n]*?)\\1\\s*(?:#.*)?$`, 'm');
     const m = fm.match(re);
     if (m) state[field] = m[2].trim();
   }
+  for(const field of ['receipt_invalidations_json','verification_plan_json','review_execution_json']){
+    const raw=parsedFields[field];if(typeof raw==='string')try{state[field]=JSON.parse(raw);}catch{}
+    else if(raw&&typeof raw==='object')state[field]=structuredClone(raw);
+    if(state[field]!==undefined)continue;const re=new RegExp(`^${field}:\\s*(.+)$`,'m');const m=fm.match(re);
+    if(m)try{state[field]=JSON.parse(m[1].trim().replace(/^['"]|['"]$/g,''));}catch{}
+  }
+  if(state.receipt_invalidations_json===undefined)state.receipt_invalidations_json=[];
   return state;
 }
 

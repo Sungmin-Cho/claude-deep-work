@@ -28,4 +28,13 @@ test('must-pass and must-fail evidence bind complete output digests', async () =
   assert.equal(red.accepted, true);
   await assert.rejects(() => runVerification({spec:{...redSpec,red_failure_literal:'wrong'},
     expectedOutcome:'must-fail', cwd:process.cwd()}), /red-evidence-mismatch/);
+  await assert.rejects(() => runVerification({spec:base,expectedOutcome:'must-pass',cwd:process.cwd(),
+    trace:{slice_id:'SLICE-001'}}), /verification-trace-authority/);
+});
+
+test('strict-spec verification cannot use the raw persistence wrapper', async () => {
+  const sentinel='dw-redaction-secret-6.13';
+  const spec={...base,args:['-e',`process.stdout.write('${sentinel}');process.stderr.write('token=${sentinel}')`]};
+  await assert.rejects(()=>runVerification({spec,expectedOutcome:'must-pass',cwd:process.cwd(),strictSpec:true}),
+    /strict-spec-capture-required/);
 });

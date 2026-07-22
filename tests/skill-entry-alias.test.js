@@ -15,3 +15,11 @@ test('deep-work skill alias is the primary skill-only entrypoint', () => {
   assert.match(skill, /^user-invocable: true$/m);
   assert.match(skill, /Skill\("deep-work-orchestrator", args="\$ARGUMENTS"\)/);
 });
+
+test('deep-spec is a discoverable user-invocable skill entrypoint', () => {
+  const skill = fs.readFileSync(path.join(repoRoot, 'skills', 'deep-spec', 'SKILL.md'), 'utf8');
+  assert.match(skill, /^name: deep-spec$/m);
+  assert.match(skill, /^user-invocable: true$/m);
+  assert.match(skill, /\$deep-work:deep-spec/);
+  assert.match(skill, /\/deep-spec/);
+});

@@ -3,7 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+const crypto = require('node:crypto');
+const { execFileSync, spawnSync } = require('node:child_process');
+const evidenceRuntime = require('../../runtime/evidence-runtime.js');
+const { canonicalJson } = require('../../runtime/operation-journal.js');
+const { parseSpecMarkdown } = require('../../runtime/contract-runtime.js');
+const { compilePlanProjectionV1 } = require('../../runtime/plan-runtime.js');
+const { compileVerificationPlan } = require('../../runtime/verification-policy-runtime.js');
+const { compileReviewPlan } = require('../../runtime/review-policy-runtime.js');
+const { updateFrontmatterText } = require('../../runtime/frontmatter.js');
 
 const {
   verifyReceipts,
@@ -41,6 +49,124 @@ function makeReceipt(overrides = {}) {
     harness_metadata: { model_id: 'sonnet' },
   }, overrides);
 }
+
+const digest = (value) => crypto.createHash('sha256').update(canonicalJson(value)).digest('hex');
+
+async function committedSliceEvidence(root = fs.mkdtempSync(path.join(os.tmpdir(), 'vr-evidence-'))) {
+  fs.mkdirSync(root, { recursive: true });
+  const fixture = path.resolve(__dirname, '../../tests/fixtures/v6.13-spec/medium-valid');
+  const specContract = parseSpecMarkdown(fs.readFileSync(path.join(fixture, 'spec.md'), 'utf8'));
+  const planProjection = compilePlanProjectionV1({
+    planMarkdown: fs.readFileSync(path.join(fixture, 'plan.md'), 'utf8'),
+    specContract,
+    sliceRiskState: { 'SLICE-001': { class: 'medium', score: 6, triggers: ['strict-admission'] } },
+  });
+  const verificationPlan = compileVerificationPlan({
+    riskProfile: { class: 'medium', score: 6, triggers: ['strict-admission'] },
+    riskProfileSha256: 'b'.repeat(64),
+    policySnapshot: { risk_class: 'medium', profile: 'standard',
+      verification_policy: { recommended: '표준 검증' } },
+    specContract,
+    specSha256: planProjection.contract_binding.spec_contract.spec_sha256,
+    specApprovedHash: 'a'.repeat(64),
+    planProjection,
+    capabilities: {},
+    compatibilityFacts: { created_by_version: '6.13.0', spec_policy_required: true },
+  });
+  const reviewPlan = compileReviewPlan({ artifactKind: 'session-final', phase: 'test',
+    riskClass: 'medium', runtime: 'claude', availableChannels: { subagent: true,
+      codex_cli: true, gemini_cli: true, deep_review: true }, tddMode: 'strict' });
+  const reports = reviewPlan.reviewers.map((row, index) => ({ role: row.role, channel: row.channel,
+    required: row.required, status: 'completed', report_ref: `reports/${row.role}.json`,
+    sha256: String(index + 1).repeat(64).slice(0, 64) }));
+  const commandSpec = { schema_version: 1, executable: { kind: 'node', value: 'node' }, args: ['verify.js'],
+    cwd_role: 'active-worktree', timeout_ms: 5000, max_output_bytes: 4096, red_failure_literal: 'expected-red' };
+  const records = [];
+  for (const [index, gateId] of verificationPlan.evidence_required_gate_ids.entries()) {
+    const gate = verificationPlan.gates.find((row) => row.id === gateId);
+    const base = { evidence_id: `EVID-ITEM9-${String(index + 1).padStart(4, '0')}`, gate_id: gateId };
+    let record;
+    if (gate.adapter === 'command') record = await evidenceRuntime.captureCommandEvidence({ ...base,
+      verification_spec: commandSpec, expected_outcome: 'must-pass', requirement_ids: gate.requirement_ids,
+      invariant_ids: ['INV-001'], failure_mode_ids: gate.failure_mode_ids, negative_test_ids: ['NEG-001'],
+      redaction_policy: { exact_secret_values: [] } }, { runner: async () => ({ exitCode: 0, stdout: 'ok',
+      stderr: '', durationMs: 1 }) });
+    else if (gate.adapter === 'contract') record = evidenceRuntime.captureContractEvidence({ ...base,
+      verificationPlan, specContract });
+    else if (gate.adapter === 'receipt') record = evidenceRuntime.captureReceiptEvidence({ ...base,
+      verificationPlan, plan: planProjection, receipts: [{ slice_id: 'SLICE-001', status: 'complete' }],
+      verificationResult: { pass: true, errors: [] } });
+    else if (gate.adapter === 'review') record = evidenceRuntime.captureReviewEvidence({ ...base,
+      verificationPlan, reviewPlan, reports });
+    else if (['sensor', 'health'].includes(gate.adapter)) {
+      const result = { status: 'pass', adapter: gate.adapter };
+      record = evidenceRuntime.captureRuntimeProjectionEvidence({ ...base, verificationPlan, kind: gate.adapter,
+        operation: { operationId: `op-${String(index + 1).repeat(32).slice(0, 32)}` }, result,
+        result_sha256: digest(result) });
+    } else throw new Error(`unhandled required adapter ${gate.adapter}`);
+    records.push(evidenceRuntime.materializeRecordUnderLock({ artifactRoot: root, record }));
+  }
+  const packageValue = evidenceRuntime.buildEvidencePackage({ scope: { kind: 'slice', id: 'SLICE-001' },
+    verificationPlan, records, artifactRoot: root });
+  const pointer = evidenceRuntime.publishContentAddressedEvidencePackage({ projectRoot: root,
+    package: packageValue, verificationPlan });
+  return { root, verificationPlan, packageValue, pointer };
+}
+
+describe('verify-receipt item 9: evidence completeness',()=>{
+  it('cannot be skipped for spec-governed evidence',()=>{
+    const slice={id:'SLICE-001',files:[],contract:{evidence_required:['GATE-spec-contract']}};
+    const receipt=makeReceipt({evidence:{schema_version:2,package_sha256:'a'.repeat(64),
+      verification_plan_sha256:'b'.repeat(64),risk_profile_sha256:'c'.repeat(64),
+      completeness:{complete:true,satisfied_gate_ids:['GATE-spec-contract']}}});
+    const result=verifyReceipts({receipts:[receipt],plan:{slices:[slice]},skip_items:[9],skip_git_checks:true});
+    assert.equal(result.pass,false);assert.match(result.errors.join('\n'),/item 9.*cannot be skipped/);
+  });
+
+  it('rejects a forged embedded claim instead of accepting it as the committed slice package',async()=>{
+    const authority=await committedSliceEvidence();const forged=structuredClone(authority.packageValue);
+    forged.records[0].producer_proof.proof_sha256='f'.repeat(64);
+    const slice={id:'SLICE-001',files:[],evidence_required:[...authority.verificationPlan.evidence_required_gate_ids]};
+    const result=verifyReceipts({receipts:[makeReceipt({evidence:forged})],plan:{slices:[slice]},skip_git_checks:true,
+      verification_plan:authority.verificationPlan,artifact_root:authority.root,
+      committed_evidence:{slice_packages:{'SLICE-001':authority.pointer}}});
+    assert.equal(result.pass,false);assert.match(result.errors.join('\n'),/item 9.*committed|item 9.*invalid/i);
+  });
+
+  it('rejects the producer receipt-plan-risk invalidation tuple for a validated committed package',async()=>{
+    const authority=await committedSliceEvidence();const receiptRecord=authority.packageValue.records.find((row)=>row.kind==='receipt');
+    const slice={id:'SLICE-001',files:[],evidence_required:[...authority.verificationPlan.evidence_required_gate_ids]};
+    const result=verifyReceipts({receipts:[makeReceipt({evidence:authority.packageValue})],plan:{slices:[slice]},skip_git_checks:true,
+      verification_plan:authority.verificationPlan,artifact_root:authority.root,
+      committed_evidence:{slice_packages:{'SLICE-001':authority.pointer}},receipt_invalidations:[{slice_id:'SLICE-001',
+        receipt_sha256:receiptRecord.result.receipt_set_sha256,
+        prior_plan_sha256:authority.verificationPlan.plan_projection_sha256,
+        prior_risk_profile_sha256:authority.verificationPlan.risk_profile_sha256}]});
+    assert.equal(result.pass,false);assert.match(result.errors.join('\n'),/invalidated/);
+  });
+
+  it('production runner loads state authority and rejects forged or invalidated receipt evidence',async()=>{
+    const projectRoot=fs.mkdtempSync(path.join(os.tmpdir(),'vr-runner-authority-')),session='s-aaaaaaaa';
+    fs.mkdirSync(path.join(projectRoot,'.git'));fs.mkdirSync(path.join(projectRoot,'.claude'));const work=path.join(projectRoot,
+      '.deep-work',session),receiptsDir=path.join(work,'receipts');fs.mkdirSync(receiptsDir,{recursive:true});
+    const authority=await committedSliceEvidence(work),planPath=path.join(work,'plan.md');fs.copyFileSync(path.resolve(__dirname,
+      '../../tests/fixtures/v6.13-spec/medium-valid/plan.md'),planPath);const statePath=path.join(projectRoot,'.claude',
+      `deep-work.${session}.md`),review={evidence:{slice_packages:{'SLICE-001':authority.pointer}}};
+    const writeState=(invalidations=[])=>fs.writeFileSync(statePath,updateFrontmatterText('',{session_id:session,
+      work_dir:`.deep-work/${session}`,tdd_mode:'strict',verification_plan_json:canonicalJson(authority.verificationPlan),
+      verification_plan_sha256:authority.verificationPlan.plan_sha256,review_execution_json:canonicalJson(review),
+      receipt_invalidations_json:canonicalJson(invalidations)}));const run=()=>spawnSync(process.execPath,[path.join(__dirname,
+      'verify-delegated-receipt-runner.js'),__dirname,statePath,receiptsDir,planPath,'','0'],{cwd:projectRoot,encoding:'utf8'});
+    const forged=structuredClone(authority.packageValue);forged.records[0].producer_proof.proof_sha256='f'.repeat(64);
+    fs.writeFileSync(path.join(receiptsDir,'SLICE-001.json'),canonicalJson(makeReceipt({evidence:forged})));writeState();
+    let result=run();assert.notEqual(result.status,0);assert.match(result.stdout,/item 9.*committed/i);
+    fs.writeFileSync(path.join(receiptsDir,'SLICE-001.json'),canonicalJson(makeReceipt({evidence:authority.packageValue})));
+    const receiptRecord=authority.packageValue.records.find((row)=>row.kind==='receipt');writeState([{slice_id:'SLICE-001',
+      receipt_sha256:receiptRecord.result.receipt_set_sha256,prior_plan_sha256:authority.verificationPlan.plan_projection_sha256,
+      prior_risk_profile_sha256:authority.verificationPlan.risk_profile_sha256}]);result=run();assert.notEqual(result.status,0);
+    assert.match(result.stdout,/item 9.*invalidated/i);
+  });
+});
 
 describe('verify-receipt item 1: file existence', () => {
   it('FAIL when receipts count mismatches slice count', () => {
@@ -482,6 +608,98 @@ describe('parsePlanMd (N-R1 — deep-plan template compat)', () => {
     fs.writeFileSync(file, content);
     return file;
   }
+
+  it('existing parsePlanMd rejects duplicate and dangling contract IDs', () => {
+    const f = writePlan([
+      '## Spec Contract Binding',
+      '',
+      '```json',
+      JSON.stringify({
+        schema_version: 1,
+        mode: 'strict-spec',
+        created_by_version: '6.13.0',
+        spec_contract: {
+          schema_version: 1,
+          spec_id: 'SPEC-PARSER',
+          spec_sha256: 'a'.repeat(64),
+          spec_approved_hash: 'b'.repeat(64),
+        },
+        risk_profile_sha256: 'c'.repeat(64),
+      }),
+      '```',
+      '',
+      '## Slice Checklist',
+      '',
+      '- [ ] SLICE-001: Reject invalid trace links',
+      '  - outcome: invalid trace links are rejected',
+      '  - files: [runtime/a.js, runtime/a.test.js]',
+      '  - depends_on: []',
+      '  - integration_touchpoints: [contract parser]',
+      '  - requirements: [REQ-001, REQ-001]',
+      '  - invariants: [INV-999]',
+      '  - failure_modes: []',
+      '  - risk: { class: medium, score: 6, triggers: [contract-parser] }',
+      '  - negative_tests: [NEG-001]',
+      '  - evidence_required: [GATE-negative-tests]',
+      '  - rollback: { method: revert, verification: [GATE-recovery] }',
+      '  - review_policy: single',
+      '  - scope_expansion_trigger: [public API change]',
+      '  - size: M',
+    ].join('\n'));
+
+    assert.throws(
+      () => parsePlanMd(f),
+      (error) => error && /duplicate|dangling/.test(error.code || error.message)
+    );
+  });
+
+  it('Markdown parser returns the full normalized SliceContractV1', () => {
+    const f = writePlan([
+      '## Spec Contract Binding', '', '```json', JSON.stringify({
+        schema_version: 1, mode: 'strict-spec', created_by_version: '6.13.0',
+        spec_contract: { schema_version: 1, spec_id: 'SPEC-PARSER',
+          spec_sha256: 'a'.repeat(64), spec_approved_hash: 'b'.repeat(64) },
+        risk_profile_sha256: 'c'.repeat(64),
+      }), '```', '', '## Slice Checklist', '',
+      '- [ ] SLICE-001: Preserve the full contract',
+      '  - outcome: every normative field is preserved',
+      '  - files: [runtime/a.js, runtime/a.test.js]',
+      '  - depends_on: []',
+      '  - integration_touchpoints: [plan parser, delegated worker]',
+      '  - requirements: [REQ-001]',
+      '  - invariants: [INV-001]',
+      '  - failure_modes: [FM-001]',
+      '  - risk: { class: high, score: 9, triggers: [contract-parser] }',
+      '  - negative_tests: [NEG-001]',
+      '  - evidence_required: [GATE-negative-tests]',
+      '  - rollback: { method: revert-slice, verification: [GATE-recovery] }',
+      '  - review_policy: dual',
+      '  - scope_expansion_trigger: [public API change]',
+      '  - failing_test: parser omits a normative field',
+      '  - verification_cmd: node --test runtime/a.test.js',
+      '  - expected_output: fail 0',
+      '  - code_sketch: parsePlanContractMarkdown(source)',
+      '  - spec_checklist: [REQ-001 acceptance, FM-001 recovery]',
+      '  - contract: [all fields normalize, duplicates fail]',
+      '  - acceptance_threshold: all',
+      '  - size: L',
+      '  - steps:',
+      '    1. runtime/a.test.js adds the RED assertion',
+      '    2. runtime/a.js implements the parser',
+    ].join('\n'));
+
+    const slice = parsePlanMd(f).slices[0];
+    assert.equal(slice.failing_test, 'parser omits a normative field');
+    assert.equal(slice.verification_cmd, 'node --test runtime/a.test.js');
+    assert.equal(slice.expected_output, 'fail 0');
+    assert.deepEqual(slice.spec_checklist, ['REQ-001 acceptance', 'FM-001 recovery']);
+    assert.deepEqual(slice.contract, ['all fields normalize', 'duplicates fail']);
+    assert.equal(slice.acceptance_threshold, 'all');
+    assert.deepEqual(slice.steps, [
+      'runtime/a.test.js adds the RED assertion',
+      'runtime/a.js implements the parser',
+    ]);
+  });
 
   it('parses unquoted bracket files list (deep-plan canonical format)', () => {
     const f = writePlan([

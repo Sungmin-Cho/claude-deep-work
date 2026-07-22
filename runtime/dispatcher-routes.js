@@ -21,6 +21,30 @@ function stateCapability(f,cwd,key='state'){const root=projectRootFor(f,cwd);con
   return platform.issueProjectStateCapability(root,target,{role:'session-state'});}
 function stateFields(capability){platform.revalidatePathCapability(capability,'dispatcher-state');return frontmatter.parseFrontmatter(boundedFile(capability.path).toString('utf8')).fields;}
 function sessionId(capability){const match=path.basename(capability.path).match(/^deep-work\.(s-[0-9a-f]{8})\.md$/);if(!match)fail('session-state-identity');return match[1];}
+function finishAdmission(stateCap,enforcementPoint){const fields=stateFields(stateCap);let review={};
+  try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('finish-review-state');}
+  let riskProfile={};if(fields.risk_profile_json!==undefined&&fields.risk_profile_json!==null&&fields.risk_profile_json!=='')
+    riskProfile=storedObject(fields,'risk_profile_json');const root=sessionCapability(stateCap).path,planPath=path.join(root,'plan.json');
+  let planProjection=null;if(fs.existsSync(planPath)){const cap=sessionFile(stateCap,planPath,{basenames:['plan.json'],role:'locked-plan'});
+    try{planProjection=JSON.parse(transaction.readSessionFile(cap));}catch{fail('finish-plan-projection');}}
+  const verificationPolicy=require('./verification-policy-runtime.js'),reviewPolicy=require('./review-policy-runtime.js');
+  const compatibilityMode=verificationPolicy.deriveCompatibilityMode(compatibilityFacts(fields,planProjection,review,riskProfile));
+  if(compatibilityMode==='legacy-no-spec')return reviewPolicy.finishGateAllowed(review,{compatibility_mode:compatibilityMode,
+    evidence_summary:null,residual_risk:null,required_gate_ids:[],satisfied_gate_ids:[],invalidated_evidence_ids:[]});
+  if(fields.verification_plan_json===undefined||fields.verification_plan_json===null||fields.verification_plan_json==='')
+    fail('finish-verification-plan-required');const plan=storedObject(fields,'verification_plan_json');
+  if(!verificationPolicy.validateVerificationPlan(plan).pass||plan.plan_sha256!==fields.verification_plan_sha256||
+      plan.plan_projection_sha256!==hash(planProjection)||plan.compatibility_mode!==compatibilityMode)
+    fail('finish-verification-plan');const evidence=require('./evidence-runtime.js'),pointer=review.evidence;
+  if(pointer?.verification_plan_sha256!==plan.plan_sha256)fail('finish-evidence-package');
+  const pkg=evidence.loadCommittedPackage(root,pointer,plan);if(!pkg)fail('finish-evidence-package');
+  if(!evidence.validateEvidencePackage(pkg,plan,{artifactRoot:root}).pass)fail('finish-evidence-package');
+  const initialRisk=riskProfile.provisional||riskProfile.initial||riskProfile,finalRisk=riskProfile.authoritative||riskProfile.final||riskProfile;
+  const baseAdmission=reviewPolicy.finishGateAllowed(review),context=evidence.loadFinishGateContext({verificationPlan:plan,
+    evidencePackage:pkg,artifactRoot:root,compatibilityMode,receiptInvalidations:storedArray(fields,'receipt_invalidations_json'),
+    initialRisk,finalRisk,riskAcceptances:storedArray(fields,'risk_acceptances_json'),enforcementPoint,
+    humanAckSatisfied:baseAdmission.blocking.missing_acks.length===0});
+  return reviewPolicy.finishGateAllowed(review,context);}
 function sessionCapability(stateCap){const fields=stateFields(stateCap);if(typeof fields.work_dir!=='string')fail('session-work-dir');
   const target=path.join(stateCap.projectRoot,...fields.work_dir.split('/'));return platform.issueProjectStateCapability(stateCap.projectRoot,target,
     {role:'session-work-dir',sessionStateCapability:stateCap});}
@@ -28,9 +52,10 @@ function sessionFile(stateCap,file,{allowMissing=false,basenames,role='session-f
   sessionCapability:sessionCapability(stateCap),candidate:resolveInput(file,stateCap.projectRoot),allowedBasenames:basenames,
   allowMissingLeaf:allowMissing,role});}
 function stateForPlan(f,cwd){if(f.state)return stateCapability(f,cwd);const root=projectRootFor(f,cwd);const target=resolveInput(f.plan,cwd);
-  const relative=path.relative(root,target).split(path.sep).join('/');const match=relative.match(/^\.deep-work\/(s-[0-9a-f]{8})\/(?:plan\.json|plan\.md)$/);
+  const relative=path.relative(root,target).split(path.sep).join('/');const match=relative.match(/^\.deep-work\/(s-[0-9a-f]{8})\/plan\.json$/);
   if(!match)fail('plan-session-route');return platform.issueProjectStateCapability(root,path.join(root,'.claude',`deep-work.${match[1]}.md`),{role:'session-state'});}
-function readPlan(f,cwd){const state=stateForPlan(f,cwd);const cap=sessionFile(state,f.plan,{basenames:['plan.json','plan.md'],role:'locked-plan'});
+function readPlan(f,cwd){if(path.basename(resolveInput(f.plan,cwd))!=='plan.json')fail('plan-json-only');
+  const state=stateForPlan(f,cwd);const cap=sessionFile(state,f.plan,{basenames:['plan.json'],role:'locked-plan'});
   const bytes=transaction.readSessionFile(cap);let value;try{value=JSON.parse(bytes);}catch{fail('plan-structured-json');}return{state,cap,value};}
 function receiptsCapability(stateCap,provided){const sessionCap=sessionCapability(stateCap);const expected=path.join(sessionCap.path,'receipts');
   if(provided&&path.resolve(provided)!==expected)fail('receipts-route');fs.mkdirSync(expected,{recursive:true});return Object.freeze({kind:'receipts-directory',
@@ -49,6 +74,60 @@ async function ownedInput(stateCap,file,expectedPurpose,consumerOperationId){con
 function safeRemoveTree(root,target){const resolved=path.resolve(target);if(!platform.isPathInside(root,resolved)||resolved===root)fail('remove-route');
   if(fs.existsSync(resolved)){const stat=fs.lstatSync(resolved);if(stat.isSymbolicLink())fail('remove-link');fs.rmSync(resolved,{recursive:true,force:false});}return{removed:resolved};}
 function hash(value){return crypto.createHash('sha256').update(Buffer.isBuffer(value)?value:journal.canonicalJson(value)).digest('hex');}
+function storedObject(fields,key){const value=fields[key];if(value&&typeof value==='object'&&!Array.isArray(value))return structuredClone(value);
+  try{const parsed=JSON.parse(value);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))return parsed;}catch{}
+  fail('state-object',key);}
+function storedArray(fields,key){const value=fields[key];if(value===undefined||value===null||value==='')return[];
+  if(Array.isArray(value))return structuredClone(value);try{const parsed=JSON.parse(value);if(Array.isArray(parsed))return parsed;}catch{}
+  fail('state-array',key);}
+function countStoredRows(fields,key){const value=fields[key];if(value===undefined||value===null||value==='')return 0;
+  try{const parsed=typeof value==='string'?JSON.parse(value):value;return Array.isArray(parsed)?parsed.length:
+    parsed&&typeof parsed==='object'?Object.keys(parsed).length:0;}catch{return 0;}}
+function compatibilityFacts(fields,planProjection,review,riskProfile={}){return{created_by_version:fields.created_by_version,
+  spec_policy_required:fields.spec_policy_required===true,risk_class:riskProfile.class||riskProfile.risk_class||
+    riskProfile.authoritative?.class||riskProfile.provisional?.class||null,planProjection,
+  changed_slice_count:countStoredRows(fields,'changed_slices_json'),rerun_slice_count:countStoredRows(fields,'rerun_slices_json'),
+  has_v613_evidence:Boolean(review?.evidence?.package_sha256)};}
+function loadTestPassContext(stateCap,planProjection){const fields=stateFields(stateCap);let review={};
+  try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('test-review-state');}
+  let riskProfile={};if(fields.risk_profile_json!==undefined&&fields.risk_profile_json!==null&&fields.risk_profile_json!=='')
+    riskProfile=storedObject(fields,'risk_profile_json');const policy=require('./verification-policy-runtime.js');
+  const compatibilityMode=policy.deriveCompatibilityMode(compatibilityFacts(fields,planProjection,review,riskProfile));
+  let verificationPlan=null,evidencePackage=null,evidenceSummary=null;const artifactRoot=sessionCapability(stateCap).path;
+  if(fields.verification_plan_json!==undefined&&fields.verification_plan_json!==null&&fields.verification_plan_json!==''){
+    verificationPlan=storedObject(fields,'verification_plan_json');if(!policy.validateVerificationPlan(verificationPlan).pass||
+        verificationPlan.plan_sha256!==fields.verification_plan_sha256||verificationPlan.plan_projection_sha256!==hash(planProjection)||
+        verificationPlan.compatibility_mode!==compatibilityMode)fail('test-verification-plan-state');
+    const evidence=require('./evidence-runtime.js');evidencePackage=evidence.loadCommittedPackage(artifactRoot,review.evidence,verificationPlan);
+    if(evidencePackage)evidenceSummary=evidence.evaluateEvidenceCompleteness(evidencePackage,verificationPlan,{artifactRoot});}
+  return{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,
+    receiptInvalidations:storedArray(fields,'receipt_invalidations_json'),artifactRoot};}
+function derivedVerificationCapabilities(specContract,projection){const corpus=journal.canonicalJson({specContract,
+    slices:(projection.slices||[]).map((row)=>row.contract||{})});const test=(pattern)=>pattern.test(corpus);
+  return{has_backward_compat:Boolean(specContract.compatibility)&&!/^\{"legacy_inputs":"none","migration":"none"\}$/i.test(
+      journal.canonicalJson(specContract.compatibility)),host_dependent:test(/host-dependent|actual-host|host-smoke/i),
+    has_migration:test(/migration|migrate|schema-upgrade/i),destructive:test(/destructive|delete|discard|canary/i),
+    external_action:test(/publish-pr|publish|deploy|merge|external-action/i)};}
+function buildPlanApprovalAuthority(stateCap,fields,projection,publishedSha256){const contractRuntime=require('./contract-runtime.js');
+  const specPath=path.join(sessionCapability(stateCap).path,'spec.md');const specBytes=boundedFile(specPath);const specApprovedHash=hash(specBytes);
+  if(fields.spec_approved_hash!==specApprovedHash)fail('plan-approval-spec-stale');const specContract=contractRuntime.parseSpecMarkdown(
+    specBytes.toString('utf8'),{path:specPath});const storedSpec=storedObject(fields,'spec_contract_json');
+  if(journal.canonicalJson(specContract)!==journal.canonicalJson(storedSpec))fail('plan-approval-spec-identity');
+  const validation=contractRuntime.validateSpecContract(specContract,{riskClass:specContract.risk_class,
+    slices:(projection.slices||[]).map((row)=>row.contract)});if(!validation.pass)fail('plan-spec-gate-failed');
+  const riskProfile=storedObject(fields,'risk_profile_json'),policySnapshot=storedObject(fields,'methodology_policy_json');
+  const riskProfileSha256=fields.risk_profile_sha256||projection.contract_binding?.risk_profile_sha256;
+  if(!/^[0-9a-f]{64}$/.test(riskProfileSha256||'')||riskProfileSha256!==projection.contract_binding?.risk_profile_sha256)
+    fail('plan-approval-risk-identity');let review={};try{review=JSON.parse(fields.review_execution_json||'{}');}catch{}
+  const specSha256=contractRuntime.specContractDigest(specContract);const planSpecGateResult={schema_version:1,pass:true,
+    spec_id:specContract.spec_id,spec_sha256:specSha256,spec_approved_hash:specApprovedHash,risk_profile_sha256:riskProfileSha256,
+    errors:validation.errors,warnings:validation.warnings,requirement_coverage:validation.requirementCoverage,
+    failure_matrix_coverage:validation.failureMatrixCoverage};const verificationCompilerInput={riskProfile,riskProfileSha256,
+    policySnapshot,specContract,specSha256,specApprovedHash,planProjection:projection,planProjectionSha256:publishedSha256,
+    capabilities:derivedVerificationCapabilities(specContract,projection),compatibilityFacts:{created_by_version:fields.created_by_version,
+      spec_policy_required:fields.spec_policy_required===true,risk_class:riskProfile.class||riskProfile.risk_class,
+      changed_slice_count:0,rerun_slice_count:0,has_v613_evidence:Boolean(review.evidence?.package_sha256)}};
+  return{planSpecGateResult,verificationCompilerInput};}
 function derivedOperationId(label,value){return `op-${hash({label,value})}`;}
 function routeLock(project,label,rank=transaction.RANKS.target){let name=`deep-work.route.${hash(label)}.lock`;
   if(label==='repository')name='deep-work.git.lock';else if(label==='registry')name='deep-work-sessions.json.lock';
@@ -145,13 +224,16 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       parentSessionId:f.parent,childSessionId:child,fromPhase:f['from-phase'],dirtyResolution:f['dirty-resolution']});});
   for(const outcome of ['merge','publish-pr','keep','discard'])on(`session finish ${outcome}`,async({f,cwd})=>{
     const state=stateCapability(f,cwd);if(sessionId(state)!==f.session)fail('session-state-identity');
-    return session.withFinishTransaction({sessionId:f.session,stateCapability:state,outcome},async({projectCapability:project,caps})=>{
+    return session.withFinishTransaction({sessionId:f.session,stateCapability:state,outcome},async({projectCapability:project,caps,finishContext})=>{
+      const admission=finishAdmission(state,'finish-pre-action');if(!admission.allowed)fail('finish-gate-blocked',JSON.stringify(admission.blocking));
       const source=ownedInputIdentity(state,f['receipt-payload'],'receipt-payload');const identities=[source];
       if(outcome==='publish-pr')identities.push(ownedInputIdentity(state,f['title-file'],'pr-title'),
         ownedInputIdentity(state,f['body-file'],'pr-body'));const preconditions={sourceOperationId:source.operationId,
         sources:identities.map((row)=>({purpose:row.purpose,operationId:row.operationId})),
         dirtyResolution:f['dirty-resolution']||null,outcome};const operation=await journal.beginOperation({projectCapability:project,
-        sessionId:f.session,kind:`finish-${outcome}`,preconditions});let pending=await journal.resumeOperation({projectCapability:project,
+        sessionId:f.session,kind:`finish-${outcome}`,preconditions:{...preconditions,gateSha256:hash(Buffer.from(JSON.stringify(admission)))} });
+      await journal.recordOperationStage(operation,'gate-checked',{owned:{allowed:true,blocking:admission.blocking}});
+      let pending=await journal.resumeOperation({projectCapability:project,
         operationId:operation.operationId,sessionId:f.session,kind:`finish-${outcome}`});let prepared=pending.stages?.find(
         (row)=>row.stage==='temp-prepared')?.details?.owned;if(!prepared){const rows=[];for(const identity of identities){const value=
           await artifact.prepareOwnedTempForOperation({sessionCapability:identity.sessionCapability,sourceOperationId:identity.operationId,
@@ -182,6 +264,9 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
         stateCapability:state,stateFields:stateFields(state),dirtyResolution:f['dirty-resolution']||'abort'});
       if(outcome==='discard')repositoryReceipt=await git.finishDiscardWithinOperation({operation,projectCapability:project,
         stateCapability:state,stateFields:stateFields(state),force:Boolean(f.force)});
+      const finalizeAdmission=finishAdmission(state,'finish-finalize');if(!finalizeAdmission.allowed)
+        fail('finish-finalize-gate-blocked',JSON.stringify(finalizeAdmission.blocking));
+      await journal.recordOperationStage(operation,'finalize-gate-checked',{owned:{allowed:true,blocking:finalizeAdmission.blocking}});
       const finishState=await session.finalizeWithinFinishOperation({operation,sessionId:f.session,
         stateCapability:state,outcome,locksHeld:true,caps});
       let authored;try{authored=JSON.parse(payload.bytes.toString('utf8'));}catch{fail('finish-payload-json');}
@@ -215,11 +300,37 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('phase begin',({f,cwd})=>phase.beginPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,at:f.at}));
   on('phase complete',({f,cwd})=>phase.completePhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
     result:jsonFile(resolveInput(f['result-json'],cwd)),at:f.at}));
-  on('phase approve',({f,cwd})=>phase.approvePhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
-    artifactSha256:hash(boundedFile(resolveInput(f.artifact,cwd))),at:f.at}));
-  on('phase advance',({f,cwd})=>phase.advancePhase({stateCapability:stateCapability(f,cwd),from:f.from,to:f.to,at:f.at}));
+  on('phase approve',async({f,cwd})=>{const state=stateCapability(f,cwd);const artifact=resolveInput(f.artifact,cwd);
+    const artifactBytes=boundedFile(artifact);if(f.phase!=='plan')return phase.approvePhase({stateCapability:state,
+      phase:f.phase,artifactSha256:hash(artifactBytes),at:f.at});
+    if(path.basename(artifact)!=='plan.md')fail('plan-source-artifact');const fields=stateFields(state);
+    let specContract,sliceRiskState;try{specContract=JSON.parse(fields.spec_contract_json);sliceRiskState=JSON.parse(fields.slice_risk_shadow_json);}
+    catch{fail('plan-approval-state');}
+    const projection=planRuntime.compilePlanProjectionV1({planMarkdown:artifactBytes.toString('utf8'),specContract,sliceRiskState});
+    const output=sessionFile(state,path.join(sessionCapability(state).path,'plan.json'),{allowMissing:true,basenames:['plan.json'],role:'plan-projection'});
+    const published=planRuntime.publishPlanProjectionV1({planCapability:output,projection});const authority=
+      buildPlanApprovalAuthority(state,fields,projection,published.sha256);
+    return phase.approvePhase({stateCapability:state,phase:'plan',artifactSha256:hash(artifactBytes),
+      sourcePlanSha256:projection.contract_binding.source_plan_sha256,planProjectionSha256:published.sha256,
+      verificationCompilerInput:authority.verificationCompilerInput,planSpecGateResult:authority.planSpecGateResult,at:f.at});});
+  on('phase spec enter',({f,cwd})=>phase.enterSpecSubphase({stateCapability:stateCapability(f,cwd),at:f.at}));
+  on('phase spec approve',({f,cwd})=>{const state=stateCapability(f,cwd);const artifactPath=resolveInput(f.artifact,cwd);
+    const bytes=boundedFile(artifactPath);const contractRuntime=require('./contract-runtime.js');const specContract=
+      contractRuntime.parseSpecMarkdown(bytes.toString('utf8'),{path:artifactPath});const validation=contractRuntime.validateSpecContract(
+        specContract,{riskClass:specContract.risk_class});const specGateResult={schema_version:1,pass:validation.pass,
+        spec_id:specContract.spec_id,spec_sha256:contractRuntime.specContractDigest(specContract),risk_class:specContract.risk_class,
+        errors:validation.errors,warnings:validation.warnings,requirement_coverage:validation.requirementCoverage,
+        failure_matrix_coverage:validation.failureMatrixCoverage};return phase.approveSpecSubphase({stateCapability:state,
+      specApprovedHash:hash(bytes),specContract,specGateResult,at:f.at});});
+  on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);let specCurrentSha256;
+    if(f.from==='research'){const candidate=path.join(sessionCapability(state).path,'spec.md');
+      if(fs.existsSync(candidate))specCurrentSha256=hash(boundedFile(candidate));}
+    return phase.advancePhase({stateCapability:state,from:f.from,to:f.to,at:f.at,specCurrentSha256});});
   on('phase rerun',({f,cwd})=>phase.rerunPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
     affectedSlices:f['affected-slices-json']?jsonFile(resolveInput(f['affected-slices-json'],cwd)):[]}));
+  on('phase invalidate-replan',({f,cwd})=>phase.invalidateForReplan({stateCapability:stateCapability(f,cwd),
+    reason:f.reason,fromRisk:f['from-risk'],toRisk:f['to-risk'],
+    affectedSliceIds:jsonFile(resolveInput(f['affected-slices-json'],cwd)),riskProfileSha256:f['risk-profile-sha256'],at:f.at}));
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));
@@ -256,9 +367,31 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     await journal.recordOperationStage(operation,'plan-written',{owned:{planSha256:hash(bound.value)}});
     const receipt=await journal.completeOperation(operation,{status:'migrated',scope:f.scope,id:f.id,specSha256:hash(spec),
       planSha256:hash(bound.value)});return{status:'migrated',scope:f.scope,id:f.id,specSha256:hash(spec),operationId:operation.operationId,receipt};});
-  on('verification run',({f,cwd})=>{const bound=readPlan(f,cwd);return verification.runVerification({stateCapability:bound.state,planCapability:bound.cap,
+  on('verification run',({f,cwd})=>{const bound=readPlan(f,cwd);if(bound.value.contract_binding?.mode==='strict-spec')
+    fail('strict-spec-capture-required');return verification.runVerification({stateCapability:bound.state,planCapability:bound.cap,
     plan:bound.value,sliceId:f.slice,gateId:f['gate-id'],spec:jsonFile(resolveInput(f['spec-json'],cwd)),expectedOutcome:f.expected,cwd:bound.state.projectRoot});});
-  on('test pass',({f,cwd})=>testRuntime.recordTestPass({stateCapability:stateCapability(f,cwd),gateResults:jsonFile(resolveInput(f['gate-results-json'],cwd)),at:f.at}));
+  on('evidence record contract',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
+    try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
+    const contractRuntime=require('./contract-runtime.js');const specContract=contractRuntime.parseSpecMarkdown(
+      boundedFile(resolveInput(f.spec,cwd)).toString('utf8'),{path:f.spec});const evidence=require('./evidence-runtime.js');
+    const record=evidence.captureContractEvidence({evidence_id:f['evidence-id'],gate_id:f['gate-id'],verificationPlan,
+      specContract,slices:bound.value.slices.map((row)=>row.contract)});return evidence.publishAuthenticatedRecord(record,
+      {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
+  on('evidence record review',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
+    try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
+    const evidence=require('./evidence-runtime.js');const record=evidence.captureReviewEvidence({evidence_id:f['evidence-id'],
+      gate_id:f['gate-id'],verificationPlan,reviewPlan:jsonFile(resolveInput(f['review-plan-json'],cwd)),
+      reports:jsonFile(resolveInput(f['reports-json'],cwd))});return evidence.publishAuthenticatedRecord(record,
+      {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
+  on('evidence record receipt',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
+    try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
+    const evidence=require('./evidence-runtime.js');const record=evidence.captureReceiptEvidence({evidence_id:f['evidence-id'],
+      gate_id:f['gate-id'],verificationPlan,plan:bound.value,receipts:jsonFile(resolveInput(f['receipts-json'],cwd)),
+      verificationResult:jsonFile(resolveInput(f['verification-result-json'],cwd))});return evidence.publishAuthenticatedRecord(record,
+      {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
+  on('test pass',({f,cwd})=>{const bound=readPlan(f,cwd),context=loadTestPassContext(bound.state,bound.value);
+    return testRuntime.recordTestPass({stateCapability:bound.state,gateResults:jsonFile(resolveInput(f['gate-results-json'],cwd)),
+      ...context,at:f.at});});
   on('test retry',({f,cwd})=>{const bound=readPlan(f,cwd);return testRuntime.recordTestRetry({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
     receiptsDirCapability:receiptsCapability(bound.state,f['receipts-dir']),failedSlices:jsonFile(resolveInput(f['failed-slices-json'],cwd)),at:f.at});});
   on('test exhaust',({f,cwd})=>{const bound=readPlan(f,cwd);return testRuntime.recordTestExhaustion({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
@@ -311,7 +444,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('sensor review-check',({f,cwd})=>{const state=f.state?stateCapability(f,cwd):null;return sensor.runReviewCheck(
     projectCapability({...f,'project-root':f['project-root']},cwd),{topology:f.topology,
       changedFiles:f['changed-files-json']?jsonFile(resolveInput(f['changed-files-json'],cwd)):[]},state?{
-      sessionId:f.session,stateCapability:state,planCapability:sessionFile(state,f.plan,{basenames:['plan.json','plan.md'],role:'locked-plan'}),
+      sessionId:f.session,stateCapability:state,planCapability:sessionFile(state,f.plan,{basenames:['plan.json'],role:'locked-plan'}),
       sliceId:f.slice,afterWriteOperationId:f['after-write-operation-id']}:undefined);});
   on('topology detect',({f,cwd})=>health.detectTopology(resolveInput(f['project-root'],cwd)));
   on('health fitness-proposal',({f,cwd})=>health.generateFitnessProposal(resolveInput(f['project-root'],cwd)));

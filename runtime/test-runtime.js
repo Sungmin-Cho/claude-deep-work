@@ -8,17 +8,47 @@ const {beginOperation,recordOperationStage,completeOperation,resumeOperation,can
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
 function clone(value){return structuredClone(value);}
-function validateGateResults(gateResults){if(!gateResults||gateResults.complete!==true||!Array.isArray(gateResults.failedSlices)||
+function validateGateResults(gateResults,{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,
+  receiptInvalidations=[],artifactRoot}={}){if(!gateResults||gateResults.complete!==true||!Array.isArray(gateResults.failedSlices)||
   gateResults.failedSlices.length||Buffer.byteLength(canonicalJson(gateResults))>1_048_576)fail('gate-results','complete passing gate results required');
+  if(verificationPlan){const policy=require('./verification-policy-runtime.js');if(!policy.validateVerificationPlan(verificationPlan).pass)
+      fail('gate-results-verification-plan');const evidence=require('./evidence-runtime.js');
+    if(compatibilityMode!==verificationPlan.compatibility_mode||!evidencePackage||
+        !evidence.validateEvidencePackage(evidencePackage,verificationPlan,{artifactRoot}).pass||!evidenceSummary?.complete||
+        evidenceSummary.complete!==evidence.evaluateEvidenceCompleteness(evidencePackage,verificationPlan,{artifactRoot}).complete)
+      fail('gate-results-evidence');
+    if(gateResults.verification_plan_sha256!==verificationPlan.plan_sha256)
+      fail('gate-results-identity');if(gateResults.package_sha256!==evidencePackage.package_sha256)
+      fail('gate-results-identity');const required=policy.requiredGateIds(verificationPlan,{at:'test'}),rows=gateResults.gates||[];
+    if(rows.length!==required.length||new Set(rows.map((row)=>row.id)).size!==rows.length)fail('gate-results-required');
+    for(const id of required){const row=rows.find((item)=>item.id===id);if(!row||row.status!=='pass')fail('gate-results-required',id);
+      const gate=verificationPlan.gates.find((item)=>item.id===id);if(gate.evidence_required&&
+        (!Array.isArray(row.evidence_ids)||!row.evidence_ids.length||row.evidence_ids.some((evidenceId)=>
+          !(evidencePackage.records||[]).some((record)=>record.evidence_id===evidenceId&&record.gate_id===id&&record.status==='pass'))))
+        fail('gate-results-evidence',id);}
+    if(evidence.invalidatedReceiptEvidenceIds(evidencePackage,verificationPlan,receiptInvalidations).length)
+      fail('gate-results-invalidated-receipt');
+  }else if(compatibilityMode&&compatibilityMode!=='legacy-no-spec')fail('gate-results-verification-plan');
   return clone(gateResults);}
 
-function pureRecordTestPass({state,gateResults,at}){validateGateResults(gateResults);if(state.current_phase!=='test')fail('test-phase');
+function pureRecordTestPass({state,gateResults,verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,
+  receiptInvalidations,artifactRoot,at}){validateGateResults(gateResults,{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,
+    receiptInvalidations,artifactRoot});if(state.current_phase!=='test')fail('test-phase');
   if(!Number.isFinite(Date.parse(at)))fail('test-time');return {...clone(state),test_passed:true,test_completed_at:at,
     gate_results_sha256:sha256(canonicalJson(gateResults))};}
-function recordTestPass({state,stateCapability,gateResults,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,at});
-  validateGateResults(gateResults);return transaction.journaledStateMutation({stateCapability,kind:'test-pass',
-    preconditions:{at,gateResultsSha256:sha256(canonicalJson(gateResults))},seam,
-    reducer:(fields)=>{const next=pureRecordTestPass({state:fields,gateResults,at});return {test_passed:next.test_passed,
+function recordTestPass({state,stateCapability,gateResults,verificationPlan,evidencePackage,evidenceSummary,
+  compatibilityMode,receiptInvalidations,artifactRoot,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,
+    verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot,at});
+  validateGateResults(gateResults,{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot});
+  return transaction.journaledStateMutation({stateCapability,kind:'test-pass',
+    preconditions:{at,gateResultsSha256:sha256(canonicalJson(gateResults)),
+      verificationPlanSha256:verificationPlan?.plan_sha256||null,packageSha256:evidencePackage?.package_sha256||null,
+      compatibilityMode:compatibilityMode||null,receiptInvalidationsSha256:sha256(canonicalJson(receiptInvalidations||[]))},seam,
+    reducer:(fields)=>{if(verificationPlan){let review;try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('gate-results-state');}
+        if(fields.verification_plan_sha256!==verificationPlan.plan_sha256||review.evidence?.package_sha256!==evidencePackage?.package_sha256||
+          canonicalJson(JSON.parse(fields.receipt_invalidations_json||'[]'))!==canonicalJson(receiptInvalidations||[]))fail('gate-results-state');}
+      const next=pureRecordTestPass({state:fields,gateResults,verificationPlan,evidencePackage,evidenceSummary,
+        compatibilityMode,receiptInvalidations,artifactRoot,at});return {test_passed:next.test_passed,
       test_completed_at:next.test_completed_at,gate_results_sha256:next.gate_results_sha256};}});}
 
 function failureTransition({state,plan,receipts,failedSlices,exhausted}){
