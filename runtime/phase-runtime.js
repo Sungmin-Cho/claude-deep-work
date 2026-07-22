@@ -71,18 +71,113 @@ function completePhase({state,stateCapability,phase,result={},at,seam}={}) {
     [phase]:clone(result)}; return next;
 }
 
-function approvePhase({state,stateCapability,phase,artifactSha256,at,seam}={}) {
+function approvePhase({state,stateCapability,phase,artifactSha256,planProjectionSha256=null,
+    sourcePlanSha256=null,verificationCompilerInput=null,verificationPlan=null,planSpecGateResult=null,at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-approval',
-    preconditions:{phase,artifactSha256,at},seam,reducer:(fields)=>approvePhase({state:fields,phase,artifactSha256,at})});
+    preconditions:{phase,artifactSha256,planProjectionSha256,sourcePlanSha256,at,
+      verificationCompilerInputSha256:verificationCompilerInput?sha256(canonicalJson(verificationCompilerInput)):null},seam,
+    reducer:(fields)=>{const next=approvePhase({state:fields,phase,artifactSha256,planProjectionSha256,sourcePlanSha256,
+      verificationCompilerInput,verificationPlan,planSpecGateResult,at}),key=`${phase}_approved`;
+      return{...next,[key]:canonicalJson(next[key])};}});
   if (!['research','plan'].includes(phase) || !/^[0-9a-f]{64}$/.test(artifactSha256||'')) fail('phase-approval');
-  const next=clone(state); next[`${phase}_approved`]={artifact_sha256:artifactSha256,at}; return next;
+  if(phase==='plan'&&(!/^[0-9a-f]{64}$/.test(planProjectionSha256||'')||
+      !/^[0-9a-f]{64}$/.test(sourcePlanSha256||'')))fail('plan-projection-required');
+  const next=clone(state); next[`${phase}_approved`]={artifact_sha256:artifactSha256,at};
+  if(phase==='plan'){next.plan_projection_sha256=planProjectionSha256;next.plan_source_sha256=sourcePlanSha256;
+    if(verificationPlanRequired(state)||verificationCompilerInput?.planProjection?.contract_binding?.mode==='strict-spec'){
+      const policy=require('./verification-policy-runtime.js');
+      if(!verificationCompilerInput)fail('verification-plan-compiler-input');const compiled=policy.compileVerificationPlan(
+        verificationCompilerInput);const valid=policy.validateVerificationPlan(compiled);
+      if(verificationPlan&&canonicalJson(verificationPlan)!==canonicalJson(compiled))fail('verification-plan-byte-mismatch');
+      const risk=compiled.risk_class;const executionRequirement=planSpecGateResult?.requirement_coverage?.execution?.ratio;
+      const executionFailure=planSpecGateResult?.failure_matrix_coverage?.execution?.ratio;
+      if(!valid.pass||compiled.spec_approved_hash!==state.spec_approved_hash||
+          compiled.plan_projection_sha256!==planProjectionSha256||compiled.source_plan_sha256!==sourcePlanSha256||
+          compiled.risk_profile_sha256!==(state.risk_profile_sha256||verificationCompilerInput.riskProfileSha256)||
+          !planSpecGateResult?.pass||planSpecGateResult.spec_id!==compiled.spec_id||
+          planSpecGateResult.spec_sha256!==compiled.spec_sha256||
+          planSpecGateResult.spec_approved_hash!==compiled.spec_approved_hash||
+          planSpecGateResult.risk_profile_sha256!==compiled.risk_profile_sha256||executionRequirement!==1||
+          (['high','critical'].includes(risk)&&executionFailure!==1))
+        fail('verification-plan-required');
+      next.verification_plan_json=canonicalJson(compiled);next.verification_plan_sha256=compiled.plan_sha256;
+      next.plan_spec_gate_result_json=canonicalJson(planSpecGateResult);}}
+  return next;
 }
 
-function advancePhase({state,stateCapability,from,to,at,seam}={}) {
+function enterSpecSubphase({state,stateCapability,at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
-    preconditions:{action:'advance',from,to,at},seam,reducer:(fields)=>advancePhase({state:fields,from,to,at})});
+    preconditions:{action:'spec-enter',at},seam,reducer:(fields)=>enterSpecSubphase({state:fields,at})});
+  if(state?.current_phase!=='research')fail('spec-subphase-phase');
+  const next=clone(state);next.subphase='spec';next.spec_policy_required=true;
+  next.spec_completed_at=null;next.spec_approved_hash=null;next.spec_contract_json=null;next.spec_gate_result_json=null;
+  return next;
+}
+
+function approveSpecSubphase({state,stateCapability,specApprovedHash,specContract,specGateResult,at,seam}={}) {
+  if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-approval',
+    preconditions:{phase:'spec',specApprovedHash,
+      specContractSha256:specContract&&require('./contract-runtime.js').specContractDigest(specContract),at},seam,
+    reducer:(fields)=>approveSpecSubphase({state:fields,specApprovedHash,specContract,specGateResult,at})});
+  if(state?.current_phase!=='research'||state.subphase!=='spec'||!/^[0-9a-f]{64}$/.test(specApprovedHash||''))
+    fail('spec-approval');
+  const contractRuntime=require('./contract-runtime.js');const result=contractRuntime.validateSpecContract(specContract,
+    {riskClass:specContract?.risk_class});const specSha256=contractRuntime.specContractDigest(specContract);
+  if(!result.pass||!specGateResult||specGateResult.pass!==true||specGateResult.spec_sha256!==specSha256||
+      specGateResult.spec_id!==specContract.spec_id||specGateResult.risk_class!==specContract.risk_class||
+      specGateResult.requirement_coverage?.contract?.ratio!==1||
+      (['high','critical'].includes(specContract.risk_class)&&specGateResult.failure_matrix_coverage?.contract?.ratio!==1))
+    fail('spec-gate-failed');
+  const next=clone(state);next.spec_policy_required=['medium','high','critical'].includes(specContract.risk_class);
+  next.spec_completed_at=at;next.spec_approved_hash=specApprovedHash;
+  next.spec_contract_json=canonicalJson(specContract);next.spec_gate_result_json=canonicalJson(specGateResult);
+  return next;
+}
+
+function specPolicyRequired(state){
+  if(state.spec_policy_required===true)return true;
+  let profile={};try{profile=parseJson(state.risk_profile_json||'{}','risk-profile-state');}catch{return true;}
+  const risk=profile.risk_class||profile.class;
+  return ['medium','high','critical'].includes(risk);
+}
+
+function verificationPlanRequired(state){
+  if(specPolicyRequired(state))return true;const match=String(state?.created_by_version||'').match(/^(\d+)\.(\d+)\./);
+  return Boolean(match&&(Number(match[1])>6||(Number(match[1])===6&&Number(match[2])>=13)));
+}
+
+function requireFreshSpec(state){
+  if(!specPolicyRequired(state))return;
+  if(state.subphase!=='spec'||!/^[0-9a-f]{64}$/.test(state.spec_approved_hash||'')||
+      !state.spec_contract_json||!state.spec_gate_result_json)fail('spec-approval-required');
+  if(!/^[0-9a-f]{64}$/.test(state.spec_current_sha256||'')||state.spec_current_sha256!==state.spec_approved_hash)
+    fail('spec-approval-stale');
+  const contract=parseJson(state.spec_contract_json,'spec-contract-state');
+  const gate=parseJson(state.spec_gate_result_json,'spec-gate-state');
+  const runtime=require('./contract-runtime.js');const validation=runtime.validateSpecContract(contract,{riskClass:contract.risk_class});
+  if(!validation.pass||gate.pass!==true||gate.spec_sha256!==runtime.specContractDigest(contract))fail('spec-gate-failed');
+}
+
+function advancePhase({state,stateCapability,from,to,at,seam,specCurrentSha256}={}) {
+  if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
+    preconditions:{action:'advance',from,to,at,specCurrentSha256},seam,
+    reducer:(fields)=>advancePhase({state:{...fields,...(specCurrentSha256?{spec_current_sha256:specCurrentSha256}:{})},from,to,at})});
   if (state.current_phase !== from || !(PHASE_GRAPH[from]||[]).includes(to)) fail('phase-transition');
-  const next=clone(state); next.current_phase=to; next[`${to}_started_at`]=at||new Date().toISOString(); return next;
+  if(from==='research'&&to==='plan')requireFreshSpec(state);
+  if(from==='plan'&&to==='implement'&&verificationPlanRequired(state)){
+    const planGate=parseJson(state.plan_spec_gate_result_json||'{}','plan-spec-gate-state');
+    if(planGate.pass!==true)fail('plan-spec-gate-required');
+    const verificationPlan=parseJson(state.verification_plan_json||'{}','verification-plan-state');
+    if(!require('./verification-policy-runtime.js').validateVerificationPlan(verificationPlan).pass||
+        verificationPlan.plan_sha256!==state.verification_plan_sha256||verificationPlan.spec_approved_hash!==state.spec_approved_hash||
+        verificationPlan.plan_projection_sha256!==state.plan_projection_sha256||
+        verificationPlan.source_plan_sha256!==state.plan_source_sha256||
+        verificationPlan.risk_profile_sha256!==(state.risk_profile_sha256||verificationPlan.risk_profile_sha256))
+      fail('verification-plan-required');
+  }
+  const next=clone(state);delete next.spec_current_sha256;next.current_phase=to;
+  if(from==='research'&&to==='plan')next.subphase=null;
+  next[`${to}_started_at`]=at||new Date().toISOString(); return next;
 }
 
 function rerunPhase({state,stateCapability,phase,affectedSlices=[],seam}={}) {
@@ -92,6 +187,37 @@ function rerunPhase({state,stateCapability,phase,affectedSlices=[],seam}={}) {
   const next=clone(state);
   delete next[`${phase}_completed_at`]; delete next[`${phase}_approved`];
   if (phase==='test') {next.test_passed=false;next.test_retry_count=0;}
+  return next;
+}
+
+function invalidateForReplan({state,stateCapability,reason,fromRisk,toRisk,affectedSliceIds=[],
+  riskProfileSha256,at,seam}={}) {
+  if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
+    preconditions:{action:'invalidate-for-replan',reason,fromRisk,toRisk,affectedSliceIds,riskProfileSha256,at},seam,
+    reducer:(fields)=>invalidateForReplan({state:fields,reason,fromRisk,toRisk,affectedSliceIds,riskProfileSha256,at})});
+  const risks=['low','medium','high','critical'];const reasons=new Set(['risk-class-increase','scope-expansion',
+    'public-contract','invariant','failure-state','external-side-effect','unplanned-mock','repeated-root-cause',
+    'persistent-state-transition','spike-promotion']);
+  if(!state||!reasons.has(reason)||risks.indexOf(toRisk)<=risks.indexOf(fromRisk)||
+      !/^[0-9a-f]{64}$/.test(riskProfileSha256||'')||!Array.isArray(affectedSliceIds)||
+      affectedSliceIds.some((id)=>!/^SLICE-\d{3}$/.test(id))||new Set(affectedSliceIds).size!==affectedSliceIds.length)
+    fail('replan-invalidation-input');
+  const sliceIds=[...affectedSliceIds].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+  const receipts=parseJson(state.slice_receipts_json||'{}','slice-receipts-state');
+  const priorInvalidations=parseJson(state.receipt_invalidations_json||'[]','receipt-invalidations-state');
+  if(!Array.isArray(priorInvalidations))fail('receipt-invalidations-state');
+  const additions=sliceIds.map((sliceId)=>{const row=receipts[sliceId]||{};return{slice_id:sliceId,
+    receipt_sha256:row.receipt_sha256||null,prior_plan_sha256:row.plan_sha256||state.plan_projection_sha256||null,
+    prior_risk_profile_sha256:row.risk_profile_sha256||state.risk_profile_sha256||null,
+    invalidated_by_risk_profile_sha256:riskProfileSha256,reason,at};});
+  const next=clone(state);next.current_phase='research';next.subphase='spec';next.replan_required=true;
+  next.replan_reason=reason;next.risk_profile_sha256=riskProfileSha256;
+  next.risk_transition_json=canonicalJson({from:fromRisk,to:toRisk,reason,at});
+  next.receipt_invalidations_json=canonicalJson([...priorInvalidations,...additions]);
+  for(const key of ['plan_approved','plan_projection_sha256','plan_source_sha256','plan_spec_gate_result_json',
+    'verification_plan_json','verification_plan_sha256','evidence_summary_json','evidence_summary_sha256'])next[key]=null;
+  next.verification_consumptions_json='{}';next.test_passed=false;
+  next.spec_completed_at=null;next.spec_approved_hash=null;next.spec_contract_json=null;next.spec_gate_result_json=null;
   return next;
 }
 
@@ -139,6 +265,12 @@ async function transitionSliceTdd({state,stateCapability,sliceId,to,verification
         _verificationEvidence.resultSha256!==verificationSha256||
         _verificationEvidence.operationId!==verificationOperationId||
         (to==='RED_VERIFIED')!==(_verificationEvidence.expectedOutcome==='must-fail')))fail('verification-evidence-stale');
+    if(_verificationEvidence&&to==='GREEN'&&from==='RED_VERIFIED'){
+      const prior=Object.values(consumptions).find((row)=>row.sliceId===sliceId&&row.to==='RED_VERIFIED');
+      if(!prior||prior.specSha256!==_verificationEvidence.result.spec_sha256||
+          canonicalJson(prior.contractTrace)!==canonicalJson(_verificationEvidence.result.contract_trace))
+        fail('verification-trace-pair');
+    }
   } else if (verificationResult || verificationSha256 || verificationOperationId) fail('verification-extra');
   if (to==='SENSOR_CLEAN' && from==='SENSOR_RUN' && state.fresh_sensor_required) {
     if (!Array.isArray(sensorOperationIds)||!sensorOperationIds.length||
@@ -149,7 +281,9 @@ async function transitionSliceTdd({state,stateCapability,sliceId,to,verification
   if(to==='SENSOR_FIX'&&state.fresh_sensor_required&&!_sensorEvidence)fail('fresh-sensor-required');
   const patch={tdd_state:to};
   if(_verificationEvidence){consumptions[verificationOperationId]={transitionOperationId:_transitionOperationId,
-      sliceId,to,resultSha256:verificationSha256};patch.verification_consumptions_json=JSON.stringify(consumptions);
+      sliceId,to,resultSha256:verificationSha256,specSha256:_verificationEvidence.result.spec_sha256,
+      planSha256:_verificationEvidence.result.plan_sha256,contractTrace:_verificationEvidence.result.contract_trace};
+    patch.verification_consumptions_json=canonicalJson(consumptions);
     patch.verification_operation_id=verificationOperationId;patch.verification_result_sha256=verificationSha256;
     if(from!=='REFACTOR_PENDING'){
       patch.accepted_write_operation_id=null;patch.accepted_write_receipt_sha256=null;patch.accepted_write_class=null;}
@@ -316,6 +450,7 @@ async function recordPhaseReview({stateCapability,phase,structuralJsonFile,struc
       structuralSha256:inputs.structuralSha256,markdownSha256:inputs.markdownSha256,adversarialSha256:inputs.adversarialSha256};
   const operationReceipt=await completeOperation(operation,result);return{...result,operationId:operation.operationId,operationReceipt};}
 
-module.exports={PHASE_GRAPH,TDD_GRAPH,beginPhase,completePhase,approvePhase,advancePhase,
-  rerunPhase,transitionSliceTdd,setTddOverride,clearTddOverride,enterDebug,completeDebug,
+module.exports={PHASE_GRAPH,TDD_GRAPH,beginPhase,completePhase,approvePhase,enterSpecSubphase,
+  approveSpecSubphase,advancePhase,
+  rerunPhase,invalidateForReplan,transitionSliceTdd,setTddOverride,clearTddOverride,enterDebug,completeDebug,
   exitDebug,recordPhaseReview,authenticateSensorEvidence};

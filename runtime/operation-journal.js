@@ -22,6 +22,8 @@ const OPERATION_KINDS = new Set([
   'test-pass', 'test-retry', 'test-exhaust', 'mutation-round', 'debug-complete',
   'phase-review-record', 'receipt-export', 'report-generate', 'report-commit',
   'handoff-publish', 'integrate-loop-update',
+  'evidence-capture', 'evidence-publish',
+  'evidence-adapter-run',
 ]);
 
 const COMPLETED_LEDGER_LIMIT = 512;
@@ -38,11 +40,11 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'branch-delete':['before-call','after-call-before-stage','after-stage'],
   'delegated-rollback':['before-call','after-call-before-stage','after-stage','receipt-removal-prepared','receipts-removed'],
   'finish-merge':['finish-inspected','before-call','after-call-before-stage','after-stage','merge-conflict','merge-aborted',
-    'merge-completed','worktree-removed','branch-deleted','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
-  'finish-publish-pr':['before-call','after-call-before-stage','after-stage','temp-prepared','temp-consumed','remote-body-written','remote-pushed','pull-request-created','result-published','state-written','registry-written','pointer-cleared'],
-  'finish-keep':['temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
+    'merge-completed','worktree-removed','branch-deleted','gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
+  'finish-publish-pr':['before-call','after-call-before-stage','after-stage','gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','remote-body-written','remote-pushed','pull-request-created','result-published','state-written','registry-written','pointer-cleared'],
+  'finish-keep':['gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
   'finish-discard':['finish-inspected','before-call','after-call-before-stage','after-stage','worktree-removed','branch-deleted',
-    'temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
+    'gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
   'remote-push':['before-call','after-call-before-stage','after-stage'],
   'pull-request-create':['before-call','after-call-before-stage','after-stage'],
   'stash-publish':['stash-prepared','nothing-to-stash','call-intent','call-result','stash-published',
@@ -73,6 +75,10 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'report-commit':['before-call','after-call-before-stage','after-stage','commit-recorded'],
   'handoff-publish':['result-consumed','output-written'],
   'integrate-loop-update':['state-written'],
+  'evidence-capture':['artifact-written','package-written','state-written','pointer-committed'],
+  'evidence-publish':['artifact-written','package-written','state-written','pointer-committed'],
+  'evidence-adapter-run':['validated','prepared','acted','observed','recovered','asserted','failed-pending-cleanup',
+    'cleanup-run','cleanup-failed','complete'],
 });
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
@@ -168,9 +174,11 @@ async function beginOperation({projectCapability, sessionId, kind, operationId, 
   const filePaths = paths(projectCapability, sessionId, kind, id);
   return underLock(projectCapability, filePaths, () => {
     if(!callerSelectedId){const claude=path.join(projectRootOf(projectCapability),'.claude');const prefix=`deep-work.${sessionId}.op.${kind}.`;
+      const completedIds=new Set(readLedger(filePaths.ledger).receipts.map((row)=>row.operationId));
       const pending=fs.readdirSync(claude).filter((name)=>name.startsWith(prefix)&&name.endsWith('.json'));
       const matches=[];for(const name of pending){const value=validateJournal(readJson(path.join(claude,name)));
-        if(canonicalJson(value.preconditions)===canonicalJson(preconditions)&&(value.slice||null)===(slice||null))matches.push(value);}
+        if(!completedIds.has(value.operationId)&&canonicalJson(value.preconditions)===canonicalJson(preconditions)&&
+            (value.slice||null)===(slice||null))matches.push(value);}
       if(matches.length>1)fail('operation-resume-ambiguous');if(matches.length===1)return operationHandle(projectCapability,matches[0]);}
     const completed = readLedger(filePaths.ledger).receipts.find((row) => row.operationId === id);
     if (completed) fail('operation-id-complete', `operation ID is already complete: ${id}`);
@@ -224,7 +232,8 @@ async function recordOperationStage(handle, stage, details = {}) {
   });
 }
 
-async function completeOperation(handle, result) {
+async function completeOperation(handle, result, {retainJournal=false}={}) {
+  if(typeof retainJournal!=='boolean')fail('operation-retain-journal');
   const filePaths = assertHandle(handle);
   return underLock(handle.projectCapability, filePaths, () => {
     const ledger = readLedger(filePaths.ledger);
@@ -246,10 +255,10 @@ async function completeOperation(handle, result) {
     ledger.receipts.push(receipt);
     ledger.receipts.sort((a, b) => Buffer.compare(Buffer.from(a.operationId), Buffer.from(b.operationId)));
     atomicWriteFile(cap(handle.projectCapability, filePaths.ledger), canonicalJson(ledger));
-    const journalCap = cap(handle.projectCapability, filePaths.journal);
-    revalidatePathCapability(journalCap, 'operation-journal-cleanup');
-    if (journal.operationId !== handle.operationId) fail('operation-journal-identity');
-    fs.unlinkSync(filePaths.journal);
+    if(!retainJournal){const journalCap = cap(handle.projectCapability, filePaths.journal);
+      revalidatePathCapability(journalCap, 'operation-journal-cleanup');
+      if (journal.operationId !== handle.operationId) fail('operation-journal-identity');
+      fs.unlinkSync(filePaths.journal);}
     return receipt;
   });
 }

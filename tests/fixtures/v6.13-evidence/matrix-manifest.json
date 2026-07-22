@@ -1,0 +1,16 @@
+{
+  "axes": {
+    "risk_profile": ["low", "medium", "high", "critical"],
+    "spec": ["none-legacy", "valid", "duplicate-id", "dangling-id", "placeholder", "empty-high-matrix"],
+    "requirement_coverage": ["zero", "partial", "complete", "duplicate-evidence"],
+    "failure_matrix_coverage": ["empty", "partial", "complete", "dangling-link"],
+    "plan": ["legacy", "strict", "missing-binding", "duplicate-binding", "override", "mismatch", "missing-field", "malformed-list"],
+    "receipt": ["legacy", "evidence", "mixed", "foreign", "schema-mismatch", "digest-mismatch"],
+    "evidence": ["complete", "missing", "unknown", "stale-identity", "stale-base", "concurrent", "trace-mismatch", "redaction-fail", "crash"],
+    "command": ["pass", "expected-fail", "unexpected-pass", "timeout", "overflow", "drift"],
+    "adapter": ["command", "sensor", "health", "fault", "retry-partial", "recovery", "host-smoke", "step-fail", "cleanup-fail"],
+    "capability": ["available", "optional-unavailable", "required-unavailable"],
+    "runtime_platform": ["claude", "codex", "darwin", "linux", "win32", "actual-host"]
+  },
+  "named_rows": {"boundary": 9, "high_omission": 8, "critical_omission": 7}
+}

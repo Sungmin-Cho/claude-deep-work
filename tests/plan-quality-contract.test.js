@@ -58,6 +58,52 @@ test('plan templates expose worker handoff and verification plan', () => {
   }
 });
 
+test('spec-governed templates require every research 7.2 field', () => {
+  const surfaces = [
+    readRepoFile('skills/deep-plan/SKILL.md'),
+    readRepoFile('skills/shared/templates/plan-template-existing.md'),
+    readRepoFile('skills/shared/templates/plan-template-zerobase.md'),
+  ];
+  for (const surface of surfaces) {
+    assert.ok(surface.includes('Spec Contract Binding'));
+    for (const field of ['outcome', 'integration_touchpoints', 'requirements', 'invariants',
+      'failure_modes', 'risk', 'negative_tests', 'evidence_required', 'rollback',
+      'review_policy', 'scope_expansion_trigger']) {
+      assert.match(surface, new RegExp(`\\b${field}\\b`), `${field} missing`);
+    }
+  }
+  assert.doesNotMatch(surfaces[0], /plan\.md 포맷은 변경하지 않는다/);
+});
+
+test('deep-spec owns the canonical executable spec template', () => {
+  const deepSpec = readRepoFile('skills/deep-spec/SKILL.md');
+  const template = readRepoFile('skills/shared/templates/spec-template.md');
+
+  assert.match(deepSpec, /^name: deep-spec$/m);
+  assert.match(deepSpec, /^user-invocable: true$/m);
+  assert.match(deepSpec, /medium\|high\|critical.*mandatory/i);
+  assert.match(deepSpec, /current_phase.*research/);
+  assert.match(deepSpec, /subphase.*spec/);
+  assert.match(deepSpec, /validate-spec-contract\.js/);
+  assert.match(deepSpec, /document review/i);
+  assert.match(deepSpec, /spec_approved_hash/);
+  assert.match(deepSpec, /current spec\.md bytes/i);
+  assert.match(deepSpec, /unresolved marker/i);
+  assert.match(template, /^# Executable Spec:/m);
+  assert.equal((template.match(/```json spec-contract/g) || []).length, 1);
+});
+
+test('PR4 strict-spec wiring and fixtures remain discoverable', () => {
+  const orchestrator=readRepoFile('skills/deep-work-orchestrator/SKILL.md');
+  assert.match(orchestrator,/current_phase: research \+ subphase: spec/);
+  assert.match(orchestrator,/Skill\("deep-spec", args=ARGS\)/);
+  assert.match(orchestrator,/phase advance --from research --to plan/);
+  for(const file of ['low-legacy/spec.md','medium-valid/spec.md','medium-valid/plan.md','high-valid/spec.md',
+    'high-valid/plan.md','invalid-matrix/spec.md','invalid-binding/plan.md']){
+    assert.doesNotThrow(()=>readRepoFile(`tests/fixtures/v6.13-spec/${file}`));
+  }
+});
+
 test('plan review-gate enforces v6.7 mandatory slice contract', () => {
   const reviewGate = readRepoFile('skills/shared/references/review-gate.md');
 

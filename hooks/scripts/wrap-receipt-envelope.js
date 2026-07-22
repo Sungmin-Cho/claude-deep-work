@@ -21,6 +21,7 @@
  *     [--source-evolve-insights <path>]  (cross-plugin chain — also fills parent_run_id if not set)
  *     [--source-harnessability <path>]   (cross-plugin chain — adds to source_artifacts only)
  *     [--session-state-file <path>]      (session-receipt: read test_passed marker → stamp x-test-verified; outcome unchanged)
+ *     [--evidence-state-file <path>]     (attach the committed EvidencePackageV2)
  *
  * Exit codes:
  *   0 — wrote envelope-wrapped receipt
@@ -46,7 +47,8 @@ function usage(extra) {
       '                                 [--source-artifacts-glob <glob>]\n' +
       '                                 [--source-evolve-insights <path>]\n' +
       '                                 [--source-harnessability <path>]\n' +
-      '                                 [--session-state-file <path>]\n',
+      '                                 [--session-state-file <path>]\n' +
+      '                                 [--evidence-state-file <path>]\n',
   );
   process.exit(2);
 }
@@ -61,6 +63,7 @@ const KNOWN_FLAGS = new Set([
   'source-evolve-insights',
   'source-harnessability',
   'session-state-file',
+  'evidence-state-file',
 ]);
 
 // Minimal YAML-frontmatter field reader, mirroring utils.sh:read_frontmatter_field.
@@ -206,6 +209,34 @@ function main() {
       `error: payload at ${payloadPath} must be a non-null, non-array object\n`,
     );
     process.exit(2);
+  }
+
+  if (args['evidence-state-file']) {
+    const statePath=path.resolve(process.cwd(),args['evidence-state-file']);
+    let parsed;try{parsed=require('../../runtime/frontmatter.js').parseFrontmatter(fs.readFileSync(statePath,'utf8')).fields;}
+    catch(error){usage(`invalid evidence state: ${error.message}`);}
+    let review;try{review=JSON.parse(parsed.review_execution_json);}catch{usage('invalid review_execution_json in evidence state');}
+    let verificationPlan;try{verificationPlan=JSON.parse(parsed.verification_plan_json);}catch{
+      usage('invalid verification_plan_json in evidence state');}
+    const verificationPolicy=require('../../runtime/verification-policy-runtime.js');
+    if(!verificationPolicy.validateVerificationPlan(verificationPlan).pass||
+        verificationPlan.plan_sha256!==parsed.verification_plan_sha256)
+      usage('persisted verification plan is invalid');
+    const evidence=review?.evidence;const pointer=artifactKind==='slice-receipt'
+      ? evidence?.slice_packages?.[payload.slice_id]:evidence;
+    if(!pointer?.package_ref||!pointer?.package_sha256)usage('committed evidence pointer is missing');
+    if(pointer.verification_plan_sha256&&pointer.verification_plan_sha256!==verificationPlan.plan_sha256)
+      usage('committed evidence pointer plan mismatch');
+    const projectRoot=path.dirname(path.dirname(statePath)),workDir=parsed.work_dir;
+    if(typeof workDir!=='string'||!workDir||path.isAbsolute(workDir)||workDir.split('/').includes('..'))
+      usage('invalid evidence work_dir');const artifactRoot=path.resolve(projectRoot,...workDir.split('/'));
+    if(!artifactRoot.startsWith(`${path.resolve(projectRoot)}${path.sep}`))usage('invalid evidence work_dir');
+    const evidenceRuntime=require('../../runtime/evidence-runtime.js');let pkg,attached;
+    try{pkg=evidenceRuntime.loadCommittedPackage(artifactRoot,pointer,verificationPlan);
+      if(!pkg)throw new Error('missing committed package');attached=evidenceRuntime.attachEvidenceToReceipt(payload,
+        {package:pkg,summary:evidence?.summary,verificationPlan,state:parsed,artifactRoot});}
+    catch(error){usage(`committed evidence package is invalid: ${error.code||error.message}`);}
+    for(const key of Object.keys(payload))delete payload[key];Object.assign(payload,attached);
   }
 
   // Deterministic test-verification signal (session-receipt only). deep-test

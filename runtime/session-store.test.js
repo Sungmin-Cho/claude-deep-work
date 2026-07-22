@@ -19,6 +19,8 @@ const {
   finalizeWithinFinishOperation,
   prepareSessionRepository,
   recoverSessionWorktree,
+  buildSessionState,
+  migrateKnownSessionSchema,
 } = require('./session-store.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const {beginOperation}=require('./operation-journal.js');
@@ -37,6 +39,21 @@ function gitFixture(){const root=fs.mkdtempSync(path.join(os.tmpdir(),'dw-sessio
   fs.writeFileSync(path.join(root,'.gitignore'),'.claude/\n.deep-work/\n');fs.writeFileSync(path.join(root,'a.txt'),'a\n');
   execFileSync('git',['-C',root,'add','.gitignore','a.txt']);execFileSync('git',['-C',root,'commit','-qm','base']);
   fs.mkdirSync(path.join(root,'.claude'));return{root,projectCapability:issueProjectStateCapability(root,root,{role:'project-root'})};}
+
+test('new and migrated session state normalize the spec subphase contract', async () => {
+  const state=buildSessionState({sessionId:'s-aaaaaaaa',task:'spec state',repositoryContext:{
+    repositoryMode:'current-branch',branch:'main',headOid:'a'.repeat(40)}});
+  assert.equal(state.created_by_version,'6.13.0');assert.equal(state.subphase,null);
+  assert.equal(state.spec_policy_required,null);assert.equal(state.spec_approved_hash,null);
+  assert.equal(state.spec_contract_json,null);assert.equal(state.spec_gate_result_json,null);
+
+  const {root}=fixture();const file=path.join(root,'.claude','deep-work.s-bbbbbbbb.md');
+  fs.writeFileSync(file,'---\nschema_version: 2\nsession_id: s-bbbbbbbb\ncurrent_phase: research\n---\n');
+  const result=await migrateKnownSessionSchema({stateCapability:issueProjectStateCapability(root,file,{role:'session-state'}),
+    sessionId:'s-bbbbbbbb'});const fields=parseFrontmatter(fs.readFileSync(file,'utf8')).fields;
+  assert.equal(result.status,'migrated');assert.equal(fields.subphase,null);
+  assert.equal(fields.spec_policy_required,null);assert.equal(fields.spec_contract_json,null);
+});
 
 test('session ids and context precedence are deterministic', () => {
   const {root, projectCapability} = fixture();

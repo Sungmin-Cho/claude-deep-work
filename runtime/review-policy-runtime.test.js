@@ -222,6 +222,14 @@ test('finishGateAllowed treats a null human_ack on every critical review point a
   });
 });
 
+test('finish gate blocks missing evidence and unaccepted residual risk',()=>{
+  const result=finishGateAllowed({external_change_lock:false,points:{}},{compatibility_mode:'strict-spec',
+    evidence_summary:{complete:false,redaction:{passed:true}},residual_risk:{class:'high',accepted:false},
+    invalidated_evidence_ids:['EVID-BAD']});
+  assert.equal(result.allowed,false);assert.equal(result.blocking.evidence_complete,true);
+  assert.equal(result.blocking.residual_risk,true);assert.deepEqual(result.blocking.invalidated_evidence_ids,['EVID-BAD']);
+});
+
 test('detectReviewChannels is deterministic with injected executable probe and install tree', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'review-channels-'));
   const manifest = path.join(home, '.claude', 'plugins', 'cache', 'suite', 'deep-review', '.claude-plugin', 'plugin.json');

@@ -10,6 +10,7 @@ const { activateSlice, enterSliceSpike, setSliceModel, setExecutionOverride,
   setDelegationSnapshot, clearDelegationSnapshot, setClusterTakeover,
   clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice,migrateModelRouting,mutateState } =
   require('./slice-runtime.js');
+const {assertProductionCompletionMode}=require('./slice-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const { parseFrontmatter } = require('./frontmatter.js');
 const transaction=require('./transaction-runtime.js');
@@ -64,6 +65,12 @@ test('slice reducers mutate only their declared fields', async () => {
   await enterSliceSpike({stateCapability:f.stateCapability, plan:f.plan, sliceId:'SLICE-001'});
   fields = parseFrontmatter(fs.readFileSync(f.state, 'utf8')).fields;
   assert.equal(fields.tdd_state, 'SPIKE');
+});
+
+test('spike receipt cannot satisfy production slice transition', () => {
+  assert.throws(()=>assertProductionCompletionMode({contract_binding:{mode:'strict-spec'}},{tdd_state:'SPIKE'}),
+    /spike-production-forbidden/);
+  assert.equal(assertProductionCompletionMode({contract_binding:{mode:'legacy-no-spec'}},{tdd_state:'SPIKE'}),true);
 });
 
 test('model and execution values use closed enums and auto is never stored', async () => {

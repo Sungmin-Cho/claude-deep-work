@@ -93,8 +93,8 @@ test('session receipt envelope readers and validator preserve optional policy/re
   assert.deepEqual(unwrapEnvelope(wrapped, 'session-receipt').review_execution, payload.review_execution);
 });
 
-test('slice receipt optional review is ignored by all existing 8 verification checks', () => {
-  assert.equal(VERIFICATION_ITEMS.length, 8);
+test('slice receipt optional review remains compatible with the additive evidence check', () => {
+  assert.equal(VERIFICATION_ITEMS.length, 9);
   const plan = { slices: [{ id: 'SLICE-001', files: ['runtime/example.js'] }] };
   const receipt = {
     schema_version: '1.0', slice_id: 'SLICE-001', status: 'complete',

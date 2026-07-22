@@ -233,7 +233,7 @@ function evaluateReviewExecution(plan = {}, reviewerResults = []) {
   return { decision, degraded_events: degradedEvents, human_gate: humanGate, reasons };
 }
 
-function finishGateAllowed(reviewExecutionJson) {
+function finishGateAllowed(reviewExecutionJson,context) {
   const state = reviewExecutionJson && typeof reviewExecutionJson === 'object' ? reviewExecutionJson : {};
   const points = state.points && typeof state.points === 'object' ? state.points : {};
   const missingAcks = Object.entries(points)
@@ -246,8 +246,19 @@ function finishGateAllowed(reviewExecutionJson) {
     })
     .map(([point]) => point).sort((a, b) => a.localeCompare(b, 'en'));
   const externalChangeLock = state.external_change_lock === true;
-  return { allowed: !externalChangeLock && missingAcks.length === 0,
-    blocking: { external_change_lock: externalChangeLock, missing_acks: missingAcks } };
+  const blocking={external_change_lock:externalChangeLock,missing_acks:missingAcks};
+  if(context!==undefined){const legacy=context?.compatibility_mode==='legacy-no-spec';
+    const evidenceBlocked=!legacy&&context?.evidence_summary?.complete!==true;
+    const redactionBlocked=!legacy&&context?.evidence_summary?.redaction?.passed!==true;
+    const residualBlocked=!legacy&&context?.residual_risk&&context.residual_risk.accepted!==true;
+    const invalidated=[...new Set(context?.invalidated_evidence_ids||[])].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+    const required=context?.required_gate_ids||[],satisfied=new Set(context?.satisfied_gate_ids||[]);
+    const missingGates=required.filter((id)=>!satisfied.has(id));
+    Object.assign(blocking,{evidence_complete:evidenceBlocked,redaction:redactionBlocked,residual_risk:Boolean(residualBlocked),
+      invalidated_evidence_ids:invalidated,missing_gate_ids:missingGates,compatibility_context_missing:!context?.compatibility_mode});}
+  const extra=context===undefined?false:blocking.evidence_complete||blocking.redaction||blocking.residual_risk||
+    blocking.invalidated_evidence_ids.length||blocking.missing_gate_ids.length||blocking.compatibility_context_missing;
+  return {allowed:!externalChangeLock&&missingAcks.length===0&&!extra,blocking};
 }
 
 function defaultProbe(binary, env) {

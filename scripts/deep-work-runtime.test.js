@@ -6,10 +6,37 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+
+test('structured dispatcher rejects plan.md input', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-json-only-')));
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.mkdirSync(path.join(root, '.claude'));
+  const workDir = path.join(root, '.deep-work', 's-1234abcd');
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude', 'deep-work.s-1234abcd.md'), [
+    '---', 'session_id: s-1234abcd', 'work_dir: .deep-work/s-1234abcd',
+    'current_phase: implement', '---', '', '# state',
+  ].join('\n'));
+  fs.writeFileSync(path.join(workDir, 'plan.md'), JSON.stringify({ schema_version: 1, slices: [] }));
+  const { helpers } = require('../runtime/dispatcher-routes.js');
+  assert.throws(
+    () => helpers.readPlan({
+      state: path.join(root, '.claude', 'deep-work.s-1234abcd.md'),
+      plan: path.join(workDir, 'plan.md'),
+    }, root),
+    (error) => error && error.code === 'plan-json-only'
+  );
+});
 const crypto = require('node:crypto');
 const artifactRuntime = require('../runtime/artifact-runtime.js');
 const platform = require('../runtime/platform.js');
-const { updateFrontmatterText } = require('../runtime/frontmatter.js');
+const { updateFrontmatterText, parseFrontmatter } = require('../runtime/frontmatter.js');
+const { canonicalJson } = require('../runtime/operation-journal.js');
+const { parseSpecMarkdown, specContractDigest } = require('../runtime/contract-runtime.js');
+const { compilePlanProjectionV1 } = require('../runtime/plan-runtime.js');
+const { compileVerificationPlan, requiredGateIds } = require('../runtime/verification-policy-runtime.js');
+const evidenceRuntime = require('../runtime/evidence-runtime.js');
+const { compileReviewPlan } = require('../runtime/review-policy-runtime.js');
 const { DISPATCHER_GRAMMAR, PHASE5_DISPATCHER_COMMANDS, DISPATCHER_HANDLERS,
   DISPATCHER_METADATA, validateGrammarContract, parseDispatcher, dispatch } =
   require('./deep-work-runtime.js');
@@ -19,6 +46,101 @@ const { ROUTE_CONTRACTS } = require('./deep-work-route-contracts.js');
 const ROUTE_TIMESTAMP = '2026-07-13T00:00:00Z';
 
 function writeJson(file, value) { fs.writeFileSync(file, `${JSON.stringify(value)}\n`); return file; }
+
+function strictFinishAuthority() {
+  const fixture = path.resolve(__dirname, '../tests/fixtures/v6.13-spec/medium-valid');
+  const specContract = parseSpecMarkdown(fs.readFileSync(path.join(fixture, 'spec.md'), 'utf8'));
+  const planProjection = compilePlanProjectionV1({
+    planMarkdown: fs.readFileSync(path.join(fixture, 'plan.md'), 'utf8'), specContract,
+    sliceRiskState: {'SLICE-001': {class:'medium',score:6,triggers:['strict-admission']}},
+  });
+  const verificationPlan = compileVerificationPlan({
+    riskProfile:{class:'medium',score:6,triggers:['strict-admission']},riskProfileSha256:'b'.repeat(64),
+    policySnapshot:{risk_class:'medium',profile:'standard',verification_policy:{recommended:'표준 검증'}},
+    specContract,specSha256:planProjection.contract_binding.spec_contract.spec_sha256,
+    specApprovedHash:'a'.repeat(64),planProjection,capabilities:{},
+    compatibilityFacts:{created_by_version:'6.13.0',spec_policy_required:true},
+  });
+  return {planProjection, verificationPlan};
+}
+
+function strictFinishFixture({forgedSummary}) {
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-finish-strict-route-'))),session='s-aaaaaaaa';
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));const work=path.join(root,'.deep-work',session);
+  fs.mkdirSync(work,{recursive:true});const state=path.join(root,'.claude',`deep-work.${session}.md`);
+  const {planProjection,verificationPlan}=strictFinishAuthority();writeJson(path.join(work,'plan.json'),planProjection);
+  const evidence=forgedSummary?{schema_version:2,package_sha256:'c'.repeat(64),verification_plan_sha256:verificationPlan.plan_sha256,
+    summary:{schema_version:2,complete:true,redaction:{passed:true},satisfied_gate_ids:[...verificationPlan.required_gate_ids],
+      missing_gate_ids:[],unverified_areas:[]},residual_risk:{class:'low',accepted:true},invalidated_evidence_ids:[]}:undefined;
+  const fields={schema_version:2,session_id:session,work_dir:`.deep-work/${session}`,current_phase:'implement',
+    created_by_version:'6.13.0',spec_policy_required:true,risk_profile_json:canonicalJson({class:'medium',score:6,
+      triggers:['strict-admission']}),review_execution_json:canonicalJson(evidence?{evidence}:{})};
+  if(forgedSummary){fields.verification_plan_json=canonicalJson(verificationPlan);
+    fields.verification_plan_sha256=verificationPlan.plan_sha256;fields.receipt_invalidations_json='[]';}
+  fs.writeFileSync(state,updateFrontmatterText('',fields));writeJson(path.join(root,'.claude','deep-work-sessions.json'),
+    {version:1,shared_files:[],sessions:{[session]:{pid:process.pid,task_description:'finish strict route',
+      work_dir:`.deep-work/${session}`,current_phase:'implement',file_ownership:[],last_activity:ROUTE_TIMESTAMP}}});
+  return {root,session,state,work};
+}
+
+function lowFlowContract(){return{schema_version:1,spec_id:'SPEC-LOW-FULL-FLOW',risk_class:'low',requirements:[{id:'REQ-001',
+  statement:'Low flow finishes with authenticated evidence.',acceptance:'Finish keep succeeds after plan approval and test pass.',
+  priority:'must',negative_test_ids:['NEG-001'],evidence_gate_ids:['GATE-plan-alignment']}],invariants:[{id:'INV-001',
+  statement:'Plan and evidence identities stay bound.',requirement_ids:['REQ-001']}],failure_matrix:[],negative_tests:[{id:'NEG-001',
+  statement:'Reject missing low verification plan.',requirement_ids:['REQ-001'],failure_mode_ids:[],
+  expected_signal:'finish-verification-plan-required',gate_id:'GATE-plan-alignment'}],compatibility:{legacy_inputs:'reject fresh',
+  migration:'author strict spec'},open_questions:[]};}
+function lowSpecMarkdown(contract){return['# Executable Spec: Low Full Flow','','## Scope','','- Complete one LOW flow.','',
+  '## Non-goals','','- No legacy downgrade.','','## Contract','','```json spec-contract\n'+JSON.stringify(contract)+'\n```','',
+  '## Requirement Notes','','REQ-001 is executable.','','## Failure and Recovery Notes','','Missing authority fails closed.','',
+  '## Decisions and Trade-offs','','- LOW still uses a minimal plan.','','## Open Questions','','- None.','','## Spec Gate Result','',
+  '- Status: PASS'].join('\n');}
+function lowPlanMarkdown(contract,specApprovedHash,riskProfileSha256){const binding={schema_version:1,mode:'strict-spec',
+  created_by_version:'6.13.0',spec_contract:{schema_version:1,spec_id:contract.spec_id,
+    spec_sha256:specContractDigest(contract),spec_approved_hash:specApprovedHash},risk_profile_sha256:riskProfileSha256};return[
+  '## Spec Contract Binding','','```json\n'+JSON.stringify(binding)+'\n```','','## Slice Checklist','',
+  '- [ ] SLICE-001: Complete LOW full flow','  - outcome: LOW flow reaches finish with authenticated evidence',
+  '  - files: [runtime/low.js, runtime/low.test.js]','  - depends_on: []','  - integration_touchpoints: [finish admission]',
+  '  - requirements: [REQ-001]','  - invariants: [INV-001]','  - failure_modes: []',
+  '  - risk: { class: low, score: 2, triggers: [low-flow] }','  - negative_tests: [NEG-001]',
+  '  - evidence_required: [GATE-plan-alignment]','  - rollback: { method: revert, verification: [GATE-recovery] }',
+  '  - review_policy: single','  - scope_expansion_trigger: [risk increase]','  - failing_test: LOW verification plan omitted',
+  '  - verification_cmd: node --test runtime/low.test.js','  - expected_output: fail 0','  - code_sketch: approvePhase()',
+  '  - spec_checklist: [REQ-001]','  - contract: [LOW finish succeeds]','  - acceptance_threshold: all','  - size: S',
+  '  - steps:','    1. Compile the minimal LOW plan','    2. Finish the session'].join('\n');}
+async function publishLowFlowEvidence({root,state,work,plan,verificationPlan,specContract}){
+  const reviewPlan=compileReviewPlan({artifactKind:'session-final',phase:'test',riskClass:'low',runtime:'claude',
+    availableChannels:{subagent:true,codex_cli:true,gemini_cli:true,deep_review:true},tddMode:'strict'});
+  const reports=reviewPlan.reviewers.map((row,index)=>({role:row.role,channel:row.channel,required:row.required,status:'completed',
+    report_ref:`reports/${row.role}.json`,sha256:String(index+1).repeat(64).slice(0,64)}));const records=[];
+  for(const [index,gateId] of verificationPlan.evidence_required_gate_ids.entries()){const gate=verificationPlan.gates.find((row)=>row.id===gateId),
+      base={evidence_id:`EVID-LOW-${String(index+1).padStart(4,'0')}`,gate_id:gateId};let record;
+    if(gate.adapter==='command')record=await evidenceRuntime.captureCommandEvidence({...base,verification_spec:{schema_version:1,
+      executable:{kind:'node',value:'node'},args:['verify-low.js'],cwd_role:'active-worktree',timeout_ms:5000,max_output_bytes:4096,
+      red_failure_literal:'expected-red'},expected_outcome:'must-pass',requirement_ids:gate.requirement_ids,invariant_ids:['INV-001'],
+      failure_mode_ids:gate.failure_mode_ids,negative_test_ids:['NEG-001'],redaction_policy:{exact_secret_values:[]}},
+    {runner:async()=>({exitCode:0,stdout:'ok',stderr:'',durationMs:1})});
+    else if(gate.adapter==='contract')record=evidenceRuntime.captureContractEvidence({...base,verificationPlan,specContract,
+      slices:plan.slices.map((row)=>row.contract)});
+    else if(gate.adapter==='receipt')record=evidenceRuntime.captureReceiptEvidence({...base,verificationPlan,plan,
+      receipts:[{slice_id:'SLICE-001',status:'complete'}],verificationResult:{pass:true,errors:[]}});
+    else if(gate.adapter==='review')record=evidenceRuntime.captureReviewEvidence({...base,verificationPlan,reviewPlan,reports});
+    else if(gate.adapter==='sensor'){const result={status:'pass',adapter:'sensor'};record=evidenceRuntime.captureRuntimeProjectionEvidence(
+      {...base,verificationPlan,kind:'sensor',operation:{operationId:`op-${String(index+1).repeat(32).slice(0,32)}`},result,
+        result_sha256:crypto.createHash('sha256').update(canonicalJson(result)).digest('hex')});}
+    else throw new Error(`unhandled LOW adapter ${gate.adapter}`);records.push(record);}
+  let published;for(const record of records)published=await evidenceRuntime.publishAuthenticatedRecord(record,{stateCapability:
+    platform.issueProjectStateCapability(root,state,{role:'session-state'}),verificationPlan,plan,scope:{kind:'session',id:'s-aaaaaaaa'}});
+  return published;
+}
+
+function finishArgv(outcome,fixture) {
+  const argv=['session','finish',outcome,'--state',fixture.state,'--session',fixture.session,
+    '--receipt-payload',path.join(fixture.work,'missing-receipt.tmp')];
+  if(outcome==='publish-pr')argv.push('--title-file',path.join(fixture.work,'missing-title.tmp'),
+    '--body-file',path.join(fixture.work,'missing-body.tmp'));
+  return argv;
+}
 
 async function semanticFixture(entry, index) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dw-route-semantic-')));
@@ -69,6 +191,7 @@ async function semanticFixture(entry, index) {
     capability:path.join(workDir,'capability.json'), ask:path.join(workDir,'ask.json'),
     arguments:path.join(workDir,'arguments.json'), profile:path.join(workDir,'profile.yaml'),
     cluster:path.join(workDir,'cluster.txt'), note:path.join(workDir,'root-cause.md'),
+    specContract:path.join(workDir,'spec-contract.json'),specGate:path.join(workDir,'spec-gate.json'),
   };
   fs.writeFileSync(files.task, 'semantic route');
   writeJson(files.defaults, {}); writeJson(files.profileJson, {}); writeJson(files.flags, {});
@@ -96,6 +219,7 @@ async function semanticFixture(entry, index) {
   writeJson(files.arguments, ['--tdd=strict','semantic']);
   fs.writeFileSync(files.profile, 'version: 3\ndefault_preset: solo-strict\npresets:\n  solo-strict:\n    interactive_each_session:\n      - team_mode\n    defaults:\n      team_mode: solo\n');
   fs.writeFileSync(files.cluster, 'C1\n'); fs.writeFileSync(files.note, '# Root cause\n');
+  writeJson(files.specContract,{});writeJson(files.specGate,{});
 
   const stateCapability = platform.issueProjectStateCapability(root, state, {role:'session-state'});
   const sessionCapability = platform.issueProjectStateCapability(root, workDir,
@@ -119,9 +243,11 @@ async function semanticArgv(entry, fx) {
     'expected-sha256':'a'.repeat(64),'project-root':fx.root,path:'src/a.js',at:ROUTE_TIMESTAMP,
     phase,mode:'current-branch','task-file':fx.files.task,'defaults-json':fx.files.defaults,
     'profile-json':fx.files.profileJson,'base-ref':'HEAD','from-phase':'plan','dirty-resolution':'abort',
+    reason:'risk-class-increase','from-risk':'medium','to-risk':'high','risk-profile-sha256':'9'.repeat(64),
     worktree:path.join(fx.root, '..', `${path.basename(fx.root)}-wt-${fx.session.slice(2)}`),
     'flags-json':fx.files.flags,'finished-at':ROUTE_TIMESTAMP,'result-json':fx.files.result,
-    artifact:fx.files.structuralMd,from:'brainstorm',to:'research','affected-slices-json':fx.files.affected,
+    artifact:fx.files.structuralMd,'contract-json':fx.files.specContract,'gate-json':fx.files.specGate,
+    from:'brainstorm',to:'research','affected-slices-json':fx.files.affected,
     plan:fx.plan,'assignment-json':fx.files.assignment,snapshot:'a'.repeat(40),slice:'SLICE-001',
     class:'failing-test','scope-sha256':'a'.repeat(64),'delegation-operation-id':`op-${'2'.repeat(64)}`,
     cluster:'C1','operation-id':`op-${'3'.repeat(64)}`,'pre-manifest-sha256':'a'.repeat(64),
@@ -130,6 +256,9 @@ async function semanticArgv(entry, fx) {
     'sensor-results-sha256':'a'.repeat(64),'after-write-operation-id':`op-${'6'.repeat(64)}`,
     'receipts-dir':fx.receipts,
     'cluster-file':fx.files.cluster,'delegation-snapshot':'a'.repeat(40),scope:'slice',id:'SLICE-001',
+    spec:fx.files.structuralMd,'evidence-id':'EVID-SEMANTIC-0001','review-plan-json':fx.files.structural,
+    'reports-json':fx.files.adversarial,'receipts-json':fx.files.adversarial,
+    'verification-result-json':fx.files.verification,
     'spec-json':fx.files.verificationSpec,expected:'must-pass','gate-id':'QG-001',
     'gate-results-json':fx.files.gate,'failed-slices-json':fx.files.failed,'survived-json':fx.files.survived,
     round:'1','verification-json':fx.files.verification,'note-file':fx.files.note,
@@ -145,6 +274,7 @@ async function semanticArgv(entry, fx) {
   if (entry.id === 'implement tdd transition') values.to = 'PENDING';
   if (entry.id === 'verification run') delete values['gate-id'];
   if (entry.id === 'sensor run') values.kind = 'lint';
+  if (entry.id === 'phase invalidate-replan') values.reason = 'risk-class-increase';
   if (entry.id === 'session execution set') values.mode = 'inline';
   if (entry.id === 'review run') values.mode = 'read-only';
   const tempValues = {
@@ -195,13 +325,16 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['session initialize',[]],['session state migrate-schema',[50]],['session execution set',[50]],
     ['session state migrate-model-routing',[50]],['session recovery worktree',[5,10,50]],
     ['session finalize',[10,20,30,40,50]],['phase begin',[10,20,50]],['phase complete',[10,20,50]],
-    ['phase approve',[10,20,50]],['phase advance',[10,20,50]],['phase rerun',[10,20,50]],
+    ['phase approve',[10,20,50,70]],['phase spec enter',[10,20,50]],['phase spec approve',[10,20,50]],
+    ['phase advance',[10,20,50]],['phase rerun',[10,20,50]],['phase invalidate-replan',[10,20,50]],
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
     ['implement tdd transition',[10,20,50]],['implement slice complete',[10,20,50,70]],
     ['implement override set',[10,20,50,70]],['implement override clear',[50]],
     ['implement takeover set',[50,70]],['implement takeover clear',[50,70]],
     ['verification migrate-spec',[10,20,50,70]],['verification run',[10,20,50,70]],
+    ['evidence record contract',[10,20,50,70]],['evidence record review',[10,20,50,70]],
+    ['evidence record receipt',[10,20,50,70]],
     ['test pass',[10,20,50,70]],['test retry',[10,20,50,70]],['test exhaust',[10,20,50,70]],
     ['mutation round begin',[10,20,50,70]],['mutation round end',[10,20,50,70]],
     ['mutation record',[10,20,50,70]],['debug enter',[50]],['debug complete',[10,20,50,70]],
@@ -437,11 +570,82 @@ test('owned-temp dispatcher allocates, writes, adopts, and compare-removes its d
   assert.equal(fs.existsSync(created.path), false);
 });
 
+test('spec-governed Medium+ test pass dispatcher route fails closed without committed plan or evidence package', async()=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-test-pass-strict-route-')));const session='s-aaaaaaaa';
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));const work=path.join(root,'.deep-work',session);
+  fs.mkdirSync(work,{recursive:true});const state=path.join(root,'.claude',`deep-work.${session}.md`);
+  fs.writeFileSync(state,updateFrontmatterText('',{schema_version:2,session_id:session,work_dir:`.deep-work/${session}`,
+    current_phase:'test',created_by_version:'6.13.0',spec_policy_required:true,
+    risk_profile_json:JSON.stringify({class:'medium',score:6,triggers:['strict-admission']}),review_execution_json:'{}'}));
+  const plan=writeJson(path.join(work,'plan.json'),{schema_version:1,contract_binding:{mode:'strict-spec',
+    created_by_version:'6.13.0'},slices:[],quality_gates:[]});
+  const gates=writeJson(path.join(work,'gate-results.json'),{complete:true,failedSlices:[]});
+  await assert.rejects(()=>dispatch(['test','pass','--state',state,'--plan',plan,'--gate-results-json',gates,
+    '--at',ROUTE_TIMESTAMP],{cwd:root}),(error)=>error?.code==='gate-results-verification-plan');
+  assert.doesNotMatch(fs.readFileSync(state,'utf8'),/^test_passed:\s*true$/m);
+});
+
+test('all finish dispatcher outcomes reject fresh Medium+ legacy bypass and forged evidence summaries',async(t)=>{
+  for(const outcome of ['keep','merge','publish-pr','discard']){
+    await t.test(`${outcome}: missing committed verification plan`,async()=>{
+      const fixture=strictFinishFixture({forgedSummary:false});
+      await assert.rejects(()=>dispatch(finishArgv(outcome,fixture),{cwd:fixture.root}),
+        (error)=>error?.code==='finish-verification-plan-required');
+      assert.equal(fs.existsSync(path.join(fixture.work,'.operation-results')),false);
+    });
+    await t.test(`${outcome}: forged review.evidence summary without committed package`,async()=>{
+      const fixture=strictFinishFixture({forgedSummary:true});
+      await assert.rejects(()=>dispatch(finishArgv(outcome,fixture),{cwd:fixture.root}),
+        (error)=>error?.code==='finish-evidence-package');
+      assert.equal(fs.existsSync(path.join(fixture.work,'.operation-results')),false);
+    });
+  }
+});
+
+test('fresh pure-LOW v6.13 production flow compiles minimal authority and reaches finish keep',async()=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-low-v613-full-flow-'))),session='s-aaaaaaaa';
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));const work=path.join(root,'.deep-work',session);
+  fs.mkdirSync(work,{recursive:true});const state=path.join(root,'.claude',`deep-work.${session}.md`),contract=lowFlowContract(),
+    specText=lowSpecMarkdown(contract),specPath=path.join(work,'spec.md');fs.writeFileSync(specPath,specText);const specApprovedHash=
+    crypto.createHash('sha256').update(specText).digest('hex'),riskProfile={class:'low',score:2,triggers:[]},riskProfileSha256='b'.repeat(64),
+    planPath=path.join(work,'plan.md');fs.writeFileSync(planPath,lowPlanMarkdown(contract,specApprovedHash,riskProfileSha256));
+  fs.writeFileSync(state,updateFrontmatterText('',{schema_version:2,session_id:session,work_dir:`.deep-work/${session}`,
+    current_phase:'research',created_by_version:'6.13.0',spec_policy_required:null,risk_profile_json:canonicalJson(riskProfile),
+    risk_profile_sha256:riskProfileSha256,methodology_policy_json:canonicalJson({risk_class:'low',profile:'lean',
+      verification_policy:{recommended:'최소 검증 (기록 전용)'}}),slice_risk_shadow_json:canonicalJson({'SLICE-001':{class:'low',
+      score:2,triggers:['low-flow']}}),review_execution_json:'{}',receipt_invalidations_json:'[]'}));
+  writeJson(path.join(root,'.claude','deep-work-sessions.json'),{version:1,shared_files:[],sessions:{[session]:{pid:process.pid,
+    task_description:'LOW v6.13 full flow',work_dir:`.deep-work/${session}`,current_phase:'research',file_ownership:[],
+    last_activity:ROUTE_TIMESTAMP}}});fs.writeFileSync(path.join(root,'.claude','deep-work-current-session'),`${session}\n`);
+  await dispatch(['phase','spec','enter','--state',state,'--at',ROUTE_TIMESTAMP],{cwd:root});
+  await dispatch(['phase','spec','approve','--state',state,'--artifact',specPath,'--at',ROUTE_TIMESTAMP],{cwd:root});
+  await dispatch(['phase','advance','--state',state,'--from','research','--to','plan','--at',ROUTE_TIMESTAMP],{cwd:root});
+  await dispatch(['phase','approve','--state',state,'--phase','plan','--artifact',planPath,'--at',ROUTE_TIMESTAMP],{cwd:root});
+  let fields=parseFrontmatter(fs.readFileSync(state,'utf8')).fields;assert.match(fields.verification_plan_sha256,/^[0-9a-f]{64}$/);
+  const verificationPlan=JSON.parse(fields.verification_plan_json),plan=JSON.parse(fs.readFileSync(path.join(work,'plan.json'),'utf8'));
+  assert.equal(verificationPlan.risk_class,'low');assert.equal(verificationPlan.profile,'lean');
+  await dispatch(['phase','advance','--state',state,'--from','plan','--to','implement','--at',ROUTE_TIMESTAMP],{cwd:root});
+  await dispatch(['phase','advance','--state',state,'--from','implement','--to','test','--at',ROUTE_TIMESTAMP],{cwd:root});
+  const published=await publishLowFlowEvidence({root,state,work,plan,verificationPlan,specContract:contract}),gateResults={complete:true,
+    failedSlices:[],verification_plan_sha256:verificationPlan.plan_sha256,package_sha256:published.package.package_sha256,
+    gates:requiredGateIds(verificationPlan,{at:'test'}).map((id)=>({id,status:'pass',evidence_ids:published.package.records
+      .filter((row)=>row.gate_id===id&&row.status==='pass').map((row)=>row.evidence_id)}))};
+  const gatePath=writeJson(path.join(work,'gate-results.json'),gateResults);await dispatch(['test','pass','--state',state,'--plan',
+    path.join(work,'plan.json'),'--gate-results-json',gatePath,'--at',ROUTE_TIMESTAMP],{cwd:root});
+  fields=parseFrontmatter(fs.readFileSync(state,'utf8')).fields;assert.equal(fields.test_passed,true);
+  const stateCap=platform.issueProjectStateCapability(root,state,{role:'session-state'}),workCap=platform.issueProjectStateCapability(root,work,
+    {role:'session-work-dir',sessionStateCapability:stateCap}),temp=await artifactRuntime.createOwnedTemp({sessionCapability:workCap,
+      purpose:'receipt-payload'});await artifactRuntime.writeOwnedTemp({sessionCapability:workCap,operationId:temp.operationId,
+      purpose:'receipt-payload'},Buffer.from('{"schema_version":"1.0","status":"complete"}\n'));
+  const finished=await dispatch(['session','finish','keep','--state',state,'--session',session,'--receipt-payload',temp.path],{cwd:root});
+  assert.equal(finished.status,'completed');assert.equal(finished.outcome,'keep');
+});
+
 test('finish keep holds the full store transaction and publishes from the finalized state identity', async()=>{
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-finish-keep-route-')));const session='s-aaaaaaaa';
   fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));const workDir=path.join(root,'.deep-work',session);
   fs.mkdirSync(workDir,{recursive:true});const state=path.join(root,'.claude',`deep-work.${session}.md`);
-  fs.writeFileSync(state,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\ncurrent_phase: implement\n---\n');
+  fs.writeFileSync(state,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\ncurrent_phase: implement\ncreated_by_version: 6.12.0\n---\n');
   fs.writeFileSync(path.join(root,'.claude','deep-work-sessions.json'),`${JSON.stringify({version:1,shared_files:[],sessions:{
     [session]:{pid:process.pid,task_description:'finish',work_dir:`.deep-work/${session}`,current_phase:'implement',file_ownership:[],
       last_activity:ROUTE_TIMESTAMP}}})}\n`);fs.writeFileSync(path.join(root,'.claude','deep-work-current-session'),`${session}\n`);
@@ -461,7 +665,7 @@ test('finish keep resumes result publication from its journal without rereading 
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-finish-keep-resume-')));const session='s-bbbbbbbb';
   fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));const work=path.join(root,'.deep-work',session);
   fs.mkdirSync(work,{recursive:true});const statePath=path.join(root,'.claude',`deep-work.${session}.md`);fs.writeFileSync(statePath,
-    '---\nsession_id: s-bbbbbbbb\nwork_dir: .deep-work/s-bbbbbbbb\ncurrent_phase: implement\n---\n');fs.writeFileSync(
+    '---\nsession_id: s-bbbbbbbb\nwork_dir: .deep-work/s-bbbbbbbb\ncurrent_phase: implement\ncreated_by_version: 6.12.0\n---\n');fs.writeFileSync(
     path.join(root,'.claude','deep-work-sessions.json'),`${JSON.stringify({version:1,shared_files:[],sessions:{[session]:{pid:process.pid,
       task_description:'resume',work_dir:'.deep-work/s-bbbbbbbb',current_phase:'implement',file_ownership:[],last_activity:ROUTE_TIMESTAMP}}})}\n`);
   const state=platform.issueProjectStateCapability(root,statePath,{role:'session-state'});const sessionCap=platform.issueProjectStateCapability(root,
@@ -475,8 +679,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 85 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 85);
+test('all 91 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 91);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -500,7 +704,7 @@ test('all 85 grammar rows cross the parser and invoke their typed route semantic
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 85);
+  assert.equal(outcomes.length, 91);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

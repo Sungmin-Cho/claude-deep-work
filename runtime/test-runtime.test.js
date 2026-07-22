@@ -17,6 +17,12 @@ test('test pass consumes bounded complete gate evidence', () => {
   assert.throws(() => recordTestPass({state, gateResults:{complete:false}}), /gate-results/);
 });
 
+test('incomplete evidence cannot set test_passed for a compiled plan',()=>{
+  const verificationPlan=JSON.parse(fs.readFileSync(path.join(__dirname,'../tests/fixtures/v6.13-evidence/verification-plan-minimal.json'),'utf8'));
+  assert.throws(()=>recordTestPass({state:{current_phase:'test'},gateResults:{complete:true,failedSlices:[],gates:[]},
+    verificationPlan,evidencePackage:null,evidenceSummary:{complete:false},at:'2026-07-13T00:00:00Z'}),/evidence|gate-results/);
+});
+
 test('retry invalidates only failed slices and mutation round is separate', () => {
   const plan = {slices:[{id:'SLICE-001',checked:true},{id:'SLICE-002',checked:true}]};
   const receipts = {'SLICE-001':{status:'complete'}, 'SLICE-002':{status:'complete'}};

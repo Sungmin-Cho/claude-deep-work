@@ -434,6 +434,7 @@ async function completeSlice({stateCapability,planCapability,plan,receiptsDirCap
         capability:transaction.stateLock(stateCapability)},...targets],()=>completeSlice({stateCapability,planCapability,plan,
           receiptsDirCapability,sliceId,receiptPayload,receiptTemp,seam,_locksHeld:true}));}
   const slice=requireSlice(plan,sliceId);const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
+  assertProductionCompletionMode(plan,fields);
   const adopting=slice.checked&&fields.active_slice===null&&fields.tdd_state==='PENDING';
   if(!adopting&&(fields.active_slice!==sliceId||!['SENSOR_CLEAN','SPIKE'].includes(fields.tdd_state)||
       fields.tdd_state==='SPIKE'&&fields.tdd_override!==sliceId))fail('slice-completion-evidence');
@@ -505,7 +506,12 @@ async function completeSlice({stateCapability,planCapability,plan,receiptsDirCap
     resultPath:published?.path,resultSha256:published?.sha256,operationReceipt:ledger};
 }
 
+function assertProductionCompletionMode(plan,fields){
+  if(plan?.contract_binding?.mode==='strict-spec'&&fields?.tdd_state==='SPIKE')fail('spike-production-forbidden');
+  return true;
+}
+
 module.exports = {activateSlice,enterSliceSpike,setSliceModel,setExecutionOverride,
   setClusterTakeover,clearClusterTakeover,migrateModelRouting,mutateState,setDelegationSnapshot,
   clearDelegationSnapshot,
-  beginScopedWrite,acceptScopedWrite,resetSlice,completeSlice};
+  beginScopedWrite,acceptScopedWrite,resetSlice,completeSlice,assertProductionCompletionMode};

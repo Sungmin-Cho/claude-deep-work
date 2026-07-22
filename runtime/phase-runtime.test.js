@@ -4,7 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
 const {execFileSync}=require('node:child_process');
-const { transitionSliceTdd, advancePhase, completeDebug,recordPhaseReview,PHASE_GRAPH } = require('./phase-runtime.js');
+const { transitionSliceTdd, advancePhase, enterSpecSubphase,approveSpecSubphase,approvePhase,
+  completeDebug,recordPhaseReview,PHASE_GRAPH } = require('./phase-runtime.js');
+const {specContractDigest}=require('./contract-runtime.js');
 const platform=require('./platform.js');const transaction=require('./transaction-runtime.js');
 const {beginScopedWrite,acceptScopedWrite,completeSlice}=require('./slice-runtime.js');
 const {deriveScopedWriteAuthority}=require('./plan-runtime.js');
@@ -12,12 +14,112 @@ const {runVerification}=require('./verification-runtime.js');
 const {runSensor,runReviewCheck,aggregateSensorResults}=require('./sensor-runtime.js');
 const {parseFrontmatter}=require('./frontmatter.js');
 const artifact=require('./artifact-runtime.js');
+const phaseRuntime=require('./phase-runtime.js');
+const {canonicalJson,sha256}=require('./operation-journal.js');
 
 test('phase graph is closed and skip edges are explicit', () => {
   assert.deepEqual(PHASE_GRAPH.brainstorm, ['research']);
   assert.deepEqual(PHASE_GRAPH.implement, ['test']);
   assert.throws(() => advancePhase({state:{current_phase:'research'}, from:'research', to:'test'}),
     /phase-transition/);
+});
+
+test('research to plan requires fresh mandatory spec approval', () => {
+  assert.throws(() => advancePhase({state:{current_phase:'research',spec_policy_required:true,
+    subphase:'spec'},from:'research',to:'plan',at:'2026-07-22T00:00:00Z'}),
+  /spec-approval-required/);
+  assert.throws(() => advancePhase({state:{current_phase:'research',spec_policy_required:true,
+    subphase:'spec',spec_approved_hash:'a'.repeat(64),spec_current_sha256:'b'.repeat(64),
+    spec_contract_json:'{}',spec_gate_result_json:'{"pass":true}'},from:'research',to:'plan',
+  at:'2026-07-22T00:00:00Z'}), /spec-approval-stale/);
+});
+
+test('spec resume does not rerun research', () => {
+  const entered=enterSpecSubphase({state:{current_phase:'research',research_completed_at:'2026-07-21T00:00:00Z',
+    research_approved:{artifact_sha256:'c'.repeat(64)}},at:'2026-07-22T00:00:00Z'});
+  assert.equal(entered.current_phase,'research');assert.equal(entered.subphase,'spec');
+  assert.equal(entered.spec_policy_required,true);assert.equal(entered.research_completed_at,'2026-07-21T00:00:00Z');
+  const contract={schema_version:1,spec_id:'SPEC-PHASE',risk_class:'medium',requirements:[{id:'REQ-001',
+    statement:'Require spec approval',acceptance:'Plan admission succeeds only after approval',priority:'must',
+    negative_test_ids:['NEG-001'],evidence_gate_ids:['GATE-negative-tests']}],invariants:[{id:'INV-001',
+    statement:'Research is not rerun',requirement_ids:['REQ-001']}],failure_matrix:[],negative_tests:[{id:'NEG-001',
+    statement:'Attempt stale admission',requirement_ids:['REQ-001'],failure_mode_ids:[],
+    expected_signal:'spec-approval-stale',gate_id:'GATE-negative-tests'}],compatibility:{legacy_inputs:'reject fresh',
+    migration:'run deep-spec'},open_questions:[]};
+  const specSha256=specContractDigest(contract);const approvedHash='a'.repeat(64);
+  const approved=approveSpecSubphase({state:entered,specApprovedHash:approvedHash,specContract:contract,
+    specGateResult:{schema_version:1,pass:true,spec_id:'SPEC-PHASE',spec_sha256:specSha256,risk_class:'medium',
+      errors:[],warnings:[],requirement_coverage:{contract:{ratio:1},execution:null},
+      failure_matrix_coverage:{contract:{ratio:null},execution:null}},at:'2026-07-22T00:01:00Z'});
+  const advanced=advancePhase({state:{...approved,spec_current_sha256:approvedHash},from:'research',to:'plan',
+    at:'2026-07-22T00:02:00Z'});
+  assert.equal(advanced.current_phase,'plan');assert.equal(advanced.subphase,null);
+  assert.equal(advanced.research_completed_at,'2026-07-21T00:00:00Z');
+});
+
+test('plan approval compiles and stores one exact authoritative verification plan',()=>{
+  const specContract={schema_version:1,spec_id:'SPEC-APPROVAL',risk_class:'medium',requirements:[{id:'REQ-001'}],
+    failure_matrix:[]};const specSha256='a'.repeat(64),specApprovedHash='b'.repeat(64),riskProfileSha256='c'.repeat(64);
+  const planProjection={schema_version:1,contract_binding:{mode:'strict-spec',created_by_version:'6.13.0',
+    source_plan_sha256:'d'.repeat(64),risk_profile_sha256:riskProfileSha256,spec_contract:{spec_id:specContract.spec_id,
+      spec_sha256:specSha256,spec_approved_hash:specApprovedHash}},slices:[]};const planProjectionSha256=sha256(canonicalJson(planProjection));
+  const state={current_phase:'plan',spec_policy_required:true,spec_approved_hash:specApprovedHash,
+    risk_profile_sha256:riskProfileSha256};const compilerInput={riskProfile:{class:'medium'},riskProfileSha256,
+    policySnapshot:{risk_class:'medium',profile:'standard',verification_policy:{recommended:'표준 검증'}},
+    specContract,specSha256,specApprovedHash,planProjection,capabilities:{},
+    compatibilityFacts:{created_by_version:'6.13.0',spec_policy_required:true}};
+  const next=approvePhase({state,phase:'plan',artifactSha256:'d'.repeat(64),sourcePlanSha256:'d'.repeat(64),
+    planProjectionSha256,verificationCompilerInput:compilerInput,planSpecGateResult:{pass:true,spec_id:specContract.spec_id,
+      spec_sha256:specSha256,spec_approved_hash:specApprovedHash,risk_profile_sha256:riskProfileSha256,
+      requirement_coverage:{execution:{ratio:1}},failure_matrix_coverage:{execution:{ratio:null}}},
+    at:'2026-07-22T00:02:00Z'});
+  const stored=JSON.parse(next.verification_plan_json);assert.equal(stored.plan_projection_sha256,planProjectionSha256);
+  assert.equal(next.verification_plan_sha256,stored.plan_sha256);assert.equal(next.plan_approved.artifact_sha256,'d'.repeat(64));
+});
+
+test('fresh v6.13 Low plan approval also compiles the minimal authoritative verification plan',()=>{
+  const specContract={schema_version:1,spec_id:'SPEC-LOW-APPROVAL',risk_class:'low',requirements:[{id:'REQ-001'}],
+    failure_matrix:[]},specSha256='a'.repeat(64),specApprovedHash='b'.repeat(64),riskProfileSha256='c'.repeat(64),
+    planProjection={schema_version:1,contract_binding:{mode:'strict-spec',created_by_version:'6.13.0',
+      source_plan_sha256:'d'.repeat(64),risk_profile_sha256:riskProfileSha256,spec_contract:{spec_id:specContract.spec_id,
+        spec_sha256:specSha256,spec_approved_hash:specApprovedHash}},slices:[]},planProjectionSha256=sha256(canonicalJson(planProjection)),
+    state={current_phase:'plan',created_by_version:'6.13.0',spec_policy_required:false,spec_approved_hash:specApprovedHash,
+      risk_profile_sha256:riskProfileSha256},compilerInput={riskProfile:{class:'low'},riskProfileSha256,
+      policySnapshot:{risk_class:'low',profile:'lean',verification_policy:{recommended:'최소 검증 (기록 전용)'}},
+      specContract,specSha256,specApprovedHash,planProjection,capabilities:{},
+      compatibilityFacts:{created_by_version:'6.13.0',spec_policy_required:false}};
+  const next=approvePhase({state,phase:'plan',artifactSha256:'d'.repeat(64),sourcePlanSha256:'d'.repeat(64),
+    planProjectionSha256,verificationCompilerInput:compilerInput,planSpecGateResult:{pass:true,spec_id:specContract.spec_id,
+      spec_sha256:specSha256,spec_approved_hash:specApprovedHash,risk_profile_sha256:riskProfileSha256,
+      requirement_coverage:{execution:{ratio:1}},failure_matrix_coverage:{execution:{ratio:null}}},at:'2026-07-22T00:02:00Z'});
+  const stored=JSON.parse(next.verification_plan_json);assert.equal(stored.risk_class,'low');assert.equal(stored.profile,'lean');
+  assert.equal(next.verification_plan_sha256,stored.plan_sha256);
+});
+
+test('risk-only escalation clears prior authority and records every receipt invalidation', () => {
+  const state={current_phase:'implement',subphase:null,spec_policy_required:true,
+    spec_approved_hash:'a'.repeat(64),plan_approved:{artifact_sha256:'b'.repeat(64)},
+    plan_projection_sha256:'c'.repeat(64),plan_source_sha256:'d'.repeat(64),
+    plan_spec_gate_result_json:'{"pass":true}',verification_plan_json:'{"schema_version":1}',
+    verification_plan_sha256:'e'.repeat(64),verification_consumptions_json:'{"op-old":{"sliceId":"SLICE-001"}}',
+    test_passed:true,evidence_summary_json:'{"complete":true}',risk_profile_sha256:'f'.repeat(64),
+    slice_receipts_json:JSON.stringify({'SLICE-002':{receipt_sha256:'2'.repeat(64),plan_sha256:'c'.repeat(64),
+      risk_profile_sha256:'f'.repeat(64)},'SLICE-001':{receipt_sha256:'1'.repeat(64),plan_sha256:'c'.repeat(64),
+      risk_profile_sha256:'f'.repeat(64)}})};
+  const transition=phaseRuntime.invalidateForReplan||((args)=>phaseRuntime.rerunPhase({state:args.state,phase:'plan'}));
+  const next=transition({state,reason:'risk-class-increase',fromRisk:'medium',toRisk:'high',
+    affectedSliceIds:['SLICE-002','SLICE-001'],riskProfileSha256:'9'.repeat(64),at:'2026-07-22T00:03:00Z'});
+  assert.equal(next.current_phase,'research');assert.equal(next.subphase,'spec');assert.equal(next.replan_required,true);
+  assert.equal(next.plan_approved,null);assert.equal(next.verification_plan_json,null);
+  assert.equal(next.verification_consumptions_json,'{}');assert.equal(next.test_passed,false);
+  assert.equal(next.evidence_summary_json,null);assert.equal(next.spec_approved_hash,null);
+  const invalidations=JSON.parse(next.receipt_invalidations_json);
+  assert.deepEqual(invalidations.map((row)=>row.slice_id),['SLICE-001','SLICE-002']);
+  assert.deepEqual(invalidations.map((row)=>row.receipt_sha256),['1'.repeat(64),'2'.repeat(64)]);
+  assert.ok(invalidations.every((row)=>row.prior_plan_sha256==='c'.repeat(64)&&
+    row.prior_risk_profile_sha256==='f'.repeat(64)));
+  assert.ok(invalidations.every((row)=>!Object.hasOwn(row,'package_sha256')&&
+    !Object.hasOwn(row,'verification_plan_sha256')&&!Object.hasOwn(row,'risk_profile_sha256')));
 });
 
 test('TDD transition table rejects proofless RED and invalid refactor completion', async () => {

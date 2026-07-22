@@ -14,6 +14,18 @@ const { unwrapEnvelope } = require(path.join(scriptDir, 'envelope.js'));
 // just the fields we need (tdd_mode).
 const state = parseStateFile(stateFile);
 const plan = parsePlanMd(planMdPath);
+const projectRoot = path.dirname(path.dirname(path.resolve(stateFile)));
+let artifactRoot = null;
+if (typeof state.work_dir === 'string' && state.work_dir && !path.isAbsolute(state.work_dir)
+    && !state.work_dir.split('/').includes('..')) {
+  const candidate = path.resolve(projectRoot, ...state.work_dir.split('/'));
+  if (candidate.startsWith(`${projectRoot}${path.sep}`)) artifactRoot = candidate;
+}
+const verificationPlan = state.verification_plan_json || null;
+if (verificationPlan && verificationPlan.plan_sha256 !== state.verification_plan_sha256) {
+  throw new Error('persisted verification plan digest does not match state');
+}
+const committedEvidence = state.review_execution_json?.evidence || null;
 
 let receipts = fs.readdirSync(receiptsDir)
   .filter((f) => /^SLICE-\d+\.json$/.test(f))
@@ -58,6 +70,11 @@ const result = verifyReceipts({
   plan,
   tdd_mode: state.tdd_mode || 'strict',
   skip_items: skipItems,
+  receipt_invalidations: state.receipt_invalidations_json || [],
+  verification_plan: verificationPlan,
+  committed_evidence: committedEvidence,
+  artifact_root: artifactRoot,
+  repo_root: projectRoot,
 });
 
 const hasErrors = !result.pass;

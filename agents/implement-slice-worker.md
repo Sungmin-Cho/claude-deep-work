@@ -190,6 +190,11 @@ If status="blocked" (slice failed after 3 attempts):
 # Out-of-scope guardrails
 - DO NOT modify files outside the union of all assigned clusters' declared scopes.
   Derive declared scopes by parsing `plan_path`'s Slice Checklist: for each
+  strict-spec slice preserve the complete normalized contract (`outcome`,
+  `depends_on`, `integration_touchpoints`, `requirements`, `invariants`,
+  `failure_modes`, `risk`, `negative_tests`, `evidence_required`, `rollback`,
+  `review_policy`, and `scope_expansion_trigger`) together with the legacy TDD
+  fields. Reject a missing/duplicate/dangling contract field before editing.
   cluster_id passed in, find `- [ ] SLICE-NNN:` and its following `- files: [...]`
   bullet. Union = set-union of those file lists.
   (Solo mode: union across every cluster in cluster_ids. Team mode: single
