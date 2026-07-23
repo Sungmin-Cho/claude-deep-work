@@ -125,3 +125,39 @@ test('v6.14 immutable plan authority binds carriers and excludes progress',()=>{
   const writableRelease=structuredClone(projection);writableRelease.slices[1].write_scope.production=['src/release.js'];
   assert.throws(()=>compileImmutablePlanAuthorityV2(writableRelease),/release-slice-write-scope/);
 });
+
+test('first-RED Plan authority recomputes the exact VerificationSpecV2 digest and replan epoch',()=>{
+  const verificationSpec={schema_version:2,executable:{kind:'node-toolchain',name:'node',
+    supported_patches_sha256:'1'.repeat(64)},
+  args:['--test','--test-reporter=tap','--','tests/a.test.js'],cwd_role:'worktree',
+  timeout_ms:30000,max_output_bytes:262144,
+  environment:{mode:'closed',values:{LANG:'C',LC_ALL:'C',TZ:'UTC'}},
+  red_failure:{adapter:'node-test-tap',adapter_version:1,expected_class:'expected-failure',
+    expected_signal:{kind:'assertion',operator:'strictEqual',
+      test_identity:{test_file:'tests/a.test.js',test_name:'fails first',start_line:3},
+      expected_digest:'2'.repeat(64),actual_digest:'3'.repeat(64),message_pattern:'fails first'}}};
+  const verificationSpecSha256=crypto.createHash('sha256')
+    .update(Buffer.from(canonicalJson(verificationSpec))).digest('hex');
+  const facts={schema_version:1,authority:'reviewed-plan',destructive:false,external_action:false,
+    has_backward_compat:true,has_migration:true,host_dependent:false,
+    source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-001']};
+  facts.facts_sha256=crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('capability-facts-v1\0'),Buffer.from(canonicalJson(facts))])).digest('hex');
+  const projection={schema_version:2,replan_epoch:'4'.repeat(64),
+    contract_binding:{mode:'strict-spec',created_by_version:'6.14.0',
+      spec_contract:{spec_id:'SPEC-FIRST-RED',spec_sha256:'5'.repeat(64),
+        spec_approved_hash:'6'.repeat(64)},risk_profile_sha256:'7'.repeat(64)},
+    capability_facts:facts,slices:[{id:'SLICE-001',slice_kind:'functional',checked:false,
+      scope_schema_version:1,files:['src/a.js','tests/a.test.js'],
+      write_scope:{failing_test:['tests/a.test.js'],production:['src/a.js'],refactor:[]},
+      verification_spec:verificationSpec,verification_spec_sha256:verificationSpecSha256}]};
+  const authority=compileImmutablePlanAuthorityV2(projection);
+  assert.equal(authority.slices[0].verification_spec_sha256,verificationSpecSha256);
+  const forged=structuredClone(projection);
+  forged.slices[0].verification_spec_sha256='8'.repeat(64);
+  assert.throws(()=>compileImmutablePlanAuthorityV2(forged),/verification-spec-digest/);
+  const stale=structuredClone(projection);
+  stale.replan_epoch='9'.repeat(64);
+  assert.notEqual(compileImmutablePlanAuthorityV2(stale).plan_authority_sha256,
+    authority.plan_authority_sha256);
+});

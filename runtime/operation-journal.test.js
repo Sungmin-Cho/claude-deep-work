@@ -90,3 +90,40 @@ test('bootstrap operation kinds have closed crash-recoverable stage tables',asyn
   await recordOperationStage(begun,'authorization-authenticated',{owned:{sha256:'1'.repeat(64)}});
   await assert.rejects(()=>recordOperationStage(begun,'test-patch-applied'),/operation-stage-kind/);
 });
+
+test('ordinary operation journals retain LF while every bootstrap producer ledger completes once',async(t)=>{
+  const {root,projectCapability}=setup();
+  const kinds=['bootstrap-failure-publish','bootstrap-abort','bootstrap-finalize',
+    'bootstrap-first-red','bootstrap-red-adoption','red-proof-publication'];
+  for(const [index,kind] of kinds.entries()){
+    await t.test(kind,async()=>{
+      const operationId=`op-${(index+1).toString(16).repeat(64).slice(0,64)}`;
+      const begun=await beginOperation({projectCapability,sessionId:'s-aaaaaaaa',kind,operationId,
+        preconditions:{authoritySha256:String(index+1).repeat(64).slice(0,64)}});
+      const journalPath=path.join(root,'.claude',
+        `deep-work.s-aaaaaaaa.op.${kind}.${operationId}.json`);
+      assert.equal(fs.readFileSync(journalPath).at(-1),0x0a,`${kind}:journal-lf`);
+      const terminal={kind,status:'completed',operation_id:operationId};
+      const receipt=await completeOperation(begun,terminal);
+      assert.equal(receipt.stage,'completed-ledger');
+      assert.deepEqual((await resumeOperation({projectCapability,operationId,
+        sessionId:'s-aaaaaaaa',kind})).result,terminal);
+      const ledgerPath=path.join(root,'.claude','deep-work.s-aaaaaaaa.completed-operations.json');
+      assert.equal(fs.readFileSync(ledgerPath).at(-1),0x0a,`${kind}:ledger-lf`);
+      await assert.rejects(()=>beginOperation({projectCapability,sessionId:'s-aaaaaaaa',kind,
+        operationId,preconditions:{authoritySha256:'f'.repeat(64)}}),/operation-id-complete/);
+    });
+  }
+});
+
+test('bootstrap crash stages are forward-only and cannot skip into another operation branch',async()=>{
+  const {projectCapability}=setup();
+  const begun=await beginOperation({projectCapability,sessionId:'s-aaaaaaaa',
+    kind:'bootstrap-abort',preconditions:{authoritySha256:'1'.repeat(64)}});
+  await recordOperationStage(begun,'authorization-authenticated');
+  await assert.rejects(()=>recordOperationStage(begun,'base-restored'),/operation-stage-order/);
+  await recordOperationStage(begun,'failure-authenticated');
+  await recordOperationStage(begun,'observed-manifest-authenticated');
+  await recordOperationStage(begun,'recovery-required-published');
+  await assert.rejects(()=>recordOperationStage(begun,'production-reverted'),/operation-stage-order/);
+});

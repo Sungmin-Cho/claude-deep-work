@@ -36,6 +36,7 @@ const { parseSpecMarkdown, specContractDigest } = require('../runtime/contract-r
 const { compilePlanProjectionV1 } = require('../runtime/plan-runtime.js');
 const { compileVerificationPlan, requiredGateIds } = require('../runtime/verification-policy-runtime.js');
 const evidenceRuntime = require('../runtime/evidence-runtime.js');
+const bootstrapRuntime = require('../runtime/bootstrap-runtime.js');
 const { compileReviewPlan } = require('../runtime/review-policy-runtime.js');
 const { DISPATCHER_GRAMMAR, PHASE5_DISPATCHER_COMMANDS, DISPATCHER_HANDLERS,
   DISPATCHER_METADATA, validateGrammarContract, parseDispatcher, dispatch } =
@@ -73,6 +74,59 @@ test('bootstrap routes expose closed dispatcher grammar and route-contract metad
   assert.throws(()=>parseDispatcher(['bootstrap','finalize','--state','/tmp/state',
     '--authorization','/tmp/authorization.json','--execution','/tmp/execution.json',
     '--widen-scope','runtime']),/unknown-flag/);
+});
+
+test('all six bootstrap commands cross the public dispatcher with exact typed arguments',async(t)=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-bootstrap-dispatch-')));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+  const session='s-aaaaaaaa',work=path.join(root,'.deep-work',session);
+  fs.mkdirSync(path.join(work,'bootstrap'),{recursive:true});
+  const state=path.join(root,'.claude',`deep-work.${session}.md`);
+  fs.writeFileSync(state,updateFrontmatterText('',{schema_version:2,session_id:session,
+    work_dir:`.deep-work/${session}`,current_phase:'implement',active_slice:'SLICE-001',
+    tdd_state:'PENDING'}));
+  const plan=writeJson(path.join(work,'plan.json'),{schema_version:2,
+    plan_authority_sha256:'a'.repeat(64),
+    slices:[{id:'SLICE-001',slice_kind:'functional'}]});
+  const files=Object.fromEntries(['authorization','failure','execution','receipt','marker','spec','write']
+    .map((name)=>[name,writeJson(path.join(work,'bootstrap',`${name}.json`),{name})]));
+  const calls=[];
+  const originals={publishBootstrapFailure:bootstrapRuntime.publishBootstrapFailure,
+    abortBootstrap:bootstrapRuntime.abortBootstrap,finalizeBootstrap:bootstrapRuntime.finalizeBootstrap,
+    runBootstrapFirstRed:bootstrapRuntime.runBootstrapFirstRed,
+    adoptBootstrapRed:bootstrapRuntime.adoptBootstrapRed,
+    publishBootstrapRedProof:bootstrapRuntime.publishBootstrapRedProof};
+  t.after(()=>Object.assign(bootstrapRuntime,originals));
+  for(const name of Object.keys(originals))bootstrapRuntime[name]=async(args)=>{
+    calls.push({name,args});return {route:name};};
+  const bridge=`op-${'1'.repeat(64)}`,transition=`op-${'2'.repeat(64)}`;
+  const routes=[
+    ['publishBootstrapFailure',['bootstrap','failure-publish','--state',state,'--authorization',
+      files.authorization,'--failure',files.failure]],
+    ['abortBootstrap',['bootstrap','abort','--state',state,'--authorization',files.authorization,
+      '--failure',files.failure]],
+    ['finalizeBootstrap',['bootstrap','finalize','--state',state,'--authorization',files.authorization,
+      '--execution',files.execution]],
+    ['runBootstrapFirstRed',['bootstrap','first-red','--state',state,'--plan',plan,'--authorization',
+      files.authorization,'--receipt',files.receipt,'--marker',files.marker,'--spec-json',files.spec,
+      '--slice','SLICE-001','--write-receipt',files.write]],
+    ['adoptBootstrapRed',['bootstrap','red-adopt','--state',state,'--plan',plan,'--authorization',
+      files.authorization,'--receipt',files.receipt,'--marker',files.marker,'--slice','SLICE-001',
+      '--bridge-operation-id',bridge]],
+    ['publishBootstrapRedProof',['bootstrap','proof-publish','--state',state,'--plan',plan,
+      '--slice','SLICE-001','--transition-operation-id',transition]],
+  ];
+  for(const [name,argv] of routes){
+    const out=await dispatch(argv,{cwd:root});
+    assert.equal(out.route,name);
+  }
+  assert.deepEqual(calls.map((row)=>row.name),routes.map((row)=>row[0]));
+  for(const row of calls){
+    assert.equal(row.args.stateCapability.projectRoot,root,row.name);
+    if(['runBootstrapFirstRed','adoptBootstrapRed','publishBootstrapRedProof'].includes(row.name))
+      assert.equal(row.args.sliceId,'SLICE-001',row.name);
+  }
 });
 
 function writeJson(file, value) { fs.writeFileSync(file, `${JSON.stringify(value)}\n`); return file; }
@@ -222,6 +276,12 @@ async function semanticFixture(entry, index) {
     arguments:path.join(workDir,'arguments.json'), profile:path.join(workDir,'profile.yaml'),
     cluster:path.join(workDir,'cluster.txt'), note:path.join(workDir,'root-cause.md'),
     specContract:path.join(workDir,'spec-contract.json'),specGate:path.join(workDir,'spec-gate.json'),
+    bootstrapAuthorization:path.join(workDir,'bootstrap-authorization.json'),
+    bootstrapFailure:path.join(workDir,'bootstrap-failure.json'),
+    bootstrapExecution:path.join(workDir,'bootstrap-execution.json'),
+    bootstrapReceipt:path.join(workDir,'bootstrap-receipt.json'),
+    bootstrapMarker:path.join(workDir,'bootstrap-marker.json'),
+    bootstrapWriteReceipt:path.join(workDir,'bootstrap-write-receipt.json'),
   };
   fs.writeFileSync(files.task, 'semantic route');
   writeJson(files.defaults, {}); writeJson(files.profileJson, {}); writeJson(files.flags, {});
@@ -250,6 +310,8 @@ async function semanticFixture(entry, index) {
   fs.writeFileSync(files.profile, 'version: 3\ndefault_preset: solo-strict\npresets:\n  solo-strict:\n    interactive_each_session:\n      - team_mode\n    defaults:\n      team_mode: solo\n');
   fs.writeFileSync(files.cluster, 'C1\n'); fs.writeFileSync(files.note, '# Root cause\n');
   writeJson(files.specContract,{});writeJson(files.specGate,{});
+  for(const file of [files.bootstrapAuthorization,files.bootstrapFailure,files.bootstrapExecution,
+    files.bootstrapReceipt,files.bootstrapMarker,files.bootstrapWriteReceipt])writeJson(file,{fixture:true});
 
   const stateCapability = platform.issueProjectStateCapability(root, state, {role:'session-state'});
   const sessionCapability = platform.issueProjectStateCapability(root, workDir,
@@ -300,6 +362,11 @@ async function semanticArgv(entry, fx) {
     'report-json':fx.files.health,'input-json':entry.id==='ask options'?fx.files.ask:fx.files.recommender,
     'result-file':fx.files.recommendation,'capability-json':fx.files.capability,'profile-file':fx.files.profile,
     'initial-preset':'solo-strict',reason:'setup',preset:'solo-strict','arguments-json':fx.files.arguments,
+    authorization:fx.files.bootstrapAuthorization,failure:fx.files.bootstrapFailure,
+    execution:fx.files.bootstrapExecution,receipt:fx.files.bootstrapReceipt,
+    marker:fx.files.bootstrapMarker,'write-receipt':fx.files.bootstrapWriteReceipt,
+    'bridge-operation-id':`op-${'7'.repeat(64)}`,
+    'transition-operation-id':`op-${'8'.repeat(64)}`,
   };
   if (entry.id === 'implement tdd transition') values.to = 'PENDING';
   if (entry.id === 'verification run') delete values['gate-id'];
@@ -712,8 +779,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 91 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 91);
+test('all 97 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 97);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -737,7 +804,7 @@ test('all 91 grammar rows cross the parser and invoke their typed route semantic
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 91);
+  assert.equal(outcomes.length, 97);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

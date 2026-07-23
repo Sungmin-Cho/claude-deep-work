@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const {execFileSync}=require('node:child_process');
 const { activateSlice, enterSliceSpike, setSliceModel, setExecutionOverride,
   setDelegationSnapshot, clearDelegationSnapshot, setClusterTakeover,
@@ -59,21 +60,63 @@ function setup() {
 test('temporary first-slice admission requires completed bridge, adoption and canonical proof publisher',()=>{
   const authority={first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'1'.repeat(64),
     bootstrap_receipt_sha256:'2'.repeat(64)};
-  const common={sliceId:'SLICE-001',verificationSpecSha256:'1'.repeat(64),authorization:authority,
+  const common={sliceId:'SLICE-001',verificationSpecSha256:'1'.repeat(64),
+    planAuthoritySha256:'3'.repeat(64),specSha256:'4'.repeat(64),
+    specApprovedHash:'5'.repeat(64),verificationPlanSha256:'6'.repeat(64),authorization:authority,
     marker:{first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'1'.repeat(64),
       bootstrap_receipt_sha256:'2'.repeat(64)},state:{tdd_state:'RED_VERIFIED',red_proof_state:'proof-pending'}};
   assert.throws(()=>assertBootstrapProductionAdmission(common),/bootstrap-proof-required/);
+  const bridgeOperationId=`op-${'7'.repeat(64)}`;
+  const adoptionOperationId=`op-${'8'.repeat(64)}`;
+  const proofOperationId=`op-${'9'.repeat(64)}`;
+  const writeOperationId=`op-${'a'.repeat(64)}`;
+  const verificationOperationId=`op-${'b'.repeat(64)}`;
+  const bridgeResultSha256='c'.repeat(64),adoptionResultSha256='d'.repeat(64);
+  const proof={schema_version:1,session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:common.planAuthoritySha256,spec_sha256:common.specSha256,
+    spec_approved_hash:common.specApprovedHash,
+    verification_plan_sha256:common.verificationPlanSha256,write_operation_id:writeOperationId,
+    write_receipt_sha256:'e'.repeat(64),verification_operation_id:verificationOperationId,
+    verification_result_sha256:'f'.repeat(64),verification_ledger_result_sha256:'0'.repeat(64),
+    transition_kind:'bootstrap-adoption',transition_operation_id:adoptionOperationId,
+    transition_ledger_result_sha256:adoptionResultSha256,
+    bootstrap_bridge_operation_id:bridgeOperationId,proof_operation_id:proofOperationId,
+    classification_digest:'1'.repeat(64),proof_sha256:null};
+  const proofPreimage=structuredClone(proof);delete proofPreimage.proof_sha256;
+  proof.proof_sha256=crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('red-proof-v1\0'),Buffer.from(require('./operation-journal.js').canonicalJson(proofPreimage))]))
+    .digest('hex');
   const accepted={...common,state:{...common.state,red_proof_state:'published',
-    red_proof_ref:'.deep-work/s-aaaaaaaa/red-proofs/proof.json',red_proof_sha256:'3'.repeat(64),
-    bootstrap_bridge_operation_id:`op-${'4'.repeat(64)}`,bootstrap_adoption_operation_id:`op-${'5'.repeat(64)}`,
-    red_proof_operation_id:`op-${'6'.repeat(64)}`},
-    bridgeReceipt:{stage:'completed-ledger',result:{bridge_consumed:true,slice_id:'SLICE-001'}},
-    adoptionReceipt:{stage:'completed-ledger',result:{status:'adopted',slice_id:'SLICE-001'}},
+    red_proof_ref:`.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`,
+    red_proof_sha256:proof.proof_sha256,bootstrap_bridge_operation_id:bridgeOperationId,
+    bootstrap_adoption_operation_id:adoptionOperationId,red_proof_operation_id:proofOperationId},
+    proof,bridgeReceipt:{operationId:bridgeOperationId,kind:'bootstrap-first-red',
+      stage:'completed-ledger',resultSha256:bridgeResultSha256,
+      result:{bridge_consumed:true,slice_id:'SLICE-001',
+        verification_result_sha256:proof.verification_result_sha256,
+        write_receipt_sha256:proof.write_receipt_sha256}},
+    adoptionReceipt:{operationId:adoptionOperationId,kind:'bootstrap-red-adoption',
+      stage:'completed-ledger',resultSha256:adoptionResultSha256,
+      result:{status:'adopted',slice_id:'SLICE-001',bridge_operation_id:bridgeOperationId}},
     proofReceipt:{stage:'completed-ledger',result:{status:'published',slice_id:'SLICE-001',
-      proof_sha256:'3'.repeat(64),red_proof_ref:'.deep-work/s-aaaaaaaa/red-proofs/proof.json'}}};
+      proof_sha256:proof.proof_sha256,red_proof_ref:
+        `.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`},
+      operationId:proofOperationId,kind:'red-proof-publication'}};
   assert.equal(assertBootstrapProductionAdmission(accepted),true);
   assert.throws(()=>assertBootstrapProductionAdmission({...accepted,sliceId:'SLICE-002'}),
     /bootstrap-first-slice/);
+  const negatives=[
+    ['pending',{bridgeReceipt:{...accepted.bridgeReceipt,stage:'verification-completed'}}],
+    ['swapped',{adoptionReceipt:{...accepted.adoptionReceipt,
+      operationId:`op-${'2'.repeat(64)}`}}],
+    ['mismatched',{proof:{...proof,verification_plan_sha256:'3'.repeat(64)}}],
+    ['under-bound',{proof:Object.fromEntries(Object.entries(proof)
+      .filter(([key])=>key!=='verification_ledger_result_sha256'))}],
+    ['missing',{proofReceipt:null}],
+  ];
+  for(const [name,change] of negatives)
+    assert.throws(()=>assertBootstrapProductionAdmission({...accepted,...change}),
+      /bootstrap-(?:proof|bridge|adoption|authority)/,name);
 });
 
 test('slice reducers mutate only their declared fields', async () => {

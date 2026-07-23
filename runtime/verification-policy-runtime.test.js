@@ -68,3 +68,40 @@ test('verification plan binds slice kind/spec map, capability facts and immutabl
   tampered.plan_sha256=crypto.createHash('sha256').update(canonicalJson(preimage)).digest('hex');
   assert.equal(validateVerificationPlan(tampered).pass,false);
 });
+
+test('first-RED verification-plan authority rejects swapped Plan, Spec and capability carriers',()=>{
+  const value=input('critical','critical');
+  const spec={schema_version:2,executable:{kind:'node-toolchain',name:'node',
+    supported_patches_sha256:'1'.repeat(64)},
+  args:['--test','--test-reporter=tap','--','runtime/first-red.test.js'],cwd_role:'worktree',
+  timeout_ms:30000,max_output_bytes:262144,
+  environment:{mode:'closed',values:{LANG:'C',LC_ALL:'C',TZ:'UTC'}},
+  red_failure:{adapter:'node-test-tap',adapter_version:1,expected_class:'expected-failure',
+    expected_signal:{kind:'contract',operator:'contract',
+      test_identity:{test_file:'runtime/first-red.test.js',test_name:'rejects production',start_line:7},
+      expected_digest:'2'.repeat(64),actual_digest:'3'.repeat(64),
+      message_pattern:'bootstrap proof required'}}};
+  const specSha=crypto.createHash('sha256').update(Buffer.from(canonicalJson(spec))).digest('hex');
+  value.planProjection.plan_authority_sha256='4'.repeat(64);
+  value.planProjection.capability_facts={schema_version:1,authority:'reviewed-plan',
+    destructive:false,external_action:false,has_backward_compat:true,has_migration:true,
+    host_dependent:true,source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-001'],
+    facts_sha256:'5'.repeat(64)};
+  value.planProjection.slices=[{id:'SLICE-001',slice_kind:'functional',checked:false,
+    verification_spec:spec,verification_spec_sha256:specSha}];
+  const plan=compileVerificationPlan(value);
+  assert.equal(plan.plan_authority_sha256,'4'.repeat(64));
+  assert.equal(plan.slice_verification_specs['SLICE-001'].verification_spec_sha256,specSha);
+  for(const [name,mutate] of [
+    ['plan authority',(copy)=>{copy.plan_authority_sha256='6'.repeat(64);}],
+    ['spec authority',(copy)=>{copy.slice_verification_specs['SLICE-001'].verification_spec_sha256=
+      '7'.repeat(64);}],
+    ['capability facts',(copy)=>{copy.capability_facts.facts_sha256='8'.repeat(64);}],
+  ]){
+    const tampered=structuredClone(plan);mutate(tampered);
+    const preimage=structuredClone(tampered);delete preimage.plan_sha256;
+    tampered.plan_sha256=crypto.createHash('sha256').update(canonicalJson(preimage)).digest('hex');
+    const result=validateVerificationPlan(tampered);
+    assert.equal(result.pass,false,name);
+  }
+});

@@ -6,6 +6,7 @@ const {
   parseSpecMarkdown,
   parsePlanContractMarkdown,
   validateSpecContract,
+  validateVerificationSpecV2,
   specContractDigest,
   computeRequirementCoverage,
 } = require('./contract-runtime.js');
@@ -134,4 +135,32 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
   assert.deepEqual(parsed.slices[1].release_gate_ids,['GATE-full-relevant-suite']);
   assert.throws(()=>parsePlanContractMarkdown(source.replace('verification_spec: null',
     `verification_spec: ${canonicalJson(verificationSpec)}`)),/release-verification-spec/);
+});
+
+test('VerificationSpecV2 closes Node TAP argv, environment, bounds and expected signal authority',()=>{
+  const value={schema_version:2,executable:{kind:'node-toolchain',name:'node',
+    supported_patches_sha256:'1'.repeat(64)},
+  args:['--test','--test-reporter=tap','--','runtime/a.test.js'],cwd_role:'worktree',
+  timeout_ms:120000,max_output_bytes:1048576,
+  environment:{mode:'closed',values:{LANG:'C',LC_ALL:'C',TZ:'UTC'}},
+  red_failure:{adapter:'node-test-tap',adapter_version:1,expected_class:'expected-failure',
+    expected_signal:{kind:'assertion',operator:'strictEqual',
+      test_identity:{test_file:'runtime/a.test.js',test_name:'fails first',start_line:11},
+      expected_digest:'2'.repeat(64),actual_digest:'3'.repeat(64),
+      message_pattern:'expected exact authority'}}};
+  assert.deepEqual(validateVerificationSpecV2(value),value);
+  const mutations=[
+    ['logical argv',{args:['--test','runtime/a.test.js']}],
+    ['ambient environment',{environment:{mode:'closed',values:{...value.environment.values,HOME:'/tmp'}}}],
+    ['timeout',{timeout_ms:120001}],
+    ['output cap',{max_output_bytes:1048577}],
+    ['alternate leaf',{red_failure:{...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,test_identity:{
+        ...value.red_failure.expected_signal.test_identity,test_file:'runtime/b.test.js'}}}}],
+    ['alternate message',{red_failure:{...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,message_pattern:''}}}],
+  ];
+  for(const [name,change] of mutations)
+    assert.throws(()=>validateVerificationSpecV2({...value,...change}),/verification-spec-v2/,name);
+  assert.throws(()=>validateVerificationSpecV2({...value,unknown:true}),/verification-spec-v2/);
 });
