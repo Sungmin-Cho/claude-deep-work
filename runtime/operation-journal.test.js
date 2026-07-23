@@ -66,3 +66,27 @@ test('completed ledger fails closed at capacity and preserves the oldest nonreus
   await assert.rejects(()=>beginOperation({projectCapability,sessionId,kind:'registry-touch',
     operationId:rows[0].operationId,preconditions:{}}),/operation-id-complete/);
 });
+
+test('bootstrap operation kinds have closed crash-recoverable stage tables',async()=>{
+  const expected={
+    'bootstrap-abort':['prepared','authorization-authenticated','failure-authenticated',
+      'observed-manifest-authenticated','production-reverted','test-reverted','base-restored',
+      'abort-receipt-published','recovery-required-published'],
+    'bootstrap-failure-publish':['prepared','failure-published','claim-committed'],
+    'bootstrap-finalize':['prepared','authorization-authenticated','execution-authenticated',
+      'receipt-precomputed','marker-committed','receipt-published'],
+    'bootstrap-first-red':['prepared','bootstrap-receipt-authenticated','failing-test-write-authenticated',
+      'verification-completed','red-state-written','bridge-consumed'],
+    'bootstrap-red-adoption':['prepared','bridge-authenticated','red-state-adopted'],
+    'red-proof-publication':['prepared','transition-authenticated','proof-published','state-committed'],
+  };
+  for(const [kind,stages] of Object.entries(expected)){
+    assert.equal(OPERATION_KINDS.has(kind),true,kind);
+    for(const stage of stages)assert.equal(WORKFLOW_STAGE_RULES[kind].includes(stage),true,`${kind}:${stage}`);
+  }
+  const {projectCapability}=setup();
+  const begun=await beginOperation({projectCapability,sessionId:'s-aaaaaaaa',kind:'bootstrap-finalize',
+    preconditions:{authorizationSha256:'1'.repeat(64),witnessSha256:'2'.repeat(64)}});
+  await recordOperationStage(begun,'authorization-authenticated',{owned:{sha256:'1'.repeat(64)}});
+  await assert.rejects(()=>recordOperationStage(begun,'test-patch-applied'),/operation-stage-kind/);
+});

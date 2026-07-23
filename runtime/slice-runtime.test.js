@@ -10,7 +10,7 @@ const { activateSlice, enterSliceSpike, setSliceModel, setExecutionOverride,
   setDelegationSnapshot, clearDelegationSnapshot, setClusterTakeover,
   clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice,migrateModelRouting,mutateState } =
   require('./slice-runtime.js');
-const {assertProductionCompletionMode}=require('./slice-runtime.js');
+const {assertProductionCompletionMode,assertBootstrapProductionAdmission}=require('./slice-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const { parseFrontmatter } = require('./frontmatter.js');
 const transaction=require('./transaction-runtime.js');
@@ -55,6 +55,26 @@ function setup() {
   return {root,state,stateCapability,workDir,receiptsDir,receiptsDirCapability,
     sessionCapability,planCapability,plan};
 }
+
+test('temporary first-slice admission requires completed bridge, adoption and canonical proof publisher',()=>{
+  const authority={first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'1'.repeat(64),
+    bootstrap_receipt_sha256:'2'.repeat(64)};
+  const common={sliceId:'SLICE-001',verificationSpecSha256:'1'.repeat(64),authorization:authority,
+    marker:{first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'1'.repeat(64),
+      bootstrap_receipt_sha256:'2'.repeat(64)},state:{tdd_state:'RED_VERIFIED',red_proof_state:'proof-pending'}};
+  assert.throws(()=>assertBootstrapProductionAdmission(common),/bootstrap-proof-required/);
+  const accepted={...common,state:{...common.state,red_proof_state:'published',
+    red_proof_ref:'.deep-work/s-aaaaaaaa/red-proofs/proof.json',red_proof_sha256:'3'.repeat(64),
+    bootstrap_bridge_operation_id:`op-${'4'.repeat(64)}`,bootstrap_adoption_operation_id:`op-${'5'.repeat(64)}`,
+    red_proof_operation_id:`op-${'6'.repeat(64)}`},
+    bridgeReceipt:{stage:'completed-ledger',result:{bridge_consumed:true,slice_id:'SLICE-001'}},
+    adoptionReceipt:{stage:'completed-ledger',result:{status:'adopted',slice_id:'SLICE-001'}},
+    proofReceipt:{stage:'completed-ledger',result:{status:'published',slice_id:'SLICE-001',
+      proof_sha256:'3'.repeat(64),red_proof_ref:'.deep-work/s-aaaaaaaa/red-proofs/proof.json'}}};
+  assert.equal(assertBootstrapProductionAdmission(accepted),true);
+  assert.throws(()=>assertBootstrapProductionAdmission({...accepted,sliceId:'SLICE-002'}),
+    /bootstrap-first-slice/);
+});
 
 test('slice reducers mutate only their declared fields', async () => {
   const f = setup();

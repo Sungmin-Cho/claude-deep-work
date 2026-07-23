@@ -41,3 +41,30 @@ test('invalid risk acceptance cannot authorize residual downgrade',()=>{
     riskAcceptances:[{}]});
   assert.equal(residual.accepted,false);assert.ok(residual.invalid_acceptance_ids.length>0);
 });
+
+test('verification plan binds slice kind/spec map, capability facts and immutable plan authority',()=>{
+  const value=input('critical','critical');
+  const spec={schema_version:2,executable:{kind:'node-toolchain',name:'node',supported_patches_sha256:'1'.repeat(64)},
+    args:['--test','--test-reporter=tap','--','runtime/a.test.js'],cwd_role:'worktree',timeout_ms:120000,
+    max_output_bytes:1048576,environment:{mode:'closed',values:{LANG:'C',LC_ALL:'C',TZ:'UTC'}},
+    red_failure:{adapter:'node-test-tap',adapter_version:1,expected_class:'expected-failure',
+      expected_signal:{kind:'assertion',operator:'strictEqual',test_identity:{test_file:'runtime/a.test.js',
+        test_name:'fails first',start_line:1},expected_digest:'2'.repeat(64),actual_digest:null,message_pattern:'fails'}}};
+  const specSha=crypto.createHash('sha256').update(Buffer.from(canonicalJson(spec))).digest('hex');
+  value.planProjection.slices=[
+    {id:'SLICE-001',slice_kind:'functional',checked:false,verification_spec:spec,verification_spec_sha256:specSha},
+    {id:'SLICE-002',slice_kind:'release-verification',checked:false,verification_spec:null,verification_spec_sha256:null},
+  ];
+  value.planProjection.plan_authority_sha256='3'.repeat(64);
+  const plan=compileVerificationPlan(value);
+  assert.equal(plan.plan_authority_sha256,'3'.repeat(64));
+  assert.deepEqual(plan.slice_verification_specs,{
+    'SLICE-001':{slice_kind:'functional',verification_spec_sha256:specSha},
+    'SLICE-002':{slice_kind:'release-verification',verification_spec_sha256:null},
+  });
+  assert.match(plan.slice_verification_specs_sha256,/^[0-9a-f]{64}$/);
+  const tampered=structuredClone(plan);tampered.slice_verification_specs['SLICE-001'].verification_spec_sha256='4'.repeat(64);
+  const preimage=structuredClone(tampered);delete preimage.plan_sha256;
+  tampered.plan_sha256=crypto.createHash('sha256').update(canonicalJson(preimage)).digest('hex');
+  assert.equal(validateVerificationPlan(tampered).pass,false);
+});

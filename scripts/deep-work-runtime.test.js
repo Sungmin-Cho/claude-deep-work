@@ -45,6 +45,31 @@ const { ROUTE_CONTRACTS } = require('./deep-work-route-contracts.js');
 
 const ROUTE_TIMESTAMP = '2026-07-13T00:00:00Z';
 
+test('bootstrap routes expose closed dispatcher grammar and route-contract metadata',()=>{
+  const rows=[
+    ['bootstrap finalize',['--state','/tmp/state','--authorization','/tmp/authorization.json',
+      '--execution','/tmp/execution.json']],
+    ['bootstrap first-red',['--state','/tmp/state','--plan','/tmp/plan.json','--authorization',
+      '/tmp/authorization.json','--receipt','/tmp/bootstrap-receipt.json','--marker','/tmp/marker.json',
+      '--spec-json','/tmp/spec.json','--slice','SLICE-001','--write-receipt','/tmp/write.json']],
+    ['bootstrap red-adopt',['--state','/tmp/state','--plan','/tmp/plan.json','--authorization',
+      '/tmp/authorization.json','--receipt','/tmp/bootstrap-receipt.json','--marker','/tmp/marker.json',
+      '--slice','SLICE-001','--bridge-operation-id',`op-${'1'.repeat(64)}`]],
+    ['bootstrap proof-publish',['--state','/tmp/state','--plan','/tmp/plan.json','--slice','SLICE-001',
+      '--transition-operation-id',`op-${'2'.repeat(64)}`]],
+  ];
+  for(const [id,args] of rows){
+    const parsed=parseDispatcher([...id.split(' '),...args]);
+    assert.equal(parsed.entry.id,id);
+    assert.doesNotThrow(()=>validateGrammarContract(parsed.entry));
+    assert.equal(DISPATCHER_HANDLERS.has(id),true,id);
+    assert.equal(ROUTE_CONTRACTS.has(id),true,id);
+  }
+  assert.throws(()=>parseDispatcher(['bootstrap','finalize','--state','/tmp/state',
+    '--authorization','/tmp/authorization.json','--execution','/tmp/execution.json',
+    '--widen-scope','runtime']),/unknown-flag/);
+});
+
 function writeJson(file, value) { fs.writeFileSync(file, `${JSON.stringify(value)}\n`); return file; }
 
 function strictFinishAuthority() {
