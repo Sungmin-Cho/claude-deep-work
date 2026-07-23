@@ -1,6 +1,6 @@
 {
   "name": "@claude-deep-work/deep-work",
-  "version": "6.13.0",
+  "version": "6.13.1",
   "engines": {
     "node": ">=22"
   },
