@@ -9,7 +9,7 @@
     "test:all": "node --test --test-concurrency=1 \"runtime/**/*.test.js\" \"hooks/**/*.test.js\" \"tests/**/*.test.js\" \"skills/**/*.test.js\" \"sensors/**/*.test.js\" \"templates/**/*.test.js\" \"scripts/**/*.test.js\"",
     "test:health": "node --test --test-concurrency=1 \"health/**/*.test.js\"",
     "test": "npm run test:all",
-    "test:runtime": "node --test runtime/*.test.js hooks/scripts/phase-guard-core.test.js hooks/scripts/verify-receipt-core.test.js"
+    "test:runtime": "node --test runtime/*.test.js hooks/scripts/hook-runtime-portability.test.js hooks/scripts/phase-guard-core.test.js hooks/scripts/verify-receipt-core.test.js"
   },
   "description": "Deep Work plugin for Claude Code and Codex (cross-platform via 24 command-equivalent skills plus deep-work entry alias) - Evidence-Driven Development Protocol with TDD enforcement, Health Engine (drift detection + fitness functions), worktree isolation, model auto-routing, receipt validation, 6-phase workflow with Phase 5 Integrate",
   "author": "sungmin",

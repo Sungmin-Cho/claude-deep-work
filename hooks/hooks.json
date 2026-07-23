@@ -8,11 +8,13 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start-adapter.js\" update-check",
+            "commandWindows": "node \"${CLAUDE_PLUGIN_ROOT}\\hooks\\scripts\\session-start-adapter.js\" update-check; exit $LASTEXITCODE",
             "timeout": 8
           },
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start-adapter.js\" sensor-detect",
+            "commandWindows": "node \"${CLAUDE_PLUGIN_ROOT}\\hooks\\scripts\\session-start-adapter.js\" sensor-detect; exit $LASTEXITCODE",
             "timeout": 8
           }
         ]
@@ -24,7 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard.sh\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-shell-adapter.js\" phase-guard",
+            "commandWindows": "node \"${CLAUDE_PLUGIN_ROOT}\\hooks\\scripts\\hook-shell-adapter.js\" phase-guard; exit $LASTEXITCODE",
             "timeout": 5
           }
         ]
@@ -36,22 +39,14 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/file-tracker.sh\"",
-            "timeout": 3
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-shell-adapter.js\" post-tool",
+            "commandWindows": "node \"${CLAUDE_PLUGIN_ROOT}\\hooks\\scripts\\hook-shell-adapter.js\" post-tool; exit $LASTEXITCODE",
+            "timeout": 6
           },
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sensor-trigger.js\"",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-transition.sh\"",
+            "commandWindows": "node \"${CLAUDE_PLUGIN_ROOT}\\hooks\\scripts\\sensor-trigger.js\"; exit $LASTEXITCODE",
             "timeout": 3
           }
         ]
@@ -63,7 +58,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/hook-shell-adapter.js\" session-end",
+            "commandWindows": "node \"${CLAUDE_PLUGIN_ROOT}\\hooks\\scripts\\hook-shell-adapter.js\" session-end; exit $LASTEXITCODE",
             "timeout": 5
           }
         ]

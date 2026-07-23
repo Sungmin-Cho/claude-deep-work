@@ -2,14 +2,14 @@
 
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { runHookScript } = require('./hook-shell-adapter.js');
 
 const PLUGIN_ROOT = path.resolve(__dirname, '../..');
 
 function probeSpec(mode, pluginRoot) {
   if (mode === 'update-check') {
     return {
-      executable: 'bash',
-      args: [path.join(pluginRoot, 'hooks', 'scripts', 'update-check.sh')],
+      hookScript: 'update-check',
     };
   }
   if (mode === 'sensor-detect') {
@@ -28,13 +28,24 @@ function runSessionStartAdapter(mode, options = {}) {
     return { status: 2, output: null, stderr: `unknown SessionStart probe: ${mode || '<missing>'}\n` };
   }
 
-  const result = run(spec.executable, spec.args, {
-    cwd: process.cwd(),
-    env: process.env,
-    encoding: 'utf8',
-    timeout: 7_000,
-    windowsHide: true,
-  });
+  const result = spec.hookScript
+    ? runHookScript(spec.hookScript, {
+      capture: true,
+      cwd: options.cwd || process.cwd(),
+      env: options.env || process.env,
+      exists: options.exists,
+      platform: options.platform,
+      pluginRoot: options.pluginRoot || PLUGIN_ROOT,
+      run,
+    })
+    : run(spec.executable, spec.args, {
+      cwd: options.cwd || process.cwd(),
+      env: options.env || process.env,
+      encoding: 'utf8',
+      shell: false,
+      timeout: 7_000,
+      windowsHide: true,
+    });
   const status = Number.isInteger(result.status) ? result.status : 1;
   const stderr = typeof result.stderr === 'string'
     ? result.stderr
