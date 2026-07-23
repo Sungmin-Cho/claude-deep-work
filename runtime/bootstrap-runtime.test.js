@@ -13,6 +13,8 @@ const {
   BOOTSTRAP_CONTROL_NAMES,
   BOOTSTRAP_EXECUTION_STAGES,
   BOOTSTRAP_REJECTION_CODES,
+  BOOTSTRAP_VERIFICATION_RESULT_KEYS,
+  BOOTSTRAP_RED_PROOF_KEYS,
   bootstrapManifestSchemaSha256,
   bootstrapCommandArgvSha256,
   normalizeNodeTestBootstrapStdout,
@@ -23,6 +25,12 @@ const {
   validateBootstrapWitness,
   validateBootstrapAuthorization,
   validateBootstrapExecutionJournal,
+  validateBootstrapExecutionJournalTransition,
+  validateBootstrapVerificationResultV2,
+  validateBootstrapRedProofV1,
+  validateBootstrapCompletionAuthority,
+  publishBootstrapFailure,
+  abortBootstrap,
   precomputeBootstrapCompletion,
 }=bootstrapRuntime;
 const {canonicalJson}=require('./operation-journal.js');
@@ -197,6 +205,9 @@ test('failure artifact durably carries rejected raw command bytes and rejects re
     /bootstrap-command-binding/);
   const noncommand=structuredClone(failure);noncommand.error_kind='patch';noncommand.command_result=null;
   assert.equal(validateBootstrapFailureArtifact(noncommand,{witness:bound,worktreeRoot:WORKTREE}).command_result,null);
+  const undeclared=structuredClone(noncommand);undeclared.observed_stage='caller-selected-stage';
+  assert.throws(()=>validateBootstrapFailureArtifact(undeclared,{witness:bound,worktreeRoot:WORKTREE}),
+    /bootstrap-failure-stage/);
 });
 
 test('authorization requires one exact human acknowledgment and three witness-bound reviews',()=>{
@@ -227,6 +238,102 @@ test('execution journal has closed stages and mutually exclusive immutable claim
   assert.throws(()=>validateBootstrapExecutionJournal(forged),/bootstrap-journal-claim/);
 });
 
+test('shared execution-journal transition authenticates prior bytes and cannot switch abort/finalize claims',()=>{
+  const prior={schema_version:1,target_session_id:'s-aaaaaaaa',authorization_sha256:'1'.repeat(64),
+    witness_sha256:'2'.repeat(64),executor_sha256:'3'.repeat(64),node_identity:witness().node_identity,
+    stage:'red-command-completed',stage_manifest_sha256:'4'.repeat(64),claim:'none',
+    claim_operation_id:null,claim_input:null,journal_sha256:null};
+  prior.journal_sha256=semantic('bootstrap-execution-journal-v1',prior,'journal_sha256');
+  const failureSha='5'.repeat(64),operationId=`op-${'6'.repeat(64)}`;
+  const claimed={...prior,stage:'abort-claimed',claim:'abort',claim_operation_id:operationId,
+    claim_input:{kind:'failure',input_journal_sha256:digest(Buffer.from(canonicalJson(prior))),
+      input_stage:prior.stage,input_manifest_sha256:prior.stage_manifest_sha256,
+      input_artifact_sha256:failureSha},journal_sha256:null};
+  claimed.journal_sha256=semantic('bootstrap-execution-journal-v1',claimed,'journal_sha256');
+  assert.equal(validateBootstrapExecutionJournalTransition(prior,claimed,{
+    priorRawSha256:claimed.claim_input.input_journal_sha256}).claim,'abort');
+  const switched={...claimed,claim:'finalize',journal_sha256:null};
+  switched.journal_sha256=semantic('bootstrap-execution-journal-v1',switched,'journal_sha256');
+  assert.throws(()=>validateBootstrapExecutionJournalTransition(claimed,switched,{
+    priorRawSha256:digest(Buffer.from(canonicalJson(claimed)))}),/bootstrap-journal-claim-switch/);
+});
+
+function verificationResult(){
+  const session='s-aaaaaaaa',operationId=`op-${'1'.repeat(64)}`;
+  const environment={mode:'closed',values:{LANG:'C',LC_ALL:'C',TZ:'UTC'}};
+  const containment={provider:'node-permission-v1',node_patch:'26.0.0',
+    worktree_realpath:WORKTREE,owned_temp_realpath:`${WORKTREE}/.deep-work/s-aaaaaaaa/tmp`,
+    logical_argv_sha256:'2'.repeat(64),effective_argv_sha256:'3'.repeat(64),
+    denied_capabilities:['child-process','native-addon','wasi','worker']};
+  const supervisor={platform:'posix',values:{},identities:{}};
+  const event={event_type:'test-failure',test_file:'runtime/a.test.js',test_name:'fails first',
+    start_line:1,error_code:'ERR_ASSERTION',error_name:'AssertionError',failure_type:'testCodeFailure',
+    operator:'strictEqual',expected_digest:'4'.repeat(64),actual_digest:'5'.repeat(64),message:'expected first'};
+  const signal={kind:'assertion',operator:'strictEqual',
+    test_identity:{test_file:'runtime/a.test.js',test_name:'fails first',start_line:1},
+    expected_digest:event.expected_digest,actual_digest:event.actual_digest,message:'expected first'};
+  const classification={adapter:'node-test-tap',adapter_version:1,observed_class:'expected-failure',
+    diagnostic_event:event,diagnostic_event_sha256:semantic('diagnostic-event-v1',event,null),
+    normalized_signal:signal,reason_code:'signal-matched'};
+  const value={schema_version:2,session_id:session,slice_id:'SLICE-001',
+    plan_authority_sha256:'6'.repeat(64),spec_sha256:'7'.repeat(64),
+    verification_plan_sha256:'8'.repeat(64),write_operation_id:`op-${'9'.repeat(64)}`,
+    verification_operation_id:operationId,
+    result_path:`.claude/deep-work.${session}.verification.${operationId}.json`,
+    executable_identity:{path:NODE_PATH,sha256:'a'.repeat(64),dev:'1',ino:'2',mode:'33261',size:'3',
+      mtime_ns:'4',node_version:'26.0.0'},
+    logical_argv:['--test','--test-reporter=tap','--','runtime/a.test.js'],
+    normalized_argv:['--no-warnings','--permission',`--allow-fs-read=${WORKTREE}`,
+      `--allow-fs-write=${containment.owned_temp_realpath}`,'--test','--test-isolation=none',
+      '--test-reporter=tap','--','runtime/a.test.js'],cwd_role:'worktree',environment,
+    environment_sha256:semantic('node-test-env-v1',environment,null),execution_containment:containment,
+    execution_containment_sha256:semantic('execution-containment-v1',containment,null),
+    supervisor_control:supervisor,supervisor_control_sha256:semantic('supervisor-control-v1',supervisor,null),
+    process:{exit_code:1,signal:null,timed_out:false,output_overflow:false,duration_ms:1,spawn_error:null},
+    raw_stdout:{base64:'',byte_length:0,sha256:EMPTY_SHA256},
+    raw_stderr:{base64:'',byte_length:0,sha256:EMPTY_SHA256},
+    pre_manifest_ref:{path:`.claude/deep-work.${session}.verification-manifest.${operationId}.pre.json`,
+      sha256:'b'.repeat(64)},
+    post_manifest_ref:{path:`.claude/deep-work.${session}.verification-manifest.${operationId}.post.json`,
+      sha256:'c'.repeat(64)},changed_paths:[],scope_disposition:'clean',classification,
+    disposition:'accepted',result_sha256:null};
+  value.result_sha256=semantic('verification-result-v2',value,'result_sha256');
+  return value;
+}
+
+test('bootstrap first-RED consumes the closed VerificationResultV2 union, not output substring prose',()=>{
+  assert.deepEqual(BOOTSTRAP_VERIFICATION_RESULT_KEYS,Object.keys(verificationResult()).sort());
+  const value=verificationResult();
+  assert.equal(validateBootstrapVerificationResultV2(value,{
+    expectedSignal:value.classification.normalized_signal}).disposition,'accepted');
+  const sideEffect=structuredClone(value);sideEffect.changed_paths=['runtime/a.js'];
+  sideEffect.scope_disposition='clean';
+  sideEffect.result_sha256=semantic('verification-result-v2',sideEffect,'result_sha256');
+  assert.throws(()=>validateBootstrapVerificationResultV2(sideEffect,{
+    expectedSignal:value.classification.normalized_signal}),/bootstrap-verification-scope/);
+  const prose=structuredClone(value);prose.classification.normalized_signal.message='some expected text only';
+  prose.result_sha256=semantic('verification-result-v2',prose,'result_sha256');
+  assert.throws(()=>validateBootstrapVerificationResultV2(prose,{
+    expectedSignal:value.classification.normalized_signal}),/bootstrap-verification-signal/);
+});
+
+test('canonical RedProofV1 binds bootstrap adoption, verified result and completed proof producer',()=>{
+  const value={schema_version:1,session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:'1'.repeat(64),spec_sha256:'2'.repeat(64),spec_approved_hash:'3'.repeat(64),
+    verification_plan_sha256:'4'.repeat(64),write_operation_id:`op-${'5'.repeat(64)}`,
+    write_receipt_sha256:'6'.repeat(64),verification_operation_id:`op-${'7'.repeat(64)}`,
+    verification_result_sha256:'8'.repeat(64),verification_ledger_result_sha256:'9'.repeat(64),
+    transition_kind:'bootstrap-adoption',transition_operation_id:`op-${'a'.repeat(64)}`,
+    transition_ledger_result_sha256:'b'.repeat(64),bootstrap_bridge_operation_id:`op-${'c'.repeat(64)}`,
+    proof_operation_id:`op-${'d'.repeat(64)}`,classification_digest:'e'.repeat(64),proof_sha256:null};
+  value.proof_sha256=semantic('red-proof-v1',value,'proof_sha256');
+  assert.deepEqual(BOOTSTRAP_RED_PROOF_KEYS,Object.keys(value).sort());
+  assert.equal(validateBootstrapRedProofV1(value).proof_sha256,value.proof_sha256);
+  const swapped=structuredClone(value);swapped.transition_kind='ordinary';
+  swapped.proof_sha256=semantic('red-proof-v1',swapped,'proof_sha256');
+  assert.throws(()=>validateBootstrapRedProofV1(swapped),/bootstrap-red-proof-transition/);
+});
+
 test('completion precomputes receipt before marker and cross-links without a digest cycle',()=>{
   const completion=precomputeBootstrapCompletion({target_session_id:'s-aaaaaaaa',authorization_sha256:'1'.repeat(64),
     witness_sha256:'2'.repeat(64),execution_sha256:'3'.repeat(64),pre_runtime_version:'6.13.0',
@@ -238,4 +345,23 @@ test('completion precomputes receipt before marker and cross-links without a dig
   assert.equal(completion.marker.bootstrap_receipt_sha256,completion.receipt.receipt_sha256);
   assert.equal(completion.receipt.completion_operation_id,completion.marker.completion_operation_id);
   assert.match(completion.marker.marker_sha256,/^[0-9a-f]{64}$/);
+  const operationReceipt={operationId:completion.receipt.completion_operation_id,
+    kind:'bootstrap-finalize',stage:'completed-ledger',result:{
+      target_session_id:'s-aaaaaaaa',
+      receipt_path:'.deep-work/s-aaaaaaaa/bootstrap/bootstrap-receipt.json',
+      receipt_sha256:completion.receipt.receipt_sha256,
+      marker_path:'.deep-work/s-aaaaaaaa/bootstrap/marker.json',
+      marker_sha256:completion.marker.marker_sha256}};
+  assert.equal(validateBootstrapCompletionAuthority({
+    receipt:completion.receipt,marker:completion.marker,operationReceipt}).receipt.receipt_sha256,
+  completion.receipt.receipt_sha256);
+  const forged=structuredClone(operationReceipt);forged.result.receipt_sha256='0'.repeat(64);
+  assert.throws(()=>validateBootstrapCompletionAuthority({
+    receipt:completion.receipt,marker:completion.marker,operationReceipt:forged}),
+  /bootstrap-completion-producer/);
+});
+
+test('post-patch failure publication and abort are public production functions',()=>{
+  assert.equal(typeof publishBootstrapFailure,'function');
+  assert.equal(typeof abortBootstrap,'function');
 });

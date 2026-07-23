@@ -47,6 +47,10 @@ const ROUTE_TIMESTAMP = '2026-07-13T00:00:00Z';
 
 test('bootstrap routes expose closed dispatcher grammar and route-contract metadata',()=>{
   const rows=[
+    ['bootstrap failure-publish',['--state','/tmp/state','--authorization','/tmp/authorization.json',
+      '--failure','/tmp/failure.json']],
+    ['bootstrap abort',['--state','/tmp/state','--authorization','/tmp/authorization.json',
+      '--failure','/tmp/failure.json']],
     ['bootstrap finalize',['--state','/tmp/state','--authorization','/tmp/authorization.json',
       '--execution','/tmp/execution.json']],
     ['bootstrap first-red',['--state','/tmp/state','--plan','/tmp/plan.json','--authorization',
@@ -61,6 +65,7 @@ test('bootstrap routes expose closed dispatcher grammar and route-contract metad
   for(const [id,args] of rows){
     const parsed=parseDispatcher([...id.split(' '),...args]);
     assert.equal(parsed.entry.id,id);
+    assert.equal(DISPATCHER_GRAMMAR.some((entry)=>entry.id===id),true,`${id}:primary-grammar`);
     assert.doesNotThrow(()=>validateGrammarContract(parsed.entry));
     assert.equal(DISPATCHER_HANDLERS.has(id),true,id);
     assert.equal(ROUTE_CONTRACTS.has(id),true,id);
@@ -358,6 +363,9 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['implement override set',[10,20,50,70]],['implement override clear',[50]],
     ['implement takeover set',[50,70]],['implement takeover clear',[50,70]],
     ['verification migrate-spec',[10,20,50,70]],['verification run',[10,20,50,70]],
+    ['bootstrap failure-publish',[10,20,50,70]],['bootstrap abort',[10,20,50,70]],
+    ['bootstrap finalize',[10,20,50,70]],['bootstrap first-red',[10,20,50,70]],
+    ['bootstrap red-adopt',[10,20,50,70]],['bootstrap proof-publish',[10,20,50,70]],
     ['evidence record contract',[10,20,50,70]],['evidence record review',[10,20,50,70]],
     ['evidence record receipt',[10,20,50,70]],
     ['test pass',[10,20,50,70]],['test retry',[10,20,50,70]],['test exhaust',[10,20,50,70]],
