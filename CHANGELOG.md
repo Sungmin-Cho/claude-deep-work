@@ -7,6 +7,17 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.1] — 2026-07-23 (Windows-portable Codex hooks)
+
+### Fixed
+
+- Codex hook execution on Windows now routes through `hooks/scripts/hook-shell-adapter.js`, a Node adapter that selects Git for Windows Bash for the underlying `.sh` scripts (`phase-guard.sh`, `file-tracker.sh`, `phase-transition.sh`, `session-end.sh`), preserves PowerShell exit codes via an explicit `commandWindows` entry (`; exit $LASTEXITCODE`), and keeps the PostToolUse tool-input flow intact end to end.
+- `hooks/hooks.json` gains `commandWindows` variants for every hook entry (`session-start-adapter.js`, `hook-shell-adapter.js`, `sensor-trigger.js`) so Windows no longer depends on a bare POSIX `bash` invocation.
+
+### Added
+
+- `hooks/scripts/hook-runtime-portability.test.js` — pins the Windows Git-Bash resolution, exit-code preservation, and PostToolUse input passthrough behavior of the new adapter.
+
 ## [6.13.0] — 2026-07-22 (Spec Contract & Evidence Policy)
 
 ### Added

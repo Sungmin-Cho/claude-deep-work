@@ -7,6 +7,17 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.13.1] — 2026-07-23 (Windows 호환 Codex hook)
+
+### Fixed
+
+- Windows에서 Codex hook 실행이 이제 `hooks/scripts/hook-shell-adapter.js`(Node adapter)를 거칩니다. 이 adapter는 기존 `.sh` 스크립트(`phase-guard.sh`, `file-tracker.sh`, `phase-transition.sh`, `session-end.sh`) 실행을 위해 Git for Windows Bash를 선택하고, `commandWindows` 항목(`; exit $LASTEXITCODE`)으로 PowerShell 종료 코드를 보존하며, PostToolUse tool-input 흐름을 끝까지 온전하게 유지합니다.
+- `hooks/hooks.json`의 모든 hook 항목(`session-start-adapter.js`, `hook-shell-adapter.js`, `sensor-trigger.js`)에 `commandWindows` variant가 추가되어, Windows가 더 이상 순수 POSIX `bash` 호출에 의존하지 않습니다.
+
+### Added
+
+- `hooks/scripts/hook-runtime-portability.test.js` — 신규 adapter의 Windows Git-Bash 경로 해석, 종료 코드 보존, PostToolUse 입력 통과 동작을 고정합니다.
+
 ## [6.13.0] — 2026-07-22 (Spec Contract & Evidence Policy)
 
 ### Added
