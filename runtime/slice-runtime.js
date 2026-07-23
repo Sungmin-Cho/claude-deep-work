@@ -261,6 +261,50 @@ function persistedScopedAssignment({stateCapability,planCapability,fields,cluste
     role:'delegation-scope'});const bytes=transaction.readSessionFile(cap);if(sha256(bytes)!==fields.delegation_sha256)
     fail('scoped-write-delegation-digest');let assignment;try{assignment=JSON.parse(bytes);}catch{fail('scoped-write-delegation-json');}
   return{assignment,delegationOperationId:fields.delegation_operation_id,delegationSha256:fields.delegation_sha256};}
+async function enforceBootstrapProductionAdmission({stateCapability,plan,sliceId,fields}){
+  const sessionId=path.basename(stateCapability.path).slice('deep-work.'.length,-3);
+  const root=stateCapability.projectRoot,control=path.join(root,'.deep-work',sessionId,'bootstrap');
+  const markerPath=path.join(control,'marker.json');
+  if(!fs.existsSync(markerPath))return;
+  const read=(file,code)=>{let stat;try{stat=fs.lstatSync(file);}catch{fail(code);}
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)fail(code);
+    try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{fail(code);}};
+  const bootstrap=require('./bootstrap-runtime.js'),transaction=require('./transaction-runtime.js');
+  const authorization=bootstrap.validateBootstrapAuthorization(read(path.join(control,'authorization.json'),
+    'bootstrap-authorization'));
+  const receipt=read(path.join(control,'bootstrap-receipt.json'),'bootstrap-receipt');
+  const marker=read(markerPath,'bootstrap-marker');
+  const project=transaction.projectCapabilityFor(stateCapability);
+  let completion;try{completion=await resumeOperation({projectCapability:project,
+    operationId:receipt.completion_operation_id,sessionId,kind:'bootstrap-finalize'});}
+  catch{fail('bootstrap-proof-required');}
+  bootstrap.validateBootstrapCompletionAuthority({receipt,marker,operationReceipt:completion});
+  const target=plan.slices?.find((row)=>row.id===sliceId);
+  if(!target)fail('bootstrap-first-slice');
+  let bridgeReceipt,adoptionReceipt,proofReceipt,proof;
+  try{
+    bridgeReceipt=await resumeOperation({projectCapability:project,
+      operationId:fields.bootstrap_bridge_operation_id,sessionId,kind:'bootstrap-first-red'});
+    adoptionReceipt=await resumeOperation({projectCapability:project,
+      operationId:fields.bootstrap_adoption_operation_id,sessionId,kind:'bootstrap-red-adoption'});
+    proofReceipt=await resumeOperation({projectCapability:project,
+      operationId:fields.red_proof_operation_id,sessionId,kind:'red-proof-publication'});
+    const proofPath=path.resolve(root,String(fields.red_proof_ref||''));
+    if(!fields.red_proof_ref||!require('./platform.js').isPathInside(root,proofPath))
+      fail('bootstrap-proof-required');
+    proof=read(proofPath,'bootstrap-proof-required');
+  }catch{fail('bootstrap-proof-required');}
+  assertBootstrapProductionAdmission({sliceId,
+    verificationSpecSha256:target.verification_spec_sha256,
+    planAuthoritySha256:plan.plan_authority_sha256,
+    specSha256:plan.contract_binding?.spec_contract?.spec_sha256,
+    specApprovedHash:plan.contract_binding?.spec_contract?.spec_approved_hash,
+    verificationPlanSha256:fields.verification_plan_sha256,
+    authorization:{first_red_slice_id:authorization.witness.first_red_slice_id,
+      first_red_verification_spec_sha256:authorization.witness.first_red_verification_spec_sha256,
+      bootstrap_receipt_sha256:receipt.receipt_sha256},
+    marker,state:fields,proof,bridgeReceipt,adoptionReceipt,proofReceipt});
+}
 async function beginScopedWrite({stateCapability,plan,planCapability,sliceId,writeClass,assignment,
   clusterId,expectedScopeSha256,runtimeExclusions=[],seam,_locksHeld=false}={}){
   if(runtimeExclusions.length||assignment!==undefined)fail('scoped-write-exclusion-authority');const transaction=require('./transaction-runtime.js');
@@ -269,6 +313,7 @@ async function beginScopedWrite({stateCapability,plan,planCapability,sliceId,wri
   const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;if(fields.current_phase!=='implement'||
       fields.active_slice!==sliceId)fail('scoped-write-state');const expectedTdd={'failing-test':'PENDING',production:'RED_VERIFIED',
     refactor:'SENSOR_CLEAN'}[writeClass];if(!expectedTdd||fields.tdd_state!==expectedTdd)fail('scoped-write-tdd-state');
+  if(writeClass==='production')await enforceBootstrapProductionAdmission({stateCapability,plan:lockedPlan,sliceId,fields});
   if(writeClass==='refactor'&&fields.fresh_sensor_required)fail('scoped-write-fresh-sensor');const persisted=persistedScopedAssignment({
     stateCapability,planCapability,fields,clusterId});const authority=deriveScopedWriteAuthority({plan:lockedPlan,sliceId,writeClass,
     assignment:persisted.assignment,clusterId,delegationOperationId:persisted.delegationOperationId,
@@ -511,7 +556,93 @@ function assertProductionCompletionMode(plan,fields){
   return true;
 }
 
+function assertBootstrapProductionAdmission({sliceId,verificationSpecSha256,planAuthoritySha256,
+  specSha256,specApprovedHash,verificationPlanSha256,authorization,marker,state,proof,
+  bridgeReceipt,adoptionReceipt,proofReceipt}={}){
+  if(!/^SLICE-\d{3}$/.test(sliceId||'')||!/^[0-9a-f]{64}$/.test(verificationSpecSha256||''))
+    fail('bootstrap-first-slice');
+  if(!authorization||authorization.first_red_slice_id!==sliceId||
+      authorization.first_red_verification_spec_sha256!==verificationSpecSha256||
+      !marker||marker.first_red_slice_id!==sliceId||
+      marker.first_red_verification_spec_sha256!==verificationSpecSha256||
+      marker.bootstrap_receipt_sha256!==authorization.bootstrap_receipt_sha256)
+    fail('bootstrap-first-slice');
+  if(state?.tdd_state!=='RED_VERIFIED'||state.red_proof_state!=='complete'||
+      !/^[0-9a-f]{64}$/.test(state.red_proof_sha256||'')||typeof state.red_proof_ref!=='string'||
+      !/^op-[0-9a-f]{64}$/.test(state.bootstrap_bridge_operation_id||'')||
+      !/^op-[0-9a-f]{64}$/.test(state.bootstrap_adoption_operation_id||'')||
+      !/^op-[0-9a-f]{64}$/.test(state.red_proof_operation_id||''))
+    fail('bootstrap-proof-required');
+  if(bridgeReceipt?.stage!=='completed-ledger'||bridgeReceipt.result?.bridge_consumed!==true||
+      bridgeReceipt.result?.slice_id!==sliceId||
+      adoptionReceipt?.stage!=='completed-ledger'||
+      adoptionReceipt.result?.slice_id!==sliceId||
+      adoptionReceipt.result?.bootstrap_bridge_operation_id!==bridgeReceipt.operationId||
+      adoptionReceipt.result?.verification_result_sha256!==
+        bridgeReceipt.result?.verification_result_sha256||
+      adoptionReceipt.result?.write_receipt_sha256!==bridgeReceipt.result?.write_receipt_sha256||
+      proofReceipt?.stage!=='completed-ledger'||
+      proofReceipt.result?.proof_sha256!==state.red_proof_sha256||
+      proofReceipt.result?.red_proof_ref!==state.red_proof_ref)
+    fail('bootstrap-proof-required');
+  const adoptionResultKeys=['bootstrap_bridge_operation_id','post_state_sha256','slice_id',
+    'verification_result_sha256','write_receipt_sha256'];
+  const proofResultKeys=['post_state_sha256','proof_sha256','red_proof_ref'];
+  if(canonicalJson(Object.keys(adoptionReceipt.result||{}).sort())!==
+      canonicalJson(adoptionResultKeys.sort())||
+    canonicalJson(Object.keys(proofReceipt.result||{}).sort())!==
+      canonicalJson(proofResultKeys.sort()))fail('bootstrap-proof-required');
+  const adoptionPreimage={session_id:proof.session_id,slice_id:sliceId,
+    plan_authority_sha256:planAuthoritySha256,
+    bootstrap_bridge_operation_id:bridgeReceipt.operationId,
+    bootstrap_bridge_ledger_result_sha256:bridgeReceipt.resultSha256,
+    verification_result_sha256:bridgeReceipt.result.verification_result_sha256,
+    write_receipt_sha256:bridgeReceipt.result.write_receipt_sha256};
+  const expectedAdoptionId=`op-${crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('bootstrap-red-adoption-v1\0'),Buffer.from(canonicalJson(adoptionPreimage)),
+  ])).digest('hex')}`;
+  const proofOperationPreimage={session_id:proof.session_id,slice_id:sliceId,
+    plan_authority_sha256:planAuthoritySha256,transition_kind:'bootstrap-adoption',
+    transition_operation_id:adoptionReceipt.operationId,
+    transition_ledger_result_sha256:adoptionReceipt.resultSha256,
+    bootstrap_bridge_operation_id:bridgeReceipt.operationId};
+  const expectedProofOperationId=`op-${crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('red-proof-publication-v1\0'),Buffer.from(canonicalJson(proofOperationPreimage)),
+  ])).digest('hex')}`;
+  if(adoptionReceipt.operationId!==expectedAdoptionId||
+    proofReceipt.operationId!==expectedProofOperationId)fail('bootstrap-authority');
+  const proofKeys=['schema_version','session_id','slice_id','plan_authority_sha256','spec_sha256',
+    'spec_approved_hash','verification_plan_sha256','write_operation_id','write_receipt_sha256',
+    'verification_operation_id','verification_result_sha256','verification_ledger_result_sha256',
+    'transition_kind','transition_operation_id','transition_ledger_result_sha256',
+    'bootstrap_bridge_operation_id','proof_operation_id','classification_digest','proof_sha256'];
+  if(!proof||canonicalJson(Object.keys(proof).sort())!==canonicalJson(proofKeys.sort())||
+      proof.schema_version!==1||proof.slice_id!==sliceId||
+      proof.plan_authority_sha256!==planAuthoritySha256||proof.spec_sha256!==specSha256||
+      proof.spec_approved_hash!==specApprovedHash||
+      proof.verification_plan_sha256!==verificationPlanSha256||
+      proof.transition_kind!=='bootstrap-adoption'||
+      proof.bootstrap_bridge_operation_id!==bridgeReceipt.operationId||
+      proof.bootstrap_bridge_operation_id!==state.bootstrap_bridge_operation_id||
+      proof.transition_operation_id!==adoptionReceipt.operationId||
+      proof.transition_operation_id!==state.bootstrap_adoption_operation_id||
+      proof.proof_operation_id!==proofReceipt.operationId||
+      proof.proof_operation_id!==state.red_proof_operation_id||
+      proof.transition_ledger_result_sha256!==adoptionReceipt.resultSha256||
+      proof.verification_result_sha256!==bridgeReceipt.result.verification_result_sha256||
+      proof.write_receipt_sha256!==bridgeReceipt.result.write_receipt_sha256||
+      proof.proof_sha256!==state.red_proof_sha256)
+    fail('bootstrap-authority');
+  const proofPreimage=structuredClone(proof);delete proofPreimage.proof_sha256;
+  const expectedProof=crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('red-proof-v1\0'),Buffer.from(canonicalJson(proofPreimage)),
+  ])).digest('hex');
+  if(expectedProof!==proof.proof_sha256)fail('bootstrap-proof-required');
+  return true;
+}
+
 module.exports = {activateSlice,enterSliceSpike,setSliceModel,setExecutionOverride,
   setClusterTakeover,clearClusterTakeover,migrateModelRouting,mutateState,setDelegationSnapshot,
   clearDelegationSnapshot,
-  beginScopedWrite,acceptScopedWrite,resetSlice,completeSlice,assertProductionCompletionMode};
+  beginScopedWrite,acceptScopedWrite,resetSlice,completeSlice,assertProductionCompletionMode,
+  assertBootstrapProductionAdmission};

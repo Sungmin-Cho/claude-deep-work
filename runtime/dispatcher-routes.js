@@ -5,6 +5,7 @@ const platform=require('./platform.js');const frontmatter=require('./frontmatter
 const session=require('./session-store.js');const git=require('./git-runtime.js');const journal=require('./operation-journal.js');
 const planRuntime=require('./plan-runtime.js');const slice=require('./slice-runtime.js');const phase=require('./phase-runtime.js');
 const testRuntime=require('./test-runtime.js');const verification=require('./verification-runtime.js');
+const bootstrap=require('./bootstrap-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -370,6 +371,26 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('verification run',({f,cwd})=>{const bound=readPlan(f,cwd);if(bound.value.contract_binding?.mode==='strict-spec')
     fail('strict-spec-capture-required');return verification.runVerification({stateCapability:bound.state,planCapability:bound.cap,
     plan:bound.value,sliceId:f.slice,gateId:f['gate-id'],spec:jsonFile(resolveInput(f['spec-json'],cwd)),expectedOutcome:f.expected,cwd:bound.state.projectRoot});});
+  on('bootstrap failure-publish',({f,cwd})=>bootstrap.publishBootstrapFailure({
+    stateCapability:stateCapability(f,cwd),authorizationPath:resolveInput(f.authorization,cwd),
+    failurePath:resolveInput(f.failure,cwd)}));
+  on('bootstrap abort',({f,cwd})=>bootstrap.abortBootstrap({
+    stateCapability:stateCapability(f,cwd),authorizationPath:resolveInput(f.authorization,cwd),
+    failurePath:resolveInput(f.failure,cwd)}));
+  on('bootstrap finalize',({f,cwd})=>bootstrap.finalizeBootstrap({stateCapability:stateCapability(f,cwd),
+    authorizationPath:resolveInput(f.authorization,cwd),executionPath:resolveInput(f.execution,cwd)}));
+  on('bootstrap first-red',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.runBootstrapFirstRed({
+    stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+    authorizationPath:resolveInput(f.authorization,cwd),receiptPath:resolveInput(f.receipt,cwd),
+    markerPath:resolveInput(f.marker,cwd),specPath:resolveInput(f['spec-json'],cwd),
+    writeReceiptPath:resolveInput(f['write-receipt'],cwd)});});
+  on('bootstrap red-adopt',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.adoptBootstrapRed({
+    stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+    authorizationPath:resolveInput(f.authorization,cwd),receiptPath:resolveInput(f.receipt,cwd),
+    markerPath:resolveInput(f.marker,cwd),bridgeOperationId:f['bridge-operation-id']});});
+  on('bootstrap proof-publish',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.publishBootstrapRedProof({
+    stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+    transitionOperationId:f['transition-operation-id']});});
   on('evidence record contract',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
     try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
     const contractRuntime=require('./contract-runtime.js');const specContract=contractRuntime.parseSpecMarkdown(

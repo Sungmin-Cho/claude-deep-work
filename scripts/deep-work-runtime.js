@@ -67,6 +67,12 @@ const rows=[
   grammar('implement takeover clear',['state','plan','receipts-dir','cluster-file','delegation-snapshot']),
   grammar('verification migrate-spec',['plan','scope','id','spec-json'],[],{scope:['slice','quality-gate']}),
   grammar('verification run',['state','plan','spec-json','expected'],['slice','gate-id'],{expected:['must-fail','must-pass']}),
+  grammar('bootstrap failure-publish',['state','authorization','failure']),
+  grammar('bootstrap abort',['state','authorization','failure']),
+  grammar('bootstrap finalize',['state','authorization','execution']),
+  grammar('bootstrap first-red',['state','plan','authorization','receipt','marker','spec-json','slice','write-receipt']),
+  grammar('bootstrap red-adopt',['state','plan','authorization','receipt','marker','slice','bridge-operation-id']),
+  grammar('bootstrap proof-publish',['state','plan','slice','transition-operation-id']),
   grammar('evidence record contract',['state','plan','gate-id','spec','evidence-id']),
   grammar('evidence record review',['state','plan','gate-id','review-plan-json','reports-json','evidence-id']),
   grammar('evidence record receipt',['state','plan','gate-id','receipts-json','verification-result-json','evidence-id']),
@@ -144,6 +150,8 @@ function parseDispatcher(argv){
   for(const name of ['at','finished-at'])if(Object.hasOwn(flags,name)&&!Number.isFinite(Date.parse(flags[name])))fail('timestamp',flags[name]);
   for(const name of ['expected-sha256','scope-sha256','verification-sha256','sensor-results-sha256','pre-manifest-sha256'])
     if(Object.hasOwn(flags,name)&&!/^[0-9a-f]{64}$/.test(flags[name]))fail('sha256',name);
+  for(const name of ['bridge-operation-id','transition-operation-id'])
+    if(Object.hasOwn(flags,name)&&!/^op-[0-9a-f]{64}$/.test(flags[name]))fail('operation-id',name);
   for(const name of ['temp-operation-id','operation-id','verification-operation-id','after-write-operation-id','delegation-operation-id'])
     if(Object.hasOwn(flags,name)&&!/^op-[0-9a-f]{32,64}$/.test(flags[name]))fail('operation-id',name);
   for(const name of ['snapshot','delegation-snapshot'])if(Object.hasOwn(flags,name)&&

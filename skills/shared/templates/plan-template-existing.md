@@ -69,12 +69,17 @@
 ## Spec Contract Binding
 
 ```json
-{"schema_version":1,"mode":"strict-spec","created_by_version":"6.13.0","spec_contract":{"schema_version":1,"spec_id":"SPEC-EXAMPLE","spec_sha256":"[64-hex]","spec_approved_hash":"[64-hex]"},"risk_profile_sha256":"[64-hex]"}
+{"schema_version":1,"mode":"strict-spec","created_by_version":"6.14.0","spec_contract":{"schema_version":1,"spec_id":"SPEC-EXAMPLE","spec_sha256":"[64-hex]","spec_approved_hash":"[64-hex]"},"risk_profile_sha256":"[64-hex]"}
 ```
+
+replan_epoch: null
+capability_facts: {"schema_version":1,"authority":"reviewed-plan","destructive":false,"external_action":false,"has_backward_compat":true,"has_migration":true,"host_dependent":false,"source_requirement_ids":["REQ-001"],"source_slice_ids":["SLICE-001","SLICE-999"],"facts_sha256":"[64-hex]"}
 
 ## Slice Checklist
 
 - [ ] SLICE-001: [Goal]
+  - slice_kind: functional
+  - verification_spec: {"schema_version":2,"executable":{"kind":"node-toolchain","name":"node","supported_patches_sha256":"[64-hex]"},"args":["--test","--test-reporter=tap","--","path/to/failing.test.js"],"cwd_role":"worktree","timeout_ms":120000,"max_output_bytes":1048576,"environment":{"mode":"closed","values":{"LANG":"C","LC_ALL":"C","TZ":"UTC"}},"red_failure":{"adapter":"node-test-tap","adapter_version":1,"expected_class":"expected-failure","expected_signal":{"kind":"assertion","operator":"strictEqual","test_identity":{"test_file":"path/to/failing.test.js","test_name":"[exact test name]","start_line":1},"expected_digest":"[64-hex-or-null]","actual_digest":null,"message_pattern":"[normalized pattern]"}}}
   - outcome: [Observable vertical result]
   - files: [...]
   - depends_on: []
@@ -99,6 +104,35 @@
   - steps:
     1. ...
     2. ...
+
+- [ ] SLICE-999: Final release verification
+  - slice_kind: release-verification
+  - verification_spec: null
+  - outcome: all authenticated release gates pass without writes
+  - files: []
+  - depends_on: [SLICE-001]
+  - integration_touchpoints: [release gate catalog]
+  - requirements: [REQ-001]
+  - invariants: [INV-001]
+  - failure_modes: [FM-001]
+  - risk: { class: medium, score: 6, triggers: [release-verification] }
+  - negative_tests: [NEG-001]
+  - evidence_required: [GATE-full-relevant-suite]
+  - rollback: { method: none, verification: [GATE-rollback-rehearsal] }
+  - review_policy: dual
+  - scope_expansion_trigger: [any write]
+  - failing_test: none
+  - verification_scope: [npm test, npm pack --dry-run --json]
+  - release_gate_ids: [GATE-full-relevant-suite]
+  - verification_cmd: none
+  - expected_output: authenticated pass
+  - code_sketch: none
+  - spec_checklist: [REQ-001]
+  - contract: [write-free]
+  - acceptance_threshold: all
+  - size: S
+  - steps:
+    1. Verify all bound release gate receipts.
 
 ## Open Questions
 

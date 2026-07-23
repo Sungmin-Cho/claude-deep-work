@@ -24,6 +24,8 @@ const OPERATION_KINDS = new Set([
   'handoff-publish', 'integrate-loop-update',
   'evidence-capture', 'evidence-publish',
   'evidence-adapter-run',
+  'bootstrap-abort', 'bootstrap-failure-publish', 'bootstrap-finalize',
+  'bootstrap-first-red', 'bootstrap-red-adoption', 'red-proof-publication',
 ]);
 
 const COMPLETED_LEDGER_LIMIT = 512;
@@ -79,6 +81,15 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'evidence-publish':['artifact-written','package-written','state-written','pointer-committed'],
   'evidence-adapter-run':['validated','prepared','acted','observed','recovered','asserted','failed-pending-cleanup',
     'cleanup-run','cleanup-failed','complete'],
+  'bootstrap-abort':['prepared','authorization-authenticated','failure-authenticated','observed-manifest-authenticated',
+    'production-reverted','test-reverted','base-restored','abort-receipt-published','recovery-required-published'],
+  'bootstrap-failure-publish':['prepared','failure-published','claim-committed'],
+  'bootstrap-finalize':['prepared','authorization-authenticated','execution-authenticated','receipt-precomputed',
+    'marker-committed','receipt-published'],
+  'bootstrap-first-red':['prepared','bootstrap-receipt-authenticated','failing-test-write-authenticated',
+    'verification-completed','red-state-written','bridge-consumed'],
+  'bootstrap-red-adoption':['prepared','bridge-authenticated','red-authority-adopted'],
+  'red-proof-publication':['prepared','proof-published','proof-ref-committed'],
 });
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
@@ -223,6 +234,14 @@ async function recordOperationStage(handle, stage, details = {}) {
         fail('operation-stage-mismatch', 'operation stage replay differs');
       }
       return journal;
+    }
+    if(handle.kind.startsWith('bootstrap-')||handle.kind==='red-proof-publication'){
+      const stages=WORKFLOW_STAGE_RULES[handle.kind];
+      const current=journal.stages.at(-1)?.stage;
+      const expected=stages[stages.indexOf(current)+1];
+      const recoveryBranch=handle.kind==='bootstrap-abort'&&current==='observed-manifest-authenticated'&&
+        stage==='recovery-required-published';
+      if(stage!==expected&&!recoveryBranch)fail('operation-stage-order',`${current}->${stage}`);
     }
     journal.stage = stage;
     journal.owned = details.owned === undefined ? journal.owned : details.owned;
