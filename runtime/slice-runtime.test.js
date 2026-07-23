@@ -67,11 +67,24 @@ test('temporary first-slice admission requires completed bridge, adoption and ca
       bootstrap_receipt_sha256:'2'.repeat(64)},state:{tdd_state:'RED_VERIFIED',red_proof_state:'proof-pending'}};
   assert.throws(()=>assertBootstrapProductionAdmission(common),/bootstrap-proof-required/);
   const bridgeOperationId=`op-${'7'.repeat(64)}`;
-  const adoptionOperationId=`op-${'8'.repeat(64)}`;
-  const proofOperationId=`op-${'9'.repeat(64)}`;
   const writeOperationId=`op-${'a'.repeat(64)}`;
   const verificationOperationId=`op-${'b'.repeat(64)}`;
   const bridgeResultSha256='c'.repeat(64),adoptionResultSha256='d'.repeat(64);
+  const canonicalJson=require('./operation-journal.js').canonicalJson;
+  const operationId=(domain,preimage)=>`op-${crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from(`${domain}\0`),Buffer.from(canonicalJson(preimage))])).digest('hex')}`;
+  const adoptionOperationId=operationId('bootstrap-red-adoption-v1',{
+    session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:common.planAuthoritySha256,
+    bootstrap_bridge_operation_id:bridgeOperationId,
+    bootstrap_bridge_ledger_result_sha256:bridgeResultSha256,
+    verification_result_sha256:'f'.repeat(64),write_receipt_sha256:'e'.repeat(64)});
+  const proofOperationId=operationId('red-proof-publication-v1',{
+    session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:common.planAuthoritySha256,transition_kind:'bootstrap-adoption',
+    transition_operation_id:adoptionOperationId,
+    transition_ledger_result_sha256:adoptionResultSha256,
+    bootstrap_bridge_operation_id:bridgeOperationId});
   const proof={schema_version:1,session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
     plan_authority_sha256:common.planAuthoritySha256,spec_sha256:common.specSha256,
     spec_approved_hash:common.specApprovedHash,
@@ -84,9 +97,9 @@ test('temporary first-slice admission requires completed bridge, adoption and ca
     classification_digest:'1'.repeat(64),proof_sha256:null};
   const proofPreimage=structuredClone(proof);delete proofPreimage.proof_sha256;
   proof.proof_sha256=crypto.createHash('sha256').update(Buffer.concat([
-    Buffer.from('red-proof-v1\0'),Buffer.from(require('./operation-journal.js').canonicalJson(proofPreimage))]))
+    Buffer.from('red-proof-v1\0'),Buffer.from(canonicalJson(proofPreimage))]))
     .digest('hex');
-  const accepted={...common,state:{...common.state,red_proof_state:'published',
+  const accepted={...common,state:{...common.state,red_proof_state:'complete',
     red_proof_ref:`.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`,
     red_proof_sha256:proof.proof_sha256,bootstrap_bridge_operation_id:bridgeOperationId,
     bootstrap_adoption_operation_id:adoptionOperationId,red_proof_operation_id:proofOperationId},
@@ -97,10 +110,13 @@ test('temporary first-slice admission requires completed bridge, adoption and ca
         write_receipt_sha256:proof.write_receipt_sha256}},
     adoptionReceipt:{operationId:adoptionOperationId,kind:'bootstrap-red-adoption',
       stage:'completed-ledger',resultSha256:adoptionResultSha256,
-      result:{status:'adopted',slice_id:'SLICE-001',bridge_operation_id:bridgeOperationId}},
-    proofReceipt:{stage:'completed-ledger',result:{status:'published',slice_id:'SLICE-001',
-      proof_sha256:proof.proof_sha256,red_proof_ref:
-        `.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`},
+      result:{slice_id:'SLICE-001',post_state_sha256:'2'.repeat(64),
+        verification_result_sha256:proof.verification_result_sha256,
+        write_receipt_sha256:proof.write_receipt_sha256,
+        bootstrap_bridge_operation_id:bridgeOperationId}},
+    proofReceipt:{stage:'completed-ledger',result:{post_state_sha256:'3'.repeat(64),
+      proof_sha256:proof.proof_sha256,
+      red_proof_ref:`.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`},
       operationId:proofOperationId,kind:'red-proof-publication'}};
   assert.equal(assertBootstrapProductionAdmission(accepted),true);
   assert.throws(()=>assertBootstrapProductionAdmission({...accepted,sliceId:'SLICE-002'}),

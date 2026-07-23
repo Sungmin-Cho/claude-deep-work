@@ -1039,11 +1039,42 @@ test('public first-RED, adoption, proof and production admission authenticate th
       '--authorization',fixture.authorizationPath,'--receipt',receiptPath,'--marker',markerPath,
       '--slice','SLICE-001','--bridge-operation-id',bridge.operation_id],{cwd:fixture.root});
     assert.equal(adoption.operation_receipt.stage,'completed-ledger');
+    const expectedAdoptionPreimage={session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+      plan_authority_sha256:plan.plan_authority_sha256,
+      bootstrap_bridge_operation_id:bridge.operation_id,
+      bootstrap_bridge_ledger_result_sha256:bridge.operation_receipt.resultSha256,
+      verification_result_sha256:bridge.verification_result_sha256,
+      write_receipt_sha256:bridge.write_receipt_sha256};
+    assert.equal(adoption.operation_id,`op-${digest(Buffer.concat([
+      Buffer.from('bootstrap-red-adoption-v1\0'),
+      Buffer.from(canonicalJson(expectedAdoptionPreimage))]))}`);
+    assert.deepEqual(Object.keys(adoption.operation_receipt.result).sort(),[
+      'bootstrap_bridge_operation_id','post_state_sha256','slice_id',
+      'verification_result_sha256','write_receipt_sha256'].sort());
+    assert.deepEqual(adoption.operation_receipt.result,{
+      slice_id:'SLICE-001',post_state_sha256:adoption.post_state_sha256,
+      verification_result_sha256:bridge.verification_result_sha256,
+      write_receipt_sha256:bridge.write_receipt_sha256,
+      bootstrap_bridge_operation_id:bridge.operation_id});
     const published=await dispatch(['bootstrap','proof-publish','--state',fixture.statePath,
       '--plan',planPath,'--slice','SLICE-001','--transition-operation-id',adoption.operation_id],
     {cwd:fixture.root});
     assert.equal(published.operation_receipt.stage,'completed-ledger');
+    const expectedProofPreimage={session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+      plan_authority_sha256:plan.plan_authority_sha256,transition_kind:'bootstrap-adoption',
+      transition_operation_id:adoption.operation_id,
+      transition_ledger_result_sha256:adoption.operation_receipt.resultSha256,
+      bootstrap_bridge_operation_id:bridge.operation_id};
+    assert.equal(published.operation_id,`op-${digest(Buffer.concat([
+      Buffer.from('red-proof-publication-v1\0'),
+      Buffer.from(canonicalJson(expectedProofPreimage))]))}`);
+    assert.deepEqual(Object.keys(published.operation_receipt.result).sort(),[
+      'post_state_sha256','proof_sha256','red_proof_ref'].sort());
+    assert.deepEqual(published.operation_receipt.result,{
+      proof_sha256:published.proof_sha256,red_proof_ref:published.red_proof_ref,
+      post_state_sha256:published.post_state_sha256});
     const fields=parseFrontmatter(fs.readFileSync(fixture.statePath,'utf8')).fields;
+    assert.equal(fields.red_proof_state,'complete');
     const proofPath=path.join(fixture.root,...fields.red_proof_ref.split('/'));
     const proofBytes=fs.readFileSync(proofPath);
     const proof=JSON.parse(proofBytes);

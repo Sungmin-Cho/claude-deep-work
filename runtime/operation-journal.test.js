@@ -77,8 +77,8 @@ test('bootstrap operation kinds have closed crash-recoverable stage tables',asyn
       'receipt-precomputed','marker-committed','receipt-published'],
     'bootstrap-first-red':['prepared','bootstrap-receipt-authenticated','failing-test-write-authenticated',
       'verification-completed','red-state-written','bridge-consumed'],
-    'bootstrap-red-adoption':['prepared','bridge-authenticated','red-state-adopted'],
-    'red-proof-publication':['prepared','transition-authenticated','proof-published','state-committed'],
+    'bootstrap-red-adoption':['prepared','bridge-authenticated','red-authority-adopted'],
+    'red-proof-publication':['prepared','proof-published','proof-ref-committed'],
   };
   for(const [kind,stages] of Object.entries(expected)){
     assert.equal(OPERATION_KINDS.has(kind),true,kind);
