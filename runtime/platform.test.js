@@ -4531,6 +4531,33 @@ test('owned directory lock inspector authenticates the exact claim child set',as
   }finally{remove(root);}
 });
 
+test('owned directory lock inspector rejects same-byte child replacement and transient claims',
+  async()=>{
+    for(const kind of ['same-byte-replacement','transient-ticket']){
+      const root=makeRepo(`dw-lock-inspect-${kind}-`);
+      try{
+        const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
+          {role:'lock',allowMissingLeaf:true});
+        await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+          processIdentity:'c'.repeat(32)},async(claim)=>{
+          const claims=`${lock.path}.claims`;
+          if(kind==='same-byte-replacement'){
+            const ticket=path.join(claims,fs.readdirSync(claims)[0]);
+            const replacement=`${ticket}.replacement`;
+            fs.writeFileSync(replacement,fs.readFileSync(ticket));
+            fs.renameSync(replacement,ticket);
+          }else{
+            const transient=path.join(claims,'transient-ticket');
+            fs.writeFileSync(transient,'foreign\n');
+            fs.unlinkSync(transient);
+          }
+          assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),
+            /lock-inspect-(?:claim|children|unstable)/);
+        });
+      }finally{remove(root);}
+    }
+  });
+
 test('directory lock retries when a canonical claim disappears during authenticated read', () => {
   const root = makeRepo('dw-lock-release-race-');
   try {

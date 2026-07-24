@@ -510,7 +510,7 @@ function fixtureRepositoryIdentity(root,baseHead){
 }
 
 function bootstrapControlFixture({stage='green-command-completed',partialPatch=false,
-  firstRedSpecSha256='2'.repeat(64),testSource=null}={}){
+  firstRedSpecSha256='2'.repeat(64),testSource=null,runtimeLedger=false}={}){
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-bootstrap-control-')));
   require('node:child_process').execFileSync('git',['init','-q'],{cwd:root});
   require('node:child_process').execFileSync('git',['config','user.email','bootstrap@example.invalid'],{cwd:root});
@@ -527,6 +527,9 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   const statePath=path.join(root,'.claude','deep-work.s-aaaaaaaa.md');
   fs.writeFileSync(statePath,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\n'+
     'current_phase: implement\nactive_slice: SLICE-001\ntdd_state: PENDING\n---\n');
+  if(runtimeLedger)fs.writeFileSync(path.join(root,'.claude',
+    'deep-work.s-aaaaaaaa.completed-operations.json'),
+  Buffer.from(canonicalJson({version:1,receipts:[]})));
   const baseManifest=fixtureManifest(root,'base',repositoryIdentity,baseHead);
   fs.writeFileSync(path.join(root,'runtime','a.test.js'),testSource||[
     "'use strict';",
@@ -894,6 +897,36 @@ test('public finalizer rejects pollution in the idle operation lock claims direc
   {cwd:fixture.root}),/bootstrap-(?:manifest|lock)/);
   });
 
+test('public finalizer rejects an operation-lock acquire-update-release during capture',async(t)=>{
+  const fixture=bootstrapControlFixture({runtimeLedger:true});
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  const ledgerPath=path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.completed-operations.json');
+  const lock=platform.issueProjectStateCapability(fixture.root,path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.operations.lock'),{role:'lock',allowMissingLeaf:true});
+  const original=fs.readFileSync;
+  let ledgerReads=0,armed=true;
+  fs.readFileSync=(file,...args)=>{
+    const bytes=original(file,...args);
+    if(armed&&path.resolve(file)===ledgerPath&&(ledgerReads+=1)===2){
+      armed=false;
+      platform.withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+        processIdentity:'b'.repeat(32)},()=>{
+        fs.writeFileSync(ledgerPath,Buffer.from(canonicalJson(
+          {version:1,receipts:[],mutation_epoch:1})));
+      });
+    }
+    return bytes;
+  };
+  try{
+    await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
+      '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+    {cwd:fixture.root}),/bootstrap-manifest-(?:file|lock|unstable)/);
+  }finally{fs.readFileSync=original;}
+  assert.equal(fs.existsSync(path.join(fixture.control,'marker.json')),false);
+  assert.equal(fs.existsSync(path.join(fixture.control,'bootstrap-receipt.json')),false);
+});
+
 test('public finalizer treats structurally incomplete unrelated operation journals as governed state',
   async(t)=>{
   const cases=[
@@ -1007,6 +1040,41 @@ test('public finalizer resumes every operation and publication crash seam with o
   });
 });
 
+test('public finalizer reauthenticates current post state after a prepublication claim crash',
+  async(t)=>{
+    for(const [name,mutate] of [
+      ['tracked',(fixture)=>fs.writeFileSync(path.join(fixture.root,'runtime','a.js'),
+        'module.exports = 99;\n')],
+      ['untracked',(fixture)=>fs.writeFileSync(path.join(fixture.root,'foreign.js'),
+        'module.exports = true;\n')],
+    ]){
+      await t.test(name,async()=>{
+        const fixture=bootstrapControlFixture();
+        t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+        const argv=['bootstrap','finalize','--state',fixture.statePath,'--authorization',
+          fixture.authorizationPath,'--execution',fixture.executionPath];
+        const original=transaction.atomicWriteSessionFile;
+        let armed=true;
+        transaction.atomicWriteSessionFile=(capability,bytes)=>{
+          const result=original(capability,bytes);
+          if(armed&&capability.path===fixture.journalPath){
+            armed=false;throw new Error('crash-after-prepublication-claim');
+          }
+          return result;
+        };
+        try{await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),
+          /crash-after-prepublication-claim/);}
+        finally{transaction.atomicWriteSessionFile=original;}
+        assert.equal(fs.existsSync(path.join(fixture.control,'marker.json')),false);
+        assert.equal(fs.existsSync(path.join(fixture.control,'bootstrap-receipt.json')),false);
+        mutate(fixture);
+        await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),/bootstrap-manifest/);
+        assert.equal(fs.existsSync(path.join(fixture.control,'marker.json')),false);
+        assert.equal(fs.existsSync(path.join(fixture.control,'bootstrap-receipt.json')),false);
+      });
+    }
+  });
+
 test('public abort resumes every restoration and ledger crash seam without a second reverse',async(t)=>{
   const stages=['authorization-authenticated','failure-authenticated',
     'observed-manifest-authenticated','production-reverted','test-reverted',
@@ -1059,6 +1127,36 @@ test('public abort resumes every restoration and ledger crash seam without a sec
     finally{journalRuntime.completeOperation=original;}
     assert.equal((await dispatch(argv,{cwd:fixture.root})).status,'aborted-restored');
   });
+});
+
+test('public abort rejects a caller-bound current journal that crosses terminal branches',async(t)=>{
+  const fixture=bootstrapControlFixture({stage:'green-command-completed'});
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  const failurePath=path.join(fixture.control,'failure.json');
+  writeBootstrapCanonical(failurePath,nonCommandFailure(fixture));
+  const original=journalRuntime.recordOperationStage;
+  let armed=true;
+  journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
+    const result=await original(handle,stage,...rest);
+    if(armed&&stage==='observed-manifest-authenticated'){
+      armed=false;
+      const file=path.join(fixture.root,'.claude',
+        `deep-work.s-aaaaaaaa.op.bootstrap-abort.${handle.operationId}.json`);
+      const value=JSON.parse(fs.readFileSync(file,'utf8'));
+      for(const next of ['production-reverted','test-reverted','base-restored',
+        'abort-receipt-published','recovery-required-published']){
+        value.stage=next;
+        value.stages.push({stage:next,at:new Date().toISOString(),details:{}});
+      }
+      fs.writeFileSync(file,Buffer.from(canonicalJson(value)));
+    }
+    return result;
+  };
+  try{
+    await assert.rejects(()=>dispatch(['bootstrap','abort','--state',fixture.statePath,
+      '--authorization',fixture.authorizationPath,'--failure',failurePath],
+    {cwd:fixture.root}),/bootstrap-manifest-runtime-journal/);
+  }finally{journalRuntime.recordOperationStage=original;}
 });
 
 test('first-RED bridge, adoption and proof are public functions, not validator-only substitutes',()=>{
