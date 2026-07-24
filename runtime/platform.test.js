@@ -4515,7 +4515,7 @@ test('owned directory lock inspector authenticates the exact claim child set',as
     const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
       {role:'lock',allowMissingLeaf:true});
     const processIdentity='a'.repeat(32);
-    await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+    await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,inspectable:true,
       processIdentity},async(claim)=>{
       const projection=inspectOwnedDirectoryClaim(lock,claim);
       assert.equal(projection.pid,process.pid);
@@ -4537,7 +4537,7 @@ test('owned directory lock inspector accepts a completed authenticated heartbeat
     try{
       const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
         {role:'lock',allowMissingLeaf:true});
-      await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+      await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,inspectable:true,
         processIdentity:'b'.repeat(32)},async(claim)=>{
         const before=fs.statSync(path.join(lock.path,'heartbeat.json')).ino;
         await new Promise((resolve)=>setTimeout(resolve,80));
@@ -4557,7 +4557,7 @@ test('owned directory lock inspector rejects same-byte child replacement and tra
       try{
         const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
           {role:'lock',allowMissingLeaf:true});
-        await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+        await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,inspectable:true,
           processIdentity:'c'.repeat(32)},async(claim)=>{
           const claims=`${lock.path}.claims`;
           if(kind==='same-byte-replacement'){
