@@ -38,13 +38,22 @@ test('compiler embeds durable compatibility proof and evidence accepts the exact
 test('v6.14 reviewed capability facts require backward compatibility and migration gates',()=>{
   const value=input('critical','critical');
   value.planProjection.contract_binding.created_by_version='6.14.0';
+  value.specContract.compatibility={legacy_inputs:'explicit legacy reads',migration:'explicit migration'};
+  value.specContract.requirements=[
+    {id:'REQ-001',evidence_gate_ids:['GATE-backward-compat']},
+    {id:'REQ-002',evidence_gate_ids:['GATE-targeted-tests']},
+  ];
   value.planProjection.capability_facts={schema_version:1,authority:'reviewed-plan',
     destructive:false,external_action:false,has_backward_compat:true,has_migration:true,
     host_dependent:false,source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-001'],
     facts_sha256:'5'.repeat(64)};
   value.planProjection.plan_authority_sha256='3'.repeat(64);
-  value.planProjection.slices=[{id:'SLICE-001',slice_kind:'release-verification',checked:false,
-    verification_spec:null,verification_spec_sha256:null}];
+  value.planProjection.slices=[
+    {id:'SLICE-001',slice_kind:'release-verification',checked:false,
+      verification_spec:null,verification_spec_sha256:null},
+    {id:'SLICE-002',slice_kind:'functional',checked:false,
+      verification_spec_sha256:'6'.repeat(64)},
+  ];
   const plan=compileVerificationPlan(value);
   assert.equal(plan.required_gate_ids.includes('GATE-backward-compat'),true);
   assert.equal(plan.required_gate_ids.includes('GATE-migration-dry-run'),true);
@@ -53,6 +62,13 @@ test('v6.14 reviewed capability facts require backward compatibility and migrati
     falseClaim.planProjection.capability_facts[key]=false;
     assert.throws(()=>compileVerificationPlan(falseClaim),/verification-capability-facts/,key);
   }
+  const absent=structuredClone(value);
+  absent.specContract.compatibility={};
+  absent.planProjection.capability_facts.has_backward_compat=false;
+  absent.planProjection.capability_facts.has_migration=false;
+  const withoutCompatibility=compileVerificationPlan(absent);
+  assert.equal(withoutCompatibility.required_gate_ids.includes('GATE-backward-compat'),false);
+  assert.equal(withoutCompatibility.required_gate_ids.includes('GATE-migration-dry-run'),false);
 });
 
 test('invalid risk acceptance cannot authorize residual downgrade',()=>{

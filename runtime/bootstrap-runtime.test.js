@@ -239,6 +239,13 @@ test('authorization requires one exact human acknowledgment and three witness-bo
   const stale=structuredClone(value);stale.review_report_refs[0].witness_sha256='0'.repeat(64);
   stale.authorization_sha256=semantic('bootstrap-authorization-v1',stale,'authorization_sha256');
   assert.throws(()=>validateBootstrapAuthorization(stale),/bootstrap-review-witness/);
+  const duplicateIdentity=structuredClone(value);
+  duplicateIdentity.review_report_refs[1].reviewer_identity=
+    duplicateIdentity.review_report_refs[0].reviewer_identity;
+  duplicateIdentity.authorization_sha256=semantic(
+    'bootstrap-authorization-v1',duplicateIdentity,'authorization_sha256');
+  assert.throws(()=>validateBootstrapAuthorization(duplicateIdentity),
+    /bootstrap-review-(?:identity|witness)/);
 });
 
 test('execution journal has closed stages and mutually exclusive immutable claim input',()=>{
@@ -520,7 +527,7 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
     first_red_verification_spec_sha256:firstRedSpecSha256});
   const reviewReports=['structural','semantic','executability'].map((role)=>{
     const value=bootstrapReviewReport(role,bound.witness_sha256);
-    const bytes=Buffer.from(canonicalJson(value));
+    const bytes=Buffer.from(`${canonicalJson(value)}\n`);
     const relative=`.deep-work/s-aaaaaaaa/bootstrap/patch-review-${role}.json`;
     return {value,bytes,ref:{role,path:relative,sha256:digest(bytes),
       reviewer_identity:value.reviewer_identity,witness_sha256:value.witness_sha256,
@@ -769,6 +776,18 @@ test('public finalizer authenticates review reports, executor, patches and curre
     ['production-patch-bytes',(fixture)=>fs.appendFileSync(path.join(fixture.control,'patch.diff'),'changed')],
     ['current-post-manifest',(fixture)=>fs.writeFileSync(path.join(fixture.root,'runtime','a.js'),
       'module.exports = 3;\n')],
+    ['live-head-drift',(fixture)=>require('node:child_process').execFileSync(
+      'git',['commit','--allow-empty','-qm','head drift'],{cwd:fixture.root})],
+    ['untracked-addition',(fixture)=>fs.writeFileSync(path.join(fixture.root,'untracked.js'),
+      'module.exports = true;\n')],
+    ['index-only-drift',(fixture)=>{
+      const file=path.join(fixture.root,'runtime','a.js');
+      fs.writeFileSync(file,'module.exports = 9;\n');
+      require('node:child_process').execFileSync('git',['add','runtime/a.js'],{cwd:fixture.root});
+      fs.writeFileSync(file,'module.exports = 2;\n');
+    }],
+    ['assume-unchanged-index-flag',(fixture)=>require('node:child_process').execFileSync(
+      'git',['update-index','--assume-unchanged','runtime/a.js'],{cwd:fixture.root})],
   ];
   for(const [name,mutate] of cases)await t.test(name,async()=>{
     const fixture=bootstrapControlFixture();
@@ -778,6 +797,26 @@ test('public finalizer authenticates review reports, executor, patches and curre
       '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
     {cwd:fixture.root}),/bootstrap-(?:authorization|authority|manifest|review|executor|patch)/);
   });
+});
+
+test('public finalizer requires exact one-terminal-LF review bytes after complete rebinding',async(t)=>{
+  const fixture=bootstrapControlFixture();
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  const report=fixture.reviewReports[0].value;
+  const noLf=Buffer.from(canonicalJson(report));
+  fs.writeFileSync(path.join(fixture.root,...fixture.reviewReports[0].ref.path.split('/')),noLf);
+  const refs=fixture.reviewReports.map((row,index)=>index===0?
+    {...row.ref,sha256:digest(noLf)}:row.ref);
+  const authorization=bootstrapAuthorization(fixture.authorization.witness,refs);
+  const journal=bootstrapJournal({authorization,stage:fixture.journal.stage,
+    manifestSha:fixture.journal.stage_manifest_sha256});
+  const execution=bootstrapExecution(journal,authorization);
+  writeBootstrapCanonical(fixture.authorizationPath,authorization);
+  writeBootstrapCanonical(fixture.journalPath,journal);
+  writeBootstrapCanonical(fixture.executionPath,execution);
+  await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
+    '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+  {cwd:fixture.root}),/bootstrap-review-(?:canonical|authority)/);
 });
 
 test('public finalizer resumes every operation and publication crash seam with one producer',async(t)=>{
@@ -923,7 +962,8 @@ function exactFirstRedSpec(overrides={}){
   return {...base,...overrides};
 }
 
-async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=null}={}){
+async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=null,
+  planAuthorityOverride=null}={}){
   const specBytes=Buffer.from(canonicalJson(spec));
   const specSha256=digest(specBytes);
   const fixture=bootstrapControlFixture({firstRedSpecSha256:specSha256,testSource});
@@ -944,7 +984,8 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
     scope_schema_version:1,files:['runtime/a.js','runtime/a.test.js'],
     write_scope:{failing_test:['runtime/a.test.js'],production:['runtime/a.js'],refactor:[]},
     verification_spec:spec,verification_spec_sha256:specSha256}]};
-  plan.plan_authority_sha256=compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
+  plan.plan_authority_sha256=planAuthorityOverride||
+    compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
   const verificationPlan=compileVerificationPlan({riskProfile:{class:'critical',score:10,
     triggers:['bootstrap']},riskProfileSha256:'2'.repeat(64),
   policySnapshot:{risk_class:'critical',profile:'critical',
@@ -983,6 +1024,42 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
     '--write-receipt',begun.receiptCapability.path];
   return {fixture,plan,planPath,planCapability,verificationPlan,begun,accepted,argv};
 }
+
+test('public first-RED recomputes immutable Plan authority and authenticates verification carriers',
+  async(t)=>{
+    await t.test('caller-selected-plan-authority',async()=>{
+      const prepared=await preparePublicFirstRedCase(t,{planAuthorityOverride:'f'.repeat(64)});
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-first-red-plan/);
+    });
+    const mutateVerificationPlan=async(name,mutate)=>{
+      await t.test(name,async()=>{
+        const prepared=await preparePublicFirstRedCase(t);
+        const changed=structuredClone(prepared.verificationPlan);
+        mutate(changed);
+        changed.slice_verification_specs_sha256=digest({
+          plan_authority_sha256:changed.plan_authority_sha256,
+          capability_facts:changed.capability_facts,
+          slice_verification_specs:changed.slice_verification_specs,
+        });
+        delete changed.plan_sha256;
+        changed.plan_sha256=digest(Buffer.from(canonicalJson(changed)));
+        const state=fs.readFileSync(prepared.fixture.statePath,'utf8');
+        fs.writeFileSync(prepared.fixture.statePath,updateFrontmatterText(state,{
+          verification_plan_json:canonicalJson(changed),
+          verification_plan_sha256:changed.plan_sha256,
+        }));
+        await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+          /bootstrap-first-red-plan/);
+      });
+    };
+    await mutateVerificationPlan('verification-plan-authority',(plan)=>{
+      plan.plan_authority_sha256='e'.repeat(64);
+    });
+    await mutateVerificationPlan('selected-slice-spec',(plan)=>{
+      plan.slice_verification_specs['SLICE-001'].verification_spec_sha256='d'.repeat(64);
+    });
+  });
 
 test('public first-RED, adoption, proof and production admission authenticate the complete producer chain',
   async(t)=>{

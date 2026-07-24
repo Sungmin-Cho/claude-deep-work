@@ -96,8 +96,7 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
         message_pattern:'carrier unavailable'}}};
   const facts={schema_version:1,authority:'reviewed-plan',destructive:false,external_action:false,
     has_backward_compat:true,has_migration:true,host_dependent:true,
-    source_requirement_ids:['REQ-001','REQ-006'],
-    source_slice_ids:['SLICE-001','SLICE-002']};
+    source_requirement_ids:['REQ-006'],source_slice_ids:['SLICE-002']};
   facts.facts_sha256=require('node:crypto').createHash('sha256').update(Buffer.concat([
     Buffer.from('capability-facts-v1\0'),Buffer.from(canonicalJson(facts))])).digest('hex');
   const source=['## Spec Contract Binding','```json',JSON.stringify({schema_version:1,mode:'strict-spec',
@@ -127,7 +126,12 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
     '  - contract: [write-free]','  - acceptance_threshold: all','  - size: S','  - steps:',
     '    1. verify'].join('\n');
   const context={specIndex:{requirements:new Set(['REQ-001','REQ-006']),
-    invariants:new Set(['INV-001']),failureModes:new Set(),negativeTests:new Set(['NEG-001'])}};
+    invariants:new Set(['INV-001']),failureModes:new Set(),negativeTests:new Set(['NEG-001']),
+    compatibility:{legacy_inputs:'explicit legacy reads',migration:'explicit migration'},
+    requirementRows:[
+      {id:'REQ-001',evidence_gate_ids:['GATE-negative-tests']},
+      {id:'REQ-006',evidence_gate_ids:['GATE-backward-compat']},
+    ]}};
   const parsed=parsePlanContractMarkdown(source,context);
   assert.equal(parsed.capability_facts.facts_sha256,facts.facts_sha256);
   assert.equal(parsed.slices[0].slice_kind,'functional');
@@ -150,6 +154,14 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
     withFacts({source_requirement_ids:['REQ-001']}),
     withFacts({source_slice_ids:['SLICE-001']}),
   ])assert.throws(()=>parsePlanContractMarkdown(candidate,context),/capability-facts/);
+  const absentCompatibility={...context,specIndex:{...context.specIndex,compatibility:{}}};
+  const falseFacts={...facts,has_backward_compat:false,has_migration:false};
+  delete falseFacts.facts_sha256;
+  falseFacts.facts_sha256=require('node:crypto').createHash('sha256').update(Buffer.concat([
+    Buffer.from('capability-facts-v1\0'),Buffer.from(canonicalJson(falseFacts))])).digest('hex');
+  const falseSource=source.replace(`capability_facts: ${canonicalJson(facts)}`,
+    `capability_facts: ${canonicalJson(falseFacts)}`);
+  assert.doesNotThrow(()=>parsePlanContractMarkdown(falseSource,absentCompatibility));
 });
 
 test('VerificationSpecV2 closes Node TAP argv, environment, bounds and expected signal authority',()=>{
