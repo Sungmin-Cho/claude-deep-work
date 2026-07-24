@@ -793,6 +793,11 @@ test('public finalizer authenticates review reports, executor, patches and curre
       'git',['commit','--allow-empty','-qm','head drift'],{cwd:fixture.root})],
     ['untracked-addition',(fixture)=>fs.writeFileSync(path.join(fixture.root,'untracked.js'),
       'module.exports = true;\n')],
+    ['tracked-deletion',(fixture)=>fs.unlinkSync(path.join(fixture.root,'runtime','a.js'))],
+    ['untracked-symlink',(fixture)=>fs.symlinkSync('runtime/a.js',
+      path.join(fixture.root,'untracked-link.js'))],
+    ['untracked-hardlink',(fixture)=>fs.linkSync(path.join(fixture.root,'runtime','a.js'),
+      path.join(fixture.root,'untracked-hardlink.js'))],
     ['index-only-drift',(fixture)=>{
       const file=path.join(fixture.root,'runtime','a.js');
       fs.writeFileSync(file,'module.exports = 9;\n');
