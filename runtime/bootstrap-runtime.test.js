@@ -77,9 +77,17 @@ function specOutput({root=WORKTREE,name='bootstrap contract',duration='1.25',sta
 const normalizationContext=(root=WORKTREE)=>({worktreeRoot:root,nodeIdentity:witness().node_identity,
   reporter:'spec',argv:witness().red_argv});
 
+function fixtureBootstrapExcludedPaths(){
+  return [
+    ...BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`),
+    '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock',
+    '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock.claims',
+  ].sort();
+}
+
 function manifest(phase='base'){
   const value={schema_version:1,repository_identity_sha256:'1'.repeat(64),base_head_oid:'2'.repeat(40),phase,
-    excluded_paths:BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`).sort(),
+    excluded_paths:fixtureBootstrapExcludedPaths(),
     entries:[{path:'runtime/a.js',type:'file',mode:'33188',size:1,sha256:'3'.repeat(64)}]};
   value.manifest_sha256=semantic('bootstrap-manifest-v1',value,'manifest_sha256');
   return value;
@@ -115,10 +123,13 @@ function witness(overrides={}){
 }
 
 test('bootstrap manifest has one exact control exclusion schema and rejects widening',()=>{
-  assert.equal(BOOTSTRAP_CONTROL_NAMES.length,19);
-  assert.equal(BOOTSTRAP_CONTROL_NAMES.includes('bootstrap-control.lock'),true);
-  assert.equal(BOOTSTRAP_CONTROL_NAMES.includes('bootstrap-control.lock.claims'),true);
+  assert.equal(BOOTSTRAP_CONTROL_NAMES.length,17);
   const checked=validateBootstrapManifest(manifest(),{sessionId:'s-aaaaaaaa'});
+  assert.equal(checked.excluded_paths.length,19);
+  assert.equal(checked.excluded_paths.includes(
+    '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock'),true);
+  assert.equal(checked.excluded_paths.includes(
+    '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock.claims'),true);
   assert.equal(checked.phase,'base');
   assert.match(bootstrapManifestSchemaSha256('s-aaaaaaaa'),/^[0-9a-f]{64}$/);
   const widened=structuredClone(checked);widened.excluded_paths.push('.deep-work/s-aaaaaaaa/bootstrap/*');
@@ -454,8 +465,7 @@ function nodeIdentity(){
 }
 
 function fixtureManifest(root,phase,repositoryIdentity,baseHead){
-  const excluded=new Set(BOOTSTRAP_CONTROL_NAMES
-    .map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`));
+  const excluded=new Set(fixtureBootstrapExcludedPaths());
   const entries=[];
   const walk=(directory,relativeRoot='')=>{
     for(const name of fs.readdirSync(directory)
@@ -477,7 +487,7 @@ function fixtureManifest(root,phase,repositoryIdentity,baseHead){
   entries.sort((left,right)=>Buffer.compare(Buffer.from(left.path),Buffer.from(right.path)));
   const value={schema_version:1,repository_identity_sha256:repositoryIdentity,
     base_head_oid:baseHead,phase,
-    excluded_paths:BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`).sort(),
+    excluded_paths:fixtureBootstrapExcludedPaths(),
     entries,manifest_sha256:null};
   value.manifest_sha256=semantic('bootstrap-manifest-v1',value,'manifest_sha256');
   return value;
