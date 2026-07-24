@@ -452,15 +452,27 @@ function nodeIdentity(){
 }
 
 function fixtureManifest(root,phase,repositoryIdentity,baseHead){
-  const output=require('node:child_process').execFileSync(
-    'git',['ls-files','-z','--cached','--others','--exclude-standard'],{cwd:root});
-  const names=output.subarray(0,-1).toString('utf8').split('\0').filter(Boolean).sort();
-  const entries=names.map((relative)=>{
-    const file=path.join(root,...relative.split('/'));
-    const stat=fs.statSync(file);
-    const bytes=fs.readFileSync(file);
-    return {path:relative,type:'file',mode:String(stat.mode),size:bytes.length,sha256:digest(bytes)};
-  });
+  const excluded=new Set(BOOTSTRAP_CONTROL_NAMES
+    .map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`));
+  const entries=[];
+  const walk=(directory,relativeRoot='')=>{
+    for(const name of fs.readdirSync(directory)
+      .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)))){
+      const relative=relativeRoot?`${relativeRoot}/${name}`:name;
+      if(relative==='.git'||excluded.has(relative))continue;
+      const file=path.join(directory,name);
+      const stat=fs.lstatSync(file);
+      if(stat.isDirectory()&&!stat.isSymbolicLink())walk(file,relative);
+      else{
+        assert.equal(stat.isFile()&&!stat.isSymbolicLink(),true,relative);
+        const bytes=fs.readFileSync(file);
+        entries.push({path:relative,type:'file',mode:String(stat.mode),size:bytes.length,
+          sha256:digest(bytes)});
+      }
+    }
+  };
+  walk(root);
+  entries.sort((left,right)=>Buffer.compare(Buffer.from(left.path),Buffer.from(right.path)));
   const value={schema_version:1,repository_identity_sha256:repositoryIdentity,
     base_head_oid:baseHead,phase,
     excluded_paths:BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`).sort(),
@@ -496,6 +508,9 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   const baseHead=require('node:child_process').execFileSync('git',['rev-parse','HEAD'],
     {cwd:root,encoding:'utf8'}).trim();
   const repositoryIdentity=fixtureRepositoryIdentity(root,baseHead);
+  const statePath=path.join(root,'.claude','deep-work.s-aaaaaaaa.md');
+  fs.writeFileSync(statePath,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\n'+
+    'current_phase: implement\nactive_slice: SLICE-001\ntdd_state: PENDING\n---\n');
   const baseManifest=fixtureManifest(root,'base',repositoryIdentity,baseHead);
   fs.writeFileSync(path.join(root,'runtime','a.test.js'),testSource||[
     "'use strict';",
@@ -515,9 +530,6 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   const reverseBytes=require('node:child_process').execFileSync('git',['diff','--binary','-R','--',
     'runtime/a.js'],{cwd:root});
   const postManifest=fixtureManifest(root,'post',repositoryIdentity,baseHead);
-  const statePath=path.join(root,'.claude','deep-work.s-aaaaaaaa.md');
-  fs.writeFileSync(statePath,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\n'+
-    'current_phase: implement\nactive_slice: SLICE-001\ntdd_state: PENDING\n---\n');
   const control=path.join(root,'.deep-work','s-aaaaaaaa','bootstrap');
   fs.mkdirSync(control,{recursive:true});
   for(const [name,bytes] of [['test.patch',testPatch],['test-reverse.patch',testReverse],
@@ -793,6 +805,11 @@ test('public finalizer authenticates review reports, executor, patches and curre
       'git',['commit','--allow-empty','-qm','head drift'],{cwd:fixture.root})],
     ['untracked-addition',(fixture)=>fs.writeFileSync(path.join(fixture.root,'untracked.js'),
       'module.exports = true;\n')],
+    ['ignored-addition',(fixture)=>{
+      fs.mkdirSync(path.join(fixture.root,'.deep-work','ignored'));
+      fs.writeFileSync(path.join(fixture.root,'.deep-work','ignored','addition.js'),
+        'module.exports = true;\n');
+    }],
     ['tracked-deletion',(fixture)=>fs.unlinkSync(path.join(fixture.root,'runtime','a.js'))],
     ['untracked-symlink',(fixture)=>fs.symlinkSync('runtime/a.js',
       path.join(fixture.root,'untracked-link.js'))],
@@ -986,6 +1003,9 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
   const specSha256=digest(specBytes);
   const fixture=bootstrapControlFixture({firstRedSpecSha256:specSha256,testSource});
   t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  await dispatch(['bootstrap','finalize','--state',fixture.statePath,
+    '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+  {cwd:fixture.root});
   const work=path.join(fixture.root,'.deep-work','s-aaaaaaaa');
   const planPath=path.join(work,'plan.json');
   const specPath=path.join(fixture.control,'first-red-spec.json');
@@ -1038,15 +1058,36 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
   const accepted=await acceptScopedWrite({stateCapability:fixture.stateCapability,planCapability,plan,
     sliceId:'SLICE-001',operationId:begun.operationId,
     preManifestSha256:begun.preManifestSha256});
-  await dispatch(['bootstrap','finalize','--state',fixture.statePath,
-    '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
-  {cwd:fixture.root});
   const argv=['bootstrap','first-red','--state',fixture.statePath,'--plan',planPath,
     '--authorization',fixture.authorizationPath,'--receipt',
     path.join(fixture.control,'bootstrap-receipt.json'),'--marker',
     path.join(fixture.control,'marker.json'),'--spec-json',specPath,'--slice','SLICE-001',
     '--write-receipt',begun.receiptCapability.path];
   return {fixture,plan,planPath,planCapability,verificationPlan,begun,accepted,argv};
+}
+
+function rebindPreparedPlan(prepared){
+  const plan=structuredClone(prepared.plan);
+  plan.replan_epoch=1;
+  plan.plan_authority_sha256=compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
+  const verificationPlan=structuredClone(prepared.verificationPlan);
+  verificationPlan.plan_authority_sha256=plan.plan_authority_sha256;
+  verificationPlan.plan_projection_sha256=digest(Buffer.from(canonicalJson(plan)));
+  verificationPlan.slice_verification_specs_sha256=digest(Buffer.from(canonicalJson({
+    plan_authority_sha256:verificationPlan.plan_authority_sha256,
+    capability_facts:verificationPlan.capability_facts,
+    slice_verification_specs:verificationPlan.slice_verification_specs,
+  })));
+  delete verificationPlan.plan_sha256;
+  verificationPlan.plan_sha256=digest(Buffer.from(canonicalJson(verificationPlan)));
+  fs.writeFileSync(prepared.planPath,Buffer.from(canonicalJson(plan)));
+  fs.writeFileSync(prepared.fixture.statePath,updateFrontmatterText(
+    fs.readFileSync(prepared.fixture.statePath,'utf8'),{
+      plan_authority_sha256:plan.plan_authority_sha256,
+      verification_plan_json:canonicalJson(verificationPlan),
+      verification_plan_sha256:verificationPlan.plan_sha256,
+    }));
+  return {plan,verificationPlan};
 }
 
 test('public first-RED recomputes immutable Plan authority and authenticates verification carriers',
@@ -1085,6 +1126,35 @@ test('public first-RED recomputes immutable Plan authority and authenticates ver
     });
   });
 
+test('public adoption and proof reject a stale first-RED producer chain after replan',async(t)=>{
+  await t.test('adoption',async()=>{
+    const prepared=await preparePublicFirstRedCase(t);
+    const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+    rebindPreparedPlan(prepared);
+    await assert.rejects(()=>dispatch(['bootstrap','red-adopt','--state',
+      prepared.fixture.statePath,'--plan',prepared.planPath,'--authorization',
+      prepared.fixture.authorizationPath,'--receipt',
+      path.join(prepared.fixture.control,'bootstrap-receipt.json'),'--marker',
+      path.join(prepared.fixture.control,'marker.json'),'--slice','SLICE-001',
+      '--bridge-operation-id',bridge.operation_id],{cwd:prepared.fixture.root}),
+    /bootstrap-red-adoption-(?:bridge|plan)/);
+  });
+  await t.test('proof',async()=>{
+    const prepared=await preparePublicFirstRedCase(t);
+    const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+    const adoption=await dispatch(['bootstrap','red-adopt','--state',prepared.fixture.statePath,
+      '--plan',prepared.planPath,'--authorization',prepared.fixture.authorizationPath,
+      '--receipt',path.join(prepared.fixture.control,'bootstrap-receipt.json'),'--marker',
+      path.join(prepared.fixture.control,'marker.json'),'--slice','SLICE-001',
+      '--bridge-operation-id',bridge.operation_id],{cwd:prepared.fixture.root});
+    rebindPreparedPlan(prepared);
+    await assert.rejects(()=>dispatch(['bootstrap','proof-publish','--state',
+      prepared.fixture.statePath,'--plan',prepared.planPath,'--slice','SLICE-001',
+      '--transition-operation-id',adoption.operation_id],{cwd:prepared.fixture.root}),
+    /bootstrap-proof-(?:bridge|plan|transition)/);
+  });
+});
+
 test('public first-RED, adoption, proof and production admission authenticate the complete producer chain',
   async(t)=>{
     assert.match(BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256,/^[0-9a-f]{64}$/);
@@ -1104,6 +1174,9 @@ test('public first-RED, adoption, proof and production admission authenticate th
     const specSha256=digest(specBytes);
     const fixture=bootstrapControlFixture({firstRedSpecSha256:specSha256});
     t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+    const finalized=await dispatch(['bootstrap','finalize','--state',fixture.statePath,
+      '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+    {cwd:fixture.root});
     const work=path.join(fixture.root,'.deep-work','s-aaaaaaaa');
     const planPath=path.join(work,'plan.json');
     const specPath=path.join(fixture.control,'first-red-spec.json');
@@ -1155,9 +1228,6 @@ test('public first-RED, adoption, proof and production admission authenticate th
       sliceId:'SLICE-001',operationId:begun.operationId,
       preManifestSha256:begun.preManifestSha256});
     assert.equal(accepted.operationReceipt.stage,'completed-ledger');
-    const finalized=await dispatch(['bootstrap','finalize','--state',fixture.statePath,
-      '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
-    {cwd:fixture.root});
     const receiptPath=path.join(fixture.control,'bootstrap-receipt.json');
     const markerPath=path.join(fixture.control,'marker.json');
     const bridge=await dispatch(['bootstrap','first-red','--state',fixture.statePath,'--plan',planPath,
