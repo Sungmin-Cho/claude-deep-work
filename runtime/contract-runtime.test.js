@@ -95,7 +95,8 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
         test_name:'rejects absent carrier',start_line:10},expected_digest:'2'.repeat(64),actual_digest:null,
         message_pattern:'carrier unavailable'}}};
   const facts={schema_version:1,authority:'reviewed-plan',destructive:false,external_action:false,
-    has_backward_compat:true,has_migration:true,host_dependent:true,source_requirement_ids:['REQ-001'],
+    has_backward_compat:true,has_migration:true,host_dependent:true,
+    source_requirement_ids:['REQ-001','REQ-006'],
     source_slice_ids:['SLICE-001','SLICE-002']};
   facts.facts_sha256=require('node:crypto').createHash('sha256').update(Buffer.concat([
     Buffer.from('capability-facts-v1\0'),Buffer.from(canonicalJson(facts))])).digest('hex');
@@ -116,7 +117,7 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
     '  - acceptance_threshold: all','  - size: M','  - steps:','    1. fail','    2. pass',
     '- [ ] SLICE-002: Release verification','  - slice_kind: release-verification',
     '  - verification_spec: null','  - outcome: release gates','  - files: []','  - depends_on: [SLICE-001]',
-    '  - integration_touchpoints: [release]','  - requirements: [REQ-001]','  - invariants: [INV-001]',
+    '  - integration_touchpoints: [release]','  - requirements: [REQ-006]','  - invariants: [INV-001]',
     '  - failure_modes: []','  - risk: { class: medium, score: 5, triggers: [] }',
     '  - negative_tests: [NEG-001]','  - evidence_required: [GATE-negative-tests]',
     '  - rollback: { method: none, verification: [GATE-recovery] }','  - review_policy: dual',
@@ -125,8 +126,9 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
     '  - expected_output: pass','  - code_sketch: none','  - spec_checklist: [REQ-001]',
     '  - contract: [write-free]','  - acceptance_threshold: all','  - size: S','  - steps:',
     '    1. verify'].join('\n');
-  const parsed=parsePlanContractMarkdown(source,{specIndex:{requirements:new Set(['REQ-001']),
-    invariants:new Set(['INV-001']),failureModes:new Set(),negativeTests:new Set(['NEG-001'])}});
+  const context={specIndex:{requirements:new Set(['REQ-001','REQ-006']),
+    invariants:new Set(['INV-001']),failureModes:new Set(),negativeTests:new Set(['NEG-001'])}};
+  const parsed=parsePlanContractMarkdown(source,context);
   assert.equal(parsed.capability_facts.facts_sha256,facts.facts_sha256);
   assert.equal(parsed.slices[0].slice_kind,'functional');
   assert.equal(parsed.slices[0].verification_spec.red_failure.expected_signal.test_identity.start_line,10);
@@ -135,6 +137,19 @@ test('strict v6.14 Plan parses exact capability facts and functional/release ver
   assert.deepEqual(parsed.slices[1].release_gate_ids,['GATE-full-relevant-suite']);
   assert.throws(()=>parsePlanContractMarkdown(source.replace('verification_spec: null',
     `verification_spec: ${canonicalJson(verificationSpec)}`)),/release-verification-spec/);
+  const withFacts=(changes)=>{
+    const changed={...facts,...changes};delete changed.facts_sha256;
+    changed.facts_sha256=require('node:crypto').createHash('sha256').update(Buffer.concat([
+      Buffer.from('capability-facts-v1\0'),Buffer.from(canonicalJson(changed))])).digest('hex');
+    return source.replace(`capability_facts: ${canonicalJson(facts)}`,
+      `capability_facts: ${canonicalJson(changed)}`);
+  };
+  for(const candidate of [
+    withFacts({has_backward_compat:false}),
+    withFacts({has_migration:false}),
+    withFacts({source_requirement_ids:['REQ-001']}),
+    withFacts({source_slice_ids:['SLICE-001']}),
+  ])assert.throws(()=>parsePlanContractMarkdown(candidate,context),/capability-facts/);
 });
 
 test('VerificationSpecV2 closes Node TAP argv, environment, bounds and expected signal authority',()=>{

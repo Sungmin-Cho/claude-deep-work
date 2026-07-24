@@ -383,8 +383,8 @@ test('post-patch failure publication and abort are public production functions',
   assert.equal(typeof abortBootstrap,'function');
 });
 
-function bootstrapAuthorization(bound=witness()){
-  const review_report_refs=['structural','semantic','executability'].map((role,index)=>({
+function bootstrapAuthorization(bound=witness(),reviewReportRefs=null){
+  const review_report_refs=reviewReportRefs||['structural','semantic','executability'].map((role,index)=>({
     role,path:`.deep-work/s-aaaaaaaa/bootstrap/patch-review-${role}.json`,
     sha256:String(index+3).repeat(64).slice(0,64),reviewer_identity:`reviewer:${role}`,
     witness_sha256:bound.witness_sha256,verdict:'APPROVE'}));
@@ -392,6 +392,13 @@ function bootstrapAuthorization(bound=witness()){
     at:'2026-07-23T00:00:00.000Z',scope:'one-shot-bootstrap',
     witness_sha256:bound.witness_sha256},review_report_refs};
   value.authorization_sha256=semantic('bootstrap-authorization-v1',value,'authorization_sha256');
+  return value;
+}
+
+function bootstrapReviewReport(role,witnessSha256){
+  const value={schema_version:1,role,reviewer_identity:`reviewer:${role}`,
+    witness_sha256:witnessSha256,verdict:'APPROVE',findings:[],report_sha256:null};
+  value.report_sha256=semantic('bootstrap-patch-review-v1',value,'report_sha256');
   return value;
 }
 
@@ -495,8 +502,10 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   fs.mkdirSync(control,{recursive:true});
   for(const [name,bytes] of [['test.patch',testPatch],['test-reverse.patch',testReverse],
     ['patch.diff',patchBytes],['reverse.patch',reverseBytes]])fs.writeFileSync(path.join(control,name),bytes);
+  const executorBytes=Buffer.from('#!/usr/bin/env node\n');
   const bound=witness({repository_identity_sha256:repositoryIdentity,base_head_oid:baseHead,
     node_identity:nodeIdentity(),base_manifest_sha256:baseManifest.manifest_sha256,
+    executor_sha256:digest(executorBytes),
     test_patch_sha256:digest(testPatch),test_reverse_patch_sha256:digest(testReverse),
     red_manifest_sha256:redManifest.manifest_sha256,patch_sha256:digest(patchBytes),
     reverse_patch_sha256:digest(reverseBytes),expected_post_manifest_sha256:postManifest.manifest_sha256,
@@ -509,7 +518,18 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
     red_argv:[nodeIdentity().path,'--test','--test-reporter=spec','runtime/a.test.js'],
     green_argv:[nodeIdentity().path,'--test','--test-reporter=spec','runtime/a.test.js'],
     first_red_verification_spec_sha256:firstRedSpecSha256});
-  const authorization=bootstrapAuthorization(bound);
+  const reviewReports=['structural','semantic','executability'].map((role)=>{
+    const value=bootstrapReviewReport(role,bound.witness_sha256);
+    const bytes=Buffer.from(canonicalJson(value));
+    const relative=`.deep-work/s-aaaaaaaa/bootstrap/patch-review-${role}.json`;
+    return {value,bytes,ref:{role,path:relative,sha256:digest(bytes),
+      reviewer_identity:value.reviewer_identity,witness_sha256:value.witness_sha256,
+      verdict:value.verdict}};
+  });
+  const authorization=bootstrapAuthorization(bound,reviewReports.map((row)=>row.ref));
+  fs.writeFileSync(path.join(control,'executor.mjs'),executorBytes);
+  for(const row of reviewReports)
+    fs.writeFileSync(path.join(root,...row.ref.path.split('/')),row.bytes);
   const manifestByStage=new Map([
     ['ready',baseManifest.manifest_sha256],['test-patch-started',baseManifest.manifest_sha256],
     ['test-patch-applied',redManifest.manifest_sha256],['red-command-completed',redManifest.manifest_sha256],
@@ -540,7 +560,7 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   writeBootstrapCanonical(executionPath,execution);
   return {root,statePath,stateCapability:platform.issueProjectStateCapability(root,statePath,
     {role:'session-state'}),control,authorization,authorizationPath,journal,journalPath,
-    execution,executionPath,baseManifest,redManifest,postManifest};
+    execution,executionPath,baseManifest,redManifest,postManifest,reviewReports,executorBytes};
 }
 
 function nonCommandFailure(fixture){
@@ -738,6 +758,26 @@ test('public finalizer adopts precompute, marker, receipt, journal and completed
   assert.deepEqual([markerPath,receiptPath,journalPath].map((file)=>fs.readFileSync(file)),snapshots);
   assert.equal(replay.receipt_sha256,first.receipt_sha256);
   assert.equal(replay.marker_sha256,first.marker_sha256);
+});
+
+test('public finalizer authenticates review reports, executor, patches and current post manifest',async(t)=>{
+  const cases=[
+    ['missing-review',(fixture)=>fs.unlinkSync(path.join(fixture.control,
+      'patch-review-structural.json'))],
+    ['executor-bytes',(fixture)=>fs.appendFileSync(path.join(fixture.control,'executor.mjs'),'// changed\n')],
+    ['test-patch-bytes',(fixture)=>fs.appendFileSync(path.join(fixture.control,'test.patch'),'changed')],
+    ['production-patch-bytes',(fixture)=>fs.appendFileSync(path.join(fixture.control,'patch.diff'),'changed')],
+    ['current-post-manifest',(fixture)=>fs.writeFileSync(path.join(fixture.root,'runtime','a.js'),
+      'module.exports = 3;\n')],
+  ];
+  for(const [name,mutate] of cases)await t.test(name,async()=>{
+    const fixture=bootstrapControlFixture();
+    t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+    mutate(fixture);
+    await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
+      '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+    {cwd:fixture.root}),/bootstrap-(?:authorization|authority|manifest|review|executor|patch)/);
+  });
 });
 
 test('public finalizer resumes every operation and publication crash seam with one producer',async(t)=>{
@@ -1093,6 +1133,17 @@ test('public first-RED, adoption, proof and production admission authenticate th
     await assert.rejects(()=>dispatch(productionArgv,{cwd:fixture.root}),
       /bootstrap-(?:proof|authority)/);
     fs.writeFileSync(proofPath,proofBytes);
+    for(const [name,file] of [
+      ['marker',markerPath],
+      ['receipt',receiptPath],
+      ['authorization',fixture.authorizationPath],
+    ]){
+      const bytes=fs.readFileSync(file);
+      fs.unlinkSync(file);
+      await assert.rejects(()=>dispatch(productionArgv,{cwd:fixture.root}),
+        /bootstrap-(?:proof|required|authority)/,name);
+      fs.writeFileSync(file,bytes);
+    }
     const admitted=await dispatch(productionArgv,{cwd:fixture.root});
     assert.equal(admitted.authority.write_class,'production');
     assert.equal(finalized.operation_receipt.stage,'completed-ledger');

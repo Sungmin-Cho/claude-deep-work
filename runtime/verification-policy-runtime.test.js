@@ -35,6 +35,26 @@ test('compiler embeds durable compatibility proof and evidence accepts the exact
   assert.doesNotThrow(()=>require('./evidence-runtime.js').validateVerificationPlan(plan));
 });
 
+test('v6.14 reviewed capability facts require backward compatibility and migration gates',()=>{
+  const value=input('critical','critical');
+  value.planProjection.contract_binding.created_by_version='6.14.0';
+  value.planProjection.capability_facts={schema_version:1,authority:'reviewed-plan',
+    destructive:false,external_action:false,has_backward_compat:true,has_migration:true,
+    host_dependent:false,source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-001'],
+    facts_sha256:'5'.repeat(64)};
+  value.planProjection.plan_authority_sha256='3'.repeat(64);
+  value.planProjection.slices=[{id:'SLICE-001',slice_kind:'release-verification',checked:false,
+    verification_spec:null,verification_spec_sha256:null}];
+  const plan=compileVerificationPlan(value);
+  assert.equal(plan.required_gate_ids.includes('GATE-backward-compat'),true);
+  assert.equal(plan.required_gate_ids.includes('GATE-migration-dry-run'),true);
+  for(const key of ['has_backward_compat','has_migration']){
+    const falseClaim=structuredClone(value);
+    falseClaim.planProjection.capability_facts[key]=false;
+    assert.throws(()=>compileVerificationPlan(falseClaim),/verification-capability-facts/,key);
+  }
+});
+
 test('invalid risk acceptance cannot authorize residual downgrade',()=>{
   const residual=computeResidualRisk({initialRisk:{class:'medium'},finalRisk:{class:'high'},
     evidenceSummary:{complete:true},unverifiedAreas:[{gate_id:'GATE-host-smoke',reason:'host-unverified'}],
