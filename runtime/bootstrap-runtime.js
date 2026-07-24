@@ -838,6 +838,7 @@ function withBootstrapLock(stateCapability,callback){
     path.join(stateCapability.projectRoot,'.claude',`deep-work.${sessionId}.bootstrap-control.lock`),
     {role:'lock',allowMissingLeaf:true});
   return platform.withDirectoryLock(lock,{timeoutMs:30_000,staleMs:120_000,heartbeatMs:5_000,
+    inspectable:true,
     processIdentity:rawDigest(Buffer.from(`bootstrap:${process.pid}`)).slice(0,32)},callback);
 }
 function loadBootstrapControl({stateCapability,authorizationPath,failurePath}){

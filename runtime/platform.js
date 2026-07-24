@@ -2890,7 +2890,9 @@ function acquireDirectoryClaim(lockCapability, options, runtime) {
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 0 ||
       !Number.isSafeInteger(options.staleMs) || options.staleMs <= 0 ||
       !Number.isSafeInteger(options.heartbeatMs) || options.heartbeatMs <= 0 ||
-      options.heartbeatMs >= options.staleMs || !/^[0-9a-f]{32}$/.test(options.processIdentity || '')) {
+      options.heartbeatMs >= options.staleMs ||
+      (options.inspectable!==undefined&&typeof options.inspectable!=='boolean') ||
+      !/^[0-9a-f]{32}$/.test(options.processIdentity || '')) {
     fail('lock-options-invalid', 'lock timing or process identity is invalid');
   }
   validateRecordedComponents(meta, runtime.fsApi);
@@ -3098,7 +3100,7 @@ function inspectOwnedDirectoryClaimRuntime(lockCapability, claimToken, runtime) 
   if(lockCapability.role!=='lock')fail('lock-inspect-capability','lock inspector requires lock role');
   validateRecordedComponents(meta,runtime.fsApi);
   const active=ownedDirectoryClaimTokens.get(claimToken);
-  if(!active||active.runtime!==runtime)
+  if(!active||active.runtime!==runtime||active.inspectable!==true||!active.identitySnapshot)
     fail('lock-inspect-claim','lock inspector requires the active callback claim');
   const claim=active.claim,targetIdentity=lockTargetIdentity(lockCapability);
   if(claim.core.targetIdentity!==targetIdentity||claim.core.pid!==process.pid)
@@ -3152,12 +3154,21 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
   updateOwnedHeartbeat(lockCapability, claim, runtime);
   reachLockTestSeam(runtime, 'after-first-heartbeat',
     {ticketPath:claim.ticketPath, lockPath:lockCapability.path, core:claim.core});
-  const ticketName=path.basename(claim.ticketPath);
-  const initialClaimsSnapshot=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
-    'lock-inspect-children');
-  const initialLockSnapshot=stableDirectorySnapshot(lockCapability.path,
-    ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
-  const identitySnapshot=immutableOwnedLockSnapshot(initialClaimsSnapshot,initialLockSnapshot);
+  let identitySnapshot=null;
+  if(options.inspectable===true){
+    try{
+      const ticketName=path.basename(claim.ticketPath);
+      const initialClaimsSnapshot=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+        'lock-inspect-children');
+      const initialLockSnapshot=stableDirectorySnapshot(lockCapability.path,
+        ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+      identitySnapshot=immutableOwnedLockSnapshot(initialClaimsSnapshot,initialLockSnapshot);
+    }catch(error){
+      try{releaseDirectoryClaim(lockCapability,claim,runtime);}
+      catch(releaseError){throw releaseError;}
+      throw error;
+    }
+  }
   let heartbeatFailure = null;
   const timer = setInterval(() => {
     try { updateOwnedHeartbeat(lockCapability, claim, runtime); }
@@ -3165,7 +3176,8 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
   }, options.heartbeatMs);
   timer.unref?.();
   const claimToken=Object.freeze({});
-  ownedDirectoryClaimTokens.set(claimToken,{claim,runtime,identitySnapshot});
+  ownedDirectoryClaimTokens.set(claimToken,
+    {claim,runtime,identitySnapshot,inspectable:options.inspectable===true});
   const finish = (kind, value) => {
     clearInterval(timer);
     ownedDirectoryClaimTokens.delete(claimToken);
