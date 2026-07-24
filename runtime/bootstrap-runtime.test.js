@@ -1211,6 +1211,35 @@ test('public first-RED recomputes immutable Plan authority and authenticates ver
     });
   });
 
+test('public first-RED requires the exact caller-bound current operation journal',async(t)=>{
+  for(const [name,mutate,expected] of [
+    ['missing',(file)=>fs.unlinkSync(file),/bootstrap-manifest-current-operation-missing/],
+    ['wrong-preconditions',(file)=>{
+      const value=JSON.parse(fs.readFileSync(file,'utf8'));
+      value.preconditions={fake_authority:'substituted'};
+      fs.writeFileSync(file,Buffer.from(canonicalJson(value)));
+    },/bootstrap-manifest-runtime-journal/],
+  ]){
+    await t.test(name,async()=>{
+      const prepared=await preparePublicFirstRedCase(t);
+      const original=journalRuntime.recordOperationStage;
+      let armed=true;
+      journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
+        const result=await original(handle,stage,...rest);
+        if(armed&&stage==='failing-test-write-authenticated'){
+          armed=false;
+          mutate(path.join(prepared.fixture.root,'.claude',
+            `deep-work.s-aaaaaaaa.op.bootstrap-first-red.${handle.operationId}.json`));
+        }
+        return result;
+      };
+      try{
+        await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),expected);
+      }finally{journalRuntime.recordOperationStage=original;}
+    });
+  }
+});
+
 test('public adoption and proof reject a stale first-RED producer chain after replan',async(t)=>{
   await t.test('adoption',async()=>{
     const prepared=await preparePublicFirstRedCase(t);
