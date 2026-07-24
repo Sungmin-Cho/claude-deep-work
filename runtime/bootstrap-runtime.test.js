@@ -478,7 +478,7 @@ function fixtureRepositoryIdentity(root,baseHead){
     .slice('worktree '.length));
   return digest(Buffer.from(canonicalJson({common_git_dir:common,
     repository_root:repositoryRoot,target_worktree_root:fs.realpathSync(root),
-    base_head_oid:baseHead})));
+    base_head_oid:baseHead}).replace(/\n$/u,'')));
 }
 
 function bootstrapControlFixture({stage='green-command-completed',partialPatch=false,
