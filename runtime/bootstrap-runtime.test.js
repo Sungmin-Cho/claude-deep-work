@@ -527,9 +527,13 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   const statePath=path.join(root,'.claude','deep-work.s-aaaaaaaa.md');
   fs.writeFileSync(statePath,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\n'+
     'current_phase: implement\nactive_slice: SLICE-001\ntdd_state: PENDING\n---\n');
-  if(runtimeLedger)fs.writeFileSync(path.join(root,'.claude',
-    'deep-work.s-aaaaaaaa.completed-operations.json'),
-  Buffer.from(canonicalJson({version:1,receipts:[]})));
+  if(runtimeLedger){
+    fs.writeFileSync(path.join(root,'.claude',
+      'deep-work.s-aaaaaaaa.completed-operations.json'),
+    Buffer.from(canonicalJson({version:1,receipts:[]})));
+    fs.mkdirSync(path.join(root,'.claude',
+      'deep-work.s-aaaaaaaa.operations.lock.claims'));
+  }
   const baseManifest=fixtureManifest(root,'base',repositoryIdentity,baseHead);
   fs.writeFileSync(path.join(root,'runtime','a.test.js'),testSource||[
     "'use strict';",
