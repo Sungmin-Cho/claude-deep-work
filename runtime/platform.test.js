@@ -4531,6 +4531,25 @@ test('owned directory lock inspector authenticates the exact claim child set',as
   }finally{remove(root);}
 });
 
+test('owned directory lock inspector accepts a completed authenticated heartbeat before inspection',
+  async()=>{
+    const root=makeRepo('dw-lock-inspect-heartbeat-');
+    try{
+      const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
+        {role:'lock',allowMissingLeaf:true});
+      await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+        processIdentity:'b'.repeat(32)},async(claim)=>{
+        const before=fs.statSync(path.join(lock.path,'heartbeat.json')).ino;
+        await new Promise((resolve)=>setTimeout(resolve,80));
+        const after=fs.statSync(path.join(lock.path,'heartbeat.json')).ino;
+        assert.notEqual(after,before);
+        const projection=inspectOwnedDirectoryClaim(lock,claim);
+        assert.equal(projection.process_identity,'b'.repeat(32));
+        assert.match(projection.claim_sha256,/^[0-9a-f]{64}$/);
+      });
+    }finally{remove(root);}
+  });
+
 test('owned directory lock inspector rejects same-byte child replacement and transient claims',
   async()=>{
     for(const kind of ['same-byte-replacement','transient-ticket']){

@@ -1079,6 +1079,30 @@ test('public finalizer reauthenticates current post state after a prepublication
     }
   });
 
+test('public finalizer rejects governed drift after a pending operation-stage crash',async(t)=>{
+  const fixture=bootstrapControlFixture();
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  const argv=['bootstrap','finalize','--state',fixture.statePath,'--authorization',
+    fixture.authorizationPath,'--execution',fixture.executionPath];
+  const original=journalRuntime.recordOperationStage;
+  let armed=true;
+  journalRuntime.recordOperationStage=async(...args)=>{
+    const result=await original(...args);
+    if(armed&&args[1]==='authorization-authenticated'){
+      armed=false;throw new Error('crash-after-authorization-authenticated');
+    }
+    return result;
+  };
+  try{await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),
+    /crash-after-authorization-authenticated/);}
+  finally{journalRuntime.recordOperationStage=original;}
+  fs.writeFileSync(path.join(fixture.root,'resume-drift.txt'),'governed drift\n');
+  await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),/bootstrap-manifest/);
+  const ledger=JSON.parse(fs.readFileSync(path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.completed-operations.json')));
+  assert.equal(ledger.receipts.length,0);
+});
+
 test('public abort resumes every restoration and ledger crash seam without a second reverse',async(t)=>{
   const stages=['authorization-authenticated','failure-authenticated',
     'observed-manifest-authenticated','production-reverted','test-reverted',
