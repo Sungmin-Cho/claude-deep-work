@@ -1056,11 +1056,11 @@ test('public first-RED recomputes immutable Plan authority and authenticates ver
         const prepared=await preparePublicFirstRedCase(t);
         const changed=structuredClone(prepared.verificationPlan);
         mutate(changed);
-        changed.slice_verification_specs_sha256=digest({
+        changed.slice_verification_specs_sha256=digest(Buffer.from(canonicalJson({
           plan_authority_sha256:changed.plan_authority_sha256,
           capability_facts:changed.capability_facts,
           slice_verification_specs:changed.slice_verification_specs,
-        });
+        })));
         delete changed.plan_sha256;
         changed.plan_sha256=digest(Buffer.from(canonicalJson(changed)));
         const state=fs.readFileSync(prepared.fixture.statePath,'utf8');
