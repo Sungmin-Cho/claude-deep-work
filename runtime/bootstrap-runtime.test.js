@@ -856,13 +856,15 @@ test('public finalizer treats an unrelated canonical bootstrap operation journal
   async(t)=>{
     const fixture=bootstrapControlFixture();
     t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
-    const operationId=`op-${'a'.repeat(64)}`;
+    const preconditions={fake_authority:'noncurrent'};
+    const operationId=`op-${digest(Buffer.concat([Buffer.from('bootstrap-first-red-v2\0'),
+      Buffer.from(canonicalJson(preconditions))]))}`;
     const createdAt='2026-07-24T00:00:00.000Z';
-    const value={version:1,operationId,sessionId:'s-aaaaaaaa',kind:'bootstrap-finalize',
-      preconditions:{},stage:'prepared',owned:null,createdAt,
+    const value={version:1,operationId,sessionId:'s-aaaaaaaa',kind:'bootstrap-first-red',
+      slice:'SLICE-999',preconditions,stage:'prepared',owned:null,createdAt,
       stages:[{stage:'prepared',at:createdAt}]};
     fs.writeFileSync(path.join(fixture.root,'.claude',
-      `deep-work.s-aaaaaaaa.op.bootstrap-finalize.${operationId}.json`),
+      `deep-work.s-aaaaaaaa.op.bootstrap-first-red.${operationId}.json`),
     Buffer.from(canonicalJson(value)));
     await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
       '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
