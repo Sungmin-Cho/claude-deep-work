@@ -61,6 +61,13 @@ const BOOTSTRAP_OPERATION_STAGE_RULES=Object.freeze({
     'red-authority-adopted']),
   'red-proof-publication':Object.freeze(['prepared','proof-published','proof-ref-committed']),
 });
+const BOOTSTRAP_ABORT_STAGE_PATHS=Object.freeze([
+  Object.freeze(['prepared','authorization-authenticated','failure-authenticated',
+    'observed-manifest-authenticated','production-reverted','test-reverted','base-restored',
+    'abort-receipt-published']),
+  Object.freeze(['prepared','authorization-authenticated','failure-authenticated',
+    'observed-manifest-authenticated','recovery-required-published']),
+]);
 const BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR=
   '.claude/deep-work.<session>.op.<bootstrap-kind>.op-<32-64-lower-hex>.json';
 const BOOTSTRAP_CURRENT_OPERATION_DOMAINS=Object.freeze({
@@ -149,10 +156,10 @@ function isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentO
   const expectedRelative=`.claude/deep-work.${sessionId}.op.${currentOperation.kind}.`+
     `${currentOperation.operation_id}.json`;
   if(relative!==expectedRelative)return false;
-  let stat,afterStat,bytes,value;
+  let stat,afterStat,bytes,afterBytes,value;
   try{
-    stat=fs.lstatSync(file);bytes=fs.readFileSync(file);
-    afterStat=fs.lstatSync(file);
+    stat=fs.lstatSync(file,{bigint:true});bytes=fs.readFileSync(file);
+    afterBytes=fs.readFileSync(file);afterStat=fs.lstatSync(file,{bigint:true});
     value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
   }catch{fail('bootstrap-manifest-runtime-journal');}
   const keys=Object.keys(value||{}).sort();
@@ -160,9 +167,9 @@ function isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentO
     ...(value&&Object.hasOwn(value,'slice')?['slice']:[]),'stage','stages','version'].sort();
   const stageRules=BOOTSTRAP_OPERATION_STAGE_RULES[currentOperation.kind];
   if(!stat.isFile()||stat.isSymbolicLink()||bytes.length>1024*1024||
-    !afterStat.isFile()||afterStat.isSymbolicLink()||afterStat.dev!==stat.dev||
-    afterStat.ino!==stat.ino||afterStat.mode!==stat.mode||afterStat.size!==stat.size||
-    afterStat.mtimeMs!==stat.mtimeMs||
+    !afterStat.isFile()||afterStat.isSymbolicLink()||!bytes.equals(afterBytes)||
+    canonicalText(bootstrapMutationIdentity(stat))!==
+      canonicalText(bootstrapMutationIdentity(afterStat))||
     !bytes.equals(Buffer.from(journal.canonicalJson(value)))||
     canonicalText(keys)!==canonicalText(expectedKeys)||value.version!==1||
     value.sessionId!==sessionId||value.kind!==currentOperation.kind||
@@ -178,7 +185,6 @@ function isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentO
     value.stages[0]?.stage!=='prepared'||value.stages[0]?.at!==value.createdAt||
     value.stage!==value.stages.at(-1)?.stage)
     fail('bootstrap-manifest-runtime-journal');
-  let priorIndex=0;
   for(let index=0;index<value.stages.length;index+=1){
     const row=value.stages[index];
     const rowKeys=index===0?['at','stage']:['at','details','stage'];
@@ -186,17 +192,15 @@ function isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentO
       !timestamp(row.at)||!stageRules.includes(row.stage)||
       index>0&&!plainObject(row.details))
       fail('bootstrap-manifest-runtime-journal');
-    if(index>0){
-      const currentIndex=stageRules.indexOf(row.stage);
-      const recoveryBranch=currentOperation.kind==='bootstrap-abort'&&
-        value.stages[index-1].stage==='observed-manifest-authenticated'&&
-        row.stage==='recovery-required-published';
-      if(currentIndex!==priorIndex+1&&!recoveryBranch)
-        fail('bootstrap-manifest-runtime-journal');
-      priorIndex=currentIndex;
-    }
   }
-  return true;
+  const observedStages=value.stages.map((row)=>row.stage);
+  const paths=currentOperation.kind==='bootstrap-abort'?
+    BOOTSTRAP_ABORT_STAGE_PATHS:[stageRules];
+  if(!paths.some((candidate)=>observedStages.length<=candidate.length&&
+    observedStages.every((stage,index)=>stage===candidate[index])))
+    fail('bootstrap-manifest-runtime-journal');
+  return {file,identity:bootstrapMutationIdentity(stat),sha256:rawDigest(bytes),
+    size:bytes.length};
 }
 function bootstrapManifestSchemaSha256(sessionId){
   return semanticDigest('bootstrap-manifest-schema-v1',{
@@ -211,6 +215,7 @@ function bootstrapManifestSchemaSha256(sessionId){
     current_operation_domains:BOOTSTRAP_CURRENT_OPERATION_DOMAINS,
     runtime_journal_grammar:BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR,
     runtime_journal_stage_rules:BOOTSTRAP_OPERATION_STAGE_RULES,
+    runtime_journal_abort_stage_paths:BOOTSTRAP_ABORT_STAGE_PATHS,
   },'schema_sha256');
 }
 function validateBootstrapManifest(value,{sessionId}={}){
@@ -941,6 +946,14 @@ async function publishBootstrapFailure({stateCapability,authorizationPath,failur
   });
 }
 
+function bootstrapMutationIdentity(stat){
+  const nanos=(value,millis)=>value===undefined?
+    String(Math.trunc(Number(millis)*1_000_000)):String(value);
+  return {dev:String(stat.dev),ino:String(stat.ino),mode:String(stat.mode),
+    type:stat.isDirectory()?'directory':stat.isFile()?'file':
+      stat.isSymbolicLink()?'link':'other',size:String(stat.size),
+    mtime_ns:nanos(stat.mtimeNs,stat.mtimeMs),ctime_ns:nanos(stat.ctimeNs,stat.ctimeMs)};
+}
 function snapshotIdleRuntimeLock(root,lockRelative,claimsRelative){
   const lockPath=path.join(root,...lockRelative.split('/'));
   try{
@@ -952,7 +965,7 @@ function snapshotIdleRuntimeLock(root,lockRelative,claimsRelative){
   const claimsPath=path.join(root,...claimsRelative.split('/'));
   let stat,names;
   try{
-    stat=fs.lstatSync(claimsPath);
+    stat=fs.lstatSync(claimsPath,{bigint:true});
     names=fs.readdirSync(claimsPath)
       .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
   }catch(error){
@@ -961,7 +974,7 @@ function snapshotIdleRuntimeLock(root,lockRelative,claimsRelative){
   }
   if(!stat.isDirectory()||stat.isSymbolicLink()||names.length!==0)
     fail('bootstrap-manifest-lock-claims');
-  return {present:true,identity:`${stat.dev}:${stat.ino}:${stat.mode}`,names};
+  return {present:true,identity:bootstrapMutationIdentity(stat),names};
 }
 function verifyIdleRuntimeLock(root,lockRelative,claimsRelative,prior){
   const current=snapshotIdleRuntimeLock(root,lockRelative,claimsRelative);
@@ -1062,7 +1075,9 @@ function captureBootstrapManifest(root,witness,phase,options={}){
   const directoryExclusions=new Set(bootstrapRuntimeLockPaths(sessionId));
   const inodeOwners=new Set();
   const entries=[];
+  const observedFiles=[];
   let currentJournalFound=false;
+  let currentJournalObservation=null;
   const walk=(directory,relativeRoot='')=>{
     let directoryStat,names;
     try{
@@ -1078,10 +1093,13 @@ function captureBootstrapManifest(root,witness,phase,options={}){
       if(relative==='.git')continue;
       if(!portablePath(relative))fail('bootstrap-manifest-capture');
       const file=path.join(directory,name);let stat;
-      try{stat=fs.lstatSync(file);}catch{fail('bootstrap-manifest-capture');}
-      if(isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentOperation)){
+      try{stat=fs.lstatSync(file,{bigint:true});}catch{fail('bootstrap-manifest-capture');}
+      const currentJournal=isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,
+        currentOperation);
+      if(currentJournal){
         if(currentJournalFound)fail('bootstrap-manifest-current-operation');
         currentJournalFound=true;
+        currentJournalObservation=currentJournal;
         continue;
       }
       if(exclusions.has(relative)){
@@ -1095,9 +1113,19 @@ function captureBootstrapManifest(root,witness,phase,options={}){
         const inode=`${stat.dev}:${stat.ino}`;
         if(inodeOwners.has(inode))fail('bootstrap-manifest-hardlink');
         inodeOwners.add(inode);
+        const identity=bootstrapMutationIdentity(stat);
         const content=fs.readFileSync(file);
+        let afterContent,afterFileStat;
+        try{
+          afterContent=fs.readFileSync(file);
+          afterFileStat=fs.lstatSync(file,{bigint:true});
+        }catch{fail('bootstrap-manifest-file-unstable');}
+        if(!content.equals(afterContent)||
+          canonicalText(identity)!==canonicalText(bootstrapMutationIdentity(afterFileStat)))
+          fail('bootstrap-manifest-file-unstable');
         entries.push({path:relative,type:'file',mode:String(stat.mode),size:content.length,
           sha256:rawDigest(content)});
+        observedFiles.push({file,identity,sha256:rawDigest(content),size:content.length});
       }
     }
     let afterStat,afterNames;
@@ -1112,6 +1140,28 @@ function captureBootstrapManifest(root,witness,phase,options={}){
       fail('bootstrap-manifest-unstable');
   };
   walk(root);
+  for(const observed of observedFiles){
+    let stat,content;
+    try{
+      stat=fs.lstatSync(observed.file,{bigint:true});
+      content=fs.readFileSync(observed.file);
+    }catch{fail('bootstrap-manifest-file-unstable');}
+    if(canonicalText(bootstrapMutationIdentity(stat))!==canonicalText(observed.identity)||
+      content.length!==observed.size||rawDigest(content)!==observed.sha256)
+      fail('bootstrap-manifest-file-unstable');
+  }
+  if(currentJournalObservation!==null){
+    let stat,content;
+    try{
+      stat=fs.lstatSync(currentJournalObservation.file,{bigint:true});
+      content=fs.readFileSync(currentJournalObservation.file);
+    }catch{fail('bootstrap-manifest-runtime-journal');}
+    if(canonicalText(bootstrapMutationIdentity(stat))!==
+      canonicalText(currentJournalObservation.identity)||
+      content.length!==currentJournalObservation.size||
+      rawDigest(content)!==currentJournalObservation.sha256)
+      fail('bootstrap-manifest-runtime-journal');
+  }
   if(currentOperation!==null&&!currentJournalFound)
     fail('bootstrap-manifest-current-operation-missing');
   if(bootstrapLockClaim===null)
@@ -1416,8 +1466,6 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
         fail('bootstrap-finalize-completed-conflict');
       return {...result,operation_id:operationId,operation_receipt:priorOperation,adopted:true};
     }
-    if(priorOperation===null)
-      authenticateBootstrapFinalizeManifest(root,context.authorization,{bootstrapLockClaim});
     let executionJournal=bindControlJournal(context).value;
     if(executionJournal.claim==='abort'||executionJournal.claim==='finalize'&&
       executionJournal.claim_operation_id!==operationId)fail('bootstrap-finalize-claim-conflict');
@@ -1430,26 +1478,6 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
       (executionJournal.claim_input?.kind!=='finalize-receipt'||
       executionJournal.claim_input.input_artifact_sha256!==receiptRawSha256))
       fail('bootstrap-finalize-claim-conflict');
-    const operation=await journal.beginOperation({projectCapability:project,sessionId,
-      kind:'bootstrap-finalize',operationId,preconditions:preimage});
-    await journal.recordOperationStage(operation,'authorization-authenticated',{owned:{
-      authorizationSha256:context.authorization.authorization_sha256,
-      witnessSha256:witness.witness_sha256}});
-    await journal.recordOperationStage(operation,'execution-authenticated',{owned:{
-      executionSha256:execution.execution_sha256}});
-    if(executionJournal.claim==='none'){
-      const currentRaw=readJsonArtifact(context.journalPath,'bootstrap-execution-journal',
-        {canonical:true});
-      executionJournal=replaceExecutionJournal(stateCapability,context.journalPath,
-        executionJournal,{...executionJournal,stage:'finalize-receipt-precomputed',
-          claim:'finalize',claim_operation_id:operationId,
-          claim_input:{kind:'finalize-receipt',input_journal_sha256:currentRaw.sha256,
-            input_stage:executionJournal.stage,
-            input_manifest_sha256:executionJournal.stage_manifest_sha256,
-            input_artifact_sha256:receiptRawSha256},journal_sha256:null});
-    }
-    await journal.recordOperationStage(operation,'receipt-precomputed',{owned:{
-      receiptSha256:completion.receipt.receipt_sha256,receiptRawSha256}});
     const advanceJournal=(nextStage)=>{
       const order=['finalize-receipt-precomputed','finalize-marker-committed',
         'finalize-receipt-published','finalize-completed'];
@@ -1458,15 +1486,49 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
         executionJournal,{...executionJournal,stage:nextStage,
           stage_manifest_sha256:execution.post_patch_manifest_sha256,journal_sha256:null});
     };
-    writeExclusiveArtifact(markerPath,completion.marker);
-    advanceJournal('finalize-marker-committed');
+    if(priorOperation===null){
+      authenticateBootstrapFinalizeManifest(root,context.authorization,{bootstrapLockClaim});
+      if(executionJournal.claim==='none'){
+        const currentRaw=readJsonArtifact(context.journalPath,'bootstrap-execution-journal',
+          {canonical:true});
+        executionJournal=replaceExecutionJournal(stateCapability,context.journalPath,
+          executionJournal,{...executionJournal,stage:'finalize-receipt-precomputed',
+            claim:'finalize',claim_operation_id:operationId,
+            claim_input:{kind:'finalize-receipt',input_journal_sha256:currentRaw.sha256,
+              input_stage:executionJournal.stage,
+              input_manifest_sha256:executionJournal.stage_manifest_sha256,
+              input_artifact_sha256:receiptRawSha256},journal_sha256:null});
+      }
+      authenticateBootstrapFinalizeManifest(root,context.authorization,{bootstrapLockClaim});
+      writeExclusiveArtifact(markerPath,completion.marker);
+      advanceJournal('finalize-marker-committed');
+      authenticateBootstrapFinalizeManifest(root,context.authorization,{bootstrapLockClaim});
+      writeExclusiveArtifact(receiptPath,completion.receipt);
+      advanceJournal('finalize-receipt-published');
+      authenticateBootstrapFinalizeManifest(root,context.authorization,{bootstrapLockClaim});
+      advanceJournal('finalize-completed');
+    }else{
+      if(executionJournal.stage!=='finalize-completed')
+        fail('bootstrap-finalize-pending-publication');
+      const markerRaw=readJsonArtifact(markerPath,'bootstrap-marker',{canonical:true});
+      const receiptRaw=readJsonArtifact(receiptPath,'bootstrap-receipt',{canonical:true});
+      if(!markerRaw.bytes.equals(canonicalBootstrapJson(completion.marker))||
+        !receiptRaw.bytes.equals(canonicalBootstrapJson(completion.receipt)))
+        fail('bootstrap-finalize-pending-publication');
+    }
+    const operation=await journal.beginOperation({projectCapability:project,sessionId,
+      kind:'bootstrap-finalize',operationId,preconditions:preimage});
+    await journal.recordOperationStage(operation,'authorization-authenticated',{owned:{
+      authorizationSha256:context.authorization.authorization_sha256,
+      witnessSha256:witness.witness_sha256}});
+    await journal.recordOperationStage(operation,'execution-authenticated',{owned:{
+      executionSha256:execution.execution_sha256}});
+    await journal.recordOperationStage(operation,'receipt-precomputed',{owned:{
+      receiptSha256:completion.receipt.receipt_sha256,receiptRawSha256}});
     await journal.recordOperationStage(operation,'marker-committed',{owned:{
       markerPath:result.marker_path,markerSha256:completion.marker.marker_sha256}});
-    writeExclusiveArtifact(receiptPath,completion.receipt);
-    advanceJournal('finalize-receipt-published');
     await journal.recordOperationStage(operation,'receipt-published',{owned:{
       receiptPath:result.receipt_path,receiptSha256:completion.receipt.receipt_sha256}});
-    advanceJournal('finalize-completed');
     const ledger=await journal.completeOperation(operation,result);
     validateBootstrapCompletionAuthority({receipt:completion.receipt,marker:completion.marker,
       operationReceipt:ledger});
