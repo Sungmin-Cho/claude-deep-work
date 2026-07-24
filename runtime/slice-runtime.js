@@ -265,7 +265,15 @@ async function enforceBootstrapProductionAdmission({stateCapability,plan,sliceId
   const sessionId=path.basename(stateCapability.path).slice('deep-work.'.length,-3);
   const root=stateCapability.projectRoot,control=path.join(root,'.deep-work',sessionId,'bootstrap');
   const markerPath=path.join(control,'marker.json');
-  if(!fs.existsSync(markerPath))return;
+  const bootstrapFields=['bootstrap_bridge_operation_id','bootstrap_adoption_operation_id',
+    'red_proof_operation_id','red_proof_ref'];
+  const bootstrapFiles=['authorization.json','execution.json','execution-journal.json','executor.mjs',
+    'test.patch','test-reverse.patch','patch.diff','reverse.patch','bootstrap-receipt.json','marker.json'];
+  const bootstrapIndicated=bootstrapFields.some((key)=>fields[key])||
+    bootstrapFiles.some((name)=>fs.existsSync(path.join(control,name)));
+  if(!bootstrapIndicated)return;
+  if(['marker.json','bootstrap-receipt.json','authorization.json']
+    .some((name)=>!fs.existsSync(path.join(control,name))))fail('bootstrap-proof-required');
   const read=(file,code)=>{let stat;try{stat=fs.lstatSync(file);}catch{fail(code);}
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)fail(code);
     try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{fail(code);}};

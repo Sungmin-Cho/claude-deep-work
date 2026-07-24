@@ -343,7 +343,7 @@ function parseInlineObject(raw, path) {
   return out;
 }
 
-function validateCapabilityFactsV1(value,{requirementIds,sliceIds}={}) {
+function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplete=false}={}) {
   const keys=['schema_version','authority','destructive','external_action','has_backward_compat','has_migration',
     'host_dependent','source_requirement_ids','source_slice_ids','facts_sha256'];
   if(!exactKeyBoolean(value,keys)||value.schema_version!==1||value.authority!=='reviewed-plan'||
@@ -363,6 +363,11 @@ function validateCapabilityFactsV1(value,{requirementIds,sliceIds}={}) {
     fail('capability-facts-requirement','capability_facts');
   if(sliceIds&&value.source_slice_ids.some((id)=>!sliceIds.has(id)))
     fail('capability-facts-slice','capability_facts');
+  if(requireComplete&&(
+    value.has_backward_compat!==true||value.has_migration!==true||
+    canonicalJson(value.source_requirement_ids)!==canonicalJson(byteSort([...(requirementIds||[])]))||
+    canonicalJson(value.source_slice_ids)!==canonicalJson(byteSort([...(sliceIds||[])]))
+  ))fail('capability-facts-incomplete','capability_facts');
   const factsPreimage=structuredClone(value);delete factsPreimage.facts_sha256;
   const factsDigest=crypto.createHash('sha256').update(Buffer.concat([
     Buffer.from('capability-facts-v1\0'),
@@ -557,7 +562,9 @@ function parsePlanContractMarkdown(source, context = {}) {
   });
   if (new Set(slices.map((slice) => slice.id)).size !== slices.length) fail('plan-duplicate-slice', 'slices');
   if(capabilityFacts)capabilityFacts=validateCapabilityFactsV1(capabilityFacts,{
-    requirementIds:context.specIndex?.requirements,sliceIds:new Set(slices.map((slice)=>slice.id))});
+    requirementIds:context.specIndex?.requirements,sliceIds:new Set(slices.map((slice)=>slice.id)),
+    requireComplete:/^(?:[7-9]|\d{2,})\.|^6\.(?:1[4-9]|[2-9]\d)\./
+      .test(binding?.created_by_version||'')});
   return canonicalize({ binding, ...(binding&&capabilityFacts?{capability_facts:capabilityFacts,replan_epoch:replanEpoch}:{}), slices });
 }
 

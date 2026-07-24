@@ -12,6 +12,7 @@ function ids(value,key){return catalog.ordered((value?.[key]||[]).map((row)=>typ
 function semverMajorMinor(value){const match=String(value||'').match(/^(\d+)\.(\d+)\./);return match?[Number(match[1]),Number(match[2])]:null;}
 function isPre613(value){const parsed=semverMajorMinor(value);return parsed&&(parsed[0]<6||(parsed[0]===6&&parsed[1]<13));}
 function isAtLeast613(value){const parsed=semverMajorMinor(value);return parsed&&(parsed[0]>6||(parsed[0]===6&&parsed[1]>=13));}
+function isAtLeast614(value){const parsed=semverMajorMinor(value);return parsed&&(parsed[0]>6||(parsed[0]===6&&parsed[1]>=14));}
 
 function compatibilityProof(facts={}){if(!facts||typeof facts!=='object'||Array.isArray(facts))fail('compatibility-mode');
   const binding=facts.planProjection?.contract_binding||facts.plan_binding||null;const strictBinding=binding?.mode==='strict-spec';
@@ -45,6 +46,15 @@ function compileVerificationPlan(input={}){const risk=input.riskProfile?.class||
   const compatibility=compatibilityProof({...input.compatibilityFacts,planProjection:projection,risk_class:risk});
   const capability_facts=projection.capability_facts?structuredClone(projection.capability_facts):
     catalog.normalizeCapabilityFacts(input.capabilities||{});const req=ids(spec,'requirements');
+  if(isAtLeast614(binding.created_by_version)){
+    const sourceRequirements=capability_facts?.source_requirement_ids;
+    const sourceSlices=capability_facts?.source_slice_ids;
+    const sliceIds=catalog.ordered((projection.slices||[]).map((row)=>row.id));
+    if(capability_facts?.has_backward_compat!==true||capability_facts?.has_migration!==true||
+      canonicalJson(catalog.ordered(sourceRequirements||[]))!==canonicalJson(req)||
+      canonicalJson(catalog.ordered(sourceSlices||[]))!==canonicalJson(sliceIds))
+      fail('verification-capability-facts');
+  }
   const policyCapabilityFacts=catalog.normalizeCapabilityFacts(Object.fromEntries(
     ['destructive','external_action','has_backward_compat','has_migration','host_dependent']
       .map((key)=>[key,capability_facts[key]===true])));

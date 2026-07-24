@@ -1037,6 +1037,45 @@ function validateBootstrapExecution(value,authorization){
     fail('bootstrap-execution-digest');
   return structuredClone(value);
 }
+function authenticateBootstrapReviewReports(root,authorization){
+  for(const ref of authorization.review_report_refs){
+    const file=assertControlPath(root,path.join(root,...ref.path.split('/')),
+      authorization.witness.target_session_id,`patch-review-${ref.role}.json`);
+    const raw=readJsonArtifact(file,'bootstrap-review',{canonical:true});
+    const report=raw.value;
+    if(raw.sha256!==ref.sha256||
+      !exactKeys(report,['schema_version','role','reviewer_identity','witness_sha256',
+        'verdict','findings','report_sha256'])||
+      report.schema_version!==1||report.role!==ref.role||
+      report.reviewer_identity!==ref.reviewer_identity||
+      report.witness_sha256!==ref.witness_sha256||report.verdict!==ref.verdict||
+      report.verdict!=='APPROVE'||!Array.isArray(report.findings)||report.findings.length!==0||
+      !DIGEST.test(report.report_sha256||'')||
+      semanticDigest('bootstrap-patch-review-v1',report,'report_sha256')!==report.report_sha256)
+      fail('bootstrap-review-authority');
+  }
+}
+function authenticateBootstrapBoundFile(root,witness,pathKey,digestKey,code){
+  const relative=witness[pathKey];
+  const file=path.join(root,...relative.split('/'));let stat;
+  try{stat=fs.lstatSync(file);}catch{fail(code);}
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)
+    fail(code);
+  if(rawDigest(fs.readFileSync(file))!==witness[digestKey])fail(code);
+}
+function authenticateBootstrapFinalizeAuthority(root,authorization){
+  const witness=authorization.witness;
+  authenticateBootstrapReviewReports(root,authorization);
+  for(const [pathKey,digestKey,code] of [
+    ['executor_path','executor_sha256','bootstrap-executor-authority'],
+    ['test_patch_path','test_patch_sha256','bootstrap-patch-authority'],
+    ['test_reverse_patch_path','test_reverse_patch_sha256','bootstrap-patch-authority'],
+    ['patch_path','patch_sha256','bootstrap-patch-authority'],
+    ['reverse_patch_path','reverse_patch_sha256','bootstrap-patch-authority'],
+  ])authenticateBootstrapBoundFile(root,witness,pathKey,digestKey,code);
+  if(captureBootstrapManifest(root,witness,'post').manifest_sha256!==
+    witness.expected_post_manifest_sha256)fail('bootstrap-manifest-authority');
+}
 async function finalizeBootstrap({stateCapability,authorizationPath,executionPath}={}){
   const sessionId=sessionIdForState(stateCapability),root=stateCapability.projectRoot;
   const authorizationFile=assertControlPath(root,authorizationPath,sessionId,'authorization.json');
@@ -1047,6 +1086,7 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
       readJsonArtifact(executionFile,'bootstrap-execution',{canonical:true}).value,
       context.authorization);
     const witness=context.authorization.witness;
+    authenticateBootstrapFinalizeAuthority(root,context.authorization);
     const preimage={target_session_id:sessionId,
       authorization_sha256:context.authorization.authorization_sha256,
       witness_sha256:witness.witness_sha256,execution_sha256:execution.execution_sha256,
