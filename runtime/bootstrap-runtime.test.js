@@ -82,7 +82,6 @@ function fixtureBootstrapExcludedPaths(){
     ...BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`),
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock',
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock.claims',
-    '.claude/deep-work.s-aaaaaaaa.completed-operations.json',
     '.claude/deep-work.s-aaaaaaaa.operations.lock',
     '.claude/deep-work.s-aaaaaaaa.operations.lock.claims',
   ].sort();
@@ -851,7 +850,7 @@ test('public finalizer authenticates review reports, executor, patches and curre
   });
 });
 
-test('public finalizer excludes only a canonical session-bound bootstrap operation journal',
+test('public finalizer treats an unrelated canonical bootstrap operation journal as governed state',
   async(t)=>{
     const fixture=bootstrapControlFixture();
     t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
@@ -863,10 +862,32 @@ test('public finalizer excludes only a canonical session-bound bootstrap operati
     fs.writeFileSync(path.join(fixture.root,'.claude',
       `deep-work.s-aaaaaaaa.op.bootstrap-finalize.${operationId}.json`),
     Buffer.from(canonicalJson(value)));
-    const finalized=await dispatch(['bootstrap','finalize','--state',fixture.statePath,
+    await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
       '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
-    {cwd:fixture.root});
-    assert.equal(finalized.operation_receipt.stage,'completed-ledger');
+    {cwd:fixture.root}),/bootstrap-manifest/);
+  });
+
+test('public finalizer treats the completed operation ledger as governed state',async(t)=>{
+  const fixture=bootstrapControlFixture();
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.completed-operations.json'),
+  Buffer.from(canonicalJson({version:1,receipts:[]})));
+  await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
+    '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+  {cwd:fixture.root}),/bootstrap-manifest/);
+});
+
+test('public finalizer rejects pollution in the idle operation lock claims directory',async(t)=>{
+  const fixture=bootstrapControlFixture();
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  const claims=path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.operations.lock.claims');
+  fs.mkdirSync(claims);
+  fs.writeFileSync(path.join(claims,'foreign'),'foreign\n');
+  await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
+    '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+  {cwd:fixture.root}),/bootstrap-(?:manifest|lock)/);
   });
 
 test('public finalizer rejects structurally incomplete bootstrap operation journals',async(t)=>{

@@ -56,6 +56,7 @@ const {
   consumeOwnedTemp,
   consumeFinalizedReceiptPayload,
   withDirectoryLock,
+  inspectOwnedDirectoryClaim,
   mutateFileWithPendingOperations,
   appendJsonLineLocked,
   drainPendingOperations,
@@ -4506,6 +4507,25 @@ test('directory lock publishes and releases an authenticated claim without owned
     const claims = `${lock.path}.claims`;
     assert.deepEqual(fs.existsSync(claims) ? fs.readdirSync(claims) : [], []);
   } finally { remove(root); }
+});
+
+test('owned directory lock inspector authenticates the exact claim child set',async()=>{
+  const root=makeRepo('dw-lock-inspect-');
+  try{
+    const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
+      {role:'lock',allowMissingLeaf:true});
+    const processIdentity='a'.repeat(32);
+    await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,
+      processIdentity},async(claim)=>{
+      const projection=inspectOwnedDirectoryClaim(lock,claim);
+      assert.equal(projection.pid,process.pid);
+      assert.equal(projection.process_identity,processIdentity);
+      assert.match(projection.claim_sha256,/^[0-9a-f]{64}$/);
+      fs.writeFileSync(path.join(lock.path,'foreign-child'),'foreign\n');
+      assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),/lock-inspect-children/);
+      fs.unlinkSync(path.join(lock.path,'foreign-child'));
+    });
+  }finally{remove(root);}
 });
 
 test('directory lock retries when a canonical claim disappears during authenticated read', () => {
