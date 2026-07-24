@@ -82,6 +82,7 @@ function fixtureBootstrapExcludedPaths(){
     ...BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`),
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock',
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock.claims',
+    '.claude/deep-work.s-aaaaaaaa.completed-operations.json',
     '.claude/deep-work.s-aaaaaaaa.operations.lock',
     '.claude/deep-work.s-aaaaaaaa.operations.lock.claims',
   ].sort();
