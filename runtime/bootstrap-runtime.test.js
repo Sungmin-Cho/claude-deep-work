@@ -452,7 +452,8 @@ function nodeIdentity(){
 }
 
 function fixtureManifest(root,phase,repositoryIdentity,baseHead){
-  const output=require('node:child_process').execFileSync('git',['ls-files','-z'],{cwd:root});
+  const output=require('node:child_process').execFileSync(
+    'git',['ls-files','-z','--cached','--others','--exclude-standard'],{cwd:root});
   const names=output.subarray(0,-1).toString('utf8').split('\0').filter(Boolean).sort();
   const entries=names.map((relative)=>{
     const file=path.join(root,...relative.split('/'));
@@ -466,6 +467,18 @@ function fixtureManifest(root,phase,repositoryIdentity,baseHead){
     entries,manifest_sha256:null};
   value.manifest_sha256=semantic('bootstrap-manifest-v1',value,'manifest_sha256');
   return value;
+}
+
+function fixtureRepositoryIdentity(root,baseHead){
+  const exec=(args)=>require('node:child_process').execFileSync('git',args,{
+    cwd:root,encoding:'utf8'}).trim();
+  const common=path.resolve(root,exec(['rev-parse','--git-common-dir']));
+  const worktrees=exec(['worktree','list','--porcelain']).split('\n');
+  const repositoryRoot=fs.realpathSync(worktrees.find((line)=>line.startsWith('worktree '))
+    .slice('worktree '.length));
+  return digest(Buffer.from(canonicalJson({common_git_dir:common,
+    repository_root:repositoryRoot,target_worktree_root:fs.realpathSync(root),
+    base_head_oid:baseHead})));
 }
 
 function bootstrapControlFixture({stage='green-command-completed',partialPatch=false,
@@ -482,7 +495,7 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   require('node:child_process').execFileSync('git',['commit','-qm','base'],{cwd:root});
   const baseHead=require('node:child_process').execFileSync('git',['rev-parse','HEAD'],
     {cwd:root,encoding:'utf8'}).trim();
-  const repositoryIdentity=digest(Buffer.from(`bootstrap-fixture\0${baseHead}`));
+  const repositoryIdentity=fixtureRepositoryIdentity(root,baseHead);
   const baseManifest=fixtureManifest(root,'base',repositoryIdentity,baseHead);
   fs.writeFileSync(path.join(root,'runtime','a.test.js'),testSource||[
     "'use strict';",
