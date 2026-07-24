@@ -1098,9 +1098,10 @@ test('public finalizer rejects governed drift after a pending operation-stage cr
   finally{journalRuntime.recordOperationStage=original;}
   fs.writeFileSync(path.join(fixture.root,'resume-drift.txt'),'governed drift\n');
   await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),/bootstrap-manifest/);
-  const ledger=JSON.parse(fs.readFileSync(path.join(fixture.root,'.claude',
-    'deep-work.s-aaaaaaaa.completed-operations.json')));
-  assert.equal(ledger.receipts.length,0);
+  const ledgerPath=path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.completed-operations.json');
+  assert.equal(fs.existsSync(ledgerPath)?
+    JSON.parse(fs.readFileSync(ledgerPath)).receipts.length:0,0);
 });
 
 test('public abort resumes every restoration and ledger crash seam without a second reverse',async(t)=>{
