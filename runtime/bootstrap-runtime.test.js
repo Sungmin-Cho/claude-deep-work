@@ -115,7 +115,9 @@ function witness(overrides={}){
 }
 
 test('bootstrap manifest has one exact control exclusion schema and rejects widening',()=>{
-  assert.equal(BOOTSTRAP_CONTROL_NAMES.length,17);
+  assert.equal(BOOTSTRAP_CONTROL_NAMES.length,19);
+  assert.equal(BOOTSTRAP_CONTROL_NAMES.includes('bootstrap-control.lock'),true);
+  assert.equal(BOOTSTRAP_CONTROL_NAMES.includes('bootstrap-control.lock.claims'),true);
   const checked=validateBootstrapManifest(manifest(),{sessionId:'s-aaaaaaaa'});
   assert.equal(checked.phase,'base');
   assert.match(bootstrapManifestSchemaSha256('s-aaaaaaaa'),/^[0-9a-f]{64}$/);
