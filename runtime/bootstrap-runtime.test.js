@@ -869,6 +869,30 @@ test('public finalizer excludes only a canonical session-bound bootstrap operati
     assert.equal(finalized.operation_receipt.stage,'completed-ledger');
   });
 
+test('public finalizer rejects structurally incomplete bootstrap operation journals',async(t)=>{
+  const cases=[
+    ['missing-preconditions',(value)=>{delete value.preconditions;}],
+    ['stage-does-not-match-last-row',(value)=>{value.stage='authorization-authenticated';}],
+    ['invalid-prepared-row',(value)=>{value.stages[0].extra=true;}],
+  ];
+  for(const [name,mutate] of cases)await t.test(name,async()=>{
+    const fixture=bootstrapControlFixture();
+    t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+    const operationId=`op-${'b'.repeat(64)}`;
+    const createdAt='2026-07-24T00:00:00.000Z';
+    const value={version:1,operationId,sessionId:'s-aaaaaaaa',kind:'bootstrap-finalize',
+      preconditions:{},stage:'prepared',owned:null,createdAt,
+      stages:[{stage:'prepared',at:createdAt}]};
+    mutate(value);
+    fs.writeFileSync(path.join(fixture.root,'.claude',
+      `deep-work.s-aaaaaaaa.op.bootstrap-finalize.${operationId}.json`),
+    Buffer.from(canonicalJson(value)));
+    await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
+      '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+    {cwd:fixture.root}),/bootstrap-manifest-runtime-journal/);
+  });
+});
+
 test('public finalizer requires exact one-terminal-LF review bytes after complete rebinding',async(t)=>{
   const fixture=bootstrapControlFixture();
   t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
