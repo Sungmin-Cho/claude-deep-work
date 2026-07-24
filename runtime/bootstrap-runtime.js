@@ -43,6 +43,26 @@ const BOOTSTRAP_CONTROL_NAMES=Object.freeze([
   'patch-review-executability.json','patch-review-semantic.json','patch-review-structural.json',
   'patch.diff','recovery-required.json','reverse.patch','test-reverse.patch','test.patch',
 ].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b))));
+const BOOTSTRAP_OPERATION_KINDS=Object.freeze([
+  'bootstrap-abort','bootstrap-failure-publish','bootstrap-finalize','bootstrap-first-red',
+  'bootstrap-red-adoption','red-proof-publication',
+]);
+const BOOTSTRAP_OPERATION_STAGE_RULES=Object.freeze({
+  'bootstrap-abort':Object.freeze(['prepared','authorization-authenticated',
+    'failure-authenticated','observed-manifest-authenticated','production-reverted',
+    'test-reverted','base-restored','abort-receipt-published','recovery-required-published']),
+  'bootstrap-failure-publish':Object.freeze(['prepared','failure-published','claim-committed']),
+  'bootstrap-finalize':Object.freeze(['prepared','authorization-authenticated',
+    'execution-authenticated','receipt-precomputed','marker-committed','receipt-published']),
+  'bootstrap-first-red':Object.freeze(['prepared','bootstrap-receipt-authenticated',
+    'failing-test-write-authenticated','verification-completed','red-state-written',
+    'bridge-consumed']),
+  'bootstrap-red-adoption':Object.freeze(['prepared','bridge-authenticated',
+    'red-authority-adopted']),
+  'red-proof-publication':Object.freeze(['prepared','proof-published','proof-ref-committed']),
+});
+const BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR=
+  '.claude/deep-work.<session>.op.<bootstrap-kind>.op-<32-64-lower-hex>.json';
 
 const BOOTSTRAP_EXECUTION_STAGES=Object.freeze([
   'ready','test-patch-started','test-patch-applied','red-command-completed',
@@ -80,8 +100,67 @@ const BOOTSTRAP_RED_PROOF_KEYS=Object.freeze([
 
 function bootstrapExcludedPaths(sessionId){
   if(!SESSION.test(sessionId||''))fail('bootstrap-session-id');
-  return BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/${sessionId}/bootstrap/${name}`)
+  return [
+    ...BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/${sessionId}/bootstrap/${name}`),
+    `.claude/deep-work.${sessionId}.bootstrap-control.lock`,
+    `.claude/deep-work.${sessionId}.bootstrap-control.lock.claims`,
+    `.claude/deep-work.${sessionId}.completed-operations.json`,
+    `.claude/deep-work.${sessionId}.operations.lock`,
+    `.claude/deep-work.${sessionId}.operations.lock.claims`,
+  ]
     .sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+}
+function isAuthenticatedBootstrapRuntimeJournal(relative,file,sessionId){
+  const match=relative.match(/^\.claude\/deep-work\.(s-[0-9a-f]{8})\.op\.([a-z-]+)\.(op-[0-9a-f]{32,64})\.json$/);
+  if(!match||match[1]!==sessionId||!BOOTSTRAP_OPERATION_KINDS.includes(match[2]))return false;
+  let stat,afterStat,bytes,value;
+  try{
+    stat=fs.lstatSync(file);bytes=fs.readFileSync(file);
+    afterStat=fs.lstatSync(file);
+    value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+  }catch{fail('bootstrap-manifest-runtime-journal');}
+  const keys=Object.keys(value||{}).sort();
+  const expectedKeys=['createdAt','kind','operationId','owned','preconditions','sessionId',
+    ...(value&&Object.hasOwn(value,'slice')?['slice']:[]),'stage','stages','version'].sort();
+  const plainObject=(candidate)=>candidate!==null&&typeof candidate==='object'&&
+    !Array.isArray(candidate)&&Object.getPrototypeOf(candidate)===Object.prototype;
+  const timestamp=(candidate)=>typeof candidate==='string'&&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(candidate);
+  const stageRules=BOOTSTRAP_OPERATION_STAGE_RULES[match[2]];
+  if(!stat.isFile()||stat.isSymbolicLink()||bytes.length>1024*1024||
+    !afterStat.isFile()||afterStat.isSymbolicLink()||afterStat.dev!==stat.dev||
+    afterStat.ino!==stat.ino||afterStat.mode!==stat.mode||afterStat.size!==stat.size||
+    afterStat.mtimeMs!==stat.mtimeMs||
+    !bytes.equals(Buffer.from(journal.canonicalJson(value)))||
+    canonicalText(keys)!==canonicalText(expectedKeys)||value.version!==1||
+    value.sessionId!==sessionId||value.kind!==match[2]||value.operationId!==match[3]||
+    !plainObject(value.preconditions)||
+    !(value.owned===null||plainObject(value.owned))||
+    !timestamp(value.createdAt)||
+    Object.hasOwn(value,'slice')&&(typeof value.slice!=='string'||value.slice.length===0)||
+    !Array.isArray(value.stages)||value.stages.length===0||
+    value.stages[0]?.stage!=='prepared'||value.stages[0]?.at!==value.createdAt||
+    value.stage!==value.stages.at(-1)?.stage)
+    fail('bootstrap-manifest-runtime-journal');
+  let priorIndex=0;
+  for(let index=0;index<value.stages.length;index+=1){
+    const row=value.stages[index];
+    const rowKeys=index===0?['at','stage']:['at','details','stage'];
+    if(!plainObject(row)||canonicalText(Object.keys(row).sort())!==canonicalText(rowKeys)||
+      !timestamp(row.at)||!stageRules.includes(row.stage)||
+      index>0&&!plainObject(row.details))
+      fail('bootstrap-manifest-runtime-journal');
+    if(index>0){
+      const currentIndex=stageRules.indexOf(row.stage);
+      const recoveryBranch=match[2]==='bootstrap-abort'&&
+        value.stages[index-1].stage==='observed-manifest-authenticated'&&
+        row.stage==='recovery-required-published';
+      if(currentIndex!==priorIndex+1&&!recoveryBranch)
+        fail('bootstrap-manifest-runtime-journal');
+      priorIndex=currentIndex;
+    }
+  }
+  return true;
 }
 function bootstrapManifestSchemaSha256(sessionId){
   return semanticDigest('bootstrap-manifest-schema-v1',{
@@ -90,6 +169,8 @@ function bootstrapManifestSchemaSha256(sessionId){
       'repository_identity_sha256','schema_version'],
     entry_keys:['mode','path','sha256','size','type'],phases:['base','post','red'],
     excluded_paths:bootstrapExcludedPaths(sessionId),
+    runtime_journal_grammar:BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR,
+    runtime_journal_stage_rules:BOOTSTRAP_OPERATION_STAGE_RULES,
   },'schema_sha256');
 }
 function validateBootstrapManifest(value,{sessionId}={}){
@@ -888,24 +969,62 @@ function captureBootstrapManifest(root,witness,phase){
   }).sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
   if(canonicalText(flagPaths)!==canonicalText(indexRows.map((row)=>row.path)))
     fail('bootstrap-manifest-index');
-  const listed=git(['ls-files','-z','--cached','--others','--exclude-standard']);
-  const bytes=listed.stdout||Buffer.alloc(0);
-  const names=bytes.length===0?[]:bytes.subarray(0,bytes.at(-1)===0?bytes.length-1:bytes.length)
-    .toString('utf8').split('\0').filter(Boolean)
-    .sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+  const exclusions=new Set(bootstrapExcludedPaths(witness.target_session_id));
+  const directoryExclusions=new Set([
+    `.claude/deep-work.${witness.target_session_id}.bootstrap-control.lock`,
+    `.claude/deep-work.${witness.target_session_id}.bootstrap-control.lock.claims`,
+    `.claude/deep-work.${witness.target_session_id}.operations.lock`,
+    `.claude/deep-work.${witness.target_session_id}.operations.lock.claims`,
+  ]);
   const inodeOwners=new Set();
-  const entries=names.flatMap((relative)=>{
-    if(bootstrapExcludedPaths(witness.target_session_id).includes(relative))return [];
-    const file=path.join(root,...relative.split('/'));let stat;
-    try{stat=fs.lstatSync(file);}catch{fail('bootstrap-manifest-capture');}
-    if(!stat.isFile()||stat.isSymbolicLink())fail('bootstrap-manifest-capture');
-    const inode=`${stat.dev}:${stat.ino}`;
-    if(inodeOwners.has(inode))fail('bootstrap-manifest-hardlink');
-    inodeOwners.add(inode);
-    const content=fs.readFileSync(file);
-    return [{path:relative,type:'file',mode:String(stat.mode),size:content.length,
-      sha256:rawDigest(content)}];
-  });
+  const entries=[];
+  const walk=(directory,relativeRoot='')=>{
+    let directoryStat,names;
+    try{
+      directoryStat=fs.lstatSync(directory);
+      names=fs.readdirSync(directory)
+        .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
+    }catch{fail('bootstrap-manifest-capture');}
+    if(!directoryStat.isDirectory()||directoryStat.isSymbolicLink())
+      fail('bootstrap-manifest-capture');
+    const directoryIdentity=`${directoryStat.dev}:${directoryStat.ino}:${directoryStat.mode}`;
+    for(const name of names){
+      const relative=relativeRoot?`${relativeRoot}/${name}`:name;
+      if(relative==='.git')continue;
+      if(!portablePath(relative))fail('bootstrap-manifest-capture');
+      const file=path.join(directory,name);let stat;
+      try{stat=fs.lstatSync(file);}catch{fail('bootstrap-manifest-capture');}
+      if(isAuthenticatedBootstrapRuntimeJournal(relative,file,witness.target_session_id))
+        continue;
+      if(exclusions.has(relative)){
+        const valid=directoryExclusions.has(relative)?stat.isDirectory():stat.isFile();
+        if(!valid||stat.isSymbolicLink())fail('bootstrap-manifest-capture');
+        continue;
+      }
+      if(stat.isDirectory()&&!stat.isSymbolicLink())walk(file,relative);
+      else{
+        if(!stat.isFile()||stat.isSymbolicLink())fail('bootstrap-manifest-capture');
+        const inode=`${stat.dev}:${stat.ino}`;
+        if(inodeOwners.has(inode))fail('bootstrap-manifest-hardlink');
+        inodeOwners.add(inode);
+        const content=fs.readFileSync(file);
+        entries.push({path:relative,type:'file',mode:String(stat.mode),size:content.length,
+          sha256:rawDigest(content)});
+      }
+    }
+    let afterStat,afterNames;
+    try{
+      afterStat=fs.lstatSync(directory);
+      afterNames=fs.readdirSync(directory)
+        .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
+    }catch{fail('bootstrap-manifest-capture');}
+    if(!afterStat.isDirectory()||afterStat.isSymbolicLink()||
+      `${afterStat.dev}:${afterStat.ino}:${afterStat.mode}`!==directoryIdentity||
+      canonicalText(afterNames)!==canonicalText(names))
+      fail('bootstrap-manifest-unstable');
+  };
+  walk(root);
+  entries.sort((left,right)=>Buffer.compare(Buffer.from(left.path),Buffer.from(right.path)));
   const value={schema_version:1,repository_identity_sha256:repositoryIdentity,
     base_head_oid:head,phase,
     excluded_paths:bootstrapExcludedPaths(witness.target_session_id),entries,manifest_sha256:null};
@@ -1352,16 +1471,17 @@ function acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath})
     fail('bootstrap-first-red-write');
   return {fields,receipt,raw,project:transaction.projectCapabilityFor(stateCapability)};
 }
-function authenticateImmutableBootstrapPlan(plan){
+function authenticateImmutableBootstrapPlan(plan,failureCode='bootstrap-first-red-plan'){
   let compiled;
   try{compiled=require('./plan-runtime.js').compileImmutablePlanAuthorityV2(plan);}
-  catch{fail('bootstrap-first-red-plan');}
+  catch{fail(failureCode);}
   if(compiled.plan_authority_sha256!==plan?.plan_authority_sha256)
-    fail('bootstrap-first-red-plan');
+    fail(failureCode);
   return compiled;
 }
-function authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,specSha256}){
-  const compiled=authenticateImmutableBootstrapPlan(plan);
+function authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,specSha256,
+  failureCode='bootstrap-first-red-plan'}){
+  const compiled=authenticateImmutableBootstrapPlan(plan,failureCode);
   const policy=require('./verification-policy-runtime.js');
   if(!policy.validateVerificationPlan(verificationPlan).pass||
     verificationPlan.plan_authority_sha256!==compiled.plan_authority_sha256||
@@ -1375,8 +1495,32 @@ function authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,sp
       canonicalText(plan.capability_facts)||
     canonicalText(verificationPlan.slice_verification_specs?.[sliceId])!==
       canonicalText({slice_kind:'functional',verification_spec_sha256:specSha256}))
-    fail('bootstrap-first-red-plan');
+    fail(failureCode);
   return verificationPlan;
+}
+function currentBootstrapVerificationPlan({fields,plan,sliceId,specSha256,failureCode}){
+  let verificationPlan;
+  try{verificationPlan=typeof fields.verification_plan_json==='string'?
+    JSON.parse(fields.verification_plan_json):fields.verification_plan_json;}
+  catch{fail(failureCode);}
+  if(!verificationPlan||verificationPlan.plan_sha256!==fields.verification_plan_sha256)
+    fail(failureCode);
+  return authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,specSha256,
+    failureCode});
+}
+function authenticateBootstrapProducerVerification({plan,verificationPlan,verification,
+  bridgeOperationId,bridge,sliceId,failureCode}){
+  const target=plan.slices?.find((row)=>row.id===sliceId);
+  if(!target||target.slice_kind!=='functional'||
+    verification.plan_authority_sha256!==plan.plan_authority_sha256||
+    verification.spec_sha256!==plan.contract_binding?.spec_contract?.spec_sha256||
+    verification.verification_plan_sha256!==verificationPlan.plan_sha256||
+    verification.verification_operation_id!==bridgeOperationId||
+    verification.write_operation_id!==bridge.result?.write_operation_id||
+    verification.result_sha256!==bridge.result?.verification_result_sha256||
+    bridge.result?.slice_id!==sliceId)
+    fail(failureCode);
+  return target;
 }
 async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId,authorizationPath,
   receiptPath,markerPath,specPath,writeReceiptPath}={}){
@@ -1450,7 +1594,6 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
           message:spec.red_failure.expected_signal.message_pattern,
           message_pattern:undefined}});
   }else{
-    const manifestBefore=captureBootstrapManifest(bound.root,bound.authorization.witness,'post');
     const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
     fs.mkdirSync(ownedTemp,{recursive:true});
     const environmentGuardPath=path.join(ownedTemp,'closed-environment-guard.cjs');
@@ -1471,6 +1614,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       "})});",
       '',
     ].join('\n')));
+    const manifestBefore=captureBootstrapManifest(bound.root,bound.authorization.witness,'post');
     const identity=executableIdentity();
     const logicalArgv=spec.args;
     const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${bound.root}`,
@@ -1570,7 +1714,7 @@ async function adoptBootstrapRed({stateCapability,planCapability,plan,sliceId,au
   const locked=JSON.parse(transaction.readSessionFile(planCapability));
   if(canonicalText(locked)!==canonicalText(plan)||sliceId!==bound.receipt.first_red_slice_id)
     fail('bootstrap-red-adoption-plan');
-  authenticateImmutableBootstrapPlan(plan);
+  authenticateImmutableBootstrapPlan(plan,'bootstrap-red-adoption-plan');
   const project=transaction.projectCapabilityFor(stateCapability);
   const bridge=await journal.resumeOperation({projectCapability:project,
     operationId:bridgeOperationId,sessionId:bound.sessionId,kind:'bootstrap-first-red'});
@@ -1586,6 +1730,24 @@ async function adoptBootstrapRed({stateCapability,planCapability,plan,sliceId,au
   if(verification.result_sha256!==bridge.result.verification_result_sha256||
     verification.verification_operation_id!==bridgeOperationId)
     fail('bootstrap-red-adoption-bridge');
+  const stateText=fs.readFileSync(stateCapability.path,'utf8');
+  const fields=frontmatter.parseFrontmatter(stateText).fields;
+  const target=plan.slices?.find((row)=>row.id===sliceId);
+  const verificationPlan=currentBootstrapVerificationPlan({fields,plan,sliceId,
+    specSha256:target?.verification_spec_sha256,failureCode:'bootstrap-red-adoption-plan'});
+  authenticateBootstrapProducerVerification({plan,verificationPlan,verification,
+    bridgeOperationId,bridge,sliceId,failureCode:'bootstrap-red-adoption-bridge'});
+  const expectedBridgeOperationId=deterministicOperationId('bootstrap-first-red-v2',{
+    target_session_id:bound.sessionId,
+    authorization_sha256:bound.authorization.authorization_sha256,
+    witness_sha256:bound.authorization.witness.witness_sha256,
+    bootstrap_receipt_sha256:bound.receipt.receipt_sha256,
+    plan_authority_sha256:plan.plan_authority_sha256,slice_id:sliceId,
+    verification_spec_sha256:target.verification_spec_sha256,
+    failing_test_write_operation_id:verification.write_operation_id,
+    failing_test_write_receipt_sha256:bridge.result.write_receipt_sha256,
+  });
+  if(expectedBridgeOperationId!==bridgeOperationId)fail('bootstrap-red-adoption-bridge');
   const preconditions={session_id:bound.sessionId,slice_id:sliceId,
     plan_authority_sha256:plan.plan_authority_sha256,
     bootstrap_bridge_operation_id:bridgeOperationId,
@@ -1602,8 +1764,6 @@ async function adoptBootstrapRed({stateCapability,planCapability,plan,sliceId,au
     preconditions});
   await journal.recordOperationStage(operation,'bridge-authenticated',{owned:{
     bridgeOperationId,bridgeLedgerResultSha256:bridge.resultSha256}});
-  const stateText=fs.readFileSync(stateCapability.path,'utf8');
-  const fields=frontmatter.parseFrontmatter(stateText).fields;
   if(fields.tdd_state!=='RED_VERIFIED'||fields.bootstrap_bridge_operation_id!==bridgeOperationId||
     !['bridge-pending','proof-pending'].includes(fields.red_proof_state))
     fail('bootstrap-red-adoption-state');
@@ -1624,7 +1784,7 @@ async function publishBootstrapRedProof({stateCapability,planCapability,plan,sli
   const sessionId=sessionIdForState(stateCapability),root=stateCapability.projectRoot;
   const locked=JSON.parse(transaction.readSessionFile(planCapability));
   if(canonicalText(locked)!==canonicalText(plan))fail('bootstrap-proof-plan');
-  authenticateImmutableBootstrapPlan(plan);
+  authenticateImmutableBootstrapPlan(plan,'bootstrap-proof-plan');
   const project=transaction.projectCapabilityFor(stateCapability);
   const transition=await journal.resumeOperation({projectCapability:project,
     operationId:transitionOperationId,sessionId,kind:'bootstrap-red-adoption'});
@@ -1638,17 +1798,32 @@ async function publishBootstrapRedProof({stateCapability,planCapability,plan,sli
     operationId:bridgeOperationId,sessionId,kind:'bootstrap-first-red'});
   if(bridge.stage!=='completed-ledger'||bridge.result?.bridge_consumed!==true)
     fail('bootstrap-proof-bridge');
+  const target=plan.slices?.find((row)=>row.id===sliceId);
+  if(!target||target.slice_kind!=='functional')fail('bootstrap-proof-plan');
   const verification=validateBootstrapVerificationResultV2(
     readJsonArtifact(path.join(root,...bridge.result.verification_result_path.split('/')),
       'bootstrap-first-red-result',{canonical:true}).value,{expectedSignal:{
-        ...plan.slices.find((row)=>row.id===sliceId).verification_spec.red_failure.expected_signal,
-        message:plan.slices.find((row)=>row.id===sliceId).verification_spec.red_failure
-          .expected_signal.message_pattern,message_pattern:undefined}});
+        ...target.verification_spec.red_failure.expected_signal,
+        message:target.verification_spec.red_failure.expected_signal.message_pattern,
+        message_pattern:undefined}});
   if(transition.result.verification_result_sha256!==verification.result_sha256||
     transition.result.write_receipt_sha256!==bridge.result.write_receipt_sha256)
     fail('bootstrap-proof-transition');
   const stateText=fs.readFileSync(stateCapability.path,'utf8');
   const fields=frontmatter.parseFrontmatter(stateText).fields;
+  const verificationPlan=currentBootstrapVerificationPlan({fields,plan,sliceId,
+    specSha256:target.verification_spec_sha256,failureCode:'bootstrap-proof-plan'});
+  authenticateBootstrapProducerVerification({plan,verificationPlan,verification,
+    bridgeOperationId,bridge,sliceId,failureCode:'bootstrap-proof-bridge'});
+  const expectedTransitionOperationId=deterministicOperationId('bootstrap-red-adoption-v1',{
+    session_id:sessionId,slice_id:sliceId,plan_authority_sha256:plan.plan_authority_sha256,
+    bootstrap_bridge_operation_id:bridgeOperationId,
+    bootstrap_bridge_ledger_result_sha256:bridge.resultSha256,
+    verification_result_sha256:verification.result_sha256,
+    write_receipt_sha256:bridge.result.write_receipt_sha256,
+  });
+  if(expectedTransitionOperationId!==transitionOperationId)
+    fail('bootstrap-proof-transition');
   if(fields.red_proof_state!=='proof-pending'||
     fields.bootstrap_adoption_operation_id!==transitionOperationId||
     fields.bootstrap_bridge_operation_id!==bridgeOperationId)
