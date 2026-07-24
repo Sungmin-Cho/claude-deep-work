@@ -472,7 +472,7 @@ function fixtureManifest(root,phase,repositoryIdentity,baseHead){
 function fixtureRepositoryIdentity(root,baseHead){
   const exec=(args)=>require('node:child_process').execFileSync('git',args,{
     cwd:root,encoding:'utf8'}).trim();
-  const common=path.resolve(root,exec(['rev-parse','--git-common-dir']));
+  const common=fs.realpathSync(path.resolve(root,exec(['rev-parse','--git-common-dir'])));
   const worktrees=exec(['worktree','list','--porcelain']).split('\n');
   const repositoryRoot=fs.realpathSync(worktrees.find((line)=>line.startsWith('worktree '))
     .slice('worktree '.length));
@@ -540,7 +540,7 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
     first_red_verification_spec_sha256:firstRedSpecSha256});
   const reviewReports=['structural','semantic','executability'].map((role)=>{
     const value=bootstrapReviewReport(role,bound.witness_sha256);
-    const bytes=Buffer.from(`${canonicalJson(value)}\n`);
+    const bytes=Buffer.from(canonicalJson(value));
     const relative=`.deep-work/s-aaaaaaaa/bootstrap/patch-review-${role}.json`;
     return {value,bytes,ref:{role,path:relative,sha256:digest(bytes),
       reviewer_identity:value.reviewer_identity,witness_sha256:value.witness_sha256,
@@ -816,7 +816,7 @@ test('public finalizer requires exact one-terminal-LF review bytes after complet
   const fixture=bootstrapControlFixture();
   t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
   const report=fixture.reviewReports[0].value;
-  const noLf=Buffer.from(canonicalJson(report));
+  const noLf=Buffer.from(canonicalJson(report).replace(/\n$/u,''));
   fs.writeFileSync(path.join(fixture.root,...fixture.reviewReports[0].ref.path.split('/')),noLf);
   const refs=fixture.reviewReports.map((row,index)=>index===0?
     {...row.ref,sha256:digest(noLf)}:row.ref);
