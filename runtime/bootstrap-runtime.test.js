@@ -829,7 +829,7 @@ test('public finalizer requires exact one-terminal-LF review bytes after complet
   writeBootstrapCanonical(fixture.executionPath,execution);
   await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
     '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
-  {cwd:fixture.root}),/bootstrap-review-(?:canonical|authority)/);
+  {cwd:fixture.root}),/bootstrap-review-terminal-lf/);
 });
 
 test('public finalizer resumes every operation and publication crash seam with one producer',async(t)=>{
@@ -987,7 +987,7 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
   fs.writeFileSync(specPath,specBytes);
   const facts={schema_version:1,authority:'reviewed-plan',destructive:false,external_action:false,
     has_backward_compat:true,has_migration:true,host_dependent:true,
-    source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-001']};
+    source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-002']};
   facts.facts_sha256=semantic('capability-facts-v1',facts,'facts_sha256');
   const plan={schema_version:2,replan_epoch:null,contract_binding:{mode:'strict-spec',
     created_by_version:'6.14.0',source_plan_sha256:'1'.repeat(64),
@@ -996,7 +996,11 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
   capability_facts:facts,slices:[{id:'SLICE-001',slice_kind:'functional',checked:false,
     scope_schema_version:1,files:['runtime/a.js','runtime/a.test.js'],
     write_scope:{failing_test:['runtime/a.test.js'],production:['runtime/a.js'],refactor:[]},
-    verification_spec:spec,verification_spec_sha256:specSha256}]};
+    verification_spec:spec,verification_spec_sha256:specSha256},
+  {id:'SLICE-002',slice_kind:'release-verification',checked:false,scope_schema_version:1,
+    files:[],write_scope:{failing_test:[],production:[],refactor:[]},
+    verification_scope:['npm test'],release_gate_ids:['GATE-full-relevant-suite'],
+    verification_spec:null,verification_spec_sha256:null}]};
   plan.plan_authority_sha256=planAuthorityOverride||
     compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
   const verificationPlan=compileVerificationPlan({riskProfile:{class:'critical',score:10,
@@ -1004,7 +1008,9 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
   policySnapshot:{risk_class:'critical',profile:'critical',
     verification_policy:{recommended:'전수 검증 + human gate'}},
   specContract:{schema_version:1,spec_id:'SPEC-FIRST-RED',risk_class:'critical',
-    requirements:[{id:'REQ-001'}],failure_modes:[]},specSha256:'3'.repeat(64),
+    requirements:[{id:'REQ-001',evidence_gate_ids:['GATE-backward-compat']}],
+    compatibility:{legacy_inputs:'explicit legacy reads',migration:'explicit migration'},
+    failure_modes:[]},specSha256:'3'.repeat(64),
   specApprovedHash:'4'.repeat(64),planProjection:plan,capabilities:{},
   compatibilityFacts:{created_by_version:'6.14.0',spec_policy_required:true}});
   fs.writeFileSync(planPath,Buffer.from(canonicalJson(plan)));
@@ -1099,7 +1105,7 @@ test('public first-RED, adoption, proof and production admission authenticate th
     fs.writeFileSync(specPath,specBytes);
     const facts={schema_version:1,authority:'reviewed-plan',destructive:false,external_action:false,
       has_backward_compat:true,has_migration:true,host_dependent:true,
-      source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-001']};
+      source_requirement_ids:['REQ-001'],source_slice_ids:['SLICE-002']};
     facts.facts_sha256=semantic('capability-facts-v1',facts,'facts_sha256');
     const plan={schema_version:2,replan_epoch:null,contract_binding:{mode:'strict-spec',
       created_by_version:'6.14.0',source_plan_sha256:'1'.repeat(64),
@@ -1108,13 +1114,19 @@ test('public first-RED, adoption, proof and production admission authenticate th
     capability_facts:facts,slices:[{id:'SLICE-001',slice_kind:'functional',checked:false,
       scope_schema_version:1,files:['runtime/a.js','runtime/a.test.js'],
       write_scope:{failing_test:['runtime/a.test.js'],production:['runtime/a.js'],refactor:[]},
-      verification_spec:spec,verification_spec_sha256:specSha256}]};
+      verification_spec:spec,verification_spec_sha256:specSha256},
+    {id:'SLICE-002',slice_kind:'release-verification',checked:false,scope_schema_version:1,
+      files:[],write_scope:{failing_test:[],production:[],refactor:[]},
+      verification_scope:['npm test'],release_gate_ids:['GATE-full-relevant-suite'],
+      verification_spec:null,verification_spec_sha256:null}]};
     plan.plan_authority_sha256=compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
     const verificationPlan=compileVerificationPlan({riskProfile:{class:'critical',score:10,triggers:['bootstrap']},
       riskProfileSha256:'2'.repeat(64),policySnapshot:{risk_class:'critical',profile:'critical',
         verification_policy:{recommended:'전수 검증 + human gate'}},
       specContract:{schema_version:1,spec_id:'SPEC-FIRST-RED',risk_class:'critical',
-        requirements:[{id:'REQ-001'}],failure_modes:[]},specSha256:'3'.repeat(64),
+        requirements:[{id:'REQ-001',evidence_gate_ids:['GATE-backward-compat']}],
+        compatibility:{legacy_inputs:'explicit legacy reads',migration:'explicit migration'},
+        failure_modes:[]},specSha256:'3'.repeat(64),
       specApprovedHash:'4'.repeat(64),planProjection:plan,capabilities:{},
       compatibilityFacts:{created_by_version:'6.14.0',spec_policy_required:true}});
     fs.writeFileSync(planPath,Buffer.from(canonicalJson(plan)));
