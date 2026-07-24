@@ -4524,6 +4524,9 @@ test('owned directory lock inspector authenticates the exact claim child set',as
       fs.writeFileSync(path.join(lock.path,'foreign-child'),'foreign\n');
       assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),/lock-inspect-children/);
       fs.unlinkSync(path.join(lock.path,'foreign-child'));
+      fs.writeFileSync(path.join(`${lock.path}.claims`,'foreign-ticket'),'foreign\n');
+      assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),/lock-inspect-children/);
+      fs.unlinkSync(path.join(`${lock.path}.claims`,'foreign-ticket'));
     });
   }finally{remove(root);}
 });

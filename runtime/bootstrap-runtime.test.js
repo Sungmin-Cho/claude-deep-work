@@ -127,7 +127,9 @@ function witness(overrides={}){
 test('bootstrap manifest has one exact control exclusion schema and rejects widening',()=>{
   assert.equal(BOOTSTRAP_CONTROL_NAMES.length,17);
   const checked=validateBootstrapManifest(manifest(),{sessionId:'s-aaaaaaaa'});
-  assert.equal(checked.excluded_paths.length,22);
+  assert.equal(checked.excluded_paths.length,21);
+  assert.equal(checked.excluded_paths.includes(
+    '.claude/deep-work.s-aaaaaaaa.completed-operations.json'),false);
   assert.equal(checked.excluded_paths.includes(
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock'),true);
   assert.equal(checked.excluded_paths.includes(
@@ -890,7 +892,8 @@ test('public finalizer rejects pollution in the idle operation lock claims direc
   {cwd:fixture.root}),/bootstrap-(?:manifest|lock)/);
   });
 
-test('public finalizer rejects structurally incomplete bootstrap operation journals',async(t)=>{
+test('public finalizer treats structurally incomplete unrelated operation journals as governed state',
+  async(t)=>{
   const cases=[
     ['missing-preconditions',(value)=>{delete value.preconditions;}],
     ['stage-does-not-match-last-row',(value)=>{value.stage='authorization-authenticated';}],
@@ -910,7 +913,7 @@ test('public finalizer rejects structurally incomplete bootstrap operation journ
     Buffer.from(canonicalJson(value)));
     await assert.rejects(()=>dispatch(['bootstrap','finalize','--state',fixture.statePath,
       '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
-    {cwd:fixture.root}),/bootstrap-manifest-runtime-journal/);
+    {cwd:fixture.root}),/bootstrap-manifest-authority/);
   });
 });
 
