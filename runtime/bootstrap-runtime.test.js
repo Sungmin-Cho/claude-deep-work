@@ -1080,7 +1080,7 @@ async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=
 
 function rebindPreparedPlan(prepared){
   const plan=structuredClone(prepared.plan);
-  plan.replan_epoch=1;
+  plan.replan_epoch='9'.repeat(64);
   plan.plan_authority_sha256=compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
   const verificationPlan=structuredClone(prepared.verificationPlan);
   verificationPlan.plan_authority_sha256=plan.plan_authority_sha256;
