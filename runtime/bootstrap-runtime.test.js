@@ -1104,6 +1104,70 @@ test('public finalizer rejects governed drift after a pending operation-stage cr
     JSON.parse(fs.readFileSync(ledgerPath)).receipts.length:0,0);
 });
 
+test('public finalizer authenticates the exact pending operation journal before recovery',async(t)=>{
+  for(const [name,mutate,serialize] of [
+    ['extra-top-level',(value)=>{value.extra=true;}],
+    ['stage-last-row-mismatch',(value)=>{value.stage='prepared';}],
+    ['injected-stage',(value)=>{
+      value.stage='receipt-precomputed';
+      value.stages.push({stage:'receipt-precomputed',at:'2026-07-24T00:00:00.000Z',details:{}});
+    }],
+    ['duplicate-stage',(value)=>{value.stages.push(structuredClone(value.stages.at(-1)));}],
+    ['wrong-preconditions',(value)=>{value.preconditions.extra=true;}],
+    ['wrong-operation-id',(value)=>{value.operationId=`op-${'f'.repeat(64)}`;}],
+    ['no-terminal-lf',()=>{},(value)=>Buffer.from(canonicalJson(value).replace(/\n$/u,''))],
+  ])await t.test(name,async()=>{
+    const fixture=bootstrapControlFixture();
+    t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+    const argv=['bootstrap','finalize','--state',fixture.statePath,'--authorization',
+      fixture.authorizationPath,'--execution',fixture.executionPath];
+    const original=journalRuntime.recordOperationStage;
+    let armed=true;
+    journalRuntime.recordOperationStage=async(...args)=>{
+      const result=await original(...args);
+      if(armed&&args[1]==='authorization-authenticated'){
+        armed=false;throw new Error('crash-after-authorization-authenticated');
+      }
+      return result;
+    };
+    try{await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),
+      /crash-after-authorization-authenticated/);}
+    finally{journalRuntime.recordOperationStage=original;}
+    const operationName=fs.readdirSync(path.join(fixture.root,'.claude'))
+      .find((entry)=>entry.includes('.op.bootstrap-finalize.'));
+    const operationPath=path.join(fixture.root,'.claude',operationName);
+    const value=JSON.parse(fs.readFileSync(operationPath));
+    mutate(value);
+    fs.writeFileSync(operationPath,serialize?serialize(value):Buffer.from(canonicalJson(value)));
+    await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),
+      /bootstrap-finalize-pending-operation/);
+    const ledgerPath=path.join(fixture.root,'.claude',
+      'deep-work.s-aaaaaaaa.completed-operations.json');
+    assert.equal(fs.existsSync(ledgerPath)?
+      JSON.parse(fs.readFileSync(ledgerPath)).receipts.length:0,0);
+  });
+});
+
+test('public finalizer reauthenticates marker and receipt at the terminal ledger barrier',async(t)=>{
+  const fixture=bootstrapControlFixture();
+  t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+  const argv=['bootstrap','finalize','--state',fixture.statePath,'--authorization',
+    fixture.authorizationPath,'--execution',fixture.executionPath];
+  const original=journalRuntime.recordOperationStage;
+  journalRuntime.recordOperationStage=async(...args)=>{
+    const result=await original(...args);
+    if(args[1]==='receipt-published')
+      fs.writeFileSync(path.join(fixture.control,'marker.json'),'{"corrupt":true}');
+    return result;
+  };
+  try{await assert.rejects(()=>dispatch(argv,{cwd:fixture.root}),/bootstrap-marker/);}
+  finally{journalRuntime.recordOperationStage=original;}
+  const ledgerPath=path.join(fixture.root,'.claude',
+    'deep-work.s-aaaaaaaa.completed-operations.json');
+  assert.equal(fs.existsSync(ledgerPath)?
+    JSON.parse(fs.readFileSync(ledgerPath)).receipts.length:0,0);
+});
+
 test('public abort resumes every restoration and ledger crash seam without a second reverse',async(t)=>{
   const stages=['authorization-authenticated','failure-authenticated',
     'observed-manifest-authenticated','production-reverted','test-reverted',
