@@ -1422,6 +1422,28 @@ function authenticateBootstrapFinalizeManifest(root,authorization,manifestOption
   if(captured.manifest_sha256!==witness.expected_post_manifest_sha256)
     fail('bootstrap-manifest-authority');
 }
+function authenticateBootstrapFinalizeRecoveryManifest(root,authorization,manifestOptions,
+  operationState){
+  if(operationState?.status!=='pending')fail('bootstrap-finalize-pending-operation');
+  const {status,...journalState}=operationState;
+  const sessionId=authorization.witness.target_session_id;
+  const relative=`.claude/deep-work.${sessionId}.op.bootstrap-finalize.`+
+    `${journalState.operationId}.json`;
+  const journalFile=path.join(root,...relative.split('/'));
+  const raw=readJsonArtifact(journalFile,'bootstrap-finalize-pending-operation',{canonical:true});
+  if(canonicalText(raw.value)!==canonicalText(journalState))
+    fail('bootstrap-finalize-pending-operation');
+  const captured=captureBootstrapManifest(root,authorization.witness,'post',manifestOptions);
+  const matches=captured.entries.filter((entry)=>entry.path===relative);
+  if(matches.length!==1||matches[0].type!=='file'||matches[0].size!==raw.bytes.length||
+    matches[0].sha256!==raw.sha256)
+    fail('bootstrap-finalize-pending-operation');
+  const projected={...captured,entries:captured.entries.filter((entry)=>entry.path!==relative),
+    manifest_sha256:null};
+  projected.manifest_sha256=semanticDigest('bootstrap-manifest-v1',projected,'manifest_sha256');
+  if(projected.manifest_sha256!==authorization.witness.expected_post_manifest_sha256)
+    fail('bootstrap-manifest-authority');
+}
 async function finalizeBootstrap({stateCapability,authorizationPath,executionPath}={}){
   const sessionId=sessionIdForState(stateCapability),root=stateCapability.projectRoot;
   const authorizationFile=assertControlPath(root,authorizationPath,sessionId,'authorization.json');
@@ -1510,6 +1532,8 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
     }else{
       if(executionJournal.stage!=='finalize-completed')
         fail('bootstrap-finalize-pending-publication');
+      authenticateBootstrapFinalizeRecoveryManifest(root,context.authorization,
+        {bootstrapLockClaim},priorOperation);
       const markerRaw=readJsonArtifact(markerPath,'bootstrap-marker',{canonical:true});
       const receiptRaw=readJsonArtifact(receiptPath,'bootstrap-receipt',{canonical:true});
       if(!markerRaw.bytes.equals(canonicalBootstrapJson(completion.marker))||
@@ -1529,6 +1553,10 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
       markerPath:result.marker_path,markerSha256:completion.marker.marker_sha256}});
     await journal.recordOperationStage(operation,'receipt-published',{owned:{
       receiptPath:result.receipt_path,receiptSha256:completion.receipt.receipt_sha256}});
+    const pendingForCompletion=await completedOperation(project,operationId,sessionId,
+      'bootstrap-finalize');
+    authenticateBootstrapFinalizeRecoveryManifest(root,context.authorization,
+      {bootstrapLockClaim},pendingForCompletion);
     const ledger=await journal.completeOperation(operation,result);
     validateBootstrapCompletionAuthority({receipt:completion.receipt,marker:completion.marker,
       operationReceipt:ledger});

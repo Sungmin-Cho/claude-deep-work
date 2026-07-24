@@ -3086,6 +3086,13 @@ function stableDirectorySnapshot(directory, expectedNames, fsApi, code) {
   return {identity:mutationSensitiveIdentity(stat),children};
 }
 
+function immutableOwnedLockSnapshot(claimsSnapshot,lockSnapshot) {
+  const owner=lockSnapshot.children.find((child)=>child.name==='owner.json');
+  if(!owner)fail('lock-inspect-children','owned lock directory is missing owner.json');
+  const {dev,ino,mode,type}=lockSnapshot.identity;
+  return {claims:claimsSnapshot,lock:{identity:{dev,ino,mode,type},owner}};
+}
+
 function inspectOwnedDirectoryClaimRuntime(lockCapability, claimToken, runtime) {
   const meta=assertCapability(lockCapability,['project-state']);
   if(lockCapability.role!=='lock')fail('lock-inspect-capability','lock inspector requires lock role');
@@ -3102,7 +3109,7 @@ function inspectOwnedDirectoryClaimRuntime(lockCapability, claimToken, runtime) 
     'lock-inspect-children');
   const lockBefore=stableDirectorySnapshot(lockCapability.path,
     ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
-  if(canonicalJson({claims:claimsBefore,lock:lockBefore})!==
+  if(canonicalJson(immutableOwnedLockSnapshot(claimsBefore,lockBefore))!==
     canonicalJson(active.identitySnapshot))
     fail('lock-inspect-claim','owned lock child identity changed before inspection');
   const chain=readCanonicalClaim(lockCapability.path,claim.claimsDir,targetIdentity,runtime.fsApi);
@@ -3146,12 +3153,11 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
   reachLockTestSeam(runtime, 'after-first-heartbeat',
     {ticketPath:claim.ticketPath, lockPath:lockCapability.path, core:claim.core});
   const ticketName=path.basename(claim.ticketPath);
-  const identitySnapshot={
-    claims:stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
-      'lock-inspect-children'),
-    lock:stableDirectorySnapshot(lockCapability.path,['heartbeat.json','owner.json'],
-      runtime.fsApi,'lock-inspect-children'),
-  };
+  const initialClaimsSnapshot=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+    'lock-inspect-children');
+  const initialLockSnapshot=stableDirectorySnapshot(lockCapability.path,
+    ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+  const identitySnapshot=immutableOwnedLockSnapshot(initialClaimsSnapshot,initialLockSnapshot);
   let heartbeatFailure = null;
   const timer = setInterval(() => {
     try { updateOwnedHeartbeat(lockCapability, claim, runtime); }
