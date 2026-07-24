@@ -49,10 +49,17 @@ function compileVerificationPlan(input={}){const risk=input.riskProfile?.class||
   if(isAtLeast614(binding.created_by_version)){
     const sourceRequirements=capability_facts?.source_requirement_ids;
     const sourceSlices=capability_facts?.source_slice_ids;
-    const sliceIds=catalog.ordered((projection.slices||[]).map((row)=>row.id));
-    if(capability_facts?.has_backward_compat!==true||capability_facts?.has_migration!==true||
-      canonicalJson(catalog.ordered(sourceRequirements||[]))!==canonicalJson(req)||
-      canonicalJson(catalog.ordered(sourceSlices||[]))!==canonicalJson(sliceIds))
+    const compatibility=spec.compatibility||{};
+    const expectedRequirements=catalog.ordered((spec.requirements||[])
+      .filter((row)=>(row.evidence_gate_ids||[]).some((id)=>
+        ['GATE-backward-compat','GATE-migration-dry-run'].includes(id)))
+      .map((row)=>row.id));
+    const expectedSlices=catalog.ordered((projection.slices||[])
+      .filter((row)=>row.slice_kind==='release-verification').map((row)=>row.id));
+    if(capability_facts?.has_backward_compat!==Object.hasOwn(compatibility,'legacy_inputs')||
+      capability_facts?.has_migration!==Object.hasOwn(compatibility,'migration')||
+      canonicalJson(catalog.ordered(sourceRequirements||[]))!==canonicalJson(expectedRequirements)||
+      canonicalJson(catalog.ordered(sourceSlices||[]))!==canonicalJson(expectedSlices))
       fail('verification-capability-facts');
   }
   const policyCapabilityFacts=catalog.normalizeCapabilityFacts(Object.fromEntries(

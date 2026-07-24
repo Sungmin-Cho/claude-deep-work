@@ -136,9 +136,11 @@ function specContractDigest(contract) {
 function buildSpecIndex(contract) {
   return {
     requirements: new Set((contract.requirements || []).map((row) => row.id)),
+    requirementRows: structuredClone(contract.requirements || []),
     invariants: new Set((contract.invariants || []).map((row) => row.id)),
     failureModes: new Set((contract.failure_matrix || []).map((row) => row.id)),
     negativeTests: new Set((contract.negative_tests || []).map((row) => row.id)),
+    compatibility: structuredClone(contract.compatibility || {}),
   };
 }
 
@@ -343,7 +345,8 @@ function parseInlineObject(raw, path) {
   return out;
 }
 
-function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplete=false}={}) {
+function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplete=false,
+  expectedBackwardCompat,expectedMigration,expectedRequirementIds,expectedSliceIds}={}) {
   const keys=['schema_version','authority','destructive','external_action','has_backward_compat','has_migration',
     'host_dependent','source_requirement_ids','source_slice_ids','facts_sha256'];
   if(!exactKeyBoolean(value,keys)||value.schema_version!==1||value.authority!=='reviewed-plan'||
@@ -363,11 +366,20 @@ function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplet
     fail('capability-facts-requirement','capability_facts');
   if(sliceIds&&value.source_slice_ids.some((id)=>!sliceIds.has(id)))
     fail('capability-facts-slice','capability_facts');
-  if(requireComplete&&(
-    value.has_backward_compat!==true||value.has_migration!==true||
-    canonicalJson(value.source_requirement_ids)!==canonicalJson(byteSort([...(requirementIds||[])]))||
-    canonicalJson(value.source_slice_ids)!==canonicalJson(byteSort([...(sliceIds||[])]))
-  ))fail('capability-facts-incomplete','capability_facts');
+  const requiredRequirements=expectedRequirementIds===undefined?null:
+    byteSort([...(expectedRequirementIds||[])]);
+  const requiredSlices=expectedSliceIds===undefined?null:byteSort([...(expectedSliceIds||[])]);
+  if((expectedBackwardCompat!==undefined&&
+      value.has_backward_compat!==expectedBackwardCompat)||
+    (expectedMigration!==undefined&&value.has_migration!==expectedMigration)||
+    (requiredRequirements!==null&&canonicalJson(value.source_requirement_ids)!==
+      canonicalJson(requiredRequirements))||
+    (requiredSlices!==null&&canonicalJson(value.source_slice_ids)!==canonicalJson(requiredSlices))||
+    (requireComplete&&expectedBackwardCompat===undefined&&expectedMigration===undefined&&
+      (value.has_backward_compat!==true||value.has_migration!==true||
+       canonicalJson(value.source_requirement_ids)!==canonicalJson(byteSort([...(requirementIds||[])]))||
+       canonicalJson(value.source_slice_ids)!==canonicalJson(byteSort([...(sliceIds||[])])))))
+    fail('capability-facts-incomplete','capability_facts');
   const factsPreimage=structuredClone(value);delete factsPreimage.facts_sha256;
   const factsDigest=crypto.createHash('sha256').update(Buffer.concat([
     Buffer.from('capability-facts-v1\0'),
@@ -563,8 +575,17 @@ function parsePlanContractMarkdown(source, context = {}) {
   if (new Set(slices.map((slice) => slice.id)).size !== slices.length) fail('plan-duplicate-slice', 'slices');
   if(capabilityFacts)capabilityFacts=validateCapabilityFactsV1(capabilityFacts,{
     requirementIds:context.specIndex?.requirements,sliceIds:new Set(slices.map((slice)=>slice.id)),
-    requireComplete:/^(?:[7-9]|\d{2,})\.|^6\.(?:1[4-9]|[2-9]\d)\./
-      .test(binding?.created_by_version||'')});
+    ...(/^(?:[7-9]|\d{2,})\.|^6\.(?:1[4-9]|[2-9]\d)\./
+      .test(binding?.created_by_version||'')?{
+        expectedBackwardCompat:Object.hasOwn(context.specIndex?.compatibility||{},'legacy_inputs'),
+        expectedMigration:Object.hasOwn(context.specIndex?.compatibility||{},'migration'),
+        expectedRequirementIds:(context.specIndex?.requirementRows||[])
+          .filter((row)=>(row.evidence_gate_ids||[]).some((id)=>
+            ['GATE-backward-compat','GATE-migration-dry-run'].includes(id)))
+          .map((row)=>row.id),
+        expectedSliceIds:slices.filter((slice)=>slice.slice_kind==='release-verification')
+          .map((slice)=>slice.id),
+      }:{})});
   return canonicalize({ binding, ...(binding&&capabilityFacts?{capability_facts:capabilityFacts,replan_epoch:replanEpoch}:{}), slices });
 }
 

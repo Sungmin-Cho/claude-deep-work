@@ -417,6 +417,8 @@ function validateBootstrapAuthorization(value){
       !DIGEST.test(row.sha256||'')||typeof row.reviewer_identity!=='string'||!row.reviewer_identity||
       row.witness_sha256!==witness.witness_sha256||row.verdict!=='APPROVE')
       fail('bootstrap-review-witness');
+  if(new Set(value.review_report_refs.map((row)=>row.reviewer_identity)).size!==3)
+    fail('bootstrap-review-identity');
   if(semanticDigest('bootstrap-authorization-v1',value,'authorization_sha256')!==value.authorization_sha256)
     fail('bootstrap-authorization-digest');
   return {...structuredClone(value),witness};
@@ -820,22 +822,92 @@ async function publishBootstrapFailure({stateCapability,authorizationPath,failur
 
 function captureBootstrapManifest(root,witness,phase){
   const {spawnSync}=require('node:child_process');
-  const listed=spawnSync('git',['-C',root,'ls-files','-z'],{encoding:null});
-  if(listed.status!==0||listed.signal!==null)fail('bootstrap-manifest-capture');
+  const git=(args,{allowStatusOne=false}={})=>{
+    const result=spawnSync('git',['-C',root,...args],{encoding:null});
+    if(result.signal!==null||(!allowStatusOne&&result.status!==0)||
+      (allowStatusOne&&![0,1].includes(result.status))||(result.stderr?.length||0))
+      fail('bootstrap-manifest-git');
+    return result;
+  };
+  const decode=(bytes)=>{
+    try{return new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
+    catch{fail('bootstrap-manifest-git');}
+  };
+  const head=decode(git(['rev-parse','HEAD']).stdout).trim();
+  if(!OID.test(head)||head!==witness.base_head_oid)fail('bootstrap-manifest-head');
+  const commonText=decode(git(['rev-parse','--git-common-dir']).stdout).trim();
+  const worktreeText=decode(git(['worktree','list','--porcelain']).stdout);
+  const firstWorktree=worktreeText.split('\n').find((line)=>line.startsWith('worktree '));
+  if(!commonText||!firstWorktree)fail('bootstrap-manifest-repository');
+  let commonGitDir,repositoryRoot,targetWorktreeRoot;
+  try{
+    commonGitDir=fs.realpathSync(path.resolve(root,commonText));
+    repositoryRoot=fs.realpathSync(firstWorktree.slice('worktree '.length));
+    targetWorktreeRoot=fs.realpathSync(root);
+  }catch{fail('bootstrap-manifest-repository');}
+  const repositoryIdentity=rawDigest(Buffer.from(canonicalText({
+    common_git_dir:commonGitDir,repository_root:repositoryRoot,
+    target_worktree_root:targetWorktreeRoot,base_head_oid:head,
+  })));
+  if(repositoryIdentity!==witness.repository_identity_sha256)
+    fail('bootstrap-manifest-repository');
+  if((git(['ls-files','-u','-z']).stdout?.length||0)!==0)
+    fail('bootstrap-manifest-index');
+  const cached=git(['diff','--cached','--quiet','HEAD','--'],{allowStatusOne:true});
+  if(cached.status!==0||(cached.stdout?.length||0)!==0)fail('bootstrap-manifest-index');
+  const parseIndex=()=>{
+    const bytes=git(['ls-files','-s','-z']).stdout||Buffer.alloc(0);
+    const records=bytes.length?decode(bytes.subarray(0,bytes.at(-1)===0?bytes.length-1:bytes.length))
+      .split('\0'):[];
+    return records.map((record)=>{
+      const match=record.match(/^([0-7]{6}) ([0-9a-f]{40}) ([0-3])\t([\s\S]+)$/);
+      if(!match||match[3]!=='0'||!portablePath(match[4]))fail('bootstrap-manifest-index');
+      return {mode:match[1],oid:match[2],path:match[4]};
+    }).sort((left,right)=>Buffer.compare(Buffer.from(left.path),Buffer.from(right.path)));
+  };
+  const parseTree=()=>{
+    const bytes=git(['ls-tree','-r','-z','--full-tree','HEAD']).stdout||Buffer.alloc(0);
+    const records=bytes.length?decode(bytes.subarray(0,bytes.at(-1)===0?bytes.length-1:bytes.length))
+      .split('\0'):[];
+    return records.map((record)=>{
+      const match=record.match(/^([0-7]{6}) blob ([0-9a-f]{40})\t([\s\S]+)$/);
+      if(!match||!portablePath(match[3]))fail('bootstrap-manifest-index');
+      return {mode:match[1],oid:match[2],path:match[3]};
+    }).sort((left,right)=>Buffer.compare(Buffer.from(left.path),Buffer.from(right.path)));
+  };
+  const indexRows=parseIndex(),treeRows=parseTree();
+  if(canonicalText(indexRows)!==canonicalText(treeRows))fail('bootstrap-manifest-index');
+  const flagBytes=git(['ls-files','-v','-z']).stdout||Buffer.alloc(0);
+  const flagRecords=flagBytes.length?
+    decode(flagBytes.subarray(0,flagBytes.at(-1)===0?flagBytes.length-1:flagBytes.length))
+      .split('\0'):[];
+  const flagPaths=flagRecords.map((record)=>{
+    if(!record.startsWith('H ')||!portablePath(record.slice(2)))
+      fail('bootstrap-manifest-index');
+    return record.slice(2);
+  }).sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
+  if(canonicalText(flagPaths)!==canonicalText(indexRows.map((row)=>row.path)))
+    fail('bootstrap-manifest-index');
+  const listed=git(['ls-files','-z','--cached','--others','--exclude-standard']);
   const bytes=listed.stdout||Buffer.alloc(0);
   const names=bytes.length===0?[]:bytes.subarray(0,bytes.at(-1)===0?bytes.length-1:bytes.length)
     .toString('utf8').split('\0').filter(Boolean)
     .sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
-  const entries=names.map((relative)=>{
+  const inodeOwners=new Set();
+  const entries=names.flatMap((relative)=>{
+    if(bootstrapExcludedPaths(witness.target_session_id).includes(relative))return [];
     const file=path.join(root,...relative.split('/'));let stat;
     try{stat=fs.lstatSync(file);}catch{fail('bootstrap-manifest-capture');}
     if(!stat.isFile()||stat.isSymbolicLink())fail('bootstrap-manifest-capture');
+    const inode=`${stat.dev}:${stat.ino}`;
+    if(inodeOwners.has(inode))fail('bootstrap-manifest-hardlink');
+    inodeOwners.add(inode);
     const content=fs.readFileSync(file);
-    return {path:relative,type:'file',mode:String(stat.mode),size:content.length,
-      sha256:rawDigest(content)};
+    return [{path:relative,type:'file',mode:String(stat.mode),size:content.length,
+      sha256:rawDigest(content)}];
   });
-  const value={schema_version:1,repository_identity_sha256:witness.repository_identity_sha256,
-    base_head_oid:witness.base_head_oid,phase,
+  const value={schema_version:1,repository_identity_sha256:repositoryIdentity,
+    base_head_oid:head,phase,
     excluded_paths:bootstrapExcludedPaths(witness.target_session_id),entries,manifest_sha256:null};
   value.manifest_sha256=semanticDigest('bootstrap-manifest-v1',value,'manifest_sha256');
   return validateBootstrapManifest(value,{sessionId:witness.target_session_id});
@@ -1041,8 +1113,10 @@ function authenticateBootstrapReviewReports(root,authorization){
   for(const ref of authorization.review_report_refs){
     const file=assertControlPath(root,path.join(root,...ref.path.split('/')),
       authorization.witness.target_session_id,`patch-review-${ref.role}.json`);
-    const raw=readJsonArtifact(file,'bootstrap-review',{canonical:true});
+    const raw=readJsonArtifact(file,'bootstrap-review');
     const report=raw.value;
+    const expectedBytes=Buffer.concat([canonicalBootstrapJson(report),Buffer.from('\n')]);
+    if(!raw.bytes.equals(expectedBytes))fail('bootstrap-review-terminal-lf');
     if(raw.sha256!==ref.sha256||
       !exactKeys(report,['schema_version','role','reviewer_identity','witness_sha256',
         'verdict','findings','report_sha256'])||
@@ -1278,14 +1352,41 @@ function acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath})
     fail('bootstrap-first-red-write');
   return {fields,receipt,raw,project:transaction.projectCapabilityFor(stateCapability)};
 }
+function authenticateImmutableBootstrapPlan(plan){
+  let compiled;
+  try{compiled=require('./plan-runtime.js').compileImmutablePlanAuthorityV2(plan);}
+  catch{fail('bootstrap-first-red-plan');}
+  if(compiled.plan_authority_sha256!==plan?.plan_authority_sha256)
+    fail('bootstrap-first-red-plan');
+  return compiled;
+}
+function authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,specSha256}){
+  const compiled=authenticateImmutableBootstrapPlan(plan);
+  const policy=require('./verification-policy-runtime.js');
+  if(!policy.validateVerificationPlan(verificationPlan).pass||
+    verificationPlan.plan_authority_sha256!==compiled.plan_authority_sha256||
+    verificationPlan.plan_projection_sha256!==
+      rawDigest(Buffer.from(journal.canonicalJson(plan)))||
+    verificationPlan.spec_sha256!==plan.contract_binding?.spec_contract?.spec_sha256||
+    verificationPlan.spec_approved_hash!==
+      plan.contract_binding?.spec_contract?.spec_approved_hash||
+    verificationPlan.source_plan_sha256!==plan.contract_binding?.source_plan_sha256||
+    canonicalText(verificationPlan.capability_facts)!==
+      canonicalText(plan.capability_facts)||
+    canonicalText(verificationPlan.slice_verification_specs?.[sliceId])!==
+      canonicalText({slice_kind:'functional',verification_spec_sha256:specSha256}))
+    fail('bootstrap-first-red-plan');
+  return verificationPlan;
+}
 async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId,authorizationPath,
   receiptPath,markerPath,specPath,writeReceiptPath}={}){
   const bound=authenticateBootstrapCompletion({stateCapability,authorizationPath,receiptPath,markerPath});
   const transaction=require('./transaction-runtime.js'),frontmatter=require('./frontmatter.js');
   const locked=JSON.parse(transaction.readSessionFile(planCapability));
-  if(canonicalText(locked)!==canonicalText(plan)||!DIGEST.test(plan.plan_authority_sha256||'')||
+  if(canonicalText(locked)!==canonicalText(plan)||
     bound.receipt.first_red_slice_id!==sliceId||bound.marker.first_red_slice_id!==sliceId)
     fail('bootstrap-first-red-plan');
+  authenticateImmutableBootstrapPlan(plan);
   const target=plan.slices?.find((row)=>row.id===sliceId);
   const specRaw=readJsonArtifact(specPath,'bootstrap-first-red-spec',{canonical:true});
   const spec=require('./contract-runtime.js').validateVerificationSpecV2(specRaw.value);
@@ -1303,6 +1404,14 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
   validateBootstrapCompletionAuthority({receipt:bound.receipt,marker:bound.marker,
     operationReceipt:completionReceipt});
   const write=acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath});
+  let verificationPlan;
+  try{verificationPlan=typeof write.fields.verification_plan_json==='string'?
+    JSON.parse(write.fields.verification_plan_json):write.fields.verification_plan_json;}
+  catch{fail('bootstrap-first-red-plan');}
+  if(!verificationPlan||verificationPlan.plan_sha256!==write.fields.verification_plan_sha256)
+    fail('bootstrap-first-red-plan');
+  authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,
+    specSha256:specRaw.sha256});
   const writeLedger=await journal.resumeOperation({projectCapability:write.project,
     operationId:write.receipt.operationId,sessionId:bound.sessionId,
     kind:'delegation-scope-publish'});
@@ -1408,12 +1517,6 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     const preWrite=writeExclusiveArtifact(path.join(bound.root,...preRef.path.split('/')),manifestBefore);
     const postWrite=writeExclusiveArtifact(path.join(bound.root,...postRef.path.split('/')),manifestAfter);
     preRef.sha256=preWrite.sha256;postRef.sha256=postWrite.sha256;
-    let verificationPlan;
-    try{verificationPlan=typeof write.fields.verification_plan_json==='string'?
-      JSON.parse(write.fields.verification_plan_json):write.fields.verification_plan_json;}
-    catch{fail('bootstrap-first-red-plan');}
-    if(!verificationPlan||verificationPlan.plan_sha256!==write.fields.verification_plan_sha256)
-      fail('bootstrap-first-red-plan');
     verification={schema_version:2,session_id:bound.sessionId,slice_id:sliceId,
       plan_authority_sha256:plan.plan_authority_sha256,
       spec_sha256:plan.contract_binding?.spec_contract?.spec_sha256,
@@ -1467,6 +1570,7 @@ async function adoptBootstrapRed({stateCapability,planCapability,plan,sliceId,au
   const locked=JSON.parse(transaction.readSessionFile(planCapability));
   if(canonicalText(locked)!==canonicalText(plan)||sliceId!==bound.receipt.first_red_slice_id)
     fail('bootstrap-red-adoption-plan');
+  authenticateImmutableBootstrapPlan(plan);
   const project=transaction.projectCapabilityFor(stateCapability);
   const bridge=await journal.resumeOperation({projectCapability:project,
     operationId:bridgeOperationId,sessionId:bound.sessionId,kind:'bootstrap-first-red'});
@@ -1520,6 +1624,7 @@ async function publishBootstrapRedProof({stateCapability,planCapability,plan,sli
   const sessionId=sessionIdForState(stateCapability),root=stateCapability.projectRoot;
   const locked=JSON.parse(transaction.readSessionFile(planCapability));
   if(canonicalText(locked)!==canonicalText(plan))fail('bootstrap-proof-plan');
+  authenticateImmutableBootstrapPlan(plan);
   const project=transaction.projectCapabilityFor(stateCapability);
   const transition=await journal.resumeOperation({projectCapability:project,
     operationId:transitionOperationId,sessionId,kind:'bootstrap-red-adoption'});
