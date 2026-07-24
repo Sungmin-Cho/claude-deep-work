@@ -63,6 +63,16 @@ const BOOTSTRAP_OPERATION_STAGE_RULES=Object.freeze({
 });
 const BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR=
   '.claude/deep-work.<session>.op.<bootstrap-kind>.op-<32-64-lower-hex>.json';
+const BOOTSTRAP_CURRENT_OPERATION_DOMAINS=Object.freeze({
+  'bootstrap-abort':'bootstrap-abort-v1',
+  'bootstrap-first-red':'bootstrap-first-red-v2',
+});
+const BOOTSTRAP_CURRENT_OPERATION_PROJECTION_KEYS=Object.freeze([
+  'kind','operation_id','preconditions','slice',
+]);
+const BOOTSTRAP_LOCK_PROJECTION_KEYS=Object.freeze([
+  'target_identity','pid','process_identity','nonce','claim_sha256',
+]);
 
 const BOOTSTRAP_EXECUTION_STAGES=Object.freeze([
   'ready','test-patch-started','test-patch-applied','red-command-completed',
@@ -98,21 +108,47 @@ const BOOTSTRAP_RED_PROOF_KEYS=Object.freeze([
   'verification_result_sha256','write_operation_id','write_receipt_sha256',
 ]);
 
+function bootstrapRuntimeLockPaths(sessionId){
+  return [
+    `.claude/deep-work.${sessionId}.bootstrap-control.lock`,
+    `.claude/deep-work.${sessionId}.bootstrap-control.lock.claims`,
+    `.claude/deep-work.${sessionId}.operations.lock`,
+    `.claude/deep-work.${sessionId}.operations.lock.claims`,
+  ].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+}
 function bootstrapExcludedPaths(sessionId){
   if(!SESSION.test(sessionId||''))fail('bootstrap-session-id');
   return [
     ...BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/${sessionId}/bootstrap/${name}`),
-    `.claude/deep-work.${sessionId}.bootstrap-control.lock`,
-    `.claude/deep-work.${sessionId}.bootstrap-control.lock.claims`,
-    `.claude/deep-work.${sessionId}.completed-operations.json`,
-    `.claude/deep-work.${sessionId}.operations.lock`,
-    `.claude/deep-work.${sessionId}.operations.lock.claims`,
+    ...bootstrapRuntimeLockPaths(sessionId),
   ]
     .sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
 }
-function isAuthenticatedBootstrapRuntimeJournal(relative,file,sessionId){
-  const match=relative.match(/^\.claude\/deep-work\.(s-[0-9a-f]{8})\.op\.([a-z-]+)\.(op-[0-9a-f]{32,64})\.json$/);
-  if(!match||match[1]!==sessionId||!BOOTSTRAP_OPERATION_KINDS.includes(match[2]))return false;
+function plainObject(value){
+  return value!==null&&typeof value==='object'&&!Array.isArray(value)&&
+    Object.getPrototypeOf(value)===Object.prototype;
+}
+function timestamp(value){
+  return typeof value==='string'&&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value);
+}
+function validateBootstrapCurrentOperation(value){
+  if(value===undefined||value===null)return null;
+  if(!exactKeys(value,BOOTSTRAP_CURRENT_OPERATION_PROJECTION_KEYS)||
+    !Object.hasOwn(BOOTSTRAP_CURRENT_OPERATION_DOMAINS,value.kind)||
+    !OPERATION.test(value.operation_id||'')||!plainObject(value.preconditions)||
+    !(value.slice===null||typeof value.slice==='string'&&value.slice.length>0))
+    fail('bootstrap-manifest-current-operation');
+  const expected=deterministicOperationId(BOOTSTRAP_CURRENT_OPERATION_DOMAINS[value.kind],
+    value.preconditions);
+  if(value.operation_id!==expected)fail('bootstrap-manifest-current-operation');
+  return structuredClone(value);
+}
+function isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentOperation){
+  if(currentOperation===null)return false;
+  const expectedRelative=`.claude/deep-work.${sessionId}.op.${currentOperation.kind}.`+
+    `${currentOperation.operation_id}.json`;
+  if(relative!==expectedRelative)return false;
   let stat,afterStat,bytes,value;
   try{
     stat=fs.lstatSync(file);bytes=fs.readFileSync(file);
@@ -122,18 +158,18 @@ function isAuthenticatedBootstrapRuntimeJournal(relative,file,sessionId){
   const keys=Object.keys(value||{}).sort();
   const expectedKeys=['createdAt','kind','operationId','owned','preconditions','sessionId',
     ...(value&&Object.hasOwn(value,'slice')?['slice']:[]),'stage','stages','version'].sort();
-  const plainObject=(candidate)=>candidate!==null&&typeof candidate==='object'&&
-    !Array.isArray(candidate)&&Object.getPrototypeOf(candidate)===Object.prototype;
-  const timestamp=(candidate)=>typeof candidate==='string'&&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(candidate);
-  const stageRules=BOOTSTRAP_OPERATION_STAGE_RULES[match[2]];
+  const stageRules=BOOTSTRAP_OPERATION_STAGE_RULES[currentOperation.kind];
   if(!stat.isFile()||stat.isSymbolicLink()||bytes.length>1024*1024||
     !afterStat.isFile()||afterStat.isSymbolicLink()||afterStat.dev!==stat.dev||
     afterStat.ino!==stat.ino||afterStat.mode!==stat.mode||afterStat.size!==stat.size||
     afterStat.mtimeMs!==stat.mtimeMs||
     !bytes.equals(Buffer.from(journal.canonicalJson(value)))||
     canonicalText(keys)!==canonicalText(expectedKeys)||value.version!==1||
-    value.sessionId!==sessionId||value.kind!==match[2]||value.operationId!==match[3]||
+    value.sessionId!==sessionId||value.kind!==currentOperation.kind||
+    value.operationId!==currentOperation.operation_id||
+    canonicalText(value.preconditions)!==canonicalText(currentOperation.preconditions)||
+    (value.slice??null)!==currentOperation.slice||
+    Object.hasOwn(value,'slice')!==(currentOperation.slice!==null)||
     !plainObject(value.preconditions)||
     !(value.owned===null||plainObject(value.owned))||
     !timestamp(value.createdAt)||
@@ -152,7 +188,7 @@ function isAuthenticatedBootstrapRuntimeJournal(relative,file,sessionId){
       fail('bootstrap-manifest-runtime-journal');
     if(index>0){
       const currentIndex=stageRules.indexOf(row.stage);
-      const recoveryBranch=match[2]==='bootstrap-abort'&&
+      const recoveryBranch=currentOperation.kind==='bootstrap-abort'&&
         value.stages[index-1].stage==='observed-manifest-authenticated'&&
         row.stage==='recovery-required-published';
       if(currentIndex!==priorIndex+1&&!recoveryBranch)
@@ -169,6 +205,10 @@ function bootstrapManifestSchemaSha256(sessionId){
       'repository_identity_sha256','schema_version'],
     entry_keys:['mode','path','sha256','size','type'],phases:['base','post','red'],
     excluded_paths:bootstrapExcludedPaths(sessionId),
+    runtime_lock_paths:bootstrapRuntimeLockPaths(sessionId),
+    lock_projection_keys:BOOTSTRAP_LOCK_PROJECTION_KEYS,
+    current_operation_projection_keys:BOOTSTRAP_CURRENT_OPERATION_PROJECTION_KEYS,
+    current_operation_domains:BOOTSTRAP_CURRENT_OPERATION_DOMAINS,
     runtime_journal_grammar:BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR,
     runtime_journal_stage_rules:BOOTSTRAP_OPERATION_STAGE_RULES,
   },'schema_sha256');
@@ -901,7 +941,56 @@ async function publishBootstrapFailure({stateCapability,authorizationPath,failur
   });
 }
 
-function captureBootstrapManifest(root,witness,phase){
+function snapshotIdleRuntimeLock(root,lockRelative,claimsRelative){
+  const lockPath=path.join(root,...lockRelative.split('/'));
+  try{
+    fs.lstatSync(lockPath);
+    fail('bootstrap-manifest-lock-active');
+  }catch(error){
+    if(error.code!=='ENOENT')throw error;
+  }
+  const claimsPath=path.join(root,...claimsRelative.split('/'));
+  let stat,names;
+  try{
+    stat=fs.lstatSync(claimsPath);
+    names=fs.readdirSync(claimsPath)
+      .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
+  }catch(error){
+    if(error.code==='ENOENT')return {present:false};
+    fail('bootstrap-manifest-lock-claims');
+  }
+  if(!stat.isDirectory()||stat.isSymbolicLink()||names.length!==0)
+    fail('bootstrap-manifest-lock-claims');
+  return {present:true,identity:`${stat.dev}:${stat.ino}:${stat.mode}`,names};
+}
+function verifyIdleRuntimeLock(root,lockRelative,claimsRelative,prior){
+  const current=snapshotIdleRuntimeLock(root,lockRelative,claimsRelative);
+  if(canonicalText(current)!==canonicalText(prior))fail('bootstrap-manifest-lock-unstable');
+}
+function heldBootstrapLockProjection(root,sessionId,claim){
+  const platform=require('./platform.js');
+  const lock=platform.issueProjectStateCapability(root,
+    path.join(root,'.claude',`deep-work.${sessionId}.bootstrap-control.lock`),
+    {role:'lock',allowMissingLeaf:true});
+  return platform.inspectOwnedDirectoryClaim(lock,claim);
+}
+
+function captureBootstrapManifest(root,witness,phase,options={}){
+  if(!plainObject(options)||Object.keys(options).some((key)=>
+    !['bootstrapLockClaim','currentOperation'].includes(key)))
+    fail('bootstrap-manifest-capture-options');
+  const bootstrapLockClaim=options.bootstrapLockClaim??null;
+  const currentOperation=validateBootstrapCurrentOperation(options.currentOperation);
+  const sessionId=witness.target_session_id;
+  const bootstrapLockRelative=`.claude/deep-work.${sessionId}.bootstrap-control.lock`;
+  const bootstrapClaimsRelative=`${bootstrapLockRelative}.claims`;
+  const operationLockRelative=`.claude/deep-work.${sessionId}.operations.lock`;
+  const operationClaimsRelative=`${operationLockRelative}.claims`;
+  const heldProjection=bootstrapLockClaim===null?null:
+    heldBootstrapLockProjection(root,sessionId,bootstrapLockClaim);
+  const bootstrapIdle=bootstrapLockClaim===null?
+    snapshotIdleRuntimeLock(root,bootstrapLockRelative,bootstrapClaimsRelative):null;
+  const operationIdle=snapshotIdleRuntimeLock(root,operationLockRelative,operationClaimsRelative);
   const {spawnSync}=require('node:child_process');
   const git=(args,{allowStatusOne=false}={})=>{
     const result=spawnSync('git',['-C',root,...args],{encoding:null});
@@ -969,15 +1058,11 @@ function captureBootstrapManifest(root,witness,phase){
   }).sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
   if(canonicalText(flagPaths)!==canonicalText(indexRows.map((row)=>row.path)))
     fail('bootstrap-manifest-index');
-  const exclusions=new Set(bootstrapExcludedPaths(witness.target_session_id));
-  const directoryExclusions=new Set([
-    `.claude/deep-work.${witness.target_session_id}.bootstrap-control.lock`,
-    `.claude/deep-work.${witness.target_session_id}.bootstrap-control.lock.claims`,
-    `.claude/deep-work.${witness.target_session_id}.operations.lock`,
-    `.claude/deep-work.${witness.target_session_id}.operations.lock.claims`,
-  ]);
+  const exclusions=new Set(bootstrapExcludedPaths(sessionId));
+  const directoryExclusions=new Set(bootstrapRuntimeLockPaths(sessionId));
   const inodeOwners=new Set();
   const entries=[];
+  let currentJournalFound=false;
   const walk=(directory,relativeRoot='')=>{
     let directoryStat,names;
     try{
@@ -994,8 +1079,11 @@ function captureBootstrapManifest(root,witness,phase){
       if(!portablePath(relative))fail('bootstrap-manifest-capture');
       const file=path.join(directory,name);let stat;
       try{stat=fs.lstatSync(file);}catch{fail('bootstrap-manifest-capture');}
-      if(isAuthenticatedBootstrapRuntimeJournal(relative,file,witness.target_session_id))
+      if(isAuthenticatedBootstrapCurrentJournal(relative,file,sessionId,currentOperation)){
+        if(currentJournalFound)fail('bootstrap-manifest-current-operation');
+        currentJournalFound=true;
         continue;
+      }
       if(exclusions.has(relative)){
         const valid=directoryExclusions.has(relative)?stat.isDirectory():stat.isFile();
         if(!valid||stat.isSymbolicLink())fail('bootstrap-manifest-capture');
@@ -1024,6 +1112,13 @@ function captureBootstrapManifest(root,witness,phase){
       fail('bootstrap-manifest-unstable');
   };
   walk(root);
+  if(currentOperation!==null&&!currentJournalFound)
+    fail('bootstrap-manifest-current-operation-missing');
+  if(bootstrapLockClaim===null)
+    verifyIdleRuntimeLock(root,bootstrapLockRelative,bootstrapClaimsRelative,bootstrapIdle);
+  else if(canonicalText(heldBootstrapLockProjection(root,sessionId,bootstrapLockClaim))!==
+    canonicalText(heldProjection))fail('bootstrap-manifest-lock-unstable');
+  verifyIdleRuntimeLock(root,operationLockRelative,operationClaimsRelative,operationIdle);
   entries.sort((left,right)=>Buffer.compare(Buffer.from(left.path),Buffer.from(right.path)));
   const value={schema_version:1,repository_identity_sha256:repositoryIdentity,
     base_head_oid:head,phase,
@@ -1065,7 +1160,7 @@ async function completedOperation(project,operationId,sessionId,kind){
 function stageSet(operationState){return new Set((operationState?.stages||[]).map((row)=>row.stage));}
 async function abortBootstrap({stateCapability,authorizationPath,failurePath}={}){
   const context=loadBootstrapControl({stateCapability,authorizationPath,failurePath});
-  return withBootstrapLock(stateCapability,async()=>{
+  return withBootstrapLock(stateCapability,async(bootstrapLockClaim)=>{
     const claimed=claimBootstrapFailure(context);
     if(claimed.terminal)return claimed.terminal;
     const transaction=require('./transaction-runtime.js');
@@ -1111,10 +1206,12 @@ async function abortBootstrap({stateCapability,authorizationPath,failurePath}={}
     pending=await journal.resumeOperation({projectCapability:project,operationId:claimed.operationId,
       sessionId:context.sessionId,kind:'bootstrap-abort'});stages=stageSet(pending);
     const witness=context.authorization.witness,observedStage=claimed.failure.observed_stage;
+    const manifestOptions={bootstrapLockClaim,currentOperation:{kind:'bootstrap-abort',
+      operation_id:claimed.operationId,preconditions:claimed.preimage,slice:null}};
     const captured={
-      base:captureBootstrapManifest(context.root,witness,'base').manifest_sha256,
-      red:captureBootstrapManifest(context.root,witness,'red').manifest_sha256,
-      post:captureBootstrapManifest(context.root,witness,'post').manifest_sha256,
+      base:captureBootstrapManifest(context.root,witness,'base',manifestOptions).manifest_sha256,
+      red:captureBootstrapManifest(context.root,witness,'red',manifestOptions).manifest_sha256,
+      post:captureBootstrapManifest(context.root,witness,'post',manifestOptions).manifest_sha256,
     };
     const currentKind=captured.base===witness.base_manifest_sha256?'base':
       captured.red===witness.red_manifest_sha256?'red':
@@ -1159,8 +1256,10 @@ async function abortBootstrap({stateCapability,authorizationPath,failurePath}={}
     }
     pending=await journal.resumeOperation({projectCapability:project,operationId:claimed.operationId,
       sessionId:context.sessionId,kind:'bootstrap-abort'});stages=stageSet(pending);
-    const afterProductionRed=captureBootstrapManifest(context.root,witness,'red').manifest_sha256;
-    const afterProductionBase=captureBootstrapManifest(context.root,witness,'base').manifest_sha256;
+    const afterProductionRed=captureBootstrapManifest(context.root,witness,'red',
+      manifestOptions).manifest_sha256;
+    const afterProductionBase=captureBootstrapManifest(context.root,witness,'base',
+      manifestOptions).manifest_sha256;
     const afterProductionKind=afterProductionRed===witness.red_manifest_sha256?'red':
       afterProductionBase===witness.base_manifest_sha256?'base':null;
     if(afterProductionKind===null)
@@ -1172,7 +1271,7 @@ async function abortBootstrap({stateCapability,authorizationPath,failurePath}={}
       await journal.recordOperationStage(operation,'test-reverted',{owned:{
         applied:afterProductionKind==='red'}});
     }
-    const restored=captureBootstrapManifest(context.root,witness,'base');
+    const restored=captureBootstrapManifest(context.root,witness,'base',manifestOptions);
     if(restored.manifest_sha256!==witness.base_manifest_sha256)
       fail('bootstrap-recovery-base-postcondition');
     await journal.recordOperationStage(operation,'base-restored',{owned:{
@@ -1256,7 +1355,7 @@ function authenticateBootstrapBoundFile(root,witness,pathKey,digestKey,code){
     fail(code);
   if(rawDigest(fs.readFileSync(file))!==witness[digestKey])fail(code);
 }
-function authenticateBootstrapFinalizeAuthority(root,authorization){
+function authenticateBootstrapFinalizeFiles(root,authorization){
   const witness=authorization.witness;
   authenticateBootstrapReviewReports(root,authorization);
   for(const [pathKey,digestKey,code] of [
@@ -1266,20 +1365,24 @@ function authenticateBootstrapFinalizeAuthority(root,authorization){
     ['patch_path','patch_sha256','bootstrap-patch-authority'],
     ['reverse_patch_path','reverse_patch_sha256','bootstrap-patch-authority'],
   ])authenticateBootstrapBoundFile(root,witness,pathKey,digestKey,code);
-  if(captureBootstrapManifest(root,witness,'post').manifest_sha256!==
-    witness.expected_post_manifest_sha256)fail('bootstrap-manifest-authority');
+}
+function authenticateBootstrapFinalizeManifest(root,authorization,manifestOptions){
+  const witness=authorization.witness;
+  const captured=captureBootstrapManifest(root,witness,'post',manifestOptions);
+  if(captured.manifest_sha256!==witness.expected_post_manifest_sha256)
+    fail('bootstrap-manifest-authority');
 }
 async function finalizeBootstrap({stateCapability,authorizationPath,executionPath}={}){
   const sessionId=sessionIdForState(stateCapability),root=stateCapability.projectRoot;
   const authorizationFile=assertControlPath(root,authorizationPath,sessionId,'authorization.json');
   const executionFile=assertControlPath(root,executionPath,sessionId,'execution.json');
   const context=loadBootstrapControl({stateCapability,authorizationPath:authorizationFile});
-  return withBootstrapLock(stateCapability,async()=>{
+  return withBootstrapLock(stateCapability,async(bootstrapLockClaim)=>{
     const execution=validateBootstrapExecution(
       readJsonArtifact(executionFile,'bootstrap-execution',{canonical:true}).value,
       context.authorization);
     const witness=context.authorization.witness;
-    authenticateBootstrapFinalizeAuthority(root,context.authorization);
+    authenticateBootstrapFinalizeFiles(root,context.authorization);
     const preimage={target_session_id:sessionId,
       authorization_sha256:context.authorization.authorization_sha256,
       witness_sha256:witness.witness_sha256,execution_sha256:execution.execution_sha256,
@@ -1313,6 +1416,8 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
         fail('bootstrap-finalize-completed-conflict');
       return {...result,operation_id:operationId,operation_receipt:priorOperation,adopted:true};
     }
+    if(priorOperation===null)
+      authenticateBootstrapFinalizeManifest(root,context.authorization,{bootstrapLockClaim});
     let executionJournal=bindControlJournal(context).value;
     if(executionJournal.claim==='abort'||executionJournal.claim==='finalize'&&
       executionJournal.claim_operation_id!==operationId)fail('bootstrap-finalize-claim-conflict');
@@ -1584,6 +1689,8 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     completionOperationId:bound.receipt.completion_operation_id}});
   await journal.recordOperationStage(operation,'failing-test-write-authenticated',{owned:{
     writeOperationId:write.receipt.operationId,writeReceiptSha256:write.receipt.receiptSha256}});
+  const manifestOptions={currentOperation:{kind:'bootstrap-first-red',
+    operation_id:operationId,preconditions,slice:sliceId}};
   const resultRelative=`.claude/deep-work.${bound.sessionId}.verification.${operationId}.json`;
   const resultPath=path.join(bound.root,...resultRelative.split('/'));
   let verification;
@@ -1614,7 +1721,8 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       "})});",
       '',
     ].join('\n')));
-    const manifestBefore=captureBootstrapManifest(bound.root,bound.authorization.witness,'post');
+    const manifestBefore=captureBootstrapManifest(bound.root,bound.authorization.witness,'post',
+      manifestOptions);
     const identity=executableIdentity();
     const logicalArgv=spec.args;
     const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${bound.root}`,
@@ -1630,7 +1738,8 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     const stdout=Buffer.from(ran.stdout||'','utf8'),stderr=Buffer.from(ran.stderr||'','utf8');
     if(ran.exitCode===0||ran.exitCode===null||ran.signal!==null||ran.timedOut||
       ran.outputOverflow||stderr.length!==0)fail('bootstrap-first-red-process');
-    const manifestAfter=captureBootstrapManifest(bound.root,bound.authorization.witness,'post');
+    const manifestAfter=captureBootstrapManifest(bound.root,bound.authorization.witness,'post',
+      manifestOptions);
     const changed=trackedChangedPaths(manifestBefore,manifestAfter);
     if(changed.length!==0)fail('bootstrap-first-red-scope');
     const event=parseNodeTapFailure(stdout.toString('utf8'),{root:bound.root,testPath:spec.args[3]});

@@ -3053,6 +3053,71 @@ function releaseDirectoryClaim(lockCapability, claim, runtime) {
   }
 }
 
+const ownedDirectoryClaimTokens = new WeakMap();
+
+function stableDirectorySnapshot(directory, expectedNames, fsApi, code) {
+  let stat,names;
+  try {
+    stat=fsApi.lstatSync(directory);
+    names=fsApi.readdirSync(directory)
+      .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
+  } catch (cause) {
+    fail(code, `cannot inspect owned lock directory: ${directory}`, {cause});
+  }
+  if(!stat.isDirectory()||stat.isSymbolicLink()||
+      names.join('\0')!==expectedNames.join('\0')) {
+    fail(code, `owned lock directory has foreign children: ${directory}`);
+  }
+  return {identity:statIdentity(stat),names};
+}
+
+function inspectOwnedDirectoryClaimRuntime(lockCapability, claimToken, runtime) {
+  const meta=assertCapability(lockCapability,['project-state']);
+  if(lockCapability.role!=='lock')fail('lock-inspect-capability','lock inspector requires lock role');
+  validateRecordedComponents(meta,runtime.fsApi);
+  const active=ownedDirectoryClaimTokens.get(claimToken);
+  if(!active||active.runtime!==runtime)
+    fail('lock-inspect-claim','lock inspector requires the active callback claim');
+  const claim=active.claim,targetIdentity=lockTargetIdentity(lockCapability);
+  if(claim.core.targetIdentity!==targetIdentity||claim.core.pid!==process.pid)
+    fail('lock-inspect-claim','active lock claim identity does not match');
+  validateClaimsDirectory(claim.claimsDir,claim.claimsIdentity,runtime.fsApi);
+  const ticketName=path.basename(claim.ticketPath);
+  const claimsBefore=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+    'lock-inspect-children');
+  const lockBefore=stableDirectorySnapshot(lockCapability.path,
+    ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+  const chain=readCanonicalClaim(lockCapability.path,claim.claimsDir,targetIdentity,runtime.fsApi);
+  if(chain.core.nonce!==claim.core.nonce||chain.core.pid!==claim.core.pid||
+      chain.core.processIdentity!==claim.core.processIdentity||
+      !sameBytes(chain.ticketBytes,claim.ticketBytes)||
+      !sameBytes(chain.ownerBytes,claim.ownerBytes))
+    fail('lock-inspect-claim','canonical lock chain is not the active callback claim');
+  const claimsAfter=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+    'lock-inspect-children');
+  const lockAfter=stableDirectorySnapshot(lockCapability.path,
+    ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+  const afterChain=readCanonicalClaim(lockCapability.path,claim.claimsDir,targetIdentity,
+    runtime.fsApi);
+  if(!identitiesEqual(claimsBefore.identity,claimsAfter.identity)||
+      !identitiesEqual(lockBefore.identity,lockAfter.identity)||
+      !sameBytes(chain.ticketBytes,afterChain.ticketBytes)||
+      !sameBytes(chain.ownerBytes,afterChain.ownerBytes)||
+      !sameBytes(chain.heartbeatBytes,afterChain.heartbeatBytes))
+    fail('lock-inspect-unstable','owned lock claim changed during inspection');
+  const claimSha256=sha256(Buffer.concat([
+    Buffer.from('owned-directory-claim-v1\0'),
+    Buffer.from(canonicalJson(chain.core)),chain.ticketBytes,chain.ownerBytes,chain.heartbeatBytes,
+  ]));
+  return Object.freeze({target_identity:targetIdentity,pid:chain.core.pid,
+    process_identity:chain.core.processIdentity,nonce:chain.core.nonce,
+    claim_sha256:claimSha256});
+}
+
+function inspectOwnedDirectoryClaim(lockCapability, claimToken) {
+  return inspectOwnedDirectoryClaimRuntime(lockCapability,claimToken,defaultRuntime());
+}
+
 function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
   if (typeof callback !== 'function') fail('lock-callback-invalid', 'lock callback must be a function');
   const claim = acquireDirectoryClaim(lockCapability, options, runtime);
@@ -3067,8 +3132,11 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
     catch (error) { heartbeatFailure = error; clearInterval(timer); }
   }, options.heartbeatMs);
   timer.unref?.();
+  const claimToken=Object.freeze({});
+  ownedDirectoryClaimTokens.set(claimToken,{claim,runtime});
   const finish = (kind, value) => {
     clearInterval(timer);
+    ownedDirectoryClaimTokens.delete(claimToken);
     let releaseError;
     try { releaseDirectoryClaim(lockCapability, claim, runtime); }
     catch (error) { releaseError = error; }
@@ -3078,7 +3146,7 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
     return value;
   };
   let result;
-  try { result = callback(); }
+  try { result = callback(claimToken); }
   catch (error) { return finish('throw', error); }
   if (result && typeof result.then === 'function') {
     return Promise.resolve(result).then((value) => finish('return', value),
@@ -3354,6 +3422,8 @@ function createPlatformRuntimeForTest(options = {}) {
       atomicWriteWithFs(capability, data, writeOptions, runtime.fsApi),
     withDirectoryLock:(capability, lockOptions, callback) =>
       withDirectoryLockRuntime(capability, lockOptions, callback, runtime),
+    inspectOwnedDirectoryClaim:(capability, claim) =>
+      inspectOwnedDirectoryClaimRuntime(capability, claim, runtime),
     mutateFileWithPendingOperations:(capability, mutationOptions) =>
       mutateWithRuntime(capability, mutationOptions, runtime),
     drainPendingOperations:(capability, drainOptions) =>
@@ -3420,6 +3490,7 @@ module.exports = {
   compareRemoveOwnedTemp,
   consumeFinalizedReceiptPayload,
   withDirectoryLock,
+  inspectOwnedDirectoryClaim,
   mutateFileWithPendingOperations,
   appendJsonLineLocked,
   drainPendingOperations,
