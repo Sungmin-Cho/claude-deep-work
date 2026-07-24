@@ -70,6 +70,16 @@ const BOOTSTRAP_ABORT_STAGE_PATHS=Object.freeze([
 ]);
 const BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR=
   '.claude/deep-work.<session>.op.<bootstrap-kind>.op-<32-64-lower-hex>.json';
+const BOOTSTRAP_FINALIZE_RECOVERY_PROJECTION=Object.freeze({
+  kind:'bootstrap-finalize',
+  journal_grammar:'.claude/deep-work.<session>.op.bootstrap-finalize.<operation-id>.json',
+  top_level_keys:Object.freeze(['createdAt','kind','operationId','owned','preconditions','sessionId',
+    'stage','stages','version']),
+  first_row_keys:Object.freeze(['at','stage']),
+  later_row_keys:Object.freeze(['at','details','stage']),
+  manifest_delta:'one-exact-authenticated-pending-journal',
+  terminal_artifacts:Object.freeze(['bootstrap-receipt.json','marker.json']),
+});
 const BOOTSTRAP_CURRENT_OPERATION_DOMAINS=Object.freeze({
   'bootstrap-abort':'bootstrap-abort-v1',
   'bootstrap-first-red':'bootstrap-first-red-v2',
@@ -216,6 +226,7 @@ function bootstrapManifestSchemaSha256(sessionId){
     runtime_journal_grammar:BOOTSTRAP_RUNTIME_JOURNAL_GRAMMAR,
     runtime_journal_stage_rules:BOOTSTRAP_OPERATION_STAGE_RULES,
     runtime_journal_abort_stage_paths:BOOTSTRAP_ABORT_STAGE_PATHS,
+    finalize_recovery_projection:BOOTSTRAP_FINALIZE_RECOVERY_PROJECTION,
   },'schema_sha256');
 }
 function validateBootstrapManifest(value,{sessionId}={}){
@@ -1422,17 +1433,48 @@ function authenticateBootstrapFinalizeManifest(root,authorization,manifestOption
   if(captured.manifest_sha256!==witness.expected_post_manifest_sha256)
     fail('bootstrap-manifest-authority');
 }
-function authenticateBootstrapFinalizeRecoveryManifest(root,authorization,manifestOptions,
-  operationState){
+function validateBootstrapFinalizePendingJournal(raw,operationState,expected){
   if(operationState?.status!=='pending')fail('bootstrap-finalize-pending-operation');
   const {status,...journalState}=operationState;
+  const value=raw.value;
+  if(!raw.bytes.equals(Buffer.from(journal.canonicalJson(value)))||
+    !exactKeys(value,BOOTSTRAP_FINALIZE_RECOVERY_PROJECTION.top_level_keys)||
+    value.version!==1||value.operationId!==expected.operationId||
+    value.sessionId!==expected.sessionId||value.kind!=='bootstrap-finalize'||
+    canonicalText(value.preconditions)!==canonicalText(expected.preconditions)||
+    !plainObject(value.preconditions)||
+    value.owned!==null&&!plainObject(value.owned)||!timestamp(value.createdAt)||
+    !Array.isArray(value.stages)||value.stages.length<1)
+    fail('bootstrap-finalize-pending-operation');
+  const stageRules=BOOTSTRAP_OPERATION_STAGE_RULES['bootstrap-finalize'];
+  if(value.stages.length>stageRules.length||value.stage!==value.stages.at(-1)?.stage)
+    fail('bootstrap-finalize-pending-operation');
+  for(let index=0;index<value.stages.length;index+=1){
+    const row=value.stages[index];
+    if(!exactKeys(row,index===0?BOOTSTRAP_FINALIZE_RECOVERY_PROJECTION.first_row_keys:
+      BOOTSTRAP_FINALIZE_RECOVERY_PROJECTION.later_row_keys)||
+      row.stage!==stageRules[index]||!timestamp(row.at)||
+      index===0&&(row.at!==value.createdAt||row.stage!=='prepared')||
+      index>0&&(!plainObject(row.details)||
+        canonicalText(row.details)!==canonicalText(expected.stageDetails[row.stage])))
+      fail('bootstrap-finalize-pending-operation');
+  }
+  const expectedOwned=value.stages.length===1?null:
+    expected.stageDetails[value.stages.at(-1).stage].owned;
+  if(canonicalText(value.owned)!==canonicalText(expectedOwned)||
+    canonicalText(journalState)!==canonicalText(value))
+    fail('bootstrap-finalize-pending-operation');
+  return value;
+}
+function authenticateBootstrapFinalizeRecoveryManifest(root,authorization,manifestOptions,
+  operationState,expected){
   const sessionId=authorization.witness.target_session_id;
   const relative=`.claude/deep-work.${sessionId}.op.bootstrap-finalize.`+
-    `${journalState.operationId}.json`;
+    `${expected.operationId}.json`;
   const journalFile=path.join(root,...relative.split('/'));
-  const raw=readJsonArtifact(journalFile,'bootstrap-finalize-pending-operation',{canonical:true});
-  if(canonicalText(raw.value)!==canonicalText(journalState))
-    fail('bootstrap-finalize-pending-operation');
+  const raw=readJsonArtifact(journalFile,'bootstrap-finalize-pending-operation',
+    {canonical:true,maxBytes:1024*1024});
+  validateBootstrapFinalizePendingJournal(raw,operationState,{...expected,sessionId});
   const captured=captureBootstrapManifest(root,authorization.witness,'post',manifestOptions);
   const matches=captured.entries.filter((entry)=>entry.path===relative);
   if(matches.length!==1||matches[0].type!=='file'||matches[0].size!==raw.bytes.length||
@@ -1443,6 +1485,15 @@ function authenticateBootstrapFinalizeRecoveryManifest(root,authorization,manife
   projected.manifest_sha256=semanticDigest('bootstrap-manifest-v1',projected,'manifest_sha256');
   if(projected.manifest_sha256!==authorization.witness.expected_post_manifest_sha256)
     fail('bootstrap-manifest-authority');
+  const afterRaw=readJsonArtifact(journalFile,'bootstrap-finalize-pending-operation',
+    {canonical:true,maxBytes:1024*1024});
+  if(!afterRaw.bytes.equals(raw.bytes))fail('bootstrap-finalize-pending-operation');
+}
+function authenticateBootstrapFinalizeCompletionArtifacts(markerPath,receiptPath,completion){
+  const markerRaw=readJsonArtifact(markerPath,'bootstrap-marker',{canonical:true});
+  const receiptRaw=readJsonArtifact(receiptPath,'bootstrap-receipt',{canonical:true});
+  if(!markerRaw.bytes.equals(canonicalBootstrapJson(completion.marker)))fail('bootstrap-marker');
+  if(!receiptRaw.bytes.equals(canonicalBootstrapJson(completion.receipt)))fail('bootstrap-receipt');
 }
 async function finalizeBootstrap({stateCapability,authorizationPath,executionPath}={}){
   const sessionId=sessionIdForState(stateCapability),root=stateCapability.projectRoot;
@@ -1496,6 +1547,20 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
       originalJournal.journal_sha256!==execution.execution_journal_sha256)
       fail('bootstrap-finalize-journal');
     const receiptRawSha256=rawDigest(canonicalBootstrapJson(completion.receipt));
+    const finalizeStageDetails={
+      'authorization-authenticated':{owned:{
+        authorizationSha256:context.authorization.authorization_sha256,
+        witnessSha256:witness.witness_sha256}},
+      'execution-authenticated':{owned:{executionSha256:execution.execution_sha256}},
+      'receipt-precomputed':{owned:{
+        receiptSha256:completion.receipt.receipt_sha256,receiptRawSha256}},
+      'marker-committed':{owned:{
+        markerPath:result.marker_path,markerSha256:completion.marker.marker_sha256}},
+      'receipt-published':{owned:{
+        receiptPath:result.receipt_path,receiptSha256:completion.receipt.receipt_sha256}},
+    };
+    const finalizeRecoveryExpected={operationId,preconditions:preimage,
+      stageDetails:finalizeStageDetails};
     if(executionJournal.claim==='finalize'&&
       (executionJournal.claim_input?.kind!=='finalize-receipt'||
       executionJournal.claim_input.input_artifact_sha256!==receiptRawSha256))
@@ -1533,12 +1598,8 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
       if(executionJournal.stage!=='finalize-completed')
         fail('bootstrap-finalize-pending-publication');
       authenticateBootstrapFinalizeRecoveryManifest(root,context.authorization,
-        {bootstrapLockClaim},priorOperation);
-      const markerRaw=readJsonArtifact(markerPath,'bootstrap-marker',{canonical:true});
-      const receiptRaw=readJsonArtifact(receiptPath,'bootstrap-receipt',{canonical:true});
-      if(!markerRaw.bytes.equals(canonicalBootstrapJson(completion.marker))||
-        !receiptRaw.bytes.equals(canonicalBootstrapJson(completion.receipt)))
-        fail('bootstrap-finalize-pending-publication');
+        {bootstrapLockClaim},priorOperation,finalizeRecoveryExpected);
+      authenticateBootstrapFinalizeCompletionArtifacts(markerPath,receiptPath,completion);
     }
     const operation=await journal.beginOperation({projectCapability:project,sessionId,
       kind:'bootstrap-finalize',operationId,preconditions:preimage});
@@ -1556,7 +1617,8 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
     const pendingForCompletion=await completedOperation(project,operationId,sessionId,
       'bootstrap-finalize');
     authenticateBootstrapFinalizeRecoveryManifest(root,context.authorization,
-      {bootstrapLockClaim},pendingForCompletion);
+      {bootstrapLockClaim},pendingForCompletion,finalizeRecoveryExpected);
+    authenticateBootstrapFinalizeCompletionArtifacts(markerPath,receiptPath,completion);
     const ledger=await journal.completeOperation(operation,result);
     validateBootstrapCompletionAuthority({receipt:completion.receipt,marker:completion.marker,
       operationReceipt:ledger});
