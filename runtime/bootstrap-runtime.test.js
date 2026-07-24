@@ -82,6 +82,9 @@ function fixtureBootstrapExcludedPaths(){
     ...BOOTSTRAP_CONTROL_NAMES.map((name)=>`.deep-work/s-aaaaaaaa/bootstrap/${name}`),
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock',
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock.claims',
+    '.claude/deep-work.s-aaaaaaaa.completed-operations.json',
+    '.claude/deep-work.s-aaaaaaaa.operations.lock',
+    '.claude/deep-work.s-aaaaaaaa.operations.lock.claims',
   ].sort();
 }
 
@@ -125,7 +128,7 @@ function witness(overrides={}){
 test('bootstrap manifest has one exact control exclusion schema and rejects widening',()=>{
   assert.equal(BOOTSTRAP_CONTROL_NAMES.length,17);
   const checked=validateBootstrapManifest(manifest(),{sessionId:'s-aaaaaaaa'});
-  assert.equal(checked.excluded_paths.length,19);
+  assert.equal(checked.excluded_paths.length,22);
   assert.equal(checked.excluded_paths.includes(
     '.claude/deep-work.s-aaaaaaaa.bootstrap-control.lock'),true);
   assert.equal(checked.excluded_paths.includes(
@@ -822,6 +825,8 @@ test('public finalizer authenticates review reports, executor, patches and curre
       fs.writeFileSync(path.join(fixture.root,'.deep-work','ignored','addition.js'),
         'module.exports = true;\n');
     }],
+    ['runtime-journal-near-miss',(fixture)=>fs.writeFileSync(path.join(fixture.root,'.claude',
+      'deep-work.s-aaaaaaaa.op.bootstrap-finalize.not-an-operation.json'),'{}\n')],
     ['tracked-deletion',(fixture)=>fs.unlinkSync(path.join(fixture.root,'runtime','a.js'))],
     ['untracked-symlink',(fixture)=>fs.symlinkSync('runtime/a.js',
       path.join(fixture.root,'untracked-link.js'))],
@@ -845,6 +850,24 @@ test('public finalizer authenticates review reports, executor, patches and curre
     {cwd:fixture.root}),/bootstrap-(?:authorization|authority|manifest|review|executor|patch)/);
   });
 });
+
+test('public finalizer excludes only a canonical session-bound bootstrap operation journal',
+  async(t)=>{
+    const fixture=bootstrapControlFixture();
+    t.after(()=>fs.rmSync(fixture.root,{recursive:true,force:true}));
+    const operationId=`op-${'a'.repeat(64)}`;
+    const createdAt='2026-07-24T00:00:00.000Z';
+    const value={version:1,operationId,sessionId:'s-aaaaaaaa',kind:'bootstrap-finalize',
+      preconditions:{},stage:'prepared',owned:null,createdAt,
+      stages:[{stage:'prepared',at:createdAt}]};
+    fs.writeFileSync(path.join(fixture.root,'.claude',
+      `deep-work.s-aaaaaaaa.op.bootstrap-finalize.${operationId}.json`),
+    Buffer.from(canonicalJson(value)));
+    const finalized=await dispatch(['bootstrap','finalize','--state',fixture.statePath,
+      '--authorization',fixture.authorizationPath,'--execution',fixture.executionPath],
+    {cwd:fixture.root});
+    assert.equal(finalized.operation_receipt.stage,'completed-ledger');
+  });
 
 test('public finalizer requires exact one-terminal-LF review bytes after complete rebinding',async(t)=>{
   const fixture=bootstrapControlFixture();
