@@ -415,12 +415,19 @@ function validateVerificationSpecV2(value) {
       red.adapter!=='node-test-tap'||red.adapter_version!==1||red.expected_class!=='expected-failure')
     fail('verification-spec-v2-red','verification_spec.red_failure');
   const signal=red.expected_signal;
+  const assertionOperators=new Set(['strictEqual','deepStrictEqual','notStrictEqual',
+    'notDeepStrictEqual','match','doesNotMatch','throws','rejects']);
+  const signalKindOperatorValid=signal?.kind==='assertion'?
+    assertionOperators.has(signal?.operator):
+    signal?.kind==='contract'&&signal?.operator==='contract';
   if(!exactKeyBoolean(signal,['kind','operator','test_identity','expected_digest','actual_digest','message_pattern'])||
-      typeof signal.kind!=='string'||!signal.kind||typeof signal.operator!=='string'||!signal.operator||
+      !signalKindOperatorValid||
       !exactKeyBoolean(signal.test_identity,['test_file','test_name','start_line'])||
       signal.test_identity.test_file!==value.args[3]||typeof signal.test_identity.test_name!=='string'||
       !signal.test_identity.test_name.trim()||!Number.isInteger(signal.test_identity.start_line)||
-      signal.test_identity.start_line<1||typeof signal.message_pattern!=='string'||!signal.message_pattern.trim()||
+      signal.test_identity.start_line<1||typeof signal.message_pattern!=='string'||
+      !signal.message_pattern.trim()||
+      signal.message_pattern!==signal.message_pattern.replaceAll('\r\n','\n').normalize('NFC')||
       ![signal.expected_digest,signal.actual_digest].some((item)=>/^[0-9a-f]{64}$/.test(item||''))||
       [signal.expected_digest,signal.actual_digest].some((item)=>item!==null&&!/^[0-9a-f]{64}$/.test(item||'')))
     fail('verification-spec-v2-signal','verification_spec.red_failure.expected_signal');

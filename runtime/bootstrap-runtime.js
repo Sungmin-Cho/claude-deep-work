@@ -4,7 +4,7 @@ const crypto=require('node:crypto');
 const fs=require('node:fs');
 const path=require('node:path');
 const {spawn}=require('node:child_process');
-const {pathToFileURL}=require('node:url');
+const {fileURLToPath,pathToFileURL}=require('node:url');
 const journal=require('./operation-journal.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
@@ -107,6 +107,12 @@ const BOOTSTRAP_REJECTION_CODES=Object.freeze([
   'stdout-malformed-failure-detail',
 ]);
 const BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256=rawDigest(Buffer.from('node-26.0.0'));
+const BOOTSTRAP_NODE_TAP_GOLDENS=Object.freeze({
+  '26.0.0':Object.freeze({
+    direct:Object.freeze({tests:1,suites:0,pass:0,failures:1}),
+    suite_wrapper:Object.freeze({tests:1,suites:1,pass:0,failures:1}),
+  }),
+});
 
 const BOOTSTRAP_VERIFICATION_RESULT_KEYS=Object.freeze([
   'changed_paths','classification','cwd_role','disposition','environment','environment_sha256',
@@ -621,6 +627,17 @@ function validateRawChannel(value,code){
   if(bytes.length!==value.byte_length||rawDigest(bytes)!==value.sha256)fail(code);
   return bytes;
 }
+function normalizedSignalMatchesExpected(observed,expected){
+  if(!exactKeys(observed,['kind','operator','test_identity','expected_digest','actual_digest',
+    'message'])||!expected)return false;
+  const pattern=normalizeTapString(expected.message_pattern??expected.message??'');
+  if(!pattern||observed.kind!==expected.kind||observed.operator!==expected.operator||
+    canonicalText(observed.test_identity)!==canonicalText(expected.test_identity)||
+    (expected.expected_digest!==null&&observed.expected_digest!==expected.expected_digest)||
+    (expected.actual_digest!==null&&observed.actual_digest!==expected.actual_digest)||
+    !normalizeTapString(observed.message).includes(pattern))return false;
+  return true;
+}
 function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
   if(!exactKeys(value,BOOTSTRAP_VERIFICATION_RESULT_KEYS)||value.schema_version!==2||
     !SESSION.test(value.session_id||'')||!/^SLICE-\d{3}$/.test(value.slice_id||'')||
@@ -665,8 +682,8 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     !DIGEST.test(classification.diagnostic_event_sha256||'')||
     semanticDigest('diagnostic-event-v1',classification.diagnostic_event,null)!==
       classification.diagnostic_event_sha256)fail('bootstrap-verification-classification');
-  if(!expectedSignal||canonicalText(classification.normalized_signal)!==
-    canonicalText(expectedSignal))fail('bootstrap-verification-signal');
+  if(!normalizedSignalMatchesExpected(classification.normalized_signal,expectedSignal))
+    fail('bootstrap-verification-signal');
   if(semanticDigest('verification-result-v2',value,'result_sha256')!==value.result_sha256)
     fail('bootstrap-verification-digest');
   return structuredClone(value);
@@ -1648,56 +1665,179 @@ function authenticateBootstrapCompletion({stateCapability,authorizationPath,rece
     fail('bootstrap-session-authority');
   return {sessionId,root,authorization,receipt,marker};
 }
-function parseTapScalar(source){
-  const value=String(source).trim();
-  if(value.startsWith("'")&&value.endsWith("'"))
-    return value.slice(1,-1).replaceAll("''","'");
-  if(value.startsWith('"')&&value.endsWith('"')){
-    try{return JSON.parse(value);}catch{fail('bootstrap-first-red-tap');}
+const TAP_AUTHORITY_KEYS=new Set(['location','failureType','error','code','name','message',
+  'operator','expected','actual','stack']);
+const TAP_WRAPPER_KEYS=new Set(['duration_ms','type']);
+const ASSERTION_OPERATORS=new Set(['strictEqual','deepStrictEqual','notStrictEqual',
+  'notDeepStrictEqual','match','doesNotMatch','throws','rejects']);
+function normalizeTapString(value){
+  if(typeof value!=='string')fail('bootstrap-first-red-tap');
+  return value.replaceAll('\r\n','\n').normalize('NFC');
+}
+function parseTapScalar(source,key){
+  if(typeof source!=='string'||!source||source.includes('\t')||
+    source!==source.trim())fail('bootstrap-first-red-tap');
+  if(source==='undefined'){
+    if(!['expected','actual'].includes(key))fail('bootstrap-first-red-tap');
+    return undefined;
   }
-  if(value==='null')return null;
-  if(value==='true')return true;
-  if(value==='false')return false;
-  if(/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(value))return Number(value);
-  return value;
+  if(source==='null')return null;
+  if(source==='true')return true;
+  if(source==='false')return false;
+  if(/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(source)){
+    const value=Number(source);
+    if(!Number.isFinite(value)||Object.is(value,-0))fail('bootstrap-first-red-tap');
+    return value;
+  }
+  if(/^'(?:[^']|'')*'$/u.test(source))
+    return normalizeTapString(source.slice(1,-1).replaceAll("''","'"));
+  if(source.startsWith('"')&&source.endsWith('"')){
+    let value;
+    try{value=JSON.parse(source);}catch{fail('bootstrap-first-red-tap');}
+    if(typeof value!=='string')fail('bootstrap-first-red-tap');
+    return normalizeTapString(value);
+  }
+  if(/^[\[\]{},&*!|>@`]/u.test(source)||source.startsWith('- ')||
+    source.startsWith('? ')||source.includes(': ')||source.includes(' #')||
+    /^(?:\.nan|[-+]?\.inf)$/iu.test(source))fail('bootstrap-first-red-tap');
+  return normalizeTapString(source);
 }
 function tapValueDigest(value){
-  return rawDigest(Buffer.concat([Buffer.from('tap-value-v1\0'),
-    Buffer.from(`d:${JSON.stringify(value)}`)]));
+  let domain;
+  if(value===undefined)domain='u:';
+  else if(value===null)domain='n:';
+  else if(typeof value==='boolean')domain=`b:${value?'1':'0'}`;
+  else if(typeof value==='number'&&Number.isFinite(value)&&!Object.is(value,-0))
+    domain=`d:${JSON.stringify(value)}`;
+  else if(typeof value==='string')domain=`s:${normalizeTapString(value)}`;
+  else fail('bootstrap-first-red-tap-value');
+  return rawDigest(Buffer.concat([Buffer.from('tap-value-v1\0'),Buffer.from(domain)]));
 }
-function parseNodeTapFailure(stdout,{root,testPath}){
-  if(typeof stdout!=='string'||stdout.includes('\r')||!stdout.startsWith('TAP version 13\n')||
-    !stdout.endsWith('\n'))fail('bootstrap-first-red-tap');
-  const lines=stdout.slice(0,-1).split('\n');
-  const failures=lines.map((line,index)=>({line,index,
-    match:line.match(/^not ok ([1-9][0-9]*) - (.+)$/u)})).filter((row)=>row.match);
-  if(failures.length!==1||!lines.some((line)=>line==='# fail 1')||
-    !lines.some((line)=>line==='# pass 0'))fail('bootstrap-first-red-tap');
-  const failure=failures[0],fields={};
-  for(let index=failure.index+1;index<lines.length;index+=1){
-    const match=lines[index].match(/^  ([A-Za-z][A-Za-z0-9_]*): (.*)$/u);
-    if(match&&['|-','|'].includes(match[2])){
+function parseTapDiagnostic(lines,start,indent,{role='leaf'}={}){
+  const prefix=' '.repeat(indent),contentPrefix=' '.repeat(indent+2);
+  if(lines[start]!==`${prefix}---`)fail('bootstrap-first-red-tap');
+  const outerKeys=new Set(['duration_ms','type','location','failureType','error','code']);
+  const fields={},allowed=role==='wrapper'?TAP_WRAPPER_KEYS:
+    role==='outer'?outerKeys:new Set([...TAP_WRAPPER_KEYS,...TAP_AUTHORITY_KEYS]);
+  let index=start+1;
+  for(;index<lines.length&&lines[index]!==`${prefix}...`;index+=1){
+    if(lines[index].includes('\t'))fail('bootstrap-first-red-tap');
+    const match=lines[index].match(new RegExp(`^ {${indent}}([A-Za-z][A-Za-z0-9_]*): (.*)$`,'u'));
+    if(!match||!allowed.has(match[1])||Object.hasOwn(fields,match[1]))
+      fail('bootstrap-first-red-tap');
+    const [,key,source]=match;
+    if(source==='|-'){
+      if(role!=='leaf'||!['error','stack'].includes(key))fail('bootstrap-first-red-tap');
       const content=[];
-      while(index+1<lines.length&&lines[index+1].startsWith('    ')){
-        index+=1;content.push(lines[index].slice(4));
+      while(index+1<lines.length&&lines[index+1].startsWith(contentPrefix)){
+        index+=1;content.push(lines[index].slice(indent+2));
       }
-      fields[match[1]]=content.join('\n');
-    }else if(match)fields[match[1]]=parseTapScalar(match[2]);
-    if(lines[index]==='  ...')break;
+      if(!content.length)fail('bootstrap-first-red-tap');
+      fields[key]=normalizeTapString(content.join('\n'));
+    }else{
+      if(['error','stack'].includes(key)&&['|','>','>-','|+','>+'].includes(source))
+        fail('bootstrap-first-red-tap');
+      fields[key]=parseTapScalar(source,key);
+    }
   }
-  const location=String(fields.location||'');
-  const locationMatch=location.match(/^(.*):([1-9][0-9]*):([1-9][0-9]*)$/u);
-  const expectedFile=path.join(root,...testPath.split('/'));
-  if(!locationMatch||path.resolve(locationMatch[1])!==expectedFile)
+  if(index>=lines.length||lines[index]!==`${prefix}...`)fail('bootstrap-first-red-tap');
+  if(!Object.hasOwn(fields,'duration_ms')||typeof fields.duration_ms!=='number'||
+    !Object.hasOwn(fields,'type')||typeof fields.type!=='string')
     fail('bootstrap-first-red-tap');
-  const event={event_type:'test-failure',test_file:testPath,test_name:failure.match[2],
-    start_line:Number(locationMatch[2]),error_code:String(fields.code||''),
-    error_name:String(fields.name||''),failure_type:String(fields.failureType||''),
-    operator:String(fields.operator||''),expected_digest:tapValueDigest(fields.expected),
-    actual_digest:tapValueDigest(fields.actual),message:String(fields.error||'').split('\n')[0]};
-  if(!event.error_code||!event.error_name||!event.failure_type||!event.operator)
+  return {fields,next:index+1};
+}
+function exactTapSummary(lines,start,{tests,suites,pass,failures}){
+  const expected=['1..1',`# tests ${tests}`,`# suites ${suites}`,`# pass ${pass}`,
+    `# fail ${failures}`,'# cancelled 0','# skipped 0','# todo 0'];
+  if(canonicalText(lines.slice(start,start+expected.length))!==canonicalText(expected)||
+    !/^# duration_ms (?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(lines[start+expected.length]||'')||
+    start+expected.length+1!==lines.length)fail('bootstrap-first-red-tap');
+}
+function reporterLocation(location,{root,testPath}){
+  if(typeof location!=='string'||location.includes('\0'))fail('bootstrap-first-red-tap');
+  const match=location.match(/^(.*):([1-9][0-9]*):([1-9][0-9]*)$/u);
+  if(!match)fail('bootstrap-first-red-tap');
+  let candidate=match[1];
+  if(candidate.startsWith('file:')){
+    if(/%2f|%5c/iu.test(candidate))fail('bootstrap-first-red-tap');
+    try{candidate=fileURLToPath(candidate);}catch{fail('bootstrap-first-red-tap');}
+  }
+  if(!path.isAbsolute(candidate))fail('bootstrap-first-red-tap');
+  const expected=fs.realpathSync(path.join(root,...testPath.split('/')));
+  let actual;
+  try{actual=fs.realpathSync(candidate);}catch{fail('bootstrap-first-red-tap');}
+  if(actual!==expected||path.resolve(candidate)!==expected)fail('bootstrap-first-red-tap');
+  return {line:Number(match[2]),column:Number(match[3])};
+}
+function tapEventFrom({fields,testName,root,testPath}){
+  for(const key of ['location','failureType','error'])
+    if(!Object.hasOwn(fields,key))fail('bootstrap-first-red-tap');
+  const location=reporterLocation(fields.location,{root,testPath});
+  const hasExpected=Object.hasOwn(fields,'expected'),hasActual=Object.hasOwn(fields,'actual');
+  if(!hasExpected&&!hasActual)fail('bootstrap-first-red-tap');
+  const nullableString=(key)=>{
+    if(!Object.hasOwn(fields,key))return null;
+    if(typeof fields[key]!=='string'||!fields[key])fail('bootstrap-first-red-tap');
+    return normalizeTapString(fields[key]);
+  };
+  const rawMessage=Object.hasOwn(fields,'message')?fields.message:
+    String(fields.error).split('\n')[0];
+  const message=normalizeTapString(rawMessage),name=normalizeTapString(testName);
+  if(!message||!name)fail('bootstrap-first-red-tap');
+  return {event_type:'test-failure',test_file:testPath,test_name:name,start_line:location.line,
+    error_code:nullableString('code'),error_name:nullableString('name'),
+    failure_type:nullableString('failureType'),operator:nullableString('operator'),
+    expected_digest:hasExpected?tapValueDigest(fields.expected):null,
+    actual_digest:hasActual?tapValueDigest(fields.actual):null,message};
+}
+function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.node}){
+  const grammar=BOOTSTRAP_NODE_TAP_GOLDENS[nodePatch];
+  if(!grammar)fail('bootstrap-first-red-tap');
+  if(typeof stdout!=='string'||stdout.includes('\r')||stdout.includes('\t')||
+    !stdout.startsWith('TAP version 13\n')||!stdout.endsWith('\n'))
     fail('bootstrap-first-red-tap');
-  return event;
+  const lines=stdout.slice(0,-1).split('\n');
+  let leafName,leafFields,summaryStart;
+  const directHeader=lines[1]?.match(/^# Subtest: (.+)$/u);
+  const directLeaf=lines[2]?.match(/^not ok 1 - (.+)$/u);
+  if(directHeader&&directLeaf&&directHeader[1]===directLeaf[1]){
+    const diagnostic=parseTapDiagnostic(lines,3,2);
+    leafName=directLeaf[1];leafFields=diagnostic.fields;summaryStart=diagnostic.next;
+    exactTapSummary(lines,summaryStart,grammar.direct);
+  }else{
+    const wrapper=lines[1]?.match(/^# Subtest: (.+)$/u);
+    const nestedHeader=lines[2]?.match(/^    # Subtest: (.+)$/u);
+    const nestedLeaf=lines[3]?.match(/^    not ok 1 - (.+)$/u);
+    if(!wrapper||!nestedHeader||!nestedLeaf||nestedHeader[1]!==nestedLeaf[1])
+      fail('bootstrap-first-red-tap');
+    const leafDiagnostic=parseTapDiagnostic(lines,4,6);
+    if(lines[leafDiagnostic.next]!=='    1..1'||
+      lines[leafDiagnostic.next+1]!==`not ok 1 - ${wrapper[1]}`)
+      fail('bootstrap-first-red-tap');
+    const wrapperDiagnostic=parseTapDiagnostic(lines,leafDiagnostic.next+2,2,{role:'outer'});
+    if(wrapperDiagnostic.fields.type!=='suite'||
+      wrapperDiagnostic.fields.failureType!=='subtestsFailed'||
+      wrapperDiagnostic.fields.code!=='ERR_TEST_FAILURE'||
+      wrapperDiagnostic.fields.error!=='1 subtest failed')
+      fail('bootstrap-first-red-tap');
+    reporterLocation(wrapperDiagnostic.fields.location,{root,testPath});
+    leafName=nestedLeaf[1];leafFields=leafDiagnostic.fields;
+    summaryStart=wrapperDiagnostic.next;
+    exactTapSummary(lines,summaryStart,grammar.suite_wrapper);
+  }
+  return tapEventFrom({fields:leafFields,testName:leafName,root,testPath});
+}
+function classifyExpectedTapSignal(event){
+  const assertionCode=event.error_code==='ERR_ASSERTION'||event.error_name==='AssertionError';
+  const assertionOperator=ASSERTION_OPERATORS.has(event.operator);
+  const contractCode=event.error_code==='ERR_DEEP_WORK_CONTRACT';
+  const contractOperator=event.operator==='contract';
+  if((assertionCode||assertionOperator)&&(contractCode||contractOperator))return null;
+  if(assertionCode||assertionOperator)
+    return assertionCode&&assertionOperator?{kind:'assertion',operator:event.operator}:null;
+  if(contractCode||contractOperator)
+    return contractCode&&contractOperator?{kind:'contract',operator:'contract'}:null;
+  return null;
 }
 function trackedChangedPaths(before,after){
   const left=new Map(before.entries.map((row)=>[row.path,row]));
@@ -1850,9 +1990,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
   if(fs.existsSync(resultPath)){
     verification=validateBootstrapVerificationResultV2(
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
-        expectedSignal:{...spec.red_failure.expected_signal,
-          message:spec.red_failure.expected_signal.message_pattern,
-          message_pattern:undefined}});
+        expectedSignal:spec.red_failure.expected_signal});
   }else{
     const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
     fs.mkdirSync(ownedTemp,{recursive:true});
@@ -1897,13 +2035,12 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     if(changed.length!==0)fail('bootstrap-first-red-scope');
     const event=parseNodeTapFailure(stdout.toString('utf8'),{root:bound.root,testPath:spec.args[3]});
     const expected=spec.red_failure.expected_signal;
-    const normalizedSignal={kind:expected.kind,operator:event.operator,
+    const observed=classifyExpectedTapSignal(event);
+    if(!observed)fail('bootstrap-first-red-classification');
+    const normalizedSignal={kind:observed.kind,operator:observed.operator,
       test_identity:{test_file:event.test_file,test_name:event.test_name,start_line:event.start_line},
       expected_digest:event.expected_digest,actual_digest:event.actual_digest,message:event.message};
-    const expectedSignal={kind:expected.kind,operator:expected.operator,
-      test_identity:expected.test_identity,expected_digest:expected.expected_digest,
-      actual_digest:expected.actual_digest,message:expected.message_pattern};
-    if(canonicalText(normalizedSignal)!==canonicalText(expectedSignal))
+    if(!normalizedSignalMatchesExpected(normalizedSignal,expected))
       fail('bootstrap-first-red-classification');
     const classification={adapter:'node-test-tap',adapter_version:1,
       observed_class:'expected-failure',diagnostic_event:event,
@@ -1944,7 +2081,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       changed_paths:changed,scope_disposition:'clean',classification,
       disposition:'accepted',result_sha256:null};
     verification.result_sha256=semanticDigest('verification-result-v2',verification,'result_sha256');
-    validateBootstrapVerificationResultV2(verification,{expectedSignal});
+    validateBootstrapVerificationResultV2(verification,{expectedSignal:expected});
     writeExclusiveArtifact(resultPath,verification);
   }
   await journal.recordOperationStage(operation,'verification-completed',{owned:{
@@ -1985,10 +2122,8 @@ async function adoptBootstrapRed({stateCapability,planCapability,plan,sliceId,au
     fail('bootstrap-red-adoption-bridge');
   const verification=validateBootstrapVerificationResultV2(
     readJsonArtifact(path.join(bound.root,...bridge.result.verification_result_path.split('/')),
-      'bootstrap-first-red-result',{canonical:true}).value,{expectedSignal:{
-        ...plan.slices.find((row)=>row.id===sliceId).verification_spec.red_failure.expected_signal,
-        message:plan.slices.find((row)=>row.id===sliceId).verification_spec.red_failure
-          .expected_signal.message_pattern,message_pattern:undefined}});
+      'bootstrap-first-red-result',{canonical:true}).value,{expectedSignal:
+        plan.slices.find((row)=>row.id===sliceId).verification_spec.red_failure.expected_signal});
   if(verification.result_sha256!==bridge.result.verification_result_sha256||
     verification.verification_operation_id!==bridgeOperationId)
     fail('bootstrap-red-adoption-bridge');
@@ -2064,10 +2199,8 @@ async function publishBootstrapRedProof({stateCapability,planCapability,plan,sli
   if(!target||target.slice_kind!=='functional')fail('bootstrap-proof-plan');
   const verification=validateBootstrapVerificationResultV2(
     readJsonArtifact(path.join(root,...bridge.result.verification_result_path.split('/')),
-      'bootstrap-first-red-result',{canonical:true}).value,{expectedSignal:{
-        ...target.verification_spec.red_failure.expected_signal,
-        message:target.verification_spec.red_failure.expected_signal.message_pattern,
-        message_pattern:undefined}});
+      'bootstrap-first-red-result',{canonical:true}).value,
+    {expectedSignal:target.verification_spec.red_failure.expected_signal});
   if(transition.result.verification_result_sha256!==verification.result_sha256||
     transition.result.write_receipt_sha256!==bridge.result.write_receipt_sha256)
     fail('bootstrap-proof-transition');
@@ -2138,6 +2271,7 @@ module.exports={
   BOOTSTRAP_CONTROL_NAMES,BOOTSTRAP_EXECUTION_STAGES,BOOTSTRAP_REJECTION_CODES,
   BOOTSTRAP_VERIFICATION_RESULT_KEYS,BOOTSTRAP_RED_PROOF_KEYS,
   bootstrapManifestSchemaSha256,bootstrapCommandArgvSha256,normalizeNodeTestBootstrapStdout,
+  parseNodeTapFailure,tapValueDigest,
   classifyBootstrapObservedCommandResult,validateBootstrapObservedCommandResult,
   validateBootstrapFailureArtifact,validateBootstrapManifest,validateBootstrapWitness,
   validateBootstrapAuthorization,validateBootstrapExecutionJournal,
