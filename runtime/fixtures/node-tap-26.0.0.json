@@ -60,6 +60,103 @@
         "type": "test",
         "failureType": "testCodeFailure"
       }
+    },
+    "syntax": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "error",
+        "name",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "name": "SyntaxError"
+      }
+    },
+    "import": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "requireStack",
+        "error",
+        "code",
+        "stack"
+      ],
+      "forms": {
+        "requireStack": "indexed-paths",
+        "error": "literal",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test"
+      }
+    },
+    "fixture": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test"
+      }
+    },
+    "collection": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "code": "ERR_TEST_FAILURE"
+      }
+    },
+    "process_failure": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "exitCode",
+        "signal",
+        "error",
+        "code"
+      ],
+      "forms": {
+        "error": "scalar"
+      },
+      "constants": {
+        "type": "test",
+        "failureType": "testCodeFailure",
+        "exitCode": 1,
+        "signal": "~",
+        "error": "test failed",
+        "code": "ERR_TEST_FAILURE"
+      }
     }
   },
   "suite_wrapper_layout": {

@@ -640,6 +640,7 @@ function normalizedSignalMatchesExpected(observed,expected){
 }
 function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
   const terminalReasons=new Map([
+    ['pre-spawn-rejected',new Set(['pre-spawn'])],
     ['timed-out',new Set(['timed-out'])],
     ['output-overflow',new Set(['output-overflow'])],
     ['terminated',new Set(['terminated'])],
@@ -685,7 +686,11 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     !(typeof value.process.signal==='string'||value.process.signal===null)||
     typeof value.process.timed_out!=='boolean'||typeof value.process.output_overflow!=='boolean'||
     !Number.isInteger(value.process.duration_ms)||value.process.duration_ms<0||
-    value.process.spawn_error!==null)
+    !(value.process.spawn_error===null||
+      (exactKeys(value.process.spawn_error,['code','message_sha256'])&&
+        new Set(['invalid-target','identity-drift','spawn-failed','environment-invalid'])
+          .has(value.process.spawn_error.code)&&
+        DIGEST.test(value.process.spawn_error.message_sha256||''))))
     fail('bootstrap-verification-process');
   const rawStdout=validateRawChannel(value.raw_stdout,'bootstrap-verification-stdout');
   const rawStderr=validateRawChannel(value.raw_stderr,'bootstrap-verification-stderr');
@@ -707,12 +712,19 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     (classification.reason_code==='stderr-nonempty')!==(rawStderr.length!==0))
     fail('bootstrap-verification-classification');
   const processClass=classification.observed_class;
-  if((processClass==='timed-out'&&value.process.timed_out!==true)||
+  const preSpawn=processClass==='pre-spawn-rejected';
+  if((preSpawn&&(value.process.exit_code!==null||value.process.signal!==null||
+      value.process.timed_out||value.process.output_overflow||
+      value.process.duration_ms!==0||value.process.spawn_error===null||
+      rawStdout.length!==0||rawStderr.length!==0))||
+    (!preSpawn&&value.process.spawn_error!==null)||
+    (processClass==='timed-out'&&value.process.timed_out!==true)||
     (processClass==='output-overflow'&&value.process.output_overflow!==true)||
     (processClass==='terminated'&&value.process.signal===null&&
       value.process.exit_code!==null)||
     (processClass==='unexpected-pass'&&value.process.exit_code!==0)||
-    (!new Set(['timed-out','output-overflow','terminated','unexpected-pass']).has(processClass)&&
+    (!new Set(['pre-spawn-rejected','timed-out','output-overflow','terminated',
+      'unexpected-pass']).has(processClass)&&
       (!Number.isInteger(value.process.exit_code)||value.process.exit_code===0||
         value.process.signal!==null||value.process.timed_out||value.process.output_overflow)))
     fail('bootstrap-verification-process');
@@ -739,7 +751,14 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
       canonicalText(replaySignal)!==canonicalText(classification.normalized_signal))
       fail('bootstrap-verification-classification');
     const matches=normalizedSignalMatchesExpected(classification.normalized_signal,expectedSignal);
-    if(matches!==accepted)fail('bootstrap-verification-signal');
+    const replayClass=classifyTapDiagnostic(replayEvent);
+    const expectedClass=matches?'expected-failure':replayClass?.observed_class==='expected-failure'?
+      'unknown':replayClass?.observed_class||'unknown';
+    const expectedReason=matches?'signal-matched':expectedClass==='unknown'?
+      'unmatched':replayClass.reason_code;
+    if(matches!==accepted||classification.observed_class!==expectedClass||
+      classification.reason_code!==expectedReason)
+      fail('bootstrap-verification-signal');
   }else if(accepted)fail('bootstrap-verification-classification');
   if(semanticDigest('verification-result-v2',value,'result_sha256')!==value.result_sha256)
     fail('bootstrap-verification-digest');
@@ -1723,7 +1742,7 @@ function authenticateBootstrapCompletion({stateCapability,authorizationPath,rece
   return {sessionId,root,authorization,receipt,marker};
 }
 const TAP_AUTHORITY_KEYS=new Set(['location','failureType','error','code','name','message',
-  'operator','expected','actual','stack']);
+  'operator','expected','actual','stack','requireStack']);
 const TAP_WRAPPER_KEYS=new Set(['duration_ms','type']);
 const ASSERTION_OPERATORS=new Set(['strictEqual','deepStrictEqual','notStrictEqual',
   'notDeepStrictEqual','match','doesNotMatch','throws','rejects']);
@@ -1775,17 +1794,36 @@ function parseTapDiagnostic(lines,start,indent,{role='leaf'}={}){
   const prefix=' '.repeat(indent),contentPrefix=' '.repeat(indent+2);
   if(lines[start]!==`${prefix}---`)fail('bootstrap-first-red-tap');
   const outerKeys=new Set(['duration_ms','type','location','failureType','error','code']);
+  const processKeys=new Set(['duration_ms','type','location','failureType','exitCode','signal',
+    'error','code']);
   const fields={},forms={},keys=[],allowed=role==='wrapper'?TAP_WRAPPER_KEYS:
-    role==='outer'?outerKeys:new Set([...TAP_WRAPPER_KEYS,...TAP_AUTHORITY_KEYS]);
+    role==='outer'?outerKeys:role==='process'?processKeys:
+      new Set([...TAP_WRAPPER_KEYS,...TAP_AUTHORITY_KEYS]);
   let index=start+1;
   for(;index<lines.length&&lines[index]!==`${prefix}...`;index+=1){
     if(lines[index].includes('\t'))fail('bootstrap-first-red-tap');
-    const match=lines[index].match(new RegExp(`^ {${indent}}([A-Za-z][A-Za-z0-9_]*): (.*)$`,'u'));
+    const requireStackLine=lines[index]===`${prefix}requireStack:`;
+    const match=requireStackLine?['','requireStack','']:
+      lines[index].match(new RegExp(`^ {${indent}}([A-Za-z][A-Za-z0-9_]*): (.*)$`,'u'));
     if(!match||!allowed.has(match[1])||Object.hasOwn(fields,match[1]))
       fail('bootstrap-first-red-tap');
     const [,key,source]=match;
     keys.push(key);
-    if(source==='|-'){
+    if(key==='requireStack'){
+      if(role!=='leaf'||source!==''||
+        !lines[index+1]?.startsWith(contentPrefix))fail('bootstrap-first-red-tap');
+      const paths=[];
+      while(index+1<lines.length&&lines[index+1].startsWith(contentPrefix)){
+        index+=1;
+        const row=lines[index].slice(indent+2).match(/^([0-9]+): (.+)$/u);
+        if(!row||Number(row[1])!==paths.length)fail('bootstrap-first-red-tap');
+        const value=parseTapScalar(row[2],'requireStack');
+        if(typeof value!=='string'||!value)fail('bootstrap-first-red-tap');
+        paths.push(value);
+      }
+      if(!paths.length)fail('bootstrap-first-red-tap');
+      fields[key]=paths;forms[key]='indexed-paths';
+    }else if(source==='|-'){
       if(role!=='leaf'||!['error','stack'].includes(key))fail('bootstrap-first-red-tap');
       const content=[];
       while(index+1<lines.length&&lines[index+1].startsWith(contentPrefix)){
@@ -1833,33 +1871,77 @@ function reporterLocation(location,{root,testPath}){
   if(actual!==expected||path.resolve(candidate)!==expected)fail('bootstrap-first-red-tap');
   return {line:Number(match[2]),column:Number(match[3])};
 }
-function tapEventFrom({fields,forms,keys,testName,root,testPath}){
+function tapEventFrom({fields,forms,keys,testName,root,testPath,diagnosticOverride=null}){
   const golden=BOOTSTRAP_NODE_TAP_GOLDENS[process.versions.node];
   const assertionShape=fields.code==='ERR_ASSERTION'||fields.name==='AssertionError';
   const contractShape=fields.code==='ERR_DEEP_WORK_CONTRACT';
-  const layout=assertionShape&&!contractShape?golden?.leaf_layouts?.assertion:
-    contractShape&&!assertionShape?golden?.leaf_layouts?.contract:null;
+  const syntaxShape=fields.name==='SyntaxError'||fields.code==='ERR_INVALID_TYPESCRIPT_SYNTAX';
+  const importShape=new Set(['ERR_MODULE_NOT_FOUND','MODULE_NOT_FOUND',
+    'ERR_PACKAGE_PATH_NOT_EXPORTED']).has(fields.code);
+  const fixtureShape=new Set(['hookFailed','globalSetup','globalTeardown'])
+    .has(fields.failureType);
+  const collectionShape=fields.code==='ERR_TEST_FAILURE'&&
+    new Set(['subtestsFailed','configuration']).has(fields.failureType);
+  const processShape=diagnosticOverride!==null;
+  const shapes=[assertionShape,contractShape,syntaxShape,importShape,fixtureShape,
+    collectionShape,processShape]
+    .filter(Boolean).length;
+  const layout=shapes===1?(assertionShape?golden?.leaf_layouts?.assertion:
+    contractShape?golden?.leaf_layouts?.contract:
+      syntaxShape?golden?.leaf_layouts?.syntax:
+        importShape?golden?.leaf_layouts?.import:
+          fixtureShape?golden?.leaf_layouts?.fixture:
+        collectionShape?golden?.leaf_layouts?.collection:
+          golden?.leaf_layouts?.process_failure):null;
   if(!layout||canonicalText(keys)!==canonicalText(layout.keys)||
-    fields.type!==layout.constants.type||fields.failureType!==layout.constants.failureType||
+    Object.entries(layout.constants).some(([key,value])=>fields[key]!==value)||
     Object.entries(layout.forms).some(([key,value])=>forms[key]!==value))
     fail('bootstrap-first-red-tap');
   const location=reporterLocation(fields.location,{root,testPath});
   const hasExpected=Object.hasOwn(fields,'expected'),hasActual=Object.hasOwn(fields,'actual');
-  if(!hasExpected&&!hasActual)fail('bootstrap-first-red-tap');
+  if((assertionShape||contractShape)&&!hasExpected&&!hasActual)
+    fail('bootstrap-first-red-tap');
   const nullableString=(key)=>{
     if(!Object.hasOwn(fields,key))return null;
     if(typeof fields[key]!=='string'||!fields[key])fail('bootstrap-first-red-tap');
     return normalizeTapString(fields[key]);
   };
-  const rawMessage=Object.hasOwn(fields,'message')?fields.message:
-    String(fields.error).split('\n')[0];
-  const message=normalizeTapString(rawMessage),name=normalizeTapString(testName);
+  const rawMessage=diagnosticOverride?.message??(Object.hasOwn(fields,'message')?fields.message:
+    String(fields.error).split('\n')[0]);
+  const message=normalizeTapString(rawMessage);
+  const name=normalizeTapString(diagnosticOverride?.test_name??testName);
   if(!message||!name)fail('bootstrap-first-red-tap');
   return {event_type:'test-failure',test_file:testPath,test_name:name,start_line:location.line,
-    error_code:nullableString('code'),error_name:nullableString('name'),
-    failure_type:nullableString('failureType'),operator:nullableString('operator'),
+    error_code:diagnosticOverride?.error_code??nullableString('code'),
+    error_name:diagnosticOverride?.error_name??nullableString('name'),
+    failure_type:diagnosticOverride?.failure_type??nullableString('failureType'),
+    operator:diagnosticOverride?.operator??nullableString('operator'),
     expected_digest:hasExpected?tapValueDigest(fields.expected):null,
-    actual_digest:hasActual?tapValueDigest(fields.actual):null,message};
+    actual_digest:hasActual?tapValueDigest(fields.actual):
+      (assertionShape||contractShape)?null:tapValueDigest(message),message};
+}
+function parseNodeTapProcessFailure(lines,{root,testPath,grammar}){
+  const headerIndex=lines.findIndex((line,index)=>index>0&&line.startsWith('# Subtest: '));
+  if(headerIndex<2||lines[headerIndex+1]!==`not ok 1 - ${lines[headerIndex].slice(11)}`)
+    return null;
+  const prelude=lines.slice(1,headerIndex);
+  if(!prelude.length||prelude.some((line)=>!line.startsWith('#'))||
+    prelude.at(-1)!==`# Node.js v${process.versions.node}`)
+    fail('bootstrap-first-red-tap');
+  const syntaxRows=prelude.filter((line)=>line.startsWith('# SyntaxError: '));
+  const importRows=prelude.filter((line)=>/^#   code: '(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND|ERR_PACKAGE_PATH_NOT_EXPORTED)'[,]?$/u
+    .test(line));
+  if((syntaxRows.length===1)===(importRows.length===1))fail('bootstrap-first-red-tap');
+  const diagnostic=parseTapDiagnostic(lines,headerIndex+2,2,{role:'process'});
+  exactTapSummary(lines,diagnostic.next,grammar.topologies.direct);
+  const override=syntaxRows.length===1?
+    {test_name:testPath,error_code:null,error_name:'SyntaxError',
+      failure_type:'testCodeFailure',operator:null,message:syntaxRows[0].slice(15)}:
+    {test_name:testPath,error_code:importRows[0].match(/'([^']+)'/u)[1],error_name:'Error',
+      failure_type:'testCodeFailure',operator:null,
+      message:(prelude.find((line)=>line.startsWith('# Error: '))||'# Error: import failed').slice(2)};
+  return tapEventFrom({...diagnostic,testName:testPath,root,testPath,
+    diagnosticOverride:override});
 }
 function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.node}){
   const grammar=BOOTSTRAP_NODE_TAP_GOLDENS[nodePatch];
@@ -1868,6 +1950,8 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
     !stdout.startsWith('TAP version 13\n')||!stdout.endsWith('\n'))
     fail('bootstrap-first-red-tap');
   const lines=stdout.slice(0,-1).split('\n');
+  const processFailure=parseNodeTapProcessFailure(lines,{root,testPath,grammar});
+  if(processFailure)return processFailure;
   let leafName,leafFields,summaryStart;
   const directHeader=lines[1]?.match(/^# Subtest: (.+)$/u);
   const directLeaf=lines[2]?.match(/^not ok 1 - (.+)$/u);
@@ -1901,6 +1985,11 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
   return tapEventFrom({...leafFields,testName:leafName,root,testPath});
 }
 function classifyExpectedTapSignal(event){
+  const classified=classifyTapDiagnostic(event);
+  if(classified?.observed_class==='expected-failure')return classified.signal;
+  return null;
+}
+function classifyTapDiagnostic(event){
   const syntax=event.error_name==='SyntaxError'||
     event.error_code==='ERR_INVALID_TYPESCRIPT_SYNTAX';
   const imported=new Set(['ERR_MODULE_NOT_FOUND','MODULE_NOT_FOUND',
@@ -1913,9 +2002,14 @@ function classifyExpectedTapSignal(event){
     new Set(['subtestsFailed','configuration']).has(event.failure_type);
   const recognized=[syntax,imported,fixture,assertion,contract,collection].filter(Boolean).length;
   if(recognized!==1)return null;
-  if(assertion)return {kind:'assertion',operator:event.operator};
-  if(contract)return {kind:'contract',operator:'contract'};
-  return null;
+  if(syntax)return {observed_class:'syntax-error',reason_code:'syntax-diagnostic',signal:null};
+  if(imported)return {observed_class:'import-error',reason_code:'import-diagnostic',signal:null};
+  if(fixture)return {observed_class:'fixture-error',reason_code:'fixture-diagnostic',signal:null};
+  if(assertion)return {observed_class:'expected-failure',reason_code:'signal-matched',
+    signal:{kind:'assertion',operator:event.operator}};
+  if(contract)return {observed_class:'expected-failure',reason_code:'signal-matched',
+    signal:{kind:'contract',operator:'contract'}};
+  return {observed_class:'collection-error',reason_code:'collection-diagnostic',signal:null};
 }
 function deriveTapSignal(event){
   if((event.error_code==='ERR_ASSERTION'||event.error_name==='AssertionError')&&
@@ -2023,8 +2117,8 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     bound.receipt.first_red_verification_spec_sha256!==specRaw.sha256||
     bound.marker.first_red_verification_spec_sha256!==specRaw.sha256)
     fail('bootstrap-first-red-spec');
-  if(spec.executable.supported_patches_sha256!==BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256||
-    process.versions.node!=='26.0.0')fail('bootstrap-first-red-node');
+  const supportedNode=spec.executable.supported_patches_sha256===
+    BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256&&process.versions.node==='26.0.0';
   const completionReceipt=await journal.resumeOperation({
     projectCapability:transaction.projectCapabilityFor(stateCapability),
     operationId:bound.receipt.completion_operation_id,sessionId:bound.sessionId,
@@ -2056,9 +2150,25 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     failing_test_write_operation_id:write.receipt.operationId,
     failing_test_write_receipt_sha256:write.receipt.receiptSha256};
   const operationId=deterministicOperationId('bootstrap-first-red-v2',preconditions);
+  const resultRelative=`.claude/deep-work.${bound.sessionId}.verification.${operationId}.json`;
+  const resultPath=path.join(bound.root,...resultRelative.split('/'));
   const existing=await completedOperation(write.project,operationId,bound.sessionId,
     'bootstrap-first-red');
   if(existing?.stage==='completed-ledger'){
+    const existingVerification=validateBootstrapVerificationResultV2(
+      readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
+        expectedSignal:spec.red_failure.expected_signal});
+    if(existingVerification.verification_operation_id!==operationId||
+      existingVerification.result_sha256!==
+        (existing.result?.result_sha256||existing.result?.verification_result_sha256))
+      fail('bootstrap-first-red-result');
+    if(existingVerification.disposition==='rejected'&&
+      (!exactKeys(existing.result,['session_id','slice_id','result_path','result_sha256',
+        'disposition','observed_class','scope_disposition'])||
+        existing.result.result_path!==resultRelative||
+        existing.result.observed_class!==existingVerification.classification.observed_class||
+        existing.result.scope_disposition!==existingVerification.scope_disposition))
+      fail('bootstrap-first-red-result');
     const aliases=existing.result?.disposition==='rejected'?{
       verification_result_path:existing.result.result_path,
       verification_result_sha256:existing.result.result_sha256}:existing.result;
@@ -2074,8 +2184,6 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     writeOperationId:write.receipt.operationId,writeReceiptSha256:write.receipt.receiptSha256}});
   const manifestOptions={currentOperation:{kind:'bootstrap-first-red',
     operation_id:operationId,preconditions,slice:sliceId}};
-  const resultRelative=`.claude/deep-work.${bound.sessionId}.verification.${operationId}.json`;
-  const resultPath=path.join(bound.root,...resultRelative.split('/'));
   let verification;
   if(fs.existsSync(resultPath)){
     verification=validateBootstrapVerificationResultV2(
@@ -2111,18 +2219,25 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       '--test','--test-isolation=none',
       '--test-reporter=tap','--',spec.args[3]];
     let ran;
-    try{
-      ran=await require('./process-supervisor.js').runSupervisedProcess({
-        executable:identity.path,args:normalizedArgv},{cwd:bound.root,timeoutMs:spec.timeout_ms,
-        maxOutputBytes:spec.max_output_bytes,env:structuredClone(spec.environment.values)});
-    }catch{fail('bootstrap-first-red-process');}
+    if(supportedNode){
+      try{
+        ran=await require('./process-supervisor.js').runSupervisedProcess({
+          executable:identity.path,args:normalizedArgv},{cwd:bound.root,timeoutMs:spec.timeout_ms,
+          maxOutputBytes:spec.max_output_bytes,env:structuredClone(spec.environment.values)});
+      }catch{fail('bootstrap-first-red-process');}
+    }else{
+      ran={exitCode:null,signal:null,stdout:'',stderr:'',timedOut:false,
+        outputOverflow:false,durationMs:0,spawnError:{code:'identity-drift',
+          message_sha256:rawDigest(Buffer.from('unsupported-node-patch'))}};
+    }
     const stdout=Buffer.from(ran.stdout||'','utf8'),stderr=Buffer.from(ran.stderr||'','utf8');
     const manifestAfter=captureBootstrapManifest(bound.root,bound.authorization.witness,'post',
       manifestOptions);
     const changed=trackedChangedPaths(manifestBefore,manifestAfter);
     const expected=spec.red_failure.expected_signal;
     let observedClass,reasonCode,event=null,normalizedSignal=null;
-    if(ran.timedOut){observedClass='timed-out';reasonCode='timed-out';}
+    if(ran.spawnError){observedClass='pre-spawn-rejected';reasonCode='pre-spawn';}
+    else if(ran.timedOut){observedClass='timed-out';reasonCode='timed-out';}
     else if(ran.outputOverflow){observedClass='output-overflow';reasonCode='output-overflow';}
     else if(ran.signal!==null||ran.exitCode===null){
       observedClass='terminated';reasonCode='terminated';
@@ -2146,9 +2261,12 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
           test_identity:{test_file:event.test_file,test_name:event.test_name,
             start_line:event.start_line},expected_digest:event.expected_digest,
           actual_digest:event.actual_digest,message:event.message}:null;
-        const observed=classifyExpectedTapSignal(event);
-        if(observed&&normalizedSignalMatchesExpected(normalizedSignal,expected)){
+        const classified=classifyTapDiagnostic(event);
+        if(classified?.observed_class==='expected-failure'&&
+          normalizedSignalMatchesExpected(normalizedSignal,expected)){
           observedClass='expected-failure';reasonCode='signal-matched';
+        }else if(classified&&classified.observed_class!=='expected-failure'){
+          observedClass=classified.observed_class;reasonCode=classified.reason_code;
         }else{
           observedClass='unknown';reasonCode='unmatched';
         }
@@ -2186,7 +2304,8 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       supervisor_control:supervisor,
       supervisor_control_sha256:semanticDigest('supervisor-control-v1',supervisor,null),
       process:{exit_code:ran.exitCode,signal:ran.signal,timed_out:ran.timedOut,
-        output_overflow:ran.outputOverflow,duration_ms:ran.durationMs,spawn_error:null},
+        output_overflow:ran.outputOverflow,duration_ms:ran.durationMs,
+        spawn_error:ran.spawnError||null},
       raw_stdout:{base64:stdout.toString('base64'),byte_length:stdout.length,
         sha256:rawDigest(stdout)},
       raw_stderr:{base64:stderr.toString('base64'),byte_length:stderr.length,
@@ -2395,7 +2514,7 @@ module.exports={
   BOOTSTRAP_CONTROL_NAMES,BOOTSTRAP_EXECUTION_STAGES,BOOTSTRAP_REJECTION_CODES,
   BOOTSTRAP_VERIFICATION_RESULT_KEYS,BOOTSTRAP_RED_PROOF_KEYS,
   bootstrapManifestSchemaSha256,bootstrapCommandArgvSha256,normalizeNodeTestBootstrapStdout,
-  parseNodeTapFailure,tapValueDigest,classifyExpectedTapSignal,
+  parseNodeTapFailure,tapValueDigest,classifyExpectedTapSignal,classifyTapDiagnostic,
   classifyBootstrapObservedCommandResult,validateBootstrapObservedCommandResult,
   validateBootstrapFailureArtifact,validateBootstrapManifest,validateBootstrapWitness,
   validateBootstrapAuthorization,validateBootstrapExecutionJournal,
