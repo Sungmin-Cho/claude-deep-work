@@ -1331,6 +1331,7 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
   assert.equal(typeof tapValueDigest,'function');
   const typed=[
     [undefined,'u:'],[null,'n:'],[false,'b:0'],[true,'b:1'],[2.5,'d:2.5'],
+    [-0,'d:0'],
     ['e\u0301\r\nline','s:é\nline'],
   ];
   for(const [value,preimage] of typed)
@@ -1361,6 +1362,10 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
     tap.replace("  name: 'AssertionError'\n",''),
     tap.replace('  stack: |-\n'+
       `    TestContext.<anonymous> (${path.join(WORKTREE,'runtime/bootstrap-runtime.test.js')}:4:24)\n`,''),
+    tap.replace('  actual: 1\n','  actual: NaN\n'),
+    tap.replace('  actual: 1\n','  actual: 1n\n'),
+    tap.replace(path.join(WORKTREE,'runtime/bootstrap-runtime.test.js'),
+      `${WORKTREE}/runtime/../runtime/bootstrap-runtime.test.js`),
   ];
   for(const [index,bytes] of malformed.entries())
     assert.throws(()=>parseNodeTapFailure(bytes,{root:WORKTREE,
