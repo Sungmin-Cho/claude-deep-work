@@ -1275,7 +1275,7 @@ function exactFirstRedSpec(overrides={}){
   return {...base,...overrides};
 }
 
-function directAssertionTap({root=WORKTREE,testPath='runtime/a.test.js',
+function directAssertionTap({root=WORKTREE,testPath='runtime/bootstrap-runtime.test.js',
   message='prefix expected exact authority suffix'}={}){
   return [
     'TAP version 13',
@@ -1323,9 +1323,9 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
     assert.equal(tapValueDigest(value),digest(Buffer.concat([
       Buffer.from('tap-value-v1\0'),Buffer.from(preimage)])));
   const tap=directAssertionTap();
-  const event=parseNodeTapFailure(tap,{root:WORKTREE,testPath:'runtime/a.test.js'});
+  const event=parseNodeTapFailure(tap,{root:WORKTREE,testPath:'runtime/bootstrap-runtime.test.js'});
   assert.deepEqual(event,{
-    event_type:'test-failure',test_file:'runtime/a.test.js',test_name:'fails first',
+    event_type:'test-failure',test_file:'runtime/bootstrap-runtime.test.js',test_name:'fails first',
     start_line:4,error_code:'ERR_ASSERTION',error_name:'AssertionError',
     failure_type:'testCodeFailure',operator:'strictEqual',
     expected_digest:tapValueDigest(2),actual_digest:tapValueDigest(1),
@@ -1344,7 +1344,8 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
     tap.replace('  ...\n1..1','1..1'),
   ];
   for(const [index,bytes] of malformed.entries())
-    assert.throws(()=>parseNodeTapFailure(bytes,{root:WORKTREE,testPath:'runtime/a.test.js'}),
+    assert.throws(()=>parseNodeTapFailure(bytes,{root:WORKTREE,
+      testPath:'runtime/bootstrap-runtime.test.js'}),
       /bootstrap-first-red-tap/,`malformed TAP ${index}`);
 });
 
@@ -1751,6 +1752,20 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         "test('fails first',()=>assert.strictEqual(1,2,'prefix expected exact authority suffix'));",
         ''].join('\n');
       const prepared=await preparePublicFirstRedCase(t,{testSource});
+      const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+      assert.equal(bridge.operation_receipt.stage,'completed-ledger');
+    });
+    await t.test('patch-keyed-suite-wrapper-topology',async()=>{
+      const source=[
+        "'use strict';","const {describe,it}=require('node:test');",
+        "const assert=require('node:assert/strict');","describe('wrapper',()=>{",
+        "  it('fails first',()=>assert.strictEqual(1,2,'expected exact authority'));","});",'',
+      ].join('\n');
+      const base=exactFirstRedSpec();
+      const spec=exactFirstRedSpec({red_failure:{...base.red_failure,expected_signal:{
+        ...base.red_failure.expected_signal,test_identity:{
+          ...base.red_failure.expected_signal.test_identity,start_line:5}}}});
+      const prepared=await preparePublicFirstRedCase(t,{spec,testSource:source});
       const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
       assert.equal(bridge.operation_receipt.stage,'completed-ledger');
     });
