@@ -639,17 +639,34 @@ function normalizedSignalMatchesExpected(observed,expected){
   return true;
 }
 function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
+  const terminalReasons=new Map([
+    ['timed-out',new Set(['timed-out'])],
+    ['output-overflow',new Set(['output-overflow'])],
+    ['terminated',new Set(['terminated'])],
+    ['unexpected-pass',new Set(['unexpected-pass'])],
+    ['test-side-effect',new Set(['governed-path-changed'])],
+    ['invalid-output',new Set(['stderr-nonempty','unsupported-node','invalid-utf8','invalid-tap'])],
+    ['syntax-error',new Set(['syntax-diagnostic'])],
+    ['import-error',new Set(['import-diagnostic'])],
+    ['fixture-error',new Set(['fixture-diagnostic'])],
+    ['expected-failure',new Set(['signal-matched'])],
+    ['collection-error',new Set(['collection-diagnostic'])],
+    ['unknown',new Set(['unmatched'])],
+  ]);
   if(!exactKeys(value,BOOTSTRAP_VERIFICATION_RESULT_KEYS)||value.schema_version!==2||
     !SESSION.test(value.session_id||'')||!/^SLICE-\d{3}$/.test(value.slice_id||'')||
     ['plan_authority_sha256','spec_sha256','verification_plan_sha256','result_sha256',
       'environment_sha256','execution_containment_sha256','supervisor_control_sha256']
       .some((key)=>!DIGEST.test(value[key]||''))||
     !OPERATION.test(value.write_operation_id||'')||!OPERATION.test(value.verification_operation_id||'')||
-    value.cwd_role!=='worktree'||value.disposition!=='accepted'||
+    value.cwd_role!=='worktree'||!new Set(['accepted','rejected']).has(value.disposition)||
     !Array.isArray(value.logical_argv)||!Array.isArray(value.normalized_argv))
     fail('bootstrap-verification-result');
-  if(value.scope_disposition!=='clean'||!Array.isArray(value.changed_paths)||
-    value.changed_paths.length!==0)fail('bootstrap-verification-scope');
+  if(!new Set(['clean','test-side-effect']).has(value.scope_disposition)||
+    !uniqueSorted(value.changed_paths,{allowEmpty:true,pattern:/^.+$/})||
+    (value.scope_disposition==='clean'&&value.changed_paths.length!==0)||
+    (value.scope_disposition==='test-side-effect'&&value.changed_paths.length===0))
+    fail('bootstrap-verification-scope');
   if(value.result_path!==`.claude/deep-work.${value.session_id}.verification.${value.verification_operation_id}.json`)
     fail('bootstrap-verification-path');
   if(!exactKeys(value.environment,['mode','values'])||value.environment.mode!=='closed'||
@@ -663,14 +680,15 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     semanticDigest('supervisor-control-v1',value.supervisor_control,null)!==
       value.supervisor_control_sha256)fail('bootstrap-verification-supervisor');
   if(!exactKeys(value.process,['exit_code','signal','timed_out','output_overflow','duration_ms',
-    'spawn_error'])||!Number.isInteger(value.process.exit_code)||value.process.exit_code===0||
-    value.process.signal!==null||value.process.timed_out!==false||
-    value.process.output_overflow!==false||!Number.isFinite(value.process.duration_ms)||
-    value.process.duration_ms<0||value.process.spawn_error!==null)
+    'spawn_error'])||
+    !(Number.isInteger(value.process.exit_code)||value.process.exit_code===null)||
+    !(typeof value.process.signal==='string'||value.process.signal===null)||
+    typeof value.process.timed_out!=='boolean'||typeof value.process.output_overflow!=='boolean'||
+    !Number.isInteger(value.process.duration_ms)||value.process.duration_ms<0||
+    value.process.spawn_error!==null)
     fail('bootstrap-verification-process');
   const rawStdout=validateRawChannel(value.raw_stdout,'bootstrap-verification-stdout');
   const rawStderr=validateRawChannel(value.raw_stderr,'bootstrap-verification-stderr');
-  if(rawStderr.length!==0||rawStdout.length===0)fail('bootstrap-verification-classification');
   for(const [name,ref] of [['pre',value.pre_manifest_ref],['post',value.post_manifest_ref]])
     if(!exactKeys(ref,['path','sha256'])||!DIGEST.test(ref.sha256||'')||
       ref.path!==`.claude/deep-work.${value.session_id}.verification-manifest.${value.verification_operation_id}.${name}.json`)
@@ -679,26 +697,50 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
   if(!exactKeys(classification,['adapter','adapter_version','observed_class','diagnostic_event',
     'diagnostic_event_sha256','normalized_signal','reason_code'])||
     classification.adapter!=='node-test-tap'||classification.adapter_version!==1||
-    classification.observed_class!=='expected-failure'||classification.reason_code!=='signal-matched'||
-    !DIGEST.test(classification.diagnostic_event_sha256||'')||
-    semanticDigest('diagnostic-event-v1',classification.diagnostic_event,null)!==
-      classification.diagnostic_event_sha256)fail('bootstrap-verification-classification');
-  let replayEvent;
-  try{
-    const text=new TextDecoder('utf-8',{fatal:true}).decode(rawStdout);
-    replayEvent=parseNodeTapFailure(text,{root:value.execution_containment.worktree_realpath,
-      testPath:value.logical_argv[3],nodePatch:value.executable_identity.node_version});
-  }catch{fail('bootstrap-verification-classification');}
-  const replayKind=classifyExpectedTapSignal(replayEvent);
-  const replaySignal=replayKind?{kind:replayKind.kind,operator:replayKind.operator,
-    test_identity:{test_file:replayEvent.test_file,test_name:replayEvent.test_name,
-      start_line:replayEvent.start_line},expected_digest:replayEvent.expected_digest,
-    actual_digest:replayEvent.actual_digest,message:replayEvent.message}:null;
-  if(!replayKind||canonicalText(replayEvent)!==canonicalText(classification.diagnostic_event)||
-    canonicalText(replaySignal)!==canonicalText(classification.normalized_signal))
+    !terminalReasons.get(classification.observed_class)?.has(classification.reason_code))
     fail('bootstrap-verification-classification');
-  if(!normalizedSignalMatchesExpected(classification.normalized_signal,expectedSignal))
-    fail('bootstrap-verification-signal');
+  const accepted=classification.observed_class==='expected-failure'&&
+    classification.reason_code==='signal-matched'&&value.scope_disposition==='clean';
+  if(value.disposition!==(accepted?'accepted':'rejected')||
+    (classification.observed_class==='test-side-effect')!==
+      (value.scope_disposition==='test-side-effect')||
+    (classification.reason_code==='stderr-nonempty')!==(rawStderr.length!==0))
+    fail('bootstrap-verification-classification');
+  const processClass=classification.observed_class;
+  if((processClass==='timed-out'&&value.process.timed_out!==true)||
+    (processClass==='output-overflow'&&value.process.output_overflow!==true)||
+    (processClass==='terminated'&&value.process.signal===null&&
+      value.process.exit_code!==null)||
+    (processClass==='unexpected-pass'&&value.process.exit_code!==0)||
+    (!new Set(['timed-out','output-overflow','terminated','unexpected-pass']).has(processClass)&&
+      (!Number.isInteger(value.process.exit_code)||value.process.exit_code===0||
+        value.process.signal!==null||value.process.timed_out||value.process.output_overflow)))
+    fail('bootstrap-verification-process');
+  const parsed=classification.diagnostic_event!==null;
+  if(parsed!==DIGEST.test(classification.diagnostic_event_sha256||'')||
+    (parsed&&semanticDigest('diagnostic-event-v1',classification.diagnostic_event,null)!==
+      classification.diagnostic_event_sha256)||
+    (!parsed&&(classification.diagnostic_event_sha256!==null||
+      classification.normalized_signal!==null)))
+    fail('bootstrap-verification-classification');
+  if(parsed){
+    let replayEvent;
+    try{
+      const text=new TextDecoder('utf-8',{fatal:true}).decode(rawStdout);
+      replayEvent=parseNodeTapFailure(text,{root:value.execution_containment.worktree_realpath,
+        testPath:value.logical_argv[3],nodePatch:value.executable_identity.node_version});
+    }catch{fail('bootstrap-verification-classification');}
+    const replayKind=deriveTapSignal(replayEvent);
+    const replaySignal=replayKind?{kind:replayKind.kind,operator:replayKind.operator,
+      test_identity:{test_file:replayEvent.test_file,test_name:replayEvent.test_name,
+        start_line:replayEvent.start_line},expected_digest:replayEvent.expected_digest,
+      actual_digest:replayEvent.actual_digest,message:replayEvent.message}:null;
+    if(canonicalText(replayEvent)!==canonicalText(classification.diagnostic_event)||
+      canonicalText(replaySignal)!==canonicalText(classification.normalized_signal))
+      fail('bootstrap-verification-classification');
+    const matches=normalizedSignalMatchesExpected(classification.normalized_signal,expectedSignal);
+    if(matches!==accepted)fail('bootstrap-verification-signal');
+  }else if(accepted)fail('bootstrap-verification-classification');
   if(semanticDigest('verification-result-v2',value,'result_sha256')!==value.result_sha256)
     fail('bootstrap-verification-digest');
   return structuredClone(value);
@@ -1875,6 +1917,14 @@ function classifyExpectedTapSignal(event){
   if(contract)return {kind:'contract',operator:'contract'};
   return null;
 }
+function deriveTapSignal(event){
+  if((event.error_code==='ERR_ASSERTION'||event.error_name==='AssertionError')&&
+    ASSERTION_OPERATORS.has(event.operator))
+    return {kind:'assertion',operator:event.operator};
+  if(event.error_code==='ERR_DEEP_WORK_CONTRACT')
+    return {kind:'contract',operator:event.operator};
+  return null;
+}
 function trackedChangedPaths(before,after){
   const left=new Map(before.entries.map((row)=>[row.path,row]));
   const right=new Map(after.entries.map((row)=>[row.path,row]));
@@ -2008,8 +2058,12 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
   const operationId=deterministicOperationId('bootstrap-first-red-v2',preconditions);
   const existing=await completedOperation(write.project,operationId,bound.sessionId,
     'bootstrap-first-red');
-  if(existing?.stage==='completed-ledger')
-    return {...existing.result,operation_id:operationId,operation_receipt:existing,adopted:true};
+  if(existing?.stage==='completed-ledger'){
+    const aliases=existing.result?.disposition==='rejected'?{
+      verification_result_path:existing.result.result_path,
+      verification_result_sha256:existing.result.result_sha256}:existing.result;
+    return {...aliases,operation_id:operationId,operation_receipt:existing,adopted:true};
+  }
   const operation=await journal.beginOperation({projectCapability:write.project,
     sessionId:bound.sessionId,kind:'bootstrap-first-red',operationId,slice:sliceId,
     preconditions});
@@ -2063,25 +2117,48 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
         maxOutputBytes:spec.max_output_bytes,env:structuredClone(spec.environment.values)});
     }catch{fail('bootstrap-first-red-process');}
     const stdout=Buffer.from(ran.stdout||'','utf8'),stderr=Buffer.from(ran.stderr||'','utf8');
-    if(ran.exitCode===0||ran.exitCode===null||ran.signal!==null||ran.timedOut||
-      ran.outputOverflow||stderr.length!==0)fail('bootstrap-first-red-process');
     const manifestAfter=captureBootstrapManifest(bound.root,bound.authorization.witness,'post',
       manifestOptions);
     const changed=trackedChangedPaths(manifestBefore,manifestAfter);
-    if(changed.length!==0)fail('bootstrap-first-red-scope');
-    const event=parseNodeTapFailure(stdout.toString('utf8'),{root:bound.root,testPath:spec.args[3]});
     const expected=spec.red_failure.expected_signal;
-    const observed=classifyExpectedTapSignal(event);
-    if(!observed)fail('bootstrap-first-red-classification');
-    const normalizedSignal={kind:observed.kind,operator:observed.operator,
-      test_identity:{test_file:event.test_file,test_name:event.test_name,start_line:event.start_line},
-      expected_digest:event.expected_digest,actual_digest:event.actual_digest,message:event.message};
-    if(!normalizedSignalMatchesExpected(normalizedSignal,expected))
-      fail('bootstrap-first-red-classification');
+    let observedClass,reasonCode,event=null,normalizedSignal=null;
+    if(ran.timedOut){observedClass='timed-out';reasonCode='timed-out';}
+    else if(ran.outputOverflow){observedClass='output-overflow';reasonCode='output-overflow';}
+    else if(ran.signal!==null||ran.exitCode===null){
+      observedClass='terminated';reasonCode='terminated';
+    }else if(ran.exitCode===0){
+      observedClass='unexpected-pass';reasonCode='unexpected-pass';
+    }else if(changed.length!==0){
+      observedClass='test-side-effect';reasonCode='governed-path-changed';
+    }else if(stderr.length!==0){
+      observedClass='invalid-output';reasonCode='stderr-nonempty';
+    }else{
+      try{
+        const text=new TextDecoder('utf-8',{fatal:true}).decode(stdout);
+        event=parseNodeTapFailure(text,{root:bound.root,testPath:spec.args[3]});
+      }catch(error){
+        observedClass='invalid-output';
+        reasonCode=error instanceof TypeError?'invalid-utf8':'invalid-tap';
+      }
+      if(event){
+        const derived=deriveTapSignal(event);
+        normalizedSignal=derived?{kind:derived.kind,operator:derived.operator,
+          test_identity:{test_file:event.test_file,test_name:event.test_name,
+            start_line:event.start_line},expected_digest:event.expected_digest,
+          actual_digest:event.actual_digest,message:event.message}:null;
+        const observed=classifyExpectedTapSignal(event);
+        if(observed&&normalizedSignalMatchesExpected(normalizedSignal,expected)){
+          observedClass='expected-failure';reasonCode='signal-matched';
+        }else{
+          observedClass='unknown';reasonCode='unmatched';
+        }
+      }
+    }
     const classification={adapter:'node-test-tap',adapter_version:1,
-      observed_class:'expected-failure',diagnostic_event:event,
-      diagnostic_event_sha256:semanticDigest('diagnostic-event-v1',event,null),
-      normalized_signal:normalizedSignal,reason_code:'signal-matched'};
+      observed_class:observedClass,diagnostic_event:event,
+      diagnostic_event_sha256:event?
+        semanticDigest('diagnostic-event-v1',event,null):null,
+      normalized_signal:normalizedSignal,reason_code:reasonCode};
     const environment=structuredClone(spec.environment);
     const containment={provider:'node-permission-v1',node_patch:process.versions.node,
       worktree_realpath:fs.realpathSync(bound.root),owned_temp_realpath:fs.realpathSync(ownedTemp),
@@ -2114,14 +2191,25 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
         sha256:rawDigest(stdout)},
       raw_stderr:{base64:stderr.toString('base64'),byte_length:stderr.length,
         sha256:rawDigest(stderr)},pre_manifest_ref:preRef,post_manifest_ref:postRef,
-      changed_paths:changed,scope_disposition:'clean',classification,
-      disposition:'accepted',result_sha256:null};
+      changed_paths:changed,scope_disposition:changed.length===0?'clean':'test-side-effect',
+      classification,disposition:observedClass==='expected-failure'&&changed.length===0?
+        'accepted':'rejected',result_sha256:null};
     verification.result_sha256=semanticDigest('verification-result-v2',verification,'result_sha256');
     validateBootstrapVerificationResultV2(verification,{expectedSignal:expected});
     writeExclusiveArtifact(resultPath,verification);
   }
   await journal.recordOperationStage(operation,'verification-completed',{owned:{
     resultPath:resultRelative,resultSha256:verification.result_sha256}});
+  if(verification.disposition==='rejected'){
+    const terminal={session_id:bound.sessionId,slice_id:sliceId,result_path:resultRelative,
+      result_sha256:verification.result_sha256,disposition:'rejected',
+      observed_class:verification.classification.observed_class,
+      scope_disposition:verification.scope_disposition};
+    const ledger=await journal.completeOperation(operation,terminal);
+    return {...terminal,verification_result_path:resultRelative,
+      verification_result_sha256:verification.result_sha256,
+      operation_id:operationId,operation_receipt:ledger,adopted:false};
+  }
   const stateText=fs.readFileSync(stateCapability.path,'utf8');
   const fields=frontmatter.parseFrontmatter(stateText).fields;
   if(fields.tdd_state!=='PENDING'&&!(fields.tdd_state==='RED_VERIFIED'&&
