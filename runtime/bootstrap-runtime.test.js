@@ -46,6 +46,7 @@ const {
   parseNodeTapFailure,
   tapValueDigest,
   classifyExpectedTapSignal,
+  classifyTapDiagnostic,
 }=bootstrapRuntime;
 const {canonicalJson}=require('./operation-journal.js');
 const journalRuntime=require('./operation-journal.js');
@@ -1379,6 +1380,21 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
     {...base,failure_type:'hookFailed'},
     {...base,error_code:'ERR_TEST_FAILURE',failure_type:'subtestsFailed'},
   ])assert.equal(classifyExpectedTapSignal(conflict),null);
+  const collectionTap=[
+    'TAP version 13','# Subtest: collection failure',
+    'not ok 1 - collection failure','  ---','  duration_ms: 1',
+    "  type: 'test'",
+    `  location: '${path.join(WORKTREE,'runtime/bootstrap-runtime.test.js')}:4:1'`,
+    "  failureType: 'subtestsFailed'","  error: 'collection failed'",
+    "  code: 'ERR_TEST_FAILURE'",'  stack: |-',
+    `    TestContext.<anonymous> (${path.join(WORKTREE,'runtime/bootstrap-runtime.test.js')}:4:1)`,
+    '  ...','1..1','# tests 1','# suites 0','# pass 0','# fail 1',
+    '# cancelled 0','# skipped 0','# todo 0','# duration_ms 2','',
+  ].join('\n');
+  const collectionEvent=parseNodeTapFailure(collectionTap,{root:WORKTREE,
+    testPath:'runtime/bootstrap-runtime.test.js'});
+  assert.deepEqual(classifyTapDiagnostic(collectionEvent),{
+    observed_class:'collection-error',reason_code:'collection-diagnostic',signal:null});
 });
 
 async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=null,
@@ -1747,10 +1763,16 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       const result=JSON.parse(fs.readFileSync(path.join(prepared.fixture.root,
         ...terminal.verification_result_path.split('/')),'utf8'));
       assert.equal(result.disposition,'rejected');
-      assert.equal(result.classification.observed_class,observedClass);
+      assert.equal(result.classification.observed_class,observedClass,
+        Buffer.from(result.raw_stdout.base64,'base64').toString('utf8'));
       assert.equal(result.classification.reason_code,reasonCode);
       assert.equal(result.scope_disposition,
         observedClass==='test-side-effect'?'test-side-effect':'clean');
+      assert.deepEqual(Object.keys(terminal.operation_receipt.result).sort(),[
+        'session_id','slice_id','result_path','result_sha256','disposition',
+        'observed_class','scope_disposition'].sort());
+      assert.equal(parseFrontmatter(
+        fs.readFileSync(prepared.fixture.statePath,'utf8')).fields.tdd_state,'PENDING');
       return result;
     };
     const cases=[
@@ -1764,8 +1786,15 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         "const assert=require('node:assert/strict');",
         "test('fails first',()=>assert.strictEqual(1,2,'different message'));",''].join('\n'),
       'unknown','unmatched'],
-      ['unsupported-tap',"'use strict';\nthis is not valid javascript\n",
-        'invalid-output','invalid-tap'],
+      ['syntax-diagnostic',"'use strict';\nthis is not valid javascript\n",
+        'syntax-error','syntax-diagnostic'],
+      ['import-diagnostic',"'use strict';\nrequire('definitely-missing-v614-package');\n",
+        'import-error','import-diagnostic'],
+      ['fixture-diagnostic',[
+        "'use strict';","const {before,test}=require('node:test');",
+        "before(()=>{throw new Error('fixture failed');});",
+        "test('fails first',()=>{});",''].join('\n'),
+      'fixture-error','fixture-diagnostic'],
       ['stderr-nonempty',[
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');",
@@ -1849,12 +1878,25 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       const prepared=await preparePublicFirstRedCase(t,{spec,testSource:source});
       await expectRejected(prepared,'output-overflow','output-overflow');
     });
+    await t.test('rejected-result-replay-authentication',async()=>{
+      const source=["'use strict';","const test=require('node:test');",
+        "const assert=require('node:assert/strict');",
+        "test('different leaf',()=>assert.strictEqual(1,2,'expected exact authority'));",
+        ''].join('\n');
+      const prepared=await preparePublicFirstRedCase(t,{testSource:source});
+      const result=await expectRejected(prepared,'unknown','unmatched');
+      const resultPath=path.join(prepared.fixture.root,...result.result_path.split('/'));
+      const forged=structuredClone(result);
+      forged.raw_stdout.sha256='f'.repeat(64);
+      fs.writeFileSync(resultPath,Buffer.from(canonicalJson(forged)));
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-verification-stdout/);
+    });
     await t.test('unsupported-node-patch',async()=>{
       const spec=exactFirstRedSpec({executable:{kind:'node-toolchain',name:'node',
         supported_patches_sha256:'f'.repeat(64)}});
       const prepared=await preparePublicFirstRedCase(t,{spec});
-      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
-        /bootstrap-first-red-(?:node|executable|classification)/);
+      await expectRejected(prepared,'pre-spawn-rejected','pre-spawn');
     });
     await t.test('producer-substitution',async()=>{
       const first=await preparePublicFirstRedCase(t);
