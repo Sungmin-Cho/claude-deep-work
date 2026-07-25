@@ -1783,7 +1783,7 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         ''].join('\n'),'invalid-output','invalid-tap'],
       ['signal',[
         "'use strict';","const test=require('node:test');",
-        "test('fails first',()=>process.kill(process.pid,'SIGTERM'));",''].join('\n'),
+        "test('fails first',()=>process.kill(process.pid,'SIGKILL'));",''].join('\n'),
       'terminated','terminated'],
     ];
     for(const [name,testSource,observedClass,reasonCode] of cases){
