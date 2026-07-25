@@ -2164,6 +2164,28 @@ function closedEnvironmentGuardBytes(root,testPath){
     '',
   ].join('\n'));
 }
+function bootstrapFirstRedExecutionContext(bound,spec){
+  const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
+  const environmentGuardPath=path.join(ownedTemp,'closed-environment-guard.cjs');
+  let guardBytes;
+  try{guardBytes=fs.readFileSync(environmentGuardPath);}catch{
+    fail('bootstrap-verification-context');
+  }
+  if(!guardBytes.equals(closedEnvironmentGuardBytes(bound.root,spec.args[3])))
+    fail('bootstrap-verification-context');
+  const identity=executableIdentity(),logicalArgv=spec.args;
+  const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${bound.root}`,
+    `--allow-fs-write=${fs.realpathSync(ownedTemp)}`,`--require=${environmentGuardPath}`,
+    '--test','--test-isolation=none','--test-reporter=tap','--',spec.args[3]];
+  const environment=structuredClone(spec.environment);
+  const containment={provider:'node-permission-v1',node_patch:process.versions.node,
+    worktree_realpath:fs.realpathSync(bound.root),owned_temp_realpath:fs.realpathSync(ownedTemp),
+    logical_argv_sha256:bootstrapCommandArgvSha256(logicalArgv),
+    effective_argv_sha256:bootstrapCommandArgvSha256(normalizedArgv),
+    denied_capabilities:['child-process','native-addon','wasi','worker']};
+  const supervisor={platform:process.platform==='win32'?'win32':'posix',values:{},identities:{}};
+  return {logicalArgv,normalizedArgv,identity,environment,containment,supervisor};
+}
 async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId,authorizationPath,
   receiptPath,markerPath,specPath,writeReceiptPath}={}){
   const bound=authenticateBootstrapCompletion({stateCapability,authorizationPath,receiptPath,markerPath});
@@ -2222,28 +2244,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     const existingVerification=validateBootstrapVerificationResultV2(
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
         expectedSignal:spec.red_failure.expected_signal});
-    const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
-    const environmentGuardPath=path.join(ownedTemp,'closed-environment-guard.cjs');
-    const guardBytes=closedEnvironmentGuardBytes(bound.root,spec.args[3]);
-    let currentGuard;
-    try{currentGuard=fs.readFileSync(environmentGuardPath);}catch{
-      fail('bootstrap-verification-context');
-    }
-    if(!currentGuard.equals(guardBytes))fail('bootstrap-verification-context');
-    const identity=executableIdentity(),logicalArgv=spec.args;
-    const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${bound.root}`,
-      `--allow-fs-write=${fs.realpathSync(ownedTemp)}`,`--require=${environmentGuardPath}`,
-      '--test','--test-isolation=none','--test-reporter=tap','--',spec.args[3]];
-    const environment=structuredClone(spec.environment);
-    const containment={provider:'node-permission-v1',node_patch:process.versions.node,
-      worktree_realpath:fs.realpathSync(bound.root),owned_temp_realpath:fs.realpathSync(ownedTemp),
-      logical_argv_sha256:bootstrapCommandArgvSha256(logicalArgv),
-      effective_argv_sha256:bootstrapCommandArgvSha256(normalizedArgv),
-      denied_capabilities:['child-process','native-addon','wasi','worker']};
-    const supervisor={platform:process.platform==='win32'?'win32':'posix',values:{},identities:{}};
+    const executionContext=bootstrapFirstRedExecutionContext(bound,spec);
     authenticateBootstrapVerificationContext({verification:existingVerification,bound,plan,
-      verificationPlan,spec,specRawSha256:specRaw.sha256,write,operationId,logicalArgv,
-      normalizedArgv,identity,environment,containment,supervisor});
+      verificationPlan,spec,specRawSha256:specRaw.sha256,write,operationId,...executionContext});
     if(existingVerification.verification_operation_id!==operationId||
       existingVerification.result_sha256!==
         (existing.result?.result_sha256||existing.result?.verification_result_sha256))
@@ -2275,6 +2278,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     verification=validateBootstrapVerificationResultV2(
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
         expectedSignal:spec.red_failure.expected_signal});
+    authenticateBootstrapVerificationContext({verification,bound,plan,verificationPlan,spec,
+      specRawSha256:specRaw.sha256,write,operationId,
+      ...bootstrapFirstRedExecutionContext(bound,spec)});
   }else{
     const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
     fs.mkdirSync(ownedTemp,{recursive:true});
