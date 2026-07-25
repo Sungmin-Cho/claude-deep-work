@@ -663,6 +663,13 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     value.cwd_role!=='worktree'||!new Set(['accepted','rejected']).has(value.disposition)||
     !Array.isArray(value.logical_argv)||!Array.isArray(value.normalized_argv))
     fail('bootstrap-verification-result');
+  if(!exactKeys(value.executable_identity,['path','sha256','dev','ino','mode','size',
+    'mtime_ns','node_version'])||!path.isAbsolute(value.executable_identity.path)||
+    !DIGEST.test(value.executable_identity.sha256||'')||
+    !/^\d+\.\d+\.\d+$/u.test(value.executable_identity.node_version||'')||
+    ['dev','ino','mode','size','mtime_ns'].some((key)=>
+      !/^\d+$/u.test(value.executable_identity[key]||'')))
+    fail('bootstrap-verification-executable');
   if(!new Set(['clean','test-side-effect']).has(value.scope_disposition)||
     !uniqueSorted(value.changed_paths,{allowEmpty:true,pattern:/^.+$/})||
     (value.scope_disposition==='clean'&&value.changed_paths.length!==0)||
@@ -2031,6 +2038,44 @@ function executableIdentity(){
     ino:String(stat.ino),mode:String(stat.mode),size:String(stat.size),mtime_ns:String(stat.mtimeNs),
     node_version:process.versions.node};
 }
+function authenticateBootstrapVerificationContext({verification,bound,plan,verificationPlan,
+  spec,specRawSha256,write,operationId,logicalArgv,normalizedArgv,identity,environment,
+  containment,supervisor}){
+  if(verification.session_id!==bound.sessionId||
+    verification.slice_id!==write.receipt.sliceId||
+    verification.plan_authority_sha256!==plan.plan_authority_sha256||
+    verification.spec_sha256!==plan.contract_binding?.spec_contract?.spec_sha256||
+    verification.verification_plan_sha256!==verificationPlan.plan_sha256||
+    verification.write_operation_id!==write.receipt.operationId||
+    verification.verification_operation_id!==operationId||
+    specRawSha256!==plan.slices.find((row)=>row.id===write.receipt.sliceId)
+      ?.verification_spec_sha256||
+    canonicalText(verification.logical_argv)!==canonicalText(spec.args)||
+    canonicalText(verification.logical_argv)!==canonicalText(logicalArgv)||
+    canonicalText(verification.normalized_argv)!==canonicalText(normalizedArgv)||
+    canonicalText(verification.executable_identity)!==canonicalText(identity)||
+    canonicalText(verification.environment)!==canonicalText(environment)||
+    canonicalText(verification.execution_containment)!==canonicalText(containment)||
+    canonicalText(verification.supervisor_control)!==canonicalText(supervisor))
+    fail('bootstrap-verification-context');
+  const manifests={};
+  for(const [name,ref] of [['pre',verification.pre_manifest_ref],
+    ['post',verification.post_manifest_ref]]){
+    const raw=readJsonArtifact(path.join(bound.root,...ref.path.split('/')),
+      `bootstrap-first-red-${name}-manifest`,{canonical:true});
+    if(raw.sha256!==ref.sha256)fail('bootstrap-verification-manifest');
+    const manifest=validateBootstrapManifest(raw.value,{sessionId:bound.sessionId});
+    if(manifest.repository_identity_sha256!==bound.authorization.witness.repository_identity_sha256||
+      manifest.base_head_oid!==bound.authorization.witness.base_head_oid)
+      fail('bootstrap-verification-manifest');
+    manifests[name]=manifest;
+  }
+  const changed=trackedChangedPaths(manifests.pre,manifests.post);
+  if(canonicalText(changed)!==canonicalText(verification.changed_paths)||
+    verification.scope_disposition!==(changed.length?'test-side-effect':'clean'))
+    fail('bootstrap-verification-manifest');
+  return verification;
+}
 function acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath}){
   const frontmatter=require('./frontmatter.js'),transaction=require('./transaction-runtime.js');
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
@@ -2100,6 +2145,25 @@ function authenticateBootstrapProducerVerification({plan,verificationPlan,verifi
     fail(failureCode);
   return target;
 }
+function closedEnvironmentGuardBytes(root,testPath){
+  return Buffer.from([
+    "'use strict';",
+    "const allowed=new Set(['LANG','LC_ALL','TZ']);",
+    `const governed=${JSON.stringify(path.join(root,...testPath.split('/')))};`,
+    "const source=process.env;",
+    "Object.defineProperty(process,'env',{configurable:false,enumerable:true,value:new Proxy(source,{",
+    "  get(target,key,receiver){",
+    "    const stack=new Error().stack||'';",
+    "    if(typeof key==='string'&&!allowed.has(key)&&stack.includes(governed)){",
+    "      const error=new Error(`ambient environment access forbidden: ${key}`);",
+    "      error.code='ERR_DEEP_WORK_AMBIENT_ENV';throw error;",
+    "    }",
+    "    return Reflect.get(target,key,receiver);",
+    "  }",
+    "})});",
+    '',
+  ].join('\n'));
+}
 async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId,authorizationPath,
   receiptPath,markerPath,specPath,writeReceiptPath}={}){
   const bound=authenticateBootstrapCompletion({stateCapability,authorizationPath,receiptPath,markerPath});
@@ -2158,6 +2222,28 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     const existingVerification=validateBootstrapVerificationResultV2(
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
         expectedSignal:spec.red_failure.expected_signal});
+    const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
+    const environmentGuardPath=path.join(ownedTemp,'closed-environment-guard.cjs');
+    const guardBytes=closedEnvironmentGuardBytes(bound.root,spec.args[3]);
+    let currentGuard;
+    try{currentGuard=fs.readFileSync(environmentGuardPath);}catch{
+      fail('bootstrap-verification-context');
+    }
+    if(!currentGuard.equals(guardBytes))fail('bootstrap-verification-context');
+    const identity=executableIdentity(),logicalArgv=spec.args;
+    const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${bound.root}`,
+      `--allow-fs-write=${fs.realpathSync(ownedTemp)}`,`--require=${environmentGuardPath}`,
+      '--test','--test-isolation=none','--test-reporter=tap','--',spec.args[3]];
+    const environment=structuredClone(spec.environment);
+    const containment={provider:'node-permission-v1',node_patch:process.versions.node,
+      worktree_realpath:fs.realpathSync(bound.root),owned_temp_realpath:fs.realpathSync(ownedTemp),
+      logical_argv_sha256:bootstrapCommandArgvSha256(logicalArgv),
+      effective_argv_sha256:bootstrapCommandArgvSha256(normalizedArgv),
+      denied_capabilities:['child-process','native-addon','wasi','worker']};
+    const supervisor={platform:process.platform==='win32'?'win32':'posix',values:{},identities:{}};
+    authenticateBootstrapVerificationContext({verification:existingVerification,bound,plan,
+      verificationPlan,spec,specRawSha256:specRaw.sha256,write,operationId,logicalArgv,
+      normalizedArgv,identity,environment,containment,supervisor});
     if(existingVerification.verification_operation_id!==operationId||
       existingVerification.result_sha256!==
         (existing.result?.result_sha256||existing.result?.verification_result_sha256))
@@ -2193,23 +2279,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     const ownedTemp=path.join(bound.root,'.deep-work',bound.sessionId,'tmp');
     fs.mkdirSync(ownedTemp,{recursive:true});
     const environmentGuardPath=path.join(ownedTemp,'closed-environment-guard.cjs');
-    writeExclusiveBytes(environmentGuardPath,Buffer.from([
-      "'use strict';",
-      "const allowed=new Set(['LANG','LC_ALL','TZ']);",
-      `const governed=${JSON.stringify(path.join(bound.root,...spec.args[3].split('/')))};`,
-      "const source=process.env;",
-      "Object.defineProperty(process,'env',{configurable:false,enumerable:true,value:new Proxy(source,{",
-      "  get(target,key,receiver){",
-      "    const stack=new Error().stack||'';",
-      "    if(typeof key==='string'&&!allowed.has(key)&&stack.includes(governed)){",
-      "      const error=new Error(`ambient environment access forbidden: ${key}`);",
-      "      error.code='ERR_DEEP_WORK_AMBIENT_ENV';throw error;",
-      "    }",
-      "    return Reflect.get(target,key,receiver);",
-      "  }",
-      "})});",
-      '',
-    ].join('\n')));
+    writeExclusiveBytes(environmentGuardPath,closedEnvironmentGuardBytes(bound.root,spec.args[3]));
     const manifestBefore=captureBootstrapManifest(bound.root,bound.authorization.witness,'post',
       manifestOptions);
     const identity=executableIdentity();
@@ -2283,7 +2353,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       logical_argv_sha256:bootstrapCommandArgvSha256(logicalArgv),
       effective_argv_sha256:bootstrapCommandArgvSha256(normalizedArgv),
       denied_capabilities:['child-process','native-addon','wasi','worker']};
-    const supervisor={platform:process.platform,values:{},identities:{}};
+    const supervisor={platform:process.platform==='win32'?'win32':'posix',values:{},identities:{}};
     const preRef={path:`.claude/deep-work.${bound.sessionId}.verification-manifest.${operationId}.pre.json`,
       sha256:null};
     const postRef={path:`.claude/deep-work.${bound.sessionId}.verification-manifest.${operationId}.post.json`,
@@ -2315,6 +2385,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
         'accepted':'rejected',result_sha256:null};
     verification.result_sha256=semanticDigest('verification-result-v2',verification,'result_sha256');
     validateBootstrapVerificationResultV2(verification,{expectedSignal:expected});
+    authenticateBootstrapVerificationContext({verification,bound,plan,verificationPlan,spec,
+      specRawSha256:specRaw.sha256,write,operationId,logicalArgv,normalizedArgv,identity,
+      environment,containment,supervisor});
     writeExclusiveArtifact(resultPath,verification);
   }
   await journal.recordOperationStage(operation,'verification-completed',{owned:{
