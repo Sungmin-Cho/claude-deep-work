@@ -1899,6 +1899,38 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
         /bootstrap-verification-context/);
     });
+    await t.test('pending-result-replay-authentication',async()=>{
+      const source=["'use strict';","const test=require('node:test');",
+        "const assert=require('node:assert/strict');",
+        "test('different leaf',()=>assert.strictEqual(1,2,'expected exact authority'));",
+        ''].join('\n');
+      const prepared=await preparePublicFirstRedCase(t,{testSource:source});
+      const original=journalRuntime.recordOperationStage;
+      let armed=true;
+      journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
+        if(armed&&stage==='verification-completed'){
+          armed=false;
+          throw new Error('injected-before-verification-stage');
+        }
+        return original(handle,stage,...rest);
+      };
+      try{
+        await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+          /injected-before-verification-stage/);
+      }finally{journalRuntime.recordOperationStage=original;}
+      const claudeDir=path.join(prepared.fixture.root,'.claude');
+      const resultName=fs.readdirSync(claudeDir).find((name)=>
+        /^deep-work\.s-aaaaaaaa\.verification\.op-[0-9a-f]{64}\.json$/u.test(name));
+      assert.ok(resultName);
+      const resultPath=path.join(claudeDir,resultName);
+      const foreign=JSON.parse(fs.readFileSync(resultPath,'utf8'));
+      foreign.environment.values.LANG='foreign';
+      foreign.environment_sha256=semantic('node-test-env-v1',foreign.environment,null);
+      foreign.result_sha256=semantic('verification-result-v2',foreign,'result_sha256');
+      fs.writeFileSync(resultPath,Buffer.from(canonicalJson(foreign)));
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-verification-context/);
+    });
     await t.test('unsupported-node-patch',async()=>{
       const spec=exactFirstRedSpec({executable:{kind:'node-toolchain',name:'node',
         supported_patches_sha256:'f'.repeat(64)}});
