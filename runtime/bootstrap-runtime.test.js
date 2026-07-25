@@ -1891,6 +1891,13 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       fs.writeFileSync(resultPath,Buffer.from(canonicalJson(forged)));
       await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
         /bootstrap-verification-stdout/);
+      const foreign=structuredClone(result);
+      foreign.environment.values.LANG='foreign';
+      foreign.environment_sha256=semantic('node-test-env-v1',foreign.environment,null);
+      foreign.result_sha256=semantic('verification-result-v2',foreign,'result_sha256');
+      fs.writeFileSync(resultPath,Buffer.from(canonicalJson(foreign)));
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-verification-context/);
     });
     await t.test('unsupported-node-patch',async()=>{
       const spec=exactFirstRedSpec({executable:{kind:'node-toolchain',name:'node',
