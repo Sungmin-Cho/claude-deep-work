@@ -668,8 +668,9 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     value.process.output_overflow!==false||!Number.isFinite(value.process.duration_ms)||
     value.process.duration_ms<0||value.process.spawn_error!==null)
     fail('bootstrap-verification-process');
-  validateRawChannel(value.raw_stdout,'bootstrap-verification-stdout');
-  validateRawChannel(value.raw_stderr,'bootstrap-verification-stderr');
+  const rawStdout=validateRawChannel(value.raw_stdout,'bootstrap-verification-stdout');
+  const rawStderr=validateRawChannel(value.raw_stderr,'bootstrap-verification-stderr');
+  if(rawStderr.length!==0||rawStdout.length===0)fail('bootstrap-verification-classification');
   for(const [name,ref] of [['pre',value.pre_manifest_ref],['post',value.post_manifest_ref]])
     if(!exactKeys(ref,['path','sha256'])||!DIGEST.test(ref.sha256||'')||
       ref.path!==`.claude/deep-work.${value.session_id}.verification-manifest.${value.verification_operation_id}.${name}.json`)
@@ -682,6 +683,20 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     !DIGEST.test(classification.diagnostic_event_sha256||'')||
     semanticDigest('diagnostic-event-v1',classification.diagnostic_event,null)!==
       classification.diagnostic_event_sha256)fail('bootstrap-verification-classification');
+  let replayEvent;
+  try{
+    const text=new TextDecoder('utf-8',{fatal:true}).decode(rawStdout);
+    replayEvent=parseNodeTapFailure(text,{root:value.execution_containment.worktree_realpath,
+      testPath:value.logical_argv[3],nodePatch:value.executable_identity.node_version});
+  }catch{fail('bootstrap-verification-classification');}
+  const replayKind=classifyExpectedTapSignal(replayEvent);
+  const replaySignal=replayKind?{kind:replayKind.kind,operator:replayKind.operator,
+    test_identity:{test_file:replayEvent.test_file,test_name:replayEvent.test_name,
+      start_line:replayEvent.start_line},expected_digest:replayEvent.expected_digest,
+    actual_digest:replayEvent.actual_digest,message:replayEvent.message}:null;
+  if(!replayKind||canonicalText(replayEvent)!==canonicalText(classification.diagnostic_event)||
+    canonicalText(replaySignal)!==canonicalText(classification.normalized_signal))
+    fail('bootstrap-verification-classification');
   if(!normalizedSignalMatchesExpected(classification.normalized_signal,expectedSignal))
     fail('bootstrap-verification-signal');
   if(semanticDigest('verification-result-v2',value,'result_sha256')!==value.result_sha256)
@@ -1717,7 +1732,7 @@ function parseTapDiagnostic(lines,start,indent,{role='leaf'}={}){
   const prefix=' '.repeat(indent),contentPrefix=' '.repeat(indent+2);
   if(lines[start]!==`${prefix}---`)fail('bootstrap-first-red-tap');
   const outerKeys=new Set(['duration_ms','type','location','failureType','error','code']);
-  const fields={},allowed=role==='wrapper'?TAP_WRAPPER_KEYS:
+  const fields={},forms={},keys=[],allowed=role==='wrapper'?TAP_WRAPPER_KEYS:
     role==='outer'?outerKeys:new Set([...TAP_WRAPPER_KEYS,...TAP_AUTHORITY_KEYS]);
   let index=start+1;
   for(;index<lines.length&&lines[index]!==`${prefix}...`;index+=1){
@@ -1726,6 +1741,7 @@ function parseTapDiagnostic(lines,start,indent,{role='leaf'}={}){
     if(!match||!allowed.has(match[1])||Object.hasOwn(fields,match[1]))
       fail('bootstrap-first-red-tap');
     const [,key,source]=match;
+    keys.push(key);
     if(source==='|-'){
       if(role!=='leaf'||!['error','stack'].includes(key))fail('bootstrap-first-red-tap');
       const content=[];
@@ -1734,17 +1750,19 @@ function parseTapDiagnostic(lines,start,indent,{role='leaf'}={}){
       }
       if(!content.length)fail('bootstrap-first-red-tap');
       fields[key]=normalizeTapString(content.join('\n'));
+      forms[key]='literal';
     }else{
       if(['error','stack'].includes(key)&&['|','>','>-','|+','>+'].includes(source))
         fail('bootstrap-first-red-tap');
       fields[key]=parseTapScalar(source,key);
+      forms[key]='scalar';
     }
   }
   if(index>=lines.length||lines[index]!==`${prefix}...`)fail('bootstrap-first-red-tap');
   if(!Object.hasOwn(fields,'duration_ms')||typeof fields.duration_ms!=='number'||
     !Object.hasOwn(fields,'type')||typeof fields.type!=='string')
     fail('bootstrap-first-red-tap');
-  return {fields,next:index+1};
+  return {fields,forms,keys,next:index+1};
 }
 function exactTapSummary(lines,start,{tests,suites,pass,failures}){
   const expected=['1..1',`# tests ${tests}`,`# suites ${suites}`,`# pass ${pass}`,
@@ -1769,9 +1787,19 @@ function reporterLocation(location,{root,testPath}){
   if(actual!==expected||path.resolve(candidate)!==expected)fail('bootstrap-first-red-tap');
   return {line:Number(match[2]),column:Number(match[3])};
 }
-function tapEventFrom({fields,testName,root,testPath}){
-  for(const key of ['location','failureType','error'])
-    if(!Object.hasOwn(fields,key))fail('bootstrap-first-red-tap');
+function tapEventFrom({fields,forms,keys,testName,root,testPath}){
+  const assertionLayout=['duration_ms','type','location','failureType','error','code','name',
+    'expected','actual','operator','stack'];
+  const contractLayout=['duration_ms','type','location','failureType','error','code','expected',
+    'actual','operator','stack'];
+  const assertionShape=fields.code==='ERR_ASSERTION'||fields.name==='AssertionError';
+  const contractShape=fields.code==='ERR_DEEP_WORK_CONTRACT';
+  const layout=assertionShape&&!contractShape?assertionLayout:
+    contractShape&&!assertionShape?contractLayout:null;
+  if(!layout||canonicalText(keys)!==canonicalText(layout)||fields.type!=='test'||
+    fields.failureType!=='testCodeFailure'||forms.stack!=='literal'||
+    assertionShape&&forms.error!=='literal'||contractShape&&forms.error!=='scalar')
+    fail('bootstrap-first-red-tap');
   const location=reporterLocation(fields.location,{root,testPath});
   const hasExpected=Object.hasOwn(fields,'expected'),hasActual=Object.hasOwn(fields,'actual');
   if(!hasExpected&&!hasActual)fail('bootstrap-first-red-tap');
@@ -1802,7 +1830,7 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
   const directLeaf=lines[2]?.match(/^not ok 1 - (.+)$/u);
   if(directHeader&&directLeaf&&directHeader[1]===directLeaf[1]){
     const diagnostic=parseTapDiagnostic(lines,3,2);
-    leafName=directLeaf[1];leafFields=diagnostic.fields;summaryStart=diagnostic.next;
+    leafName=directLeaf[1];leafFields=diagnostic;summaryStart=diagnostic.next;
     exactTapSummary(lines,summaryStart,grammar.direct);
   }else{
     const wrapper=lines[1]?.match(/^# Subtest: (.+)$/u);
@@ -1815,28 +1843,35 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
       lines[leafDiagnostic.next+1]!==`not ok 1 - ${wrapper[1]}`)
       fail('bootstrap-first-red-tap');
     const wrapperDiagnostic=parseTapDiagnostic(lines,leafDiagnostic.next+2,2,{role:'outer'});
-    if(wrapperDiagnostic.fields.type!=='suite'||
+    if(canonicalText(wrapperDiagnostic.keys)!==canonicalText(
+      ['duration_ms','type','location','failureType','error','code'])||
+      wrapperDiagnostic.forms.error!=='scalar'||wrapperDiagnostic.fields.type!=='suite'||
       wrapperDiagnostic.fields.failureType!=='subtestsFailed'||
       wrapperDiagnostic.fields.code!=='ERR_TEST_FAILURE'||
       wrapperDiagnostic.fields.error!=='1 subtest failed')
       fail('bootstrap-first-red-tap');
     reporterLocation(wrapperDiagnostic.fields.location,{root,testPath});
-    leafName=nestedLeaf[1];leafFields=leafDiagnostic.fields;
+    leafName=nestedLeaf[1];leafFields=leafDiagnostic;
     summaryStart=wrapperDiagnostic.next;
     exactTapSummary(lines,summaryStart,grammar.suite_wrapper);
   }
-  return tapEventFrom({fields:leafFields,testName:leafName,root,testPath});
+  return tapEventFrom({...leafFields,testName:leafName,root,testPath});
 }
 function classifyExpectedTapSignal(event){
-  const assertionCode=event.error_code==='ERR_ASSERTION'||event.error_name==='AssertionError';
-  const assertionOperator=ASSERTION_OPERATORS.has(event.operator);
-  const contractCode=event.error_code==='ERR_DEEP_WORK_CONTRACT';
-  const contractOperator=event.operator==='contract';
-  if((assertionCode||assertionOperator)&&(contractCode||contractOperator))return null;
-  if(assertionCode||assertionOperator)
-    return assertionCode&&assertionOperator?{kind:'assertion',operator:event.operator}:null;
-  if(contractCode||contractOperator)
-    return contractCode&&contractOperator?{kind:'contract',operator:'contract'}:null;
+  const syntax=event.error_name==='SyntaxError'||
+    event.error_code==='ERR_INVALID_TYPESCRIPT_SYNTAX';
+  const imported=new Set(['ERR_MODULE_NOT_FOUND','MODULE_NOT_FOUND',
+    'ERR_PACKAGE_PATH_NOT_EXPORTED']).has(event.error_code);
+  const fixture=new Set(['hookFailed','globalSetup','globalTeardown']).has(event.failure_type);
+  const assertion=(event.error_code==='ERR_ASSERTION'||event.error_name==='AssertionError')&&
+    ASSERTION_OPERATORS.has(event.operator);
+  const contract=event.error_code==='ERR_DEEP_WORK_CONTRACT'&&event.operator==='contract';
+  const collection=event.error_code==='ERR_TEST_FAILURE'&&
+    new Set(['subtestsFailed','configuration']).has(event.failure_type);
+  const recognized=[syntax,imported,fixture,assertion,contract,collection].filter(Boolean).length;
+  if(recognized!==1)return null;
+  if(assertion)return {kind:'assertion',operator:event.operator};
+  if(contract)return {kind:'contract',operator:'contract'};
   return null;
 }
 function trackedChangedPaths(before,after){
@@ -2271,7 +2306,7 @@ module.exports={
   BOOTSTRAP_CONTROL_NAMES,BOOTSTRAP_EXECUTION_STAGES,BOOTSTRAP_REJECTION_CODES,
   BOOTSTRAP_VERIFICATION_RESULT_KEYS,BOOTSTRAP_RED_PROOF_KEYS,
   bootstrapManifestSchemaSha256,bootstrapCommandArgvSha256,normalizeNodeTestBootstrapStdout,
-  parseNodeTapFailure,tapValueDigest,
+  parseNodeTapFailure,tapValueDigest,classifyExpectedTapSignal,
   classifyBootstrapObservedCommandResult,validateBootstrapObservedCommandResult,
   validateBootstrapFailureArtifact,validateBootstrapManifest,validateBootstrapWitness,
   validateBootstrapAuthorization,validateBootstrapExecutionJournal,
