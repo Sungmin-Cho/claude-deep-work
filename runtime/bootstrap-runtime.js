@@ -106,13 +106,13 @@ const BOOTSTRAP_REJECTION_CODES=Object.freeze([
   'stdout-malformed-timing','stdout-malformed-summary','stdout-count-invalid',
   'stdout-malformed-failure-detail',
 ]);
-const BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256=rawDigest(Buffer.from('node-26.0.0'));
-const BOOTSTRAP_NODE_TAP_GOLDENS=Object.freeze({
-  '26.0.0':Object.freeze({
-    direct:Object.freeze({tests:1,suites:0,pass:0,failures:1}),
-    suite_wrapper:Object.freeze({tests:1,suites:1,pass:0,failures:1}),
-  }),
-});
+const NODE_TAP_26_GOLDEN_BYTES=fs.readFileSync(path.join(__dirname,'fixtures',
+  'node-tap-26.0.0.json'));
+const NODE_TAP_26_GOLDEN=JSON.parse(NODE_TAP_26_GOLDEN_BYTES);
+if(NODE_TAP_26_GOLDEN.schema_version!==1||NODE_TAP_26_GOLDEN.node_patch!=='26.0.0')
+  fail('bootstrap-node-tap-golden');
+const BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256=rawDigest(NODE_TAP_26_GOLDEN_BYTES);
+const BOOTSTRAP_NODE_TAP_GOLDENS=Object.freeze({'26.0.0':NODE_TAP_26_GOLDEN});
 
 const BOOTSTRAP_VERIFICATION_RESULT_KEYS=Object.freeze([
   'changed_paths','classification','cwd_role','disposition','environment','environment_sha256',
@@ -1714,7 +1714,8 @@ function parseTapScalar(source,key){
   }
   if(/^[\[\]{},&*!|>@`]/u.test(source)||source.startsWith('- ')||
     source.startsWith('? ')||source.includes(': ')||source.includes(' #')||
-    /^(?:\.nan|[-+]?\.inf)$/iu.test(source))fail('bootstrap-first-red-tap');
+    /^(?:\.nan|[-+]?\.inf|[-+]?(?:NaN|Infinity)|-?[0-9]+n)$/iu.test(source))
+    fail('bootstrap-first-red-tap');
   return normalizeTapString(source);
 }
 function tapValueDigest(value){
@@ -1722,7 +1723,7 @@ function tapValueDigest(value){
   if(value===undefined)domain='u:';
   else if(value===null)domain='n:';
   else if(typeof value==='boolean')domain=`b:${value?'1':'0'}`;
-  else if(typeof value==='number'&&Number.isFinite(value)&&!Object.is(value,-0))
+  else if(typeof value==='number'&&Number.isFinite(value))
     domain=`d:${JSON.stringify(value)}`;
   else if(typeof value==='string')domain=`s:${normalizeTapString(value)}`;
   else fail('bootstrap-first-red-tap-value');
@@ -1778,9 +1779,12 @@ function reporterLocation(location,{root,testPath}){
   let candidate=match[1];
   if(candidate.startsWith('file:')){
     if(/%2f|%5c/iu.test(candidate))fail('bootstrap-first-red-tap');
-    try{candidate=fileURLToPath(candidate);}catch{fail('bootstrap-first-red-tap');}
+    const rawUrl=candidate;
+    try{candidate=fileURLToPath(rawUrl);}catch{fail('bootstrap-first-red-tap');}
+    if(pathToFileURL(candidate).href!==rawUrl)fail('bootstrap-first-red-tap');
   }
-  if(!path.isAbsolute(candidate))fail('bootstrap-first-red-tap');
+  if(!path.isAbsolute(candidate)||path.normalize(candidate)!==candidate)
+    fail('bootstrap-first-red-tap');
   const expected=fs.realpathSync(path.join(root,...testPath.split('/')));
   let actual;
   try{actual=fs.realpathSync(candidate);}catch{fail('bootstrap-first-red-tap');}
@@ -1788,17 +1792,14 @@ function reporterLocation(location,{root,testPath}){
   return {line:Number(match[2]),column:Number(match[3])};
 }
 function tapEventFrom({fields,forms,keys,testName,root,testPath}){
-  const assertionLayout=['duration_ms','type','location','failureType','error','code','name',
-    'expected','actual','operator','stack'];
-  const contractLayout=['duration_ms','type','location','failureType','error','code','expected',
-    'actual','operator','stack'];
+  const golden=BOOTSTRAP_NODE_TAP_GOLDENS[process.versions.node];
   const assertionShape=fields.code==='ERR_ASSERTION'||fields.name==='AssertionError';
   const contractShape=fields.code==='ERR_DEEP_WORK_CONTRACT';
-  const layout=assertionShape&&!contractShape?assertionLayout:
-    contractShape&&!assertionShape?contractLayout:null;
-  if(!layout||canonicalText(keys)!==canonicalText(layout)||fields.type!=='test'||
-    fields.failureType!=='testCodeFailure'||forms.stack!=='literal'||
-    assertionShape&&forms.error!=='literal'||contractShape&&forms.error!=='scalar')
+  const layout=assertionShape&&!contractShape?golden?.leaf_layouts?.assertion:
+    contractShape&&!assertionShape?golden?.leaf_layouts?.contract:null;
+  if(!layout||canonicalText(keys)!==canonicalText(layout.keys)||
+    fields.type!==layout.constants.type||fields.failureType!==layout.constants.failureType||
+    Object.entries(layout.forms).some(([key,value])=>forms[key]!==value))
     fail('bootstrap-first-red-tap');
   const location=reporterLocation(fields.location,{root,testPath});
   const hasExpected=Object.hasOwn(fields,'expected'),hasActual=Object.hasOwn(fields,'actual');
@@ -1831,7 +1832,7 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
   if(directHeader&&directLeaf&&directHeader[1]===directLeaf[1]){
     const diagnostic=parseTapDiagnostic(lines,3,2);
     leafName=directLeaf[1];leafFields=diagnostic;summaryStart=diagnostic.next;
-    exactTapSummary(lines,summaryStart,grammar.direct);
+    exactTapSummary(lines,summaryStart,grammar.topologies.direct);
   }else{
     const wrapper=lines[1]?.match(/^# Subtest: (.+)$/u);
     const nestedHeader=lines[2]?.match(/^    # Subtest: (.+)$/u);
@@ -1843,17 +1844,17 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
       lines[leafDiagnostic.next+1]!==`not ok 1 - ${wrapper[1]}`)
       fail('bootstrap-first-red-tap');
     const wrapperDiagnostic=parseTapDiagnostic(lines,leafDiagnostic.next+2,2,{role:'outer'});
-    if(canonicalText(wrapperDiagnostic.keys)!==canonicalText(
-      ['duration_ms','type','location','failureType','error','code'])||
-      wrapperDiagnostic.forms.error!=='scalar'||wrapperDiagnostic.fields.type!=='suite'||
-      wrapperDiagnostic.fields.failureType!=='subtestsFailed'||
-      wrapperDiagnostic.fields.code!=='ERR_TEST_FAILURE'||
-      wrapperDiagnostic.fields.error!=='1 subtest failed')
+    const wrapperLayout=grammar.suite_wrapper_layout;
+    if(canonicalText(wrapperDiagnostic.keys)!==canonicalText(wrapperLayout.keys)||
+      Object.entries(wrapperLayout.forms).some(([key,value])=>
+        wrapperDiagnostic.forms[key]!==value)||
+      Object.entries(wrapperLayout.constants).some(([key,value])=>
+        wrapperDiagnostic.fields[key]!==value))
       fail('bootstrap-first-red-tap');
     reporterLocation(wrapperDiagnostic.fields.location,{root,testPath});
     leafName=nestedLeaf[1];leafFields=leafDiagnostic;
     summaryStart=wrapperDiagnostic.next;
-    exactTapSummary(lines,summaryStart,grammar.suite_wrapper);
+    exactTapSummary(lines,summaryStart,grammar.topologies.suite_wrapper);
   }
   return tapEventFrom({...leafFields,testName:leafName,root,testPath});
 }

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "node_patch": "26.0.0",
+  "topologies": {
+    "direct": {
+      "tests": 1,
+      "suites": 0,
+      "pass": 0,
+      "failures": 1
+    },
+    "suite_wrapper": {
+      "tests": 1,
+      "suites": 1,
+      "pass": 0,
+      "failures": 1
+    }
+  },
+  "leaf_layouts": {
+    "assertion": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "name",
+        "expected",
+        "actual",
+        "operator",
+        "stack"
+      ],
+      "forms": {
+        "error": "literal",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "failureType": "testCodeFailure"
+      }
+    },
+    "contract": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "expected",
+        "actual",
+        "operator",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "failureType": "testCodeFailure"
+      }
+    }
+  },
+  "suite_wrapper_layout": {
+    "keys": [
+      "duration_ms",
+      "type",
+      "location",
+      "failureType",
+      "error",
+      "code"
+    ],
+    "forms": {
+      "error": "scalar"
+    },
+    "constants": {
+      "type": "suite",
+      "failureType": "subtestsFailed",
+      "error": "1 subtest failed",
+      "code": "ERR_TEST_FAILURE"
+    }
+  }
+}
