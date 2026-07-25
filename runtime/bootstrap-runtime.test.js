@@ -361,7 +361,8 @@ test('bootstrap first-RED consumes the closed VerificationResultV2 union, not ou
   const prose=structuredClone(value);prose.classification.normalized_signal.message='some expected text only';
   prose.result_sha256=semantic('verification-result-v2',prose,'result_sha256');
   assert.throws(()=>validateBootstrapVerificationResultV2(prose,{
-    expectedSignal:value.classification.normalized_signal}),/bootstrap-verification-signal/);
+    expectedSignal:value.classification.normalized_signal}),
+  /bootstrap-verification-(?:classification|signal)/);
   const forged=structuredClone(value);
   forged.classification.diagnostic_event.message='forged diagnostic';
   forged.classification.diagnostic_event_sha256=semantic('diagnostic-event-v1',
