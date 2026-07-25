@@ -1741,42 +1741,63 @@ test('public first-RED, adoption, proof and production admission authenticate th
 
 test('public first-RED rejects every closed process, TAP, scope, environment and producer substitution',
   async(t)=>{
+    const expectRejected=async(prepared,observedClass,reasonCode)=>{
+      const terminal=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+      assert.equal(terminal.operation_receipt.stage,'completed-ledger');
+      const result=JSON.parse(fs.readFileSync(path.join(prepared.fixture.root,
+        ...terminal.verification_result_path.split('/')),'utf8'));
+      assert.equal(result.disposition,'rejected');
+      assert.equal(result.classification.observed_class,observedClass);
+      assert.equal(result.classification.reason_code,reasonCode);
+      assert.equal(result.scope_disposition,
+        observedClass==='test-side-effect'?'test-side-effect':'clean');
+      return result;
+    };
     const cases=[
       ['alternate-leaf',[
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');",
-        "test('different leaf',()=>assert.strictEqual(1,2,'expected exact authority'));",''].join('\n')],
+        "test('different leaf',()=>assert.strictEqual(1,2,'expected exact authority'));",''].join('\n'),
+      'unknown','unmatched'],
       ['alternate-message',[
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');",
-        "test('fails first',()=>assert.strictEqual(1,2,'different message'));",''].join('\n')],
-      ['unsupported-tap',"'use strict';\nthis is not valid javascript\n"],
+        "test('fails first',()=>assert.strictEqual(1,2,'different message'));",''].join('\n'),
+      'unknown','unmatched'],
+      ['unsupported-tap',"'use strict';\nthis is not valid javascript\n",
+        'invalid-output','invalid-tap'],
       ['stderr-nonempty',[
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');",
         "test('fails first',()=>{console.error('forbidden stderr');assert.strictEqual(1,2,'expected exact authority');});",
-        ''].join('\n')],
+        ''].join('\n'),'invalid-output','stderr-nonempty'],
       ['ambient-environment',[
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');",
         "test('fails first',()=>{assert.equal(process.env.HOME,undefined,'ambient HOME');assert.strictEqual(1,2,'expected exact authority');});",
-        ''].join('\n')],
+        ''].join('\n'),'invalid-output','invalid-tap'],
       ['governed-side-effect',[
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');","const fs=require('node:fs');",
         "test('fails first',()=>{fs.writeFileSync('runtime/a.js','side effect\\n');assert.strictEqual(1,2,'expected exact authority');});",
-        ''].join('\n')],
+        ''].join('\n'),'invalid-output','invalid-tap'],
       ['signal',[
         "'use strict';","const test=require('node:test');",
-        "test('fails first',()=>process.kill(process.pid,'SIGTERM'));",''].join('\n')],
+        "test('fails first',()=>process.kill(process.pid,'SIGTERM'));",''].join('\n'),
+      'terminated','terminated'],
     ];
-    for(const [name,testSource] of cases){
+    for(const [name,testSource,observedClass,reasonCode] of cases){
       await t.test(name,async()=>{
         const prepared=await preparePublicFirstRedCase(t,{testSource});
-        await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
-          /bootstrap-first-red-(?:classification|process|tap|scope|environment)/);
+        await expectRejected(prepared,observedClass,reasonCode);
       });
     }
+    await t.test('unexpected-pass',async()=>{
+      const source=["'use strict';","const test=require('node:test');",
+        "test('fails first',()=>{});",''].join('\n');
+      const prepared=await preparePublicFirstRedCase(t,{testSource:source});
+      await expectRejected(prepared,'unexpected-pass','unexpected-pass');
+    });
     await t.test('normalized-literal-substring',async()=>{
       const testSource=[
         "'use strict';","const test=require('node:test');",
@@ -1808,8 +1829,7 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
           "error.code='ERR_DEEP_WORK_CONTRACT';error.operator='strictEqual';"+
           "error.expected=2;error.actual=1;throw error;});",''].join('\n');
       const prepared=await preparePublicFirstRedCase(t,{testSource});
-      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
-        /bootstrap-first-red-classification/);
+      await expectRejected(prepared,'unknown','unmatched');
     });
     await t.test('timeout',async()=>{
       const spec=exactFirstRedSpec({timeout_ms:100});
@@ -1817,8 +1837,7 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         "'use strict';","const test=require('node:test');",
         "test('fails first',async()=>new Promise(()=>{}));",''].join('\n');
       const prepared=await preparePublicFirstRedCase(t,{spec,testSource:source});
-      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
-        /bootstrap-first-red-(?:classification|process)/);
+      await expectRejected(prepared,'timed-out','timed-out');
     });
     await t.test('overflow',async()=>{
       const spec=exactFirstRedSpec({max_output_bytes:1024});
@@ -1828,8 +1847,7 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         "test('fails first',()=>{console.log('x'.repeat(4096));assert.strictEqual(1,2,'expected exact authority');});",
         ''].join('\n');
       const prepared=await preparePublicFirstRedCase(t,{spec,testSource:source});
-      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
-        /bootstrap-first-red-(?:classification|process)/);
+      await expectRejected(prepared,'output-overflow','output-overflow');
     });
     await t.test('unsupported-node-patch',async()=>{
       const spec=exactFirstRedSpec({executable:{kind:'node-toolchain',name:'node',
