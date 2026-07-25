@@ -45,6 +45,7 @@ const {
   precomputeBootstrapCompletion,
   parseNodeTapFailure,
   tapValueDigest,
+  classifyExpectedTapSignal,
 }=bootstrapRuntime;
 const {canonicalJson}=require('./operation-journal.js');
 const journalRuntime=require('./operation-journal.js');
@@ -309,11 +310,14 @@ function verificationResult(){
     logical_argv_sha256:'2'.repeat(64),effective_argv_sha256:'3'.repeat(64),
     denied_capabilities:['child-process','native-addon','wasi','worker']};
   const supervisor={platform:'posix',values:{},identities:{}};
-  const event={event_type:'test-failure',test_file:'runtime/a.test.js',test_name:'fails first',
-    start_line:1,error_code:'ERR_ASSERTION',error_name:'AssertionError',failure_type:'testCodeFailure',
-    operator:'strictEqual',expected_digest:'4'.repeat(64),actual_digest:'5'.repeat(64),message:'expected first'};
+  const testPath='runtime/bootstrap-runtime.test.js';
+  const stdout=Buffer.from(directAssertionTap({testPath,message:'expected first'}));
+  const event={event_type:'test-failure',test_file:testPath,test_name:'fails first',
+    start_line:4,error_code:'ERR_ASSERTION',error_name:'AssertionError',failure_type:'testCodeFailure',
+    operator:'strictEqual',expected_digest:tapValueDigest(2),actual_digest:tapValueDigest(1),
+    message:'expected first'};
   const signal={kind:'assertion',operator:'strictEqual',
-    test_identity:{test_file:'runtime/a.test.js',test_name:'fails first',start_line:1},
+    test_identity:{test_file:testPath,test_name:'fails first',start_line:4},
     expected_digest:event.expected_digest,actual_digest:event.actual_digest,message:'expected first'};
   const classification={adapter:'node-test-tap',adapter_version:1,observed_class:'expected-failure',
     diagnostic_event:event,diagnostic_event_sha256:semantic('diagnostic-event-v1',event,null),
@@ -325,15 +329,15 @@ function verificationResult(){
     result_path:`.claude/deep-work.${session}.verification.${operationId}.json`,
     executable_identity:{path:NODE_PATH,sha256:'a'.repeat(64),dev:'1',ino:'2',mode:'33261',size:'3',
       mtime_ns:'4',node_version:'26.0.0'},
-    logical_argv:['--test','--test-reporter=tap','--','runtime/a.test.js'],
+    logical_argv:['--test','--test-reporter=tap','--',testPath],
     normalized_argv:['--no-warnings','--permission',`--allow-fs-read=${WORKTREE}`,
       `--allow-fs-write=${containment.owned_temp_realpath}`,'--test','--test-isolation=none',
-      '--test-reporter=tap','--','runtime/a.test.js'],cwd_role:'worktree',environment,
+      '--test-reporter=tap','--',testPath],cwd_role:'worktree',environment,
     environment_sha256:semantic('node-test-env-v1',environment,null),execution_containment:containment,
     execution_containment_sha256:semantic('execution-containment-v1',containment,null),
     supervisor_control:supervisor,supervisor_control_sha256:semantic('supervisor-control-v1',supervisor,null),
     process:{exit_code:1,signal:null,timed_out:false,output_overflow:false,duration_ms:1,spawn_error:null},
-    raw_stdout:{base64:'',byte_length:0,sha256:EMPTY_SHA256},
+    raw_stdout:{base64:stdout.toString('base64'),byte_length:stdout.length,sha256:digest(stdout)},
     raw_stderr:{base64:'',byte_length:0,sha256:EMPTY_SHA256},
     pre_manifest_ref:{path:`.claude/deep-work.${session}.verification-manifest.${operationId}.pre.json`,
       sha256:'b'.repeat(64)},
@@ -358,6 +362,15 @@ test('bootstrap first-RED consumes the closed VerificationResultV2 union, not ou
   prose.result_sha256=semantic('verification-result-v2',prose,'result_sha256');
   assert.throws(()=>validateBootstrapVerificationResultV2(prose,{
     expectedSignal:value.classification.normalized_signal}),/bootstrap-verification-signal/);
+  const forged=structuredClone(value);
+  forged.classification.diagnostic_event.message='forged diagnostic';
+  forged.classification.diagnostic_event_sha256=semantic('diagnostic-event-v1',
+    forged.classification.diagnostic_event,null);
+  forged.classification.normalized_signal.message='forged diagnostic';
+  forged.result_sha256=semantic('verification-result-v2',forged,'result_sha256');
+  assert.throws(()=>validateBootstrapVerificationResultV2(forged,{
+    expectedSignal:forged.classification.normalized_signal}),
+  /bootstrap-verification-(?:classification|signal)/);
 });
 
 test('canonical RedProofV1 binds bootstrap adoption, verified result and completed proof producer',()=>{
@@ -1342,11 +1355,24 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
     tap.replace("  actual: 1\n","  actual: [1]\n"),
     tap.replace('  duration_ms: 1.25','\tduration_ms: 1.25'),
     tap.replace('  ...\n1..1','1..1'),
+    tap.replace("  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n",
+      "  name: 'AssertionError'\n  code: 'ERR_ASSERTION'\n"),
+    tap.replace("  name: 'AssertionError'\n",''),
+    tap.replace('  stack: |-\n'+
+      `    TestContext.<anonymous> (${path.join(WORKTREE,'runtime/bootstrap-runtime.test.js')}:4:24)\n`,''),
   ];
   for(const [index,bytes] of malformed.entries())
     assert.throws(()=>parseNodeTapFailure(bytes,{root:WORKTREE,
       testPath:'runtime/bootstrap-runtime.test.js'}),
       /bootstrap-first-red-tap/,`malformed TAP ${index}`);
+  assert.equal(typeof classifyExpectedTapSignal,'function');
+  const base={...event};
+  for(const conflict of [
+    {...base,error_name:'SyntaxError'},
+    {...base,error_code:'MODULE_NOT_FOUND'},
+    {...base,failure_type:'hookFailed'},
+    {...base,error_code:'ERR_TEST_FAILURE',failure_type:'subtestsFailed'},
+  ])assert.equal(classifyExpectedTapSignal(conflict),null);
 });
 
 async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=null,
