@@ -43,6 +43,8 @@ const {
   canonicalBootstrapJson,
   BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256,
   precomputeBootstrapCompletion,
+  parseNodeTapFailure,
+  tapValueDigest,
 }=bootstrapRuntime;
 const {canonicalJson}=require('./operation-journal.js');
 const journalRuntime=require('./operation-journal.js');
@@ -1273,6 +1275,79 @@ function exactFirstRedSpec(overrides={}){
   return {...base,...overrides};
 }
 
+function directAssertionTap({root=WORKTREE,testPath='runtime/a.test.js',
+  message='prefix expected exact authority suffix'}={}){
+  return [
+    'TAP version 13',
+    '# Subtest: fails first',
+    'not ok 1 - fails first',
+    '  ---',
+    '  duration_ms: 1.25',
+    "  type: 'test'",
+    `  location: '${path.join(root,...testPath.split('/'))}:4:1'`,
+    "  failureType: 'testCodeFailure'",
+    '  error: |-',
+    `    ${message}`,
+    '    ',
+    '    1 !== 2',
+    '    ',
+    "  code: 'ERR_ASSERTION'",
+    "  name: 'AssertionError'",
+    '  expected: 2',
+    '  actual: 1',
+    "  operator: 'strictEqual'",
+    '  stack: |-',
+    `    TestContext.<anonymous> (${path.join(root,...testPath.split('/'))}:4:24)`,
+    '  ...',
+    '1..1',
+    '# tests 1',
+    '# suites 0',
+    '# pass 0',
+    '# fail 1',
+    '# cancelled 0',
+    '# skipped 0',
+    '# todo 0',
+    '# duration_ms 2.5',
+    '',
+  ].join('\n');
+}
+
+test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domains',()=>{
+  assert.equal(typeof parseNodeTapFailure,'function');
+  assert.equal(typeof tapValueDigest,'function');
+  const typed=[
+    [undefined,'u:'],[null,'n:'],[false,'b:0'],[true,'b:1'],[2.5,'d:2.5'],
+    ['e\u0301\r\nline','s:é\nline'],
+  ];
+  for(const [value,preimage] of typed)
+    assert.equal(tapValueDigest(value),digest(Buffer.concat([
+      Buffer.from('tap-value-v1\0'),Buffer.from(preimage)])));
+  const tap=directAssertionTap();
+  const event=parseNodeTapFailure(tap,{root:WORKTREE,testPath:'runtime/a.test.js'});
+  assert.deepEqual(event,{
+    event_type:'test-failure',test_file:'runtime/a.test.js',test_name:'fails first',
+    start_line:4,error_code:'ERR_ASSERTION',error_name:'AssertionError',
+    failure_type:'testCodeFailure',operator:'strictEqual',
+    expected_digest:tapValueDigest(2),actual_digest:tapValueDigest(1),
+    message:'prefix expected exact authority suffix',
+  });
+  const malformed=[
+    tap.replace("  code: 'ERR_ASSERTION'\n","  code: 'ERR_ASSERTION'\n  code: 'ERR_ASSERTION'\n"),
+    tap.replace("  code: 'ERR_ASSERTION'\n","  surprise: 'authority drift'\n  code: 'ERR_ASSERTION'\n"),
+    tap.replace('  error: |-\n','  error: >-\n'),
+    tap.replace('# suites 0','# suites 1'),
+    tap.replace('# pass 0','# pass 1'),
+    tap.replace('1..1','1..2'),
+    `${tap}extra\n`,
+    tap.replace("  actual: 1\n","  actual: [1]\n"),
+    tap.replace('  duration_ms: 1.25','\tduration_ms: 1.25'),
+    tap.replace('  ...\n1..1','1..1'),
+  ];
+  for(const [index,bytes] of malformed.entries())
+    assert.throws(()=>parseNodeTapFailure(bytes,{root:WORKTREE,testPath:'runtime/a.test.js'}),
+      /bootstrap-first-red-tap/,`malformed TAP ${index}`);
+});
+
 async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=null,
   planAuthorityOverride=null}={}){
   const specBytes=Buffer.from(canonicalJson(spec));
@@ -1642,11 +1717,6 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         "'use strict';","const test=require('node:test');",
         "const assert=require('node:assert/strict');",
         "test('fails first',()=>assert.strictEqual(1,2,'different message'));",''].join('\n')],
-      ['substring-only',[
-        "'use strict';","const test=require('node:test');",
-        "const assert=require('node:assert/strict');",
-        "test('fails first',()=>assert.strictEqual(3,4,'prefix expected exact authority suffix'));",
-        ''].join('\n')],
       ['unsupported-tap',"'use strict';\nthis is not valid javascript\n"],
       ['stderr-nonempty',[
         "'use strict';","const test=require('node:test');",
@@ -1674,6 +1744,26 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
           /bootstrap-first-red-(?:classification|process|tap|scope|environment)/);
       });
     }
+    await t.test('normalized-literal-substring',async()=>{
+      const testSource=[
+        "'use strict';","const test=require('node:test');",
+        "const assert=require('node:assert/strict');",
+        "test('fails first',()=>assert.strictEqual(1,2,'prefix expected exact authority suffix'));",
+        ''].join('\n');
+      const prepared=await preparePublicFirstRedCase(t,{testSource});
+      const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+      assert.equal(bridge.operation_receipt.stage,'completed-ledger');
+    });
+    await t.test('observed-kind-is-not-copied-from-expected-signal',async()=>{
+      const testSource=[
+        "'use strict';","const test=require('node:test');",
+        "test('fails first',()=>{const error=new Error('expected exact authority');"+
+          "error.code='ERR_DEEP_WORK_CONTRACT';error.operator='strictEqual';"+
+          "error.expected=2;error.actual=1;throw error;});",''].join('\n');
+      const prepared=await preparePublicFirstRedCase(t,{testSource});
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-first-red-classification/);
+    });
     await t.test('timeout',async()=>{
       const spec=exactFirstRedSpec({timeout_ms:100});
       const source=[

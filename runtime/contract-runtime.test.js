@@ -186,8 +186,19 @@ test('VerificationSpecV2 closes Node TAP argv, environment, bounds and expected 
         ...value.red_failure.expected_signal.test_identity,test_file:'runtime/b.test.js'}}}}],
     ['alternate message',{red_failure:{...value.red_failure,expected_signal:{
       ...value.red_failure.expected_signal,message_pattern:''}}}],
+    ['unknown signal kind',{red_failure:{...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,kind:'exception'}}}],
+    ['assertion with contract operator',{red_failure:{...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,kind:'assertion',operator:'contract'}}}],
+    ['contract with assertion operator',{red_failure:{...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,kind:'contract',operator:'strictEqual'}}}],
+    ['unsupported assertion operator',{red_failure:{...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,kind:'assertion',operator:'equal'}}}],
   ];
   for(const [name,change] of mutations)
     assert.throws(()=>validateVerificationSpecV2({...value,...change}),/verification-spec-v2/,name);
   assert.throws(()=>validateVerificationSpecV2({...value,unknown:true}),/verification-spec-v2/);
+  assert.doesNotThrow(()=>validateVerificationSpecV2({...value,red_failure:{
+    ...value.red_failure,expected_signal:{
+      ...value.red_failure.expected_signal,kind:'contract',operator:'contract'}}}));
 });
