@@ -10,6 +10,7 @@ const redProof=require('./red-proof-runtime.js');
 const verificationV2=require('./verification-v2-runtime.js');
 const findingRef=require('./finding-ref-runtime.js');
 const functionalReceipt=require('./functional-receipt-runtime.js');
+const refactorDecision=require('./refactor-decision-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -375,6 +376,11 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       sliceId:f.slice,greenVerification:jsonFile(resolveInput(
         f['green-ref-json'],cwd)),refactorEvidence:jsonFile(resolveInput(
         f['refactor-evidence-json'],cwd))});});
+  on('implement refactor no-change',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return refactorDecision.recordNoRefactorDecision({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
+      sliceId:f.slice,greenVerification:jsonFile(resolveInput(
+        f['green-ref-json'],cwd)),reasonCode:f.reason});});
   on('implement override set',async({f,cwd})=>{const state=stateCapability(f,cwd);const source=identifyOwnedInput(state,f['reason-file'],'reason');
     const consumed=await ownedInput(state,f['reason-file'],'reason',derivedOperationId('implement-override-set',{
       session:sessionId(state),slice:f.slice,sourceOperationId:source.operationId}));return phase.setTddOverride({stateCapability:state,

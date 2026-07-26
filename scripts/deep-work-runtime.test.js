@@ -381,7 +381,8 @@ async function semanticArgv(entry, fx) {
     'expected-sha256':'a'.repeat(64),'project-root':fx.root,path:'src/a.js',at:ROUTE_TIMESTAMP,
     phase,mode:'current-branch','task-file':fx.files.task,'defaults-json':fx.files.defaults,
     'profile-json':fx.files.profileJson,'base-ref':'HEAD','from-phase':'plan','dirty-resolution':'abort',
-    reason:'risk-class-increase','from-risk':'medium','to-risk':'high','risk-profile-sha256':'9'.repeat(64),
+    reason:'risk-class-increase','from-risk':'medium','to-risk':'high',
+    'risk-profile-sha256':'9'.repeat(64),
     worktree:path.join(fx.root, '..', `${path.basename(fx.root)}-wt-${fx.session.slice(2)}`),
     'flags-json':fx.files.flags,'finished-at':ROUTE_TIMESTAMP,'result-json':fx.files.result,
     artifact:fx.files.structuralMd,'contract-json':fx.files.specContract,'gate-json':fx.files.specGate,
@@ -423,6 +424,7 @@ async function semanticArgv(entry, fx) {
   if (entry.id === 'verification run') delete values['gate-id'];
   if (entry.id === 'sensor run') values.kind = 'lint';
   if (entry.id === 'phase invalidate-replan') values.reason = 'risk-class-increase';
+  if (entry.id === 'implement refactor no-change') values.reason = 'no-duplication';
   if (entry.id === 'session execution set') values.mode = 'inline';
   if (entry.id === 'review run') values.mode = 'read-only';
   const tempValues = {
@@ -479,6 +481,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
     ['implement tdd transition',[10,20,50]],['implement slice complete',[10,20,50,70]],
     ['implement slice complete-v2',[10,20,50,70]],
+    ['implement refactor no-change',[10,20,50]],
     ['implement override set',[10,20,50,70]],['implement override clear',[50]],
     ['implement takeover set',[50,70]],['implement takeover clear',[50,70]],
     ['verification migrate-spec',[10,20,50,70]],['verification run',[10,20,50,70]],
@@ -857,8 +860,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 102 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 102);
+test('all 103 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 103);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -882,7 +885,7 @@ test('all 102 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 102);
+  assert.equal(outcomes.length, 103);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

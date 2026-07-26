@@ -266,16 +266,30 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
     planCapability,plan:current,sliceId,ref:greenVerification,
     expectedWriteClass:'production'});
   const refactor=validateRefactorEvidenceV1(refactorEvidence);
-  if(refactor.kind!=='performed-refactor')fail('functional-no-refactor-pending');
-  const post=await authenticateVerificationResultRefV1({stateCapability,
-    planCapability,plan:current,sliceId,ref:refactor.post_refactor_green,
-    expectedWriteClass:'refactor'});
-  if(post.write.operationId!==refactor.write_operation_id||
-      post.write.receiptSha256!==refactor.write_receipt_sha256)
-    fail('functional-refactor-write');
+  let post,afterWriteOperationId;
+  if(refactor.kind==='performed-refactor'){
+    post=await authenticateVerificationResultRefV1({stateCapability,
+      planCapability,plan:current,sliceId,ref:refactor.post_refactor_green,
+      expectedWriteClass:'refactor'});
+    if(post.write.operationId!==refactor.write_operation_id||
+        post.write.receiptSha256!==refactor.write_receipt_sha256)
+      fail('functional-refactor-write');
+    afterWriteOperationId=refactor.write_operation_id;
+  }else{
+    const decision=await require('./refactor-decision-runtime.js')
+      .authenticateNoRefactorDecision({stateCapability,plan:current,sliceId,
+        greenVerification:green.ref,reasonCode:refactor.reason_code,
+        operationId:refactor.decision_operation_id});
+    post=await authenticateVerificationResultRefV1({stateCapability,
+      planCapability,plan:current,sliceId,ref:refactor.post_decision_green,
+      expectedWriteClass:'no-refactor-decision'});
+    if(post.write.operationId!==decision.operationId)
+      fail('functional-no-refactor-decision');
+    afterWriteOperationId=decision.operationId;
+  }
   for(const sensor of refactor.sensor_results)
     await authenticateSensorResultRefV1({stateCapability,plan:current,sliceId,
-      ref:sensor,afterWriteOperationId:refactor.write_operation_id});
+      ref:sensor,afterWriteOperationId});
   if(!target.checked&&fields.tdd_state!=='SENSOR_CLEAN')
     fail('functional-completion-state');
   const receipt=buildFunctionalSliceReceiptV2({session_id:sid,slice_id:sliceId,
@@ -318,7 +332,8 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
   await journal.recordOperationStage(operation,'evidence-authenticated',{owned:{
     redProofSha256:red.proof.proof_sha256,
     greenResultSha256:green.ref.result_sha256,
-    refactorEvidenceSha256:refactor.evidence_sha256}});
+    refactorEvidenceSha256:refactor.kind==='performed-refactor'?
+      refactor.evidence_sha256:refactor.decision_sha256}});
   const workDir=path.join(root,...fields.work_dir.split('/'));
   const sessionCapability=platform.issueProjectStateCapability(root,workDir,{
     role:'session-work-dir',sessionStateCapability:stateCapability});

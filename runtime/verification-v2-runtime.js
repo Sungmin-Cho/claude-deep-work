@@ -53,11 +53,11 @@ function loadPlan(planCapability,plan){
     fail('verification-v2-plan-authority');
   return current;
 }
-function acceptedWrite({stateCapability,plan,sliceId,fields,expectedOutcome,
+async function acceptedWrite({stateCapability,plan,sliceId,fields,expectedOutcome,
   operationId:explicitOperationId}){
   const operationIdValue=explicitOperationId||fields.accepted_write_operation_id;
   const expectedClasses=expectedOutcome==='must-fail'?['failing-test']:
-    ['production','refactor'];
+    ['production','refactor','no-refactor-decision'];
   const stateSelected=!explicitOperationId;
   if(!OPERATION.test(operationIdValue||'')||
       stateSelected&&(!DIGEST.test(fields.accepted_write_receipt_sha256||'')||
@@ -65,6 +65,15 @@ function acceptedWrite({stateCapability,plan,sliceId,fields,expectedOutcome,
     fail('verification-v2-write');
   const file=path.join(stateCapability.projectRoot,'.claude',
     `deep-work.${sid(stateCapability)}.scoped-write.${operationIdValue}.json`);
+  if(expectedOutcome==='must-pass'&&!fs.existsSync(file)){
+    const decision=await require('./refactor-decision-runtime.js')
+      .authenticateNoRefactorDecision({stateCapability,plan,sliceId,
+        operationId:operationIdValue});
+    if(stateSelected&&(fields.accepted_write_class!==decision.writeClass||
+        fields.accepted_write_receipt_sha256!==decision.receiptSha256))
+      fail('verification-v2-write');
+    return decision;
+  }
   const receipt=readCanonical(file,'verification-v2-write').value;
   const planSha256=planRuntime.canonicalizePlanScopeV1(plan).sha256;
   const slice=plan.slices.find((row)=>row.id===sliceId);
@@ -217,7 +226,7 @@ async function runVerificationV2({stateCapability,planCapability,plan,sliceId,
   if(fields.current_phase!=='implement'||fields.active_slice!==sliceId||
       !allowedState||!DIGEST.test(fields.verification_plan_sha256||''))
     fail('verification-v2-state');
-  const write=acceptedWrite({stateCapability,plan:current,sliceId,fields,
+  const write=await acceptedWrite({stateCapability,plan:current,sliceId,fields,
     expectedOutcome});
   const context=executionContext(stateCapability.projectRoot,sid(stateCapability),sliceId,spec,
     write.operationId);
@@ -373,7 +382,7 @@ async function authenticateVerificationV2({stateCapability,planCapability,plan,s
     readCanonical(resultPath,'verification-v2-result').value,{
       expectedSignal:spec.red_failure.expected_signal,
       expectedOutcome});
-  const write=acceptedWrite({stateCapability,plan:current,sliceId,fields,
+  const write=await acceptedWrite({stateCapability,plan:current,sliceId,fields,
     expectedOutcome,operationId:verification.write_operation_id});
   const context=executionContext(stateCapability.projectRoot,sid(stateCapability),sliceId,spec,
     write.operationId);
