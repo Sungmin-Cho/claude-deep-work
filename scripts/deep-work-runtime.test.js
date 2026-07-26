@@ -387,6 +387,11 @@ async function semanticArgv(entry, fx) {
     'flags-json':fx.files.flags,'finished-at':ROUTE_TIMESTAMP,'result-json':fx.files.result,
     artifact:fx.files.structuralMd,'contract-json':fx.files.specContract,'gate-json':fx.files.specGate,
     from:'brainstorm',to:'research','affected-slices-json':fx.files.affected,
+    'observation-json':fx.files.structural,
+    'producer-operation-id':`op-${'b'.repeat(64)}`,
+    checker:'spec-gate-v1','input-refs-json':fx.files.changed,
+    'fact-operation-id':`op-${'c'.repeat(64)}`,
+    'functional-receipts-json':fx.files.changed,
     plan:fx.plan,'assignment-json':fx.files.assignment,snapshot:'a'.repeat(40),slice:'SLICE-001',
     class:'failing-test','scope-sha256':'a'.repeat(64),'delegation-operation-id':`op-${'2'.repeat(64)}`,
     cluster:'C1','operation-id':`op-${'3'.repeat(64)}`,'pre-manifest-sha256':'a'.repeat(64),
@@ -890,7 +895,7 @@ test('all 109 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 103);
+  assert.equal(outcomes.length, 109);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

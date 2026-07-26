@@ -62,6 +62,14 @@ function validateToolIdentity(value){
       decimal(stat.dev)!==value.target_dev||decimal(stat.ino)!==value.target_ino||
       decimal(stat.mode)!==value.target_mode||decimal(stat.size)!==value.target_size||
       statNanos(stat)!==value.target_mtime_ns)fail('release-tool-identity');
+  if(value.shim_kind==='posix-symlink'){
+    let shimStat,link,shimTarget;try{shimStat=fs.lstatSync(value.shim_path);
+      link=fs.readlinkSync(value.shim_path);shimTarget=fs.realpathSync(value.shim_path);}
+    catch{fail('release-tool-identity');}
+    if(!shimStat.isSymbolicLink()||shimTarget!==value.target_path||
+        sha256(Buffer.from(link))!==value.shim_sha256)
+      fail('release-tool-identity');
+  }
   return structuredClone(value);
 }
 function graphIdentity(row){return{kind:row.kind,path:row.path};}
@@ -165,7 +173,122 @@ function buildToolchainManifest({platform,sourceGraphRef,sourceGraphSha256,
   value.manifest_sha256=manifestDigest(value);
   return validateToolchainManifest(value);
 }
+function materializeOwnedBin({parent,entries,platformName=process.platform}={}){
+  let physicalParent,parentStat;try{physicalParent=fs.realpathSync(parent);
+    parentStat=fs.lstatSync(physicalParent);}catch{fail('release-owned-bin');}
+  if(!require('node:path').isAbsolute(parent||'')||!parentStat.isDirectory()||
+      parentStat.isSymbolicLink()||!Array.isArray(entries)||entries.length===0)
+    fail('release-owned-bin');
+  if(!['posix','darwin','linux','freebsd','openbsd','aix','sunos'].includes(
+      platformName))fail('release-owned-bin-platform');
+  const binPath=fs.mkdtempSync(require('node:path').join(physicalParent,'bin-'));
+  const names=new Set(),materialized=[];
+  try{
+    for(const source of [...entries].sort((a,b)=>byteCompare(a.name,b.name))){
+      const identity=validateToolIdentity(source);
+      if(names.has(identity.name))fail('release-owned-bin');names.add(identity.name);
+      const shimPath=require('node:path').join(binPath,identity.name);
+      fs.symlinkSync(identity.target_path,shimPath,'file');
+      const link=fs.readlinkSync(shimPath);
+      materialized.push(validateToolIdentity({...identity,
+        shim_kind:'posix-symlink',shim_path:shimPath,
+        shim_sha256:sha256(Buffer.from(link))}));
+    }
+    validateMaterializedBin(binPath,materialized);
+    return{binPath,entries:materialized};
+  }catch(error){fs.rmSync(binPath,{recursive:true,force:true});throw error;}
+}
+function validateMaterializedBin(binPath,entries){
+  let stat,names;try{stat=fs.lstatSync(binPath);names=fs.readdirSync(binPath)
+    .sort(byteCompare);}catch{fail('release-owned-bin');}
+  const expected=entries.map((row)=>row.name).sort(byteCompare);
+  if(!stat.isDirectory()||stat.isSymbolicLink()||
+      canonical(names)!==canonical(expected))fail('release-owned-bin');
+  for(const entry of entries){
+    validateToolIdentity(entry);
+    if(entry.shim_path!==require('node:path').join(binPath,entry.name))
+      fail('release-owned-bin');
+  }
+  return true;
+}
+function pathIdentity(target,kind){
+  let physical,stat,bytes=null;try{physical=fs.realpathSync(target);
+    stat=fs.lstatSync(physical,{bigint:true});if(kind==='file')bytes=fs.readFileSync(physical);}
+  catch{fail('release-path-identity');}
+  if(kind==='file'&&(!stat.isFile()||stat.isSymbolicLink())||
+      kind==='directory'&&(!stat.isDirectory()||stat.isSymbolicLink())||
+      !['file','directory'].includes(kind))fail('release-path-identity');
+  return{path:physical,kind,dev:decimal(stat.dev),ino:decimal(stat.ino),
+    mode:decimal(stat.mode),size:decimal(stat.size),mtime_ns:statNanos(stat),
+    sha256:bytes?sha256(bytes):null};
+}
+function validatePathIdentity(value){
+  if(!exactKeys(value,['path','kind','dev','ino','mode','size','mtime_ns',
+      'sha256'])||!['file','directory'].includes(value.kind)||
+      !require('node:path').isAbsolute(value.path||'')||
+      ![value.dev,value.ino,value.mode,value.size,value.mtime_ns].every((row)=>
+        /^(?:0|[1-9]\d*)$/.test(row||''))||
+      (value.kind==='file'?!DIGEST.test(value.sha256||''):value.sha256!==null)||
+      canonical(pathIdentity(value.path,value.kind))!==canonical(value))
+    fail('release-path-identity');
+  return structuredClone(value);
+}
+function environmentDigest(value){return semanticDigest('release-command-env-v1',
+  value);}
+function buildReleaseEnvironment({platformName=process.platform,homePath,binPath,
+  manifestPath,manifest}={}){
+  if(!['posix','darwin','linux','freebsd','openbsd','aix','sunos'].includes(
+      platformName))fail('release-environment-platform');
+  const home=pathIdentity(homePath,'directory'),ownedBin=
+    pathIdentity(binPath,'directory'),manifestIdentity=pathIdentity(manifestPath,'file');
+  if(manifestIdentity.sha256!==sha256(canonical(manifest)))fail('release-environment');
+  const environment={platform:'posix',mode:'closed',values:{LANG:'C',LC_ALL:'C',
+    TZ:'UTC',HOME:home.path,PATH:ownedBin.path},identities:{home,owned_bin:ownedBin,
+    toolchain_manifest:{path:manifestIdentity.path,sha256:manifestIdentity.sha256,
+      source_graph_sha256:manifest.source_graph_sha256}}};
+  return{...environment,release_environment_sha256:
+    environmentDigest(environment)};
+}
+function validateReleaseEnvironment(value,manifest){
+  const core={platform:value?.platform,mode:value?.mode,values:value?.values,
+    identities:value?.identities};
+  if(!exactKeys(value,['platform','mode','values','identities',
+      'release_environment_sha256'])||value.platform!=='posix'||
+      value.mode!=='closed'||!exactKeys(value.values,
+        ['LANG','LC_ALL','TZ','HOME','PATH'])||
+      canonical({LANG:value.values.LANG,LC_ALL:value.values.LC_ALL,
+        TZ:value.values.TZ})!==canonical({LANG:'C',LC_ALL:'C',TZ:'UTC'})||
+      !exactKeys(value.identities,['home','owned_bin','toolchain_manifest'])||
+      validatePathIdentity(value.identities.home).path!==value.values.HOME||
+      validatePathIdentity(value.identities.owned_bin).path!==value.values.PATH||
+      !exactKeys(value.identities.toolchain_manifest,
+        ['path','sha256','source_graph_sha256'])||
+      value.identities.toolchain_manifest.sha256!==sha256(canonical(manifest))||
+      value.identities.toolchain_manifest.source_graph_sha256!==
+        manifest.source_graph_sha256||
+      environmentDigest(core)!==value.release_environment_sha256)
+    fail('release-environment');
+  return structuredClone(value);
+}
+async function runHermetic({manifest,environment,executableName,args,cwd,
+  timeoutMs,maxOutputBytes}={}){
+  validateToolchainManifest(manifest);validateReleaseEnvironment(environment,manifest);
+  validateMaterializedBin(environment.values.PATH,manifest.entries);
+  const entry=manifest.entries.find((row)=>row.name===executableName);
+  if(!entry||entry.shim_path!==require('node:path').join(environment.values.PATH,
+      executableName)||!Array.isArray(args)||args.some((arg)=>typeof arg!=='string'))
+    fail('release-command');
+  const result=await require('./process-supervisor.js').runSupervisedProcess({
+    executable:entry.shim_path,args},{cwd,timeoutMs,maxOutputBytes,
+    env:structuredClone(environment.values)});
+  validateMaterializedBin(environment.values.PATH,manifest.entries);
+  validateReleaseEnvironment(environment,manifest);
+  return result;
+}
 
 module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
   commandRootRow,compareGraphRows,buildReleaseSourceGraph,
-  validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest};
+  validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest,
+  materializeOwnedBin,validateMaterializedBin,pathIdentity,
+  validatePathIdentity,buildReleaseEnvironment,validateReleaseEnvironment,
+  runHermetic};
