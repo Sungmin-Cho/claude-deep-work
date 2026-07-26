@@ -75,8 +75,8 @@ test('bootstrap operation kinds have closed crash-recoverable stage tables',asyn
     'bootstrap-failure-publish':['prepared','failure-published','claim-committed'],
     'bootstrap-finalize':['prepared','authorization-authenticated','execution-authenticated',
       'receipt-precomputed','marker-committed','receipt-published'],
-    'bootstrap-first-red':['prepared','bootstrap-receipt-authenticated','failing-test-write-authenticated',
-      'verification-completed','red-state-written','bridge-consumed'],
+    'bootstrap-first-red':['prepared','containment-authenticated','pre-manifest-published',
+      'process-completed','post-manifest-published','result-published'],
     'bootstrap-red-adoption':['prepared','bridge-authenticated','red-authority-adopted'],
     'red-proof-publication':['prepared','proof-published','proof-ref-committed'],
   };
