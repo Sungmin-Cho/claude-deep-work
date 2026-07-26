@@ -506,13 +506,25 @@ function prepareReplanAuthority({stateCapability,plan,sliceId,reason,producerOpe
   invalidation.invalidation_sha256=digestExcluding(invalidation,'invalidation_sha256');
   return{fields,observation,observationDigest,trigger,invalidation,statePatch:{}};
 }
-async function recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam}={}){
-  const {fields,observation,observationDigest,trigger,invalidation,
+async function recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam,
+  _lockHeld=false}={}){
+  const {observation,observationDigest,trigger,invalidation,
     statePatch={}}=prepared;
-  if(fields.replan_required===true&&
-      fields.active_replan_trigger_id!==trigger.trigger_id)
+  const sid=sessionId(stateCapability),root=stateCapability.projectRoot;
+  if(!_lockHeld)return transaction.withRankedLocks([
+    {rank:transaction.RANKS.session,capability:platform.issueProjectStateCapability(
+      root,path.join(root,'.claude',`deep-work.${sid}.rank-operation.lock`),
+      {allowMissingLeaf:true,role:'lock'})},
+    {rank:transaction.RANKS.state,
+      capability:transaction.stateLock(stateCapability)},
+  ],()=>recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam,
+    _lockHeld:true}));
+  const lockedFields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  if(lockedFields.replan_required===true&&
+      lockedFields.active_replan_trigger_id!==trigger.trigger_id)
     fail('replan-active-conflict');
-  const sid=sessionId(stateCapability),id=operationId('replan-trigger-record-v1',trigger);
+  const id=operationId('replan-trigger-record-v1',trigger);
   const existing=await journal.resumeOperation({projectCapability:project(stateCapability),
     operationId:id,sessionId:sid,kind:'replan-trigger-record'}).catch((error)=>{
       if(error.code==='operation-not-found')return null;throw error;});
@@ -538,7 +550,7 @@ async function recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam}
     const already=currentFields.active_replan_trigger_id===trigger.trigger_id&&
       currentFields.replan_invalidation_sha256===invalidation.invalidation_sha256;
     const after=already?before:frontmatter.updateFrontmatterText(before,
-      invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperationId:id,
+      invalidationPatch(currentFields,{sliceId,trigger,invalidation,triggerOperationId:id,
         triggerPath,invalidationPath,statePatch}));
     if(after!==before){seam?.('before-invalidation-state-write',{operationId:id});
       platform.atomicWriteFile(stateCapability,after);

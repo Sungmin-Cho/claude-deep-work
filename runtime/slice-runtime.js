@@ -659,7 +659,8 @@ async function acceptOrReplanScopedWrite({stateCapability,plan,sliceId,operation
     fail('accept-or-replan-receipt');}finally{if(fd!==undefined)fs.closeSync(fd);}
   await recordOperationStage(child,'needs-replan-receipt-published',{owned:{
     receiptPath:relative,receiptSha256:needs.receipt_sha256}});
-  const replanned=await replan.recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam});
+  const replanned=await replan.recordPreparedReplan({stateCapability,plan,sliceId,
+    prepared,seam,_lockHeld:true});
   await recordOperationStage(child,'invalidation-applied',{owned:{
     triggerId:replanned.trigger_id,invalidationSha256:replanned.invalidation_sha256,
     replanEpoch:replanned.replan_epoch}});

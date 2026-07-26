@@ -172,4 +172,5 @@ function computeResidualRisk({initialRisk,finalRisk,evidenceSummary,unverifiedAr
     (reasons.length===0||valid.length>0)&&invalid.length===0,invalid_acceptance_ids:catalog.ordered(invalid)};}
 
 module.exports={CATALOG:catalog.CATALOG,compileVerificationPlan,validateVerificationPlan,requiredGateIds,
-  evidenceRequiredGateIds,gateRequirementFor:catalog.gateRequirementFor,deriveCompatibilityMode,computeResidualRisk};
+  evidenceRequiredGateIds,gateRequirementFor:catalog.gateRequirementFor,
+  deriveCompatibilityMode,computeResidualRisk,isAtLeast614};

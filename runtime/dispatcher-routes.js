@@ -31,11 +31,9 @@ function stateCapability(f,cwd,key='state'){const root=projectRootFor(f,cwd);con
 function stateFields(capability){platform.revalidatePathCapability(capability,'dispatcher-state');return frontmatter.parseFrontmatter(boundedFile(capability.path).toString('utf8')).fields;}
 function sessionId(capability){const match=path.basename(capability.path).match(/^deep-work\.(s-[0-9a-f]{8})\.md$/);if(!match)fail('session-state-identity');return match[1];}
 function usesGovernedProjection(plan){
-  if(plan?.contract_binding?.mode!=='strict-spec')return false;
-  const match=String(plan.contract_binding.created_by_version||'').match(
-    /^(\d+)\.(\d+)\.(\d+)$/);
-  return Boolean(match&&(Number(match[1])>6||
-    Number(match[1])===6&&Number(match[2])>=14));
+  return plan?.contract_binding?.mode==='strict-spec'&&
+    require('./verification-policy-runtime.js').isAtLeast614(
+      plan.contract_binding.created_by_version);
 }
 function finishAdmission(stateCap,enforcementPoint){
   slice.assertNoPendingScopedWrite(stateCap);
@@ -357,7 +355,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     affectedSlices:f['affected-slices-json']?jsonFile(resolveInput(f['affected-slices-json'],cwd)):[]}));
   on('phase invalidate-replan',({f,cwd})=>{const state=stateCapability(f,cwd);
     const fields=stateFields(state),version=String(fields.created_by_version||'');
-    if(/^6\.(?:1[4-9]|[2-9]\d)\.|^[7-9]\./.test(version))
+    if(require('./verification-policy-runtime.js').isAtLeast614(version))
       fail('authenticated-replan-required');
     return phase.invalidateForReplan({stateCapability:state,
       reason:f.reason,fromRisk:f['from-risk'],toRisk:f['to-risk'],
