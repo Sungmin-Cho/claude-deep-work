@@ -179,4 +179,19 @@ test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes
     const resultReplay=await gate.publishDeterministicGateResult({
       stateCapability,planCapability,plan,factOperationId:published.operation_id});
     assert.equal(resultReplay.adopted,true);
+    const gateRefsPath=path.join(root,'gate-refs.json');
+    const functionalRefsPath=path.join(root,'functional-refs.json');
+    fs.writeFileSync(gateRefsPath,journal.canonicalJson(result.gate_result_refs));
+    fs.writeFileSync(functionalRefsPath,'[]');
+    const completed=await dispatch(['release','verification','complete','--state',
+      statePath,'--plan',planCapability.path,'--slice','SLICE-001',
+      '--gate-results-json',gateRefsPath,'--functional-receipts-json',
+      functionalRefsPath],{cwd:root});
+    assert.match(completed.receipt_sha256,/^[0-9a-f]{64}$/);
+    const completedPlan=JSON.parse(fs.readFileSync(planCapability.path,'utf8'));
+    assert.equal(completedPlan.slices[0].checked,true);
+    const completionReplay=await gate.publishReleaseVerificationReceipt({
+      stateCapability,planCapability,plan:completedPlan,sliceId:'SLICE-001',
+      gateResults:result.gate_result_refs,functionalReceipts:[]});
+    assert.equal(completionReplay.adopted,true);
   });

@@ -7,6 +7,7 @@ const journal=require('./operation-journal.js');
 const transaction=require('./transaction-runtime.js');
 const frontmatter=require('./frontmatter.js');
 const planRuntime=require('./plan-runtime.js');
+const platform=require('./platform.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
 const OPERATION=/^op-[0-9a-f]{64}$/;
@@ -591,10 +592,149 @@ async function publishDeterministicGateResult({stateCapability,planCapability,pl
     gate_result_refs:gateResultRefs({result,operationId:id,resultPath:relative,
       ledgerResultSha256:receipt.resultSha256}),adopted:false};
 }
+function gateRefSortKey(ref){return `${ref.gate_id}\0${ref.checker_id}\0${
+  ref.operation_id}`;}
+async function authenticateGateResultRefs({stateCapability,plan,verificationPlanSha256,
+  refs}={}){
+  if(!Array.isArray(refs)||refs.length===0||
+      refs.some((ref)=>{try{validateGateResultRef(ref);return false;}catch{return true;}})||
+      new Set(refs.map((ref)=>ref.gate_id)).size!==refs.length||
+      canonical(refs.map(gateRefSortKey))!==canonical(refs.map(gateRefSortKey)
+        .sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)))))
+    fail('release-verification-gates');
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const sid=transaction.sessionIdFromState(stateCapability),authenticated=[];
+  for(const ref of refs){
+    const receipt=await journal.resumeOperation({projectCapability:project,
+      operationId:ref.operation_id,sessionId:sid,kind:'release-gate-result'});
+    const terminal=receipt.result;
+    if(receipt.stage!=='completed-ledger'||receipt.resultSha256!==
+        ref.ledger_result_sha256||!exactKeys(terminal,['checker_id','gate_ids',
+          'input_refs','result_path','result_sha256','status'])||
+        terminal.result_path!==ref.result_path||
+        terminal.result_sha256!==ref.result_sha256||
+        terminal.checker_id!==ref.checker_id||terminal.status!=='passed'||
+        !terminal.gate_ids.includes(ref.gate_id))
+      fail('release-verification-gates');
+    const raw=readCanonical(path.join(stateCapability.projectRoot,
+      ...ref.result_path.split('/')),'release-verification-gates');
+    const result=validateGateResult(raw.value);
+    if(result.result_sha256!==ref.result_sha256||
+        result.plan_authority_sha256!==plan.plan_authority_sha256||
+        result.verification_plan_sha256!==verificationPlanSha256||
+        result.checker_id!==ref.checker_id||result.argv_sha256!==ref.argv_sha256||
+        !result.gate_ids.includes(ref.gate_id)||result.status!=='passed')
+      fail('release-verification-gates');
+    authenticated.push({ref,receipt,result});
+  }
+  return authenticated;
+}
+async function authenticateFunctionalReceiptRefs({stateCapability,plan,refs}={}){
+  const expected=plan.slices.filter((row)=>row.slice_kind==='functional')
+    .map((row)=>row.id).sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+  if(!Array.isArray(refs)||canonical(refs.map((row)=>row?.slice_id))!==
+      canonical(expected)||refs.some((row)=>!exactKeys(row,
+        ['slice_id','receipt_sha256','completion_operation_id'])||
+        !DIGEST.test(row.receipt_sha256||'')||
+        !OPERATION.test(row.completion_operation_id||'')))
+    fail('release-verification-functional');
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const sid=transaction.sessionIdFromState(stateCapability),runtime=
+    require('./functional-receipt-runtime.js');
+  for(const ref of refs){
+    const relative=`.deep-work/${sid}/receipts/${ref.slice_id}.json`;
+    const raw=readCanonical(path.join(stateCapability.projectRoot,
+      ...relative.split('/')),'release-verification-functional');
+    const receipt=runtime.validateFunctionalSliceReceiptV2(raw.value);
+    const producer=await journal.resumeOperation({projectCapability:project,
+      operationId:ref.completion_operation_id,sessionId:sid,
+      kind:'functional-slice-complete-v2'});
+    if(receipt.receipt_sha256!==ref.receipt_sha256||
+        receipt.completion_operation_id!==ref.completion_operation_id||
+        receipt.plan_authority_sha256!==plan.plan_authority_sha256||
+        producer.stage!=='completed-ledger'||
+        producer.result?.receipt_path!==relative||
+        producer.result?.receipt_sha256!==ref.receipt_sha256)
+      fail('release-verification-functional');
+  }
+  return structuredClone(refs);
+}
+function releaseReceiptDigest(value){const copy=structuredClone(value);
+  delete copy.receipt_sha256;return journal.sha256(canonical(copy));}
+async function publishReleaseVerificationReceipt({stateCapability,planCapability,plan,
+  sliceId,gateResults,functionalReceipts,seam}={}){
+  const current=loadPlan(planCapability,plan),sid=
+    transaction.sessionIdFromState(stateCapability);
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const slice=current.slices.find((row)=>row.id===sliceId);
+  if(!slice||slice.slice_kind!=='release-verification'||
+      fields.current_phase!=='test'||!DIGEST.test(fields.verification_plan_sha256||''))
+    fail('release-verification-state');
+  await authenticateGateResultRefs({stateCapability,plan:current,
+    verificationPlanSha256:fields.verification_plan_sha256,refs:gateResults});
+  const projected=[...slice.release_gate_ids].sort((a,b)=>
+    Buffer.compare(Buffer.from(a),Buffer.from(b)));
+  if(canonical(gateResults.map((ref)=>ref.gate_id).sort((a,b)=>
+      Buffer.compare(Buffer.from(a),Buffer.from(b))))!==canonical(projected))
+    fail('release-verification-gates');
+  const functional=await authenticateFunctionalReceiptRefs({stateCapability,
+    plan:current,refs:functionalReceipts});
+  const preconditions={session_id:sid,slice_id:sliceId,
+    plan_authority_sha256:current.plan_authority_sha256,
+    verification_plan_sha256:fields.verification_plan_sha256,
+    gate_results:gateResults,functional_receipts:functional};
+  const id=operationId('release-verification-complete-v1',preconditions);
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const existing=await journal.resumeOperation({projectCapability:project,
+    operationId:id,sessionId:sid,kind:'release-verification-complete'}).catch(
+      (error)=>{if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger')return{...existing.result,
+    operation_id:id,operation_receipt:existing,adopted:true};
+  if(slice.checked)fail('release-verification-state');
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId:sid,kind:'release-verification-complete',operationId:id,
+    preconditions});
+  await journal.recordOperationStage(operation,'aggregate-authenticated',{owned:{
+    gateCount:gateResults.length,functionalCount:functional.length}});
+  const receipt={schema_version:1,slice_id:sliceId,
+    plan_authority_sha256:current.plan_authority_sha256,
+    verification_plan_sha256:fields.verification_plan_sha256,
+    gate_results:structuredClone(gateResults),
+    functional_receipts:functional,completion_operation_id:id,
+    receipt_sha256:null};
+  receipt.receipt_sha256=releaseReceiptDigest(receipt);
+  const relative=`.deep-work/${sid}/receipts/${sliceId}.json`;
+  seam?.('before-release-receipt-write',{operationId:id,path:relative});
+  writeExclusive(path.join(stateCapability.projectRoot,...relative.split('/')),
+    receipt,'release-verification-receipt');
+  await journal.recordOperationStage(operation,'receipt-published',{owned:{
+    receiptPath:relative,receiptSha256:receipt.receipt_sha256}});
+  const updated=structuredClone(current);
+  updated.slices=updated.slices.map((row)=>row.id===sliceId?
+    {...row,checked:true}:row);
+  if(planRuntime.compileImmutablePlanAuthorityV2(updated).plan_authority_sha256!==
+      current.plan_authority_sha256)fail('release-verification-plan');
+  transaction.atomicWriteSessionFile(planCapability,canonical(updated));
+  const stateBefore=fs.readFileSync(stateCapability.path,'utf8');
+  const stateAfter=frontmatter.updateFrontmatterText(stateBefore,{
+    release_verification_receipt_sha256:receipt.receipt_sha256,
+    release_verification_operation_id:id,test_passed:true});
+  platform.atomicWriteFile(stateCapability,stateAfter);
+  await journal.recordOperationStage(operation,'progress-committed',{owned:{
+    planSha256:journal.sha256(canonical(updated)),
+    postStateSha256:journal.sha256(Buffer.from(stateAfter))}});
+  const result={slice_id:sliceId,receipt_path:relative,
+    receipt_sha256:receipt.receipt_sha256,
+    post_state_sha256:journal.sha256(Buffer.from(stateAfter))};
+  const operationReceipt=await journal.completeOperation(operation,result);
+  return{...result,operation_id:id,operation_receipt:operationReceipt,
+    adopted:false};
+}
 
 module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   CHECKER_INPUT_CATALOG,validateCheckerInputRefs,computeBlockingCodes,
   buildGateFactArtifact,validateGateFactArtifact,argvSha256,
   buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
   validateGateResultRef,publishGateFact,publishDeterministicGateResult,
-  gateResultRefs,semanticDigest};
+  gateResultRefs,publishReleaseVerificationReceipt,semanticDigest};

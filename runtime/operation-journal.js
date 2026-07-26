@@ -29,7 +29,7 @@ const OPERATION_KINDS = new Set([
     'red-transition', 'red-proof-publication', 'replan-trigger-record',
     'replan-epoch-publication', 'replan-discovery-publish', 'replan-complete',
     'accept-or-replan', 'finding-publish', 'gate-fact-publish',
-    'release-gate-result',
+    'release-gate-result', 'release-verification-complete',
     'functional-slice-complete-v2', 'refactor-no-change-decision',
 ]);
 
@@ -105,6 +105,8 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'replan-complete':['epoch-authenticated','approvals-authenticated','state-written'],
   'gate-fact-publish':['authority-authenticated','facts-computed','fact-published'],
   'release-gate-result':['inputs-authenticated','checker-completed','result-published'],
+  'release-verification-complete':['aggregate-authenticated','receipt-published',
+    'progress-committed'],
   'accept-or-replan':['observation-stable','needs-replan-receipt-published',
     'invalidation-applied','parent-resolved'],
   'finding-publish':['authority-authenticated','findings-published',
@@ -119,6 +121,7 @@ const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publi
   'red-transition','red-proof-publication','replan-trigger-record',
   'replan-epoch-publication','replan-discovery-publish','replan-complete',
   'accept-or-replan','finding-publish','gate-fact-publish','release-gate-result',
+  'release-verification-complete',
   'functional-slice-complete-v2','refactor-no-change-decision']);
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
