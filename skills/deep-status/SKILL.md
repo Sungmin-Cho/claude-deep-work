@@ -501,7 +501,24 @@ If no finalized sessions exist:
    /deep-work로 세션을 시작하고 완료하면 badge가 생성됩니다.
 ```
 
-### 13. `--risk` — Shadow Risk & Policy (v6.11.0)
+### 13. `--risk` — Governed Risk & Policy
+
+For a v7 strict-spec session, do not parse independent state scalars. Invoke the
+production dispatcher and render the returned canonical progress projection:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" receipt dashboard --state "$STATE_FILE"
+```
+
+The projection is the sole status/dashboard authority for plan identity,
+methodology policy, evidence, residual risk, invalidations, findings, receipts,
+replan state, and admission blockers. Report the command error and stop if governed
+loading fails; never reconstruct or weaken a fail-closed result.
+
+For a legacy session without strict-spec binding, use the compatibility display
+below.
+
+#### Legacy shadow display (v6.11–v6.14)
 
 If `$ARGUMENTS` contains `--risk`:
 

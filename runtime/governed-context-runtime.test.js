@@ -14,6 +14,7 @@ const {semanticDigest}=require('./release-gate-runtime.js');
 const {buildProgressProjectionV1,selectGovernedAdmission,loadGovernedContext,
   validateSessionAuthority}=
   require('./governed-context-runtime.js');
+const reportRuntime=require('./report-runtime.js');
 
 const empty={evidence:{status:'unknown',required_ids:[],completed_ids:[],missing_ids:[],
   invalidated_ids:[]},residual_risk:{status:'unknown',class:null,accepted:null,
@@ -87,7 +88,7 @@ test('the governed loader emits the same no-plan bytes consumed by all readers',
   assert.equal(loaded.bytes.toString('utf8').endsWith('\n'),true);
 });
 
-test('the governed loader derives finish locks from the review execution carrier',(t)=>{
+test('the governed loader derives finish locks from the review execution carrier',async(t)=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'dw-governed-review-'));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   fs.mkdirSync(path.join(root,'.claude'));const sessionId='s-aaaaaaaa';
@@ -175,6 +176,15 @@ x
     loadGovernedContext({stateCapability}).projection,'finish-finalize');
   assert.equal(admission.blocking_codes.includes('human-ack-missing'),false);
   assert.equal(admission.blocking_codes.includes('external-change-lock'),false);
+
+  const governed=loadGovernedContext({stateCapability});
+  assert.deepEqual(reportRuntime.readReceiptDashboard({stateCapability}),
+    governed.projection);
+  const generated=await reportRuntime.generateReport({stateCapability});
+  assert.equal(generated.projection_sha256,governed.sha256);
+  const reportText=fs.readFileSync(generated.output,'utf8');
+  assert.equal(reportText.includes(`Projection SHA-256: ${governed.sha256}`),true);
+  assert.equal(reportText.includes(governed.bytes.toString('utf8')),true);
 
   const current=frontmatter.parseFrontmatter(fs.readFileSync(statePath,'utf8')).fields;
   const tamperedPolicy=JSON.parse(current.methodology_policy_json);

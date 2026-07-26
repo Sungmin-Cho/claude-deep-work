@@ -38,6 +38,20 @@ user-invocable: true
 
 Generate or regenerate a comprehensive report for the current (or most recent) Deep Work session.
 
+## v7 governed report path
+
+For a strict-spec session, the production dispatcher is the sole report generator:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" report generate --state "$STATE_FILE"
+```
+
+Use the generated `report.md` and returned `projection_sha256` as authoritative.
+The report embeds the exact canonical progress projection used by status/dashboard.
+If governed loading or publication fails, report the error and stop. Do not
+manually combine state fields or artifacts. The instructions below are the legacy
+compatibility path for sessions without strict-spec binding.
+
 ## Language
 
 Detect the user's language from their messages or the Claude Code `language` setting. **Output ALL user-facing messages in the detected language.** The display templates below use Korean as the reference format — translate naturally to the user's language while preserving emoji, formatting, and structure.
