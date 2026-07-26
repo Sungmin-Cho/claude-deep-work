@@ -238,6 +238,13 @@ test('release toolchain authenticated git carrier is admitted',()=>{
   assert.throws(()=>scanner.scanLaunchSites(
     'runtime/release-toolchain-runtime.js',Buffer.from(prevalidated)),
   /release-launch-dynamic/);
+  const commented=source.replace(
+    '  validateToolIdentity(identity);\n  return result;',
+    '  // validateToolIdentity(identity);\n  return result;'
+  );
+  assert.throws(()=>scanner.scanLaunchSites(
+    'runtime/release-toolchain-runtime.js',Buffer.from(commented)),
+  /release-launch-dynamic/);
 });
 
 test('review probes remain optional release tools',()=>{
