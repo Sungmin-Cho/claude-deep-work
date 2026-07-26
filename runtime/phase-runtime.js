@@ -191,8 +191,8 @@ function rerunPhase({state,stateCapability,phase,affectedSlices=[],seam}={}) {
 }
 
 function invalidateForReplan({state,stateCapability,reason,fromRisk,toRisk,affectedSliceIds=[],
-  riskProfileSha256,at,seam}={}) {
-  if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
+  riskProfileSha256,at,seam,operationId}={}) {
+  if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',operationId,
     preconditions:{action:'invalidate-for-replan',reason,fromRisk,toRisk,affectedSliceIds,riskProfileSha256,at},seam,
     reducer:(fields)=>invalidateForReplan({state:fields,reason,fromRisk,toRisk,affectedSliceIds,riskProfileSha256,at})});
   const risks=['low','medium','high','critical'];const reasons=new Set(['risk-class-increase','scope-expansion',

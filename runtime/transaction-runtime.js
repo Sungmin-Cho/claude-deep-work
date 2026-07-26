@@ -56,7 +56,7 @@ async function withRankedLocks(requests,callback){if(typeof callback!=='function
           await new Promise((resolve)=>setTimeout(resolve,2));}}
     });};
   return acquire(0);}
-async function journaledStateMutation({stateCapability,kind,preconditions={},slice,reducer,seam,
+async function journaledStateMutation({stateCapability,kind,operationId,preconditions={},slice,reducer,seam,
   prepareUnderLock,afterStateCommitUnderLock,retainCompletedJournal=false}={}){
   if(typeof reducer!=='function')fail('transaction-reducer');const sessionId=sessionIdFromState(stateCapability);
   if(typeof retainCompletedJournal!=='boolean')fail('transaction-retain-journal');
@@ -70,7 +70,7 @@ async function journaledStateMutation({stateCapability,kind,preconditions={},sli
   return withRankedLocks([{rank:RANKS.session,capability:sessionRankLock},
     {rank:RANKS.journal,capability:journalRankLock},
     {rank:RANKS.state,capability:stateLock(stateCapability)}],async()=>{
-    const operation=await beginOperation({projectCapability,sessionId,kind,preconditions,slice});
+    const operation=await beginOperation({projectCapability,sessionId,kind,operationId,preconditions,slice});
     invokeSeam(seam,'before-state-lock',{operationId:operation.operationId,kind});
     revalidatePathCapability(stateCapability,'transaction-state');let text=fs.readFileSync(stateCapability.path,'utf8');
     let pending=await resumeOperation({projectCapability,operationId:operation.operationId,sessionId,kind});let prepared=

@@ -2102,18 +2102,65 @@ function acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath})
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
   const raw=readJsonArtifact(writeReceiptPath,'bootstrap-write-receipt',{canonical:true});
   const receipt=raw.value;
+  const active=fields.current_phase==='implement'&&fields.active_slice===sliceId&&
+    fields.tdd_state==='PENDING';
+  const sideEffectReplan=fields.current_phase==='research'&&fields.subphase==='spec'&&
+    fields.replan_required===true&&fields.replan_reason==='external-side-effect'&&
+    fields.active_slice===sliceId&&fields.tdd_state==='PENDING';
   if(!OPERATION.test(receipt?.operationId||'')||
     path.resolve(writeReceiptPath)!==path.join(stateCapability.projectRoot,'.claude',
       `deep-work.${sessionIdForState(stateCapability)}.scoped-write.${receipt.operationId}.json`)||
     receipt.status!=='accepted'||receipt.sliceId!==sliceId||receipt.writeClass!=='failing-test'||
     !DIGEST.test(receipt.receiptSha256||'')||
     receipt.planSha256!==require('./plan-runtime.js').canonicalizePlanScopeV1(plan).sha256||
-    fields.current_phase!=='implement'||fields.active_slice!==sliceId||fields.tdd_state!=='PENDING'||
+    !active&&!sideEffectReplan||
     fields.accepted_write_operation_id!==receipt.operationId||
     fields.accepted_write_receipt_sha256!==receipt.receiptSha256||
     fields.accepted_write_class!=='failing-test')
     fail('bootstrap-first-red-write');
-  return {fields,receipt,raw,project:transaction.projectCapabilityFor(stateCapability)};
+  return {fields,receipt,raw,project:transaction.projectCapabilityFor(stateCapability),
+    sideEffectReplan};
+}
+function assertBootstrapSideEffectReplanState({stateCapability,sliceId,riskProfileSha256,at}){
+  const fields=require('./frontmatter.js').parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  let transition,invalidations;
+  try{
+    transition=JSON.parse(fields.risk_transition_json);
+    invalidations=JSON.parse(fields.receipt_invalidations_json);
+  }catch{fail('bootstrap-side-effect-replan');}
+  const matching=Array.isArray(invalidations)&&invalidations.some((row)=>
+    row?.slice_id===sliceId&&row.reason==='external-side-effect'&&
+    row.invalidated_by_risk_profile_sha256===riskProfileSha256&&row.at===at);
+  if(fields.current_phase!=='research'||fields.subphase!=='spec'||
+    fields.replan_required!==true||fields.replan_reason!=='external-side-effect'||
+    fields.risk_profile_sha256!==riskProfileSha256||
+    canonicalText(transition)!==canonicalText({
+      from:'high',to:'critical',reason:'external-side-effect',at})||!matching)
+    fail('bootstrap-side-effect-replan');
+  return fields;
+}
+async function ensureBootstrapSideEffectReplan({stateCapability,project,sessionId,sliceId,
+  verification,firstRedOperationId,at}){
+  const riskProfileSha256=semanticDigest('bootstrap-side-effect-replan-v1',{
+    verification_result_sha256:verification.result_sha256,
+    changed_paths:verification.changed_paths},null);
+  const operationId=deterministicOperationId('bootstrap-side-effect-replan-operation-v1',{
+    first_red_operation_id:firstRedOperationId,
+    verification_result_sha256:verification.result_sha256,
+    risk_profile_sha256:riskProfileSha256,slice_id:sliceId});
+  const prior=await completedOperation(project,operationId,sessionId,'phase-checkpoint');
+  if(prior?.stage==='completed-ledger'){
+    if(prior.result?.status!=='completed')fail('bootstrap-side-effect-replan');
+    assertBootstrapSideEffectReplanState({stateCapability,sliceId,riskProfileSha256,at});
+    return prior;
+  }
+  await require('./phase-runtime.js').invalidateForReplan({stateCapability,operationId,
+    reason:'external-side-effect',fromRisk:'high',toRisk:'critical',
+    affectedSliceIds:[sliceId],riskProfileSha256,at});
+  assertBootstrapSideEffectReplanState({stateCapability,sliceId,riskProfileSha256,at});
+  return journal.resumeOperation({projectCapability:project,operationId,sessionId,
+    kind:'phase-checkpoint'});
 }
 function authenticateImmutableBootstrapPlan(plan,failureCode='bootstrap-first-red-plan'){
   let compiled;
@@ -2233,14 +2280,16 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
   validateBootstrapCompletionAuthority({receipt:bound.receipt,marker:bound.marker,
     operationReceipt:completionReceipt});
   const write=acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath});
-  let verificationPlan;
-  try{verificationPlan=typeof write.fields.verification_plan_json==='string'?
-    JSON.parse(write.fields.verification_plan_json):write.fields.verification_plan_json;}
-  catch{fail('bootstrap-first-red-plan');}
-  if(!verificationPlan||verificationPlan.plan_sha256!==write.fields.verification_plan_sha256)
-    fail('bootstrap-first-red-plan');
-  authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,
-    specSha256:specRaw.sha256});
+  let verificationPlan=null;
+  if(!write.sideEffectReplan){
+    try{verificationPlan=typeof write.fields.verification_plan_json==='string'?
+      JSON.parse(write.fields.verification_plan_json):write.fields.verification_plan_json;}
+    catch{fail('bootstrap-first-red-plan');}
+    if(!verificationPlan||verificationPlan.plan_sha256!==write.fields.verification_plan_sha256)
+      fail('bootstrap-first-red-plan');
+    authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,
+      specSha256:specRaw.sha256});
+  }
   const writeLedger=await journal.resumeOperation({projectCapability:write.project,
     operationId:write.receipt.operationId,sessionId:bound.sessionId,
     kind:'delegation-scope-publish'});
@@ -2277,7 +2326,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
         expectedSignal:spec.red_failure.expected_signal});
     authenticateBootstrapVerificationContext({verification:existingVerification,bound,plan,
-      verificationPlan,spec,specRawSha256:specRaw.sha256,write,operationId,...executionContext});
+      verificationPlan:verificationPlan||{
+        plan_sha256:existingVerification.verification_plan_sha256},
+      spec,specRawSha256:specRaw.sha256,write,operationId,...executionContext});
     if(existingVerification.verification_operation_id!==operationId||
       existingVerification.result_sha256!==
         (existing.result?.result_sha256||existing.result?.verification_result_sha256))
@@ -2289,6 +2340,11 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       existing.result.observed_class!==existingVerification.classification.observed_class||
       existing.result.scope_disposition!==existingVerification.scope_disposition)
       fail('bootstrap-first-red-result');
+    if(existingVerification.classification.observed_class==='test-side-effect'){
+      await ensureBootstrapSideEffectReplan({stateCapability,project:write.project,
+        sessionId:bound.sessionId,sliceId,verification:existingVerification,
+        firstRedOperationId:operationId,at:existing.completedAt});
+    }else if(write.sideEffectReplan)fail('bootstrap-side-effect-replan');
     const aliases={
       verification_result_path:existing.result.result_path,
       verification_result_sha256:existing.result.result_sha256,
@@ -2297,6 +2353,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     return {...existing.result,...aliases,operation_id:operationId,
       operation_receipt:existing,adopted:true};
   }
+  if(write.sideEffectReplan)fail('bootstrap-side-effect-replan');
   const operation=await journal.beginOperation({projectCapability:write.project,
     sessionId:bound.sessionId,kind:'bootstrap-first-red',operationId,slice:sliceId,
     preconditions});
@@ -2410,13 +2467,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       scope_disposition:verification.scope_disposition};
     const ledger=await journal.completeOperation(operation,terminal);
     if(verification.classification.observed_class==='test-side-effect'){
-      await require('./phase-runtime.js').invalidateForReplan({stateCapability,
-        reason:'external-side-effect',fromRisk:'high',toRisk:'critical',
-        affectedSliceIds:[sliceId],
-        riskProfileSha256:semanticDigest('bootstrap-side-effect-replan-v1',{
-          verification_result_sha256:verification.result_sha256,
-          changed_paths:verification.changed_paths},null),
-        at:new Date().toISOString()});
+      await ensureBootstrapSideEffectReplan({stateCapability,project:write.project,
+        sessionId:bound.sessionId,sliceId,verification,
+        firstRedOperationId:operationId,at:ledger.completedAt});
     }
     return {...terminal,verification_result_path:resultRelative,
       verification_result_sha256:verification.result_sha256,
