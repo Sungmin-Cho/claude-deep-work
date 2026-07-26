@@ -60,7 +60,57 @@ function migrateProfileCoreUnlocked(profilePath,opts={}){if(!fs.existsSync(profi
   return{migrated:true,reason:'v2-to-v3',warnings:converted.warnings};}
 function migrateProfileCore(profilePath,opts={}){return withProfileOwner(profilePath,()=>migrateProfileCoreUnlocked(profilePath,opts));}
 function unquote(value){return value&&((value.startsWith('"')&&value.endsWith('"'))||(value.startsWith("'")&&value.endsWith("'")))?value.slice(1,-1):value;}
-function loadV3Profile(profilePath,opts={}){const text=fs.readFileSync(profilePath,'utf8');if(readVersion(text)!==3)return{error:'not-v3'};
+function parseV4Policy(lines,start,end){
+  const policyIndex=lines.slice(start,end).findIndex((line)=>
+    /^ {4}policy:\s*$/.test(line));
+  if(policyIndex<0)fail('profile-v4-policy','missing policy');
+  const policy={},allowed=new Set(['max_risk_without_confirmation',
+    'low_risk_profile','medium_risk_profile','high_risk_profile',
+    'critical_risk_profile','preferred_review_roles','context']);
+  let index=start+policyIndex+1;
+  while(index<end){
+    if(!lines[index].trim()||/^\s*#/.test(lines[index])){index++;continue;}
+    const scalar=lines[index].match(/^ {6}(\w+):\s*(\S+)\s*(#.*)?$/);
+    if(scalar){
+      if(!allowed.has(scalar[1])||Object.hasOwn(policy,scalar[1]))
+        fail('profile-v4-policy',scalar[1]);
+      policy[scalar[1]]=unquote(scalar[2]);index++;continue;
+    }
+    const block=lines[index].match(/^ {6}(preferred_review_roles|context):\s*$/);
+    if(!block||Object.hasOwn(policy,block[1]))
+      fail('profile-v4-policy','shape');
+    const value={};index++;
+    while(index<end){
+      const child=lines[index].match(/^ {8}(\w+):\s*(\S+)\s*(#.*)?$/);
+      if(!child)break;
+      if(Object.hasOwn(value,child[1]))fail('profile-v4-policy',child[1]);
+      value[child[1]]=unquote(child[2]);index++;
+    }
+    policy[block[1]]=value;
+  }
+  const exact=['max_risk_without_confirmation','low_risk_profile',
+    'medium_risk_profile','high_risk_profile','critical_risk_profile',
+    'preferred_review_roles','context'];
+  if(Object.keys(policy).sort().join('\0')!==exact.sort().join('\0')||
+      !['low','medium','high','critical'].includes(
+        policy.max_risk_without_confirmation)||
+      policy.low_risk_profile!=='lean'||
+      policy.medium_risk_profile!=='standard'||
+      policy.high_risk_profile!=='strict'||
+      policy.critical_risk_profile!=='critical'||
+      Object.keys(policy.preferred_review_roles).sort().join('\0')!==
+        ['executability','semantic'].join('\0')||
+      !['claude','codex','gemini','agy'].includes(
+        policy.preferred_review_roles.semantic)||
+      !['claude','codex','gemini','agy'].includes(
+        policy.preferred_review_roles.executability)||
+      Object.keys(policy.context).join('\0')!=='codex_same_goal'||
+      policy.context.codex_same_goal!=='native-compaction')
+    fail('profile-v4-policy','values');
+  return policy;
+}
+function loadV3Profile(profilePath,opts={}){const text=fs.readFileSync(profilePath,'utf8'),
+  version=readVersion(text);if(![3,4].includes(version))return{error:'not-v3-or-v4'};
   const requested=opts.initialPreset||(text.match(/^default_preset:\s*(\S+)\s*$/m)||[])[1];if(!requested)return{error:'no-default-preset'};
   if(!PRESET_RE.test(requested))return{error:'invalid-preset-name',requested_preset:requested};const lines=text.split('\n');
   const presetsIndex=lines.findIndex((line)=>/^presets:\s*$/.test(line));if(presetsIndex<0)return{error:'no-presets-block'};
@@ -76,8 +126,11 @@ function loadV3Profile(profilePath,opts={}){const text=fs.readFileSync(profilePa
     while(i<end){if(/^\s*#/.test(lines[i])||!lines[i].trim()){i+=1;continue;}const scalar=lines[i].match(/^ {6}(\w+):\s*(\S+)\s*(#.*)?$/);
       if(scalar){defaults[scalar[1]]=unquote(scalar[2]);i+=1;continue;}const block=lines[i].match(/^ {6}(\w+):\s*(#.*)?$/);
       if(block){const value={};i+=1;while(i<end){const child=lines[i].match(/^ {8}(\w+):\s*(\S+)\s*(#.*)?$/);if(!child)break;value[child[1]]=unquote(child[2]);i+=1;}defaults[block[1]]=value;continue;}break;}}
-  return{preset_name:requested,interactive_each_session:interactive,defaults,project_type:presetLevel.project_type||null,
-    cross_model_preference:presetLevel.cross_model_preference||null,auto_update:presetLevel.auto_update||null};}
+  const policy=version===4?parseV4Policy(lines,start,end):null;
+  return{preset_name:requested,interactive_each_session:interactive,defaults,
+    project_type:presetLevel.project_type||null,
+    cross_model_preference:presetLevel.cross_model_preference||null,
+    auto_update:presetLevel.auto_update||null,policy};}
 function inspect(file,allowMissing=false){try{const stat=fs.lstatSync(file);if(stat.isSymbolicLink()||!stat.isFile())fail('profile-unsafe');return stat;}
   catch(error){if(allowMissing&&error.code==='ENOENT')return null;throw error;}}
 function migrateProfile(profileCapability,initialPreset='solo-strict'){const file=typeof profileCapability==='string'?profileCapability:profileCapability.path;
@@ -85,10 +138,13 @@ function migrateProfile(profileCapability,initialPreset='solo-strict'){const fil
     createV3Profile(file,initialPreset);return{created:true};}return migrateProfileCoreUnlocked(file,{initialPreset});});}
 function presetNames(text){return[...text.matchAll(/^ {2}([a-z0-9][a-z0-9_-]{0,30}):\s*$/gim)].map((match)=>match[1]);}
 function loadProfile(profileCapability,initialPreset){const file=typeof profileCapability==='string'?profileCapability:profileCapability.path;inspect(file);
-  const text=fs.readFileSync(file,'utf8');const selected=loadV3Profile(file,{initialPreset});if(selected.error)fail('profile-load',selected.error);
-  return{version:3,default_preset:(text.match(/^default_preset:\s*(\S+)/m)||[])[1]||null,
+  const text=fs.readFileSync(file,'utf8'),version=readVersion(text);
+  const selected=loadV3Profile(file,{initialPreset});if(selected.error)fail('profile-load',selected.error);
+  return{version,compatibility_mode:version===4?'native-v4':'legacy-v3',
+    default_preset:(text.match(/^default_preset:\s*(\S+)/m)||[])[1]||null,
     presets:Object.fromEntries(presetNames(text).map((name)=>[name,loadV3Profile(file,{initialPreset:name})])),selected_preset:selected.preset_name,
-    defaults:selected.defaults,interactive_each_session:selected.interactive_each_session};}
+    defaults:selected.defaults,interactive_each_session:selected.interactive_each_session,
+    policy:selected.policy};}
 function scalar(value){if(typeof value==='boolean'||typeof value==='number')return String(value);if(typeof value!=='string'||/[\r\n]/.test(value))fail('profile-value');return JSON.stringify(value);}
 function updateProfile(profileCapability,{reason,selectedPreset,defaults}={}){if(!REASONS.has(reason))fail('profile-reason');
   if(!PRESET_RE.test(selectedPreset||'')||!defaults||typeof defaults!=='object'||Array.isArray(defaults))fail('profile-defaults');
