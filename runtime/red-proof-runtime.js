@@ -50,20 +50,24 @@ function lockedPlan(planCapability,plan){
       current.contract_binding?.mode!=='strict-spec')fail('red-plan-authority');
   return current;
 }
-function acceptedFailingWrite({stateCapability,plan,sliceId,fields}){
+async function acceptedFailingWrite({stateCapability,plan,sliceId,fields}){
   const op=fields.accepted_write_operation_id,digest=fields.accepted_write_receipt_sha256;
   if(!OPERATION.test(op||'')||!DIGEST.test(digest||'')||
       fields.accepted_write_class!=='failing-test')fail('red-write-required');
   const file=path.join(stateCapability.projectRoot,'.claude',
     `deep-work.${sessionId(stateCapability)}.scoped-write.${op}.json`);
   const receipt=readCanonicalJson(file,'red-write-receipt');
+  const scopedWrite=require('./slice-runtime.js');
+  try{scopedWrite.validateAcceptedScopedWriteReceipt(receipt,{
+    operationId:op,sliceId});}
+  catch{fail('red-write-receipt');}
   const planSha256=planRuntime.canonicalizePlanScopeV1(plan).sha256;
-  const recomputed=journal.sha256(canonical({operationId:op,
-    postManifestSha256:receipt.postManifest?.sha256,changedPaths:receipt.changedPaths,
-    planSha256:receipt.planSha256,sliceId,writeClass:receipt.writeClass}));
+  const recomputed=scopedWrite.scopedWriteReceiptDigest(receipt);
   if(receipt.status!=='accepted'||receipt.operationId!==op||receipt.sliceId!==sliceId||
       receipt.writeClass!=='failing-test'||receipt.planSha256!==planSha256||
       receipt.receiptSha256!==digest||recomputed!==digest)fail('red-write-receipt');
+  try{await scopedWrite.authenticateScopedWriteProducer({stateCapability,receipt});}
+  catch{fail('red-write-producer-ledger');}
   return receipt;
 }
 async function authenticateOrdinaryVerification({stateCapability,planCapability,plan,sliceId,

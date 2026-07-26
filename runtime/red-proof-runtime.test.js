@@ -195,6 +195,27 @@ test('ordinary RED transition and proof publication authorize the exact strict p
       planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
       operationId:begun.operationId,preManifestSha256:begun.preManifestSha256});
     assert.equal(accepted.status,'accepted');
+    const writeReceiptPath=path.join(f.root,'.claude',
+      `deep-work.s-aaaaaaaa.scoped-write.${begun.operationId}.json`);
+    const writeReceiptBytes=fs.readFileSync(writeReceiptPath);
+    const writeReceipt=JSON.parse(writeReceiptBytes);
+    writeReceipt.authority.authorized_paths=[];
+    fs.writeFileSync(writeReceiptPath,journal.canonicalJson(writeReceipt));
+    await assert.rejects(()=>runVerificationV2({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001'}),
+    /verification-v2-write/);
+    fs.writeFileSync(writeReceiptPath,writeReceiptBytes);
+    const writeLedgerPath=path.join(f.root,'.claude',
+      'deep-work.s-aaaaaaaa.completed-operations.json');
+    const writeLedgerBytes=fs.readFileSync(writeLedgerPath);
+    const writeLedger=JSON.parse(writeLedgerBytes);
+    writeLedger.receipts=writeLedger.receipts.filter((row)=>
+      row.operationId!==begun.operationId);
+    fs.writeFileSync(writeLedgerPath,journal.canonicalJson(writeLedger));
+    await assert.rejects(()=>runVerificationV2({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001'}),
+    /operation-not-found|verification-v2-write-ledger/);
+    fs.writeFileSync(writeLedgerPath,writeLedgerBytes);
     const verification=await runVerificationV2({stateCapability:f.stateCapability,
       planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001'});
     assert.equal(verification.disposition,'accepted');
@@ -512,6 +533,17 @@ test('strict scoped-write acceptance converts expanded scope into needs-replan a
     assert.equal(fields.replan_reason,'scope-expansion');
     assert.equal(fields.active_slice,null);
     assert.equal(fields.accepted_write_operation_id,null);
+    const needsPath=path.join(f.root,'.deep-work','s-aaaaaaaa','receipts',
+      `write-${begun.operationId}-needs-replan.json`);
+    const needsBytes=fs.readFileSync(needsPath);
+    const tamperedNeeds=JSON.parse(needsBytes);
+    tamperedNeeds.affected_paths=['runtime/forged.js'];
+    fs.writeFileSync(needsPath,journal.canonicalJson(tamperedNeeds));
+    await assert.rejects(()=>acceptScopedWrite({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
+      operationId:begun.operationId,preManifestSha256:begun.preManifestSha256}),
+    /accept-or-replan-receipt/);
+    fs.writeFileSync(needsPath,needsBytes);
     const replay=await acceptScopedWrite({stateCapability:f.stateCapability,
       planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
       operationId:begun.operationId,preManifestSha256:begun.preManifestSha256});

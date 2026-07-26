@@ -75,6 +75,10 @@ async function acceptedWrite({stateCapability,plan,sliceId,fields,expectedOutcom
     return decision;
   }
   const receipt=readCanonical(file,'verification-v2-write').value;
+  const scopedWrite=require('./slice-runtime.js');
+  try{scopedWrite.validateAcceptedScopedWriteReceipt(receipt,{
+    operationId:operationIdValue,sliceId});
+  }catch{fail('verification-v2-write');}
   const planSha256=planRuntime.canonicalizePlanScopeV1(plan).sha256;
   const slice=plan.slices.find((row)=>row.id===sliceId);
   const field={failing_test:'failing_test',production:'production',
@@ -91,15 +95,15 @@ async function acceptedWrite({stateCapability,plan,sliceId,fields,expectedOutcom
       authority.class_paths.filter((candidate)=>authority.assigned_union.includes(candidate)))&&
     authority.sha256===journal.sha256(canonical(Object.fromEntries(
       Object.entries(authority).filter(([key])=>key!=='sha256'))));
-  const receiptSha256=journal.sha256(canonical({operationId:operationIdValue,
-    postManifestSha256:receipt.postManifest?.sha256,changedPaths:receipt.changedPaths,
-    planSha256:receipt.planSha256,sliceId,writeClass:receipt.writeClass}));
+  const receiptSha256=scopedWrite.scopedWriteReceiptDigest(receipt);
   if(receipt.status!=='accepted'||receipt.operationId!==operationIdValue||
       receipt.sliceId!==sliceId||!expectedClasses.includes(receipt.writeClass)||
       !(receipt.planSha256===planSha256||historicalAuthorityValid)||
       receipt.receiptSha256!==receiptSha256||
       stateSelected&&fields.accepted_write_receipt_sha256!==receiptSha256)
     fail('verification-v2-write');
+  try{await scopedWrite.authenticateScopedWriteProducer({stateCapability,receipt});}
+  catch{fail('verification-v2-write-ledger');}
   return receipt;
 }
 function decimal(value){return String(typeof value==='bigint'?value:BigInt(value));}
