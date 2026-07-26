@@ -268,12 +268,242 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     if(first.type!=='string'||!/^[A-Za-z0-9._/-]+$/.test(first.value))
       fail('release-launch-dynamic',`${path}:${member?`${member}.`:''}${
         call.value}:${first.value||first.type}`);
-    required.add(first.value);
+    required.add(first.value==='/bin/sh'?'sh':first.value);
   }
   if(activeNode)platform.push(toolchain.buildActiveNodeExecutable({
     sourcePath:path,sourceSha256:toolchain.sha256(bytes)}));
   return{required_tools:[...required].sort(byteCompare),
     platform_executables:platform};
+}
+function resolveCommittedLiteral(sourcePath,literal,files,extension){
+  if(typeof literal!=='string'||!literal.endsWith(extension))return null;
+  const directory=path.posix.dirname(sourcePath),relative=path.posix.normalize(
+    path.posix.join(directory,literal)),root=path.posix.normalize(literal);
+  for(const candidate of [relative,root])
+    if(portable(candidate)&&files.has(candidate))return candidate;
+  const matches=[...files.keys()].filter((candidate)=>
+    candidate.endsWith(`/${path.posix.basename(literal)}`)||
+    candidate===path.posix.basename(literal)).sort(byteCompare);
+  if(matches.length>1)fail('release-source-ambiguous',
+    `${sourcePath}:${literal}`);
+  return matches[0]||null;
+}
+function nodeShellEntrypoints(sourcePath,bytes,files,requiredTools){
+  if(!requiredTools.some((name)=>['bash','sh'].includes(name)))return[];
+  const source=bytes.toString('utf8');let tokens;
+  try{tokens=jsTokens(source);}catch(error){
+    if(error.code==='release-source-js')
+      fail('release-source-js',`${sourcePath}:${error.message}`);throw error;}
+  const targets=new Set();
+  for(const token of tokens){
+    if(token.type!=='string'||!token.value.endsWith('.sh'))continue;
+    const selected=resolveCommittedLiteral(sourcePath,token.value,files,'.sh');
+    if(selected)targets.add(selected);
+  }
+  return[...targets].sort(byteCompare);
+}
+const SHELL_BUILTINS=new Set(['.','[','[[','break','builtin','caller','case',
+  'cd','command','continue','declare','do','done','echo','elif','else','esac',
+  'eval','exec','exit','export','false','fi','for','function','getopts','hash',
+  'if','in','let','local','mapfile','popd','printf','pushd','pwd','read',
+  'readonly','return','select','set','shift','shopt','source','test','then',
+  'time','times','trap','true','type','typeset','ulimit','umask','unalias',
+  'unset','until','wait','while']);
+function maskShellHeredocs(source){
+  const lines=source.split(/(?<=\n)/),result=[];let delimiter=null;
+  for(const line of lines){
+    const body=line.replace(/\r?\n$/,'');
+    if(delimiter!==null){
+      result.push(line.replace(/[^\r\n]/g,' '));
+      if(body===delimiter||body===`\t${delimiter}`)delimiter=null;
+      continue;
+    }
+    const match=line.match(/<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/);
+    result.push(line);
+    if(match)delimiter=match[1];
+  }
+  if(delimiter!==null)fail('release-source-shell-heredoc');
+  return result.join('');
+}
+function maskShellComments(source){
+  const chars=source.split('');let quote=null,escaped=false,comment=false;
+  for(let index=0;index<source.length;index++){
+    const char=source[index];
+    if(comment){
+      if(char==='\n')comment=false;
+      else if(char!=='\r')chars[index]=' ';
+      continue;
+    }
+    if(escaped){escaped=false;continue;}
+    if(char==='\\'&&quote!=="'"){escaped=true;continue;}
+    if(quote){if(char===quote)quote=null;continue;}
+    if(char==="'"||char==='"'){quote=char;continue;}
+    if(char==='#'&&(index===0||/[\s;|&({]/.test(source[index-1]))){
+      comment=true;chars[index]=' ';
+    }
+  }
+  return chars.join('');
+}
+function extractShellSubstitutions(source){
+  const chars=source.split(''),segments=[];let quote=null,escaped=false;
+  function closeParen(start){
+    let depth=1,innerQuote=null,innerEscaped=false;
+    for(let index=start;index<source.length;index++){
+      const char=source[index],next=source[index+1];
+      if(innerEscaped){innerEscaped=false;continue;}
+      if(innerQuote){
+        if(char==='\\'&&innerQuote==='"'){innerEscaped=true;continue;}
+        if(char===innerQuote)innerQuote=null;
+        continue;
+      }
+      if(char==="'"||char==='"'){innerQuote=char;continue;}
+      if(char==='$'&&next==='('){depth++;index++;continue;}
+      if(char==='('){depth++;continue;}
+      if(char===')'&&--depth===0)return index;
+    }
+    fail('release-source-shell-substitution');
+  }
+  for(let index=0;index<source.length;index++){
+    const char=source[index],next=source[index+1];
+    if(escaped){escaped=false;continue;}
+    if(char==='\\'&&quote!=="'"){escaped=true;continue;}
+    if(quote){
+      if(char===quote){quote=null;continue;}
+      if(quote==="'"||char!=='$'||next!=='(')continue;
+    }else if(char==="'"||char==='"'){quote=char;continue;}
+    if(char==='$'&&next==='('&&source[index+2]!=='('){
+      const end=closeParen(index+2);
+      segments.push(source.slice(index+2,end));
+      for(let cursor=index;cursor<=end;cursor++)
+        if(chars[cursor]!=='\n'&&chars[cursor]!=='\r')chars[cursor]=' ';
+      index=end;continue;
+    }
+    if(char==='`'&&quote!=="'"){
+      let end=index+1,backtickEscaped=false;
+      for(;end<source.length;end++){
+        if(backtickEscaped){backtickEscaped=false;continue;}
+        if(source[end]==='\\'){backtickEscaped=true;continue;}
+        if(source[end]==='`')break;
+      }
+      if(end>=source.length)fail('release-source-shell-substitution');
+      segments.push(source.slice(index+1,end));
+      for(let cursor=index;cursor<=end;cursor++)
+        if(chars[cursor]!=='\n'&&chars[cursor]!=='\r')chars[cursor]=' ';
+      index=end;
+    }
+  }
+  return{masked:chars.join(''),segments};
+}
+function shellCommandSegments(source){
+  const extracted=extractShellSubstitutions(maskShellComments(
+      maskShellHeredocs(source))),
+    working=extracted.masked,segments=extracted.segments;
+  function maskQuotes(value){
+    let result='',quote=null,escaped=false,comment=false;
+    for(let index=0;index<value.length;index++){
+      const char=value[index];
+      if(comment){
+        if(char==='\n'){comment=false;result+='\n';}else result+=' ';
+        continue;
+      }
+      if(escaped){result+=' ';escaped=false;continue;}
+      if(quote){
+        if(char==='\\'&&quote==='"'){result+=' ';escaped=true;continue;}
+        if(char===quote){quote=null;result+=' ';continue;}
+        result+=char==='\n'?'\n':' ';continue;
+      }
+      if(char==="'"||char==='"'){quote=char;result+=' ';continue;}
+      if(char==='#'){comment=true;result+=' ';continue;}
+      result+=char;
+    }
+    if(quote)fail('release-source-shell-quote');
+    return result;
+  }
+  function maskStructures(value){
+    const chars=value.split('');
+    for(const match of value.matchAll(
+      /\b[A-Za-z_][A-Za-z0-9_]*\s*=\s*\((?!\()/g)){
+      let depth=1,index=match.index+match[0].length;
+      for(;index<value.length&&depth>0;index++){
+        if(value[index]==='(')depth++;
+        else if(value[index]===')')depth--;
+      }
+      if(depth!==0)fail('release-source-shell-array');
+      for(let cursor=match.index;cursor<index;cursor++)
+        if(chars[cursor]!=='\n'&&chars[cursor]!=='\r')chars[cursor]=' ';
+    }
+    let caseDepth=0,offset=0;
+    for(const line of chars.join('').split(/(?<=\n)/)){
+      if(/^\s*case\b.*\bin\s*(?:\r?\n)?$/.test(line))caseDepth++;
+      else if(caseDepth>0&&/^\s*esac\b/.test(line))caseDepth--;
+      else if(caseDepth>0){
+        const label=line.match(/^\s*[^#\r\n]*?\)\s*/);
+        if(label)for(let cursor=offset;cursor<offset+label[0].length;cursor++)
+          if(chars[cursor]!=='\n'&&chars[cursor]!=='\r')chars[cursor]=' ';
+      }
+      offset+=line.length;
+    }
+    return chars.join('')
+      .replace(/\$\{[^}\n]*\}/g,(row)=>' '.repeat(row.length))
+      .replace(/\$\{[A-Za-z_][A-Za-z0-9_]*/g,(row)=>' '.repeat(row.length))
+      .replace(/\$[A-Za-z_][A-Za-z0-9_]*/g,(row)=>' '.repeat(row.length))
+      .replace(/\[\[[\s\S]*?\]\]/g,(row)=>row.replace(/[^\r\n]/g,' '))
+      .replace(/(^|[\s;|&({])\[(?=\s)[^\]\n]*\]/g,(row)=>
+        row.replace(/[^\r\n]/g,' '))
+      .replace(/\(\([^)\n]*\)\)/g,(row)=>row.replace(/[^\r\n]/g,' '));
+  }
+  return[maskStructures(maskQuotes(working)),...segments.flatMap((segment)=>
+    shellCommandSegments(segment))];
+}
+function shellDeclaredFunctions(source){
+  return[...new Set([...source.matchAll(
+    /(?:^|\n)\s*(?:(?:function\s+)([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\))?|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\))\s*\{/g)]
+    .map((match)=>match[1]||match[2]))].sort(byteCompare);
+}
+function shellCommandWords(source){
+  const functions=new Set(shellDeclaredFunctions(source)),required=new Set();
+  for(const segment of shellCommandSegments(source)){
+    for(let clause of segment.split(/(?:&&|\|\||[;|{}\n])/)){
+      clause=clause.trim();
+      for(;;){
+        const control=clause.match(
+          /^(?:!|if|then|elif|else|while|until|do)\b\s*/);
+        if(!control)break;clause=clause.slice(control[0].length).trim();
+      }
+      for(;;){
+        const assignment=clause.match(
+          /^[A-Za-z_][A-Za-z0-9_]*\+?=(?:[^\s]+)?\s*/);
+        if(!assignment)break;clause=clause.slice(assignment[0].length).trim();
+      }
+      const match=clause.match(/^([A-Za-z][A-Za-z0-9._-]*)\b/);
+      if(!match)continue;
+      const name=match[1];
+      if(!SHELL_BUILTINS.has(name)&&!functions.has(name))required.add(name);
+    }
+  }
+  return[...required].sort(byteCompare);
+}
+function scanShellEntrypoint(sourcePath,bytes,files){
+  const source=bytes.toString('utf8');
+  if(!Buffer.from(source).equals(bytes))fail('release-source-utf8');
+  if(!/^#!\/usr\/bin\/env bash\r?$/m.test(source)&&
+      !/^#!\/bin\/(?:ba)?sh\r?$/m.test(source))
+    fail('release-source-shell',sourcePath);
+  const required=new Set(),shellDependencies=new Set(),
+    nodeDependencies=new Set();
+  for(const name of shellCommandWords(source))required.add(name);
+  for(const match of source.matchAll(
+    /(?:source|\.|bash|sh|node)\s+["']?[^ \t\r\n"']*?([A-Za-z0-9_.-]+\.(?:sh|js))(?![A-Za-z0-9_.-])/g)){
+    const literal=match[1],extension=literal.endsWith('.sh')?'.sh':'.js',
+      selected=resolveCommittedLiteral(sourcePath,literal,files,extension);
+    if(!selected)continue;
+    if(extension==='.sh')shellDependencies.add(selected);
+    else nodeDependencies.add(selected);
+  }
+  return{required_tools:[...required].sort(byteCompare),
+    shell_dependencies:[...shellDependencies].sort(byteCompare),
+    node_dependencies:[...nodeDependencies].sort(byteCompare),
+    declared_functions:shellDeclaredFunctions(source)};
 }
 function relativeDependencies(sourcePath,bytes,files){
   const source=bytes.toString('utf8');let tokens;
@@ -315,7 +545,22 @@ function scanReleaseSources({committedFiles}={}){
         sha256:toolchain.sha256(document.bytes),outgoing:[]},
       ...scanned.rows.values(),
     ],required=new Set(['node','npm']),platform=[];
-  const nodeRows=new Map(),visiting=new Set();
+  const nodeRows=new Map(),shellRows=new Map(),visiting=new Set(),
+    shellRequired=new Set(),shellFunctions=new Set();
+  function visitShell(target){
+    if(shellRows.has(target))return;
+    if(visiting.has(target))return;
+    visiting.add(target);const bytes=files.get(target);
+    if(!bytes)fail('release-source-dependency');
+    const shell=scanShellEntrypoint(target,bytes,files);
+    for(const name of shell.required_tools)shellRequired.add(name);
+    for(const name of shell.declared_functions)shellFunctions.add(name);
+    for(const dependency of shell.shell_dependencies)visitShell(dependency);
+    for(const dependency of shell.node_dependencies)visitNode(dependency);
+    shellRows.set(target,{path:target,kind:'shell-entry',
+      sha256:toolchain.sha256(bytes),outgoing:[]});
+    visiting.delete(target);
+  }
   function visitNode(target){
     if(nodeRows.has(target))return;
     if(visiting.has(target))return;
@@ -324,6 +569,8 @@ function scanReleaseSources({committedFiles}={}){
     const dependencies=relativeDependencies(target,bytes,files);
     for(const dependency of dependencies)visitNode(dependency);
     const launch=scanLaunchSites(target,bytes);
+    for(const entrypoint of nodeShellEntrypoints(target,bytes,files,
+      launch.required_tools))visitShell(entrypoint);
     nodeRows.set(target,{path:target,kind:'node-entry',
       sha256:toolchain.sha256(bytes),outgoing:[]});
     for(const name of launch.required_tools)required.add(name);
@@ -332,7 +579,9 @@ function scanReleaseSources({committedFiles}={}){
   }
   for(const target of [...scanned.nodeTargets].sort(byteCompare))
     visitNode(target);
-  rows.push(...nodeRows.values());
+  for(const name of shellRequired)
+    if(!shellFunctions.has(name))required.add(name);
+  rows.push(...nodeRows.values(),...shellRows.values());
   platform.sort((a,b)=>byteCompare(toolchain.canonical(a),
     toolchain.canonical(b)));
   return{graph:toolchain.buildReleaseSourceGraph({rows:rows.sort(
@@ -380,4 +629,6 @@ function loadCommittedFiles({root,gitIdentity,
 function canonicalNames(values){return JSON.stringify(values);}
 
 module.exports={shellWords,globRegex,jsTokens,scanLaunchSites,
+  resolveCommittedLiteral,nodeShellEntrypoints,scanShellEntrypoint,
+  shellCommandSegments,shellCommandWords,shellDeclaredFunctions,
   relativeDependencies,scanReleaseSources,loadCommittedFiles};

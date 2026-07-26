@@ -50,6 +50,40 @@ test('recursive source scan follows exact test scripts, globs, and launch litera
     result.graph);
 });
 
+test('recursive source scan follows invoked shell entrypoints and utilities',()=>{
+  const files={
+    'package.json':JSON.stringify({scripts:{test:
+      'node --test runtime/a.test.js'}}),
+    'runtime/a.test.js':[
+      "'use strict';",
+      "const path=require('node:path');",
+      "const {spawnSync}=require('node:child_process');",
+      "const script=path.join(__dirname,'check.sh');",
+      "spawnSync('bash',[script]);",
+      '',
+    ].join('\n'),
+    'runtime/check.sh':[
+      '#!/usr/bin/env bash',
+      '# forged-command should remain comment data',
+      'ROOT="$(cd "$(dirname "$0")" && pwd)"',
+      'echo "quoted-command must remain string data"',
+      "cat <<'JSON'",
+      'heredoc-command is data',
+      'JSON',
+      'node "$ROOT/check.js"',
+      '',
+    ].join('\n'),
+    'runtime/check.js':"'use strict';\n",
+  };
+  const result=scanner.scanReleaseSources({committedFiles:files});
+  assert.deepEqual(result.required_tools,
+    ['bash','cat','dirname','node','npm']);
+  assert.equal(result.graph.rows.some((row)=>
+    row.path==='runtime/check.sh'&&row.kind==='shell-entry'),true);
+  assert.equal(result.graph.rows.some((row)=>
+    row.path==='runtime/check.js'&&row.kind==='node-entry'),true);
+});
+
 test('recursive scripts fail closed on cycles, missing targets, and dynamic roots',()=>{
   assert.throws(()=>scanner.scanReleaseSources({committedFiles:{
     'package.json':JSON.stringify({scripts:{test:'npm run test:all',
