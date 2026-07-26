@@ -10,6 +10,10 @@ function c(capabilityKind,readSet,writeSet,mutableFields,allowedPhases,lockDomai
 
 const ROUTE_CONTRACTS=new Map([
   ['session context',c('session-context-route-v1',['validated-session'],[],[],['standalone'],'none',[],'none','none',false,true)],
+  ['session authority validate',c('session-authority-validate-route-v1',
+    ['session-state','locked-plan','exact-spec-artifact','methodology-policy-state',
+      'verification-plan-state','committed-evidence-package'],[],[],
+    ['standalone'],'state',[50],'none','none',false,true)],
   ['git capability',c('git-capability-route-v1',[],[],[],['standalone'],'none',[],'none','none',false,true)],
   ['git changed',c('git-changed-route-v1',['validated-base','validated-paths-json'],[],[],['standalone'],'none',[5],'none','none',false,true)],
   ['temp create',c('temp-create-route-v1',['session-state','validated-session','validated-purpose'],['owned-temp','operation-ledger'],['owned-temp-reservation','completed-operation-ledger'],['standalone'],'owned-temp',[10,20,50,70],'journal-ledger','owned-temp',false,true)],

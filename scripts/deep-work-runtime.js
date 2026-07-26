@@ -22,6 +22,7 @@ function grammar(id,required=[],optional=[],enums={}){
 
 const rows=[
   grammar('session context',[],['session']),
+  grammar('session authority validate',['state']),
   grammar('git capability'),
   grammar('git changed',['base'],['paths-json']),
   grammar('temp create',['state','session','purpose'],[],{purpose:['artifact-input','review-prompt','verification-spec','phase-result','gate-results','receipt-payload','pr-title','pr-body','handoff-payload','reason','notes','selection']}),

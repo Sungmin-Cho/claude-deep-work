@@ -465,12 +465,14 @@ test('dispatcher grammar is single-source typed metadata', () => {
   assert.deepEqual(PHASE5_DISPATCHER_COMMANDS,
     DISPATCHER_GRAMMAR.filter((entry) => entry.phase5Allowed));
   assert.deepEqual(PHASE5_DISPATCHER_COMMANDS.map((entry) => entry.id),
-    ['session context','git capability','git changed','temp create','temp write','temp remove']);
+    ['session context','session authority validate','git capability','git changed',
+      'temp create','temp write','temp remove']);
 });
 
 test('all route lock ranks match the global repository to target hierarchy',()=>{
   const expected=new Map([
-    ['session context',[]],['git capability',[]],['git changed',[5]],
+    ['session context',[]],['session authority validate',[50]],['git capability',[]],
+    ['git changed',[5]],
     ['temp create',[10,20,50,70]],['temp write',[10,20,50,70]],['temp remove',[10,20,50,70]],
     ['session registry read',[]],['session registry own',[10,20,30,40,50]],
     ['session registry touch',[10,20,30,40,50]],['session registry phase',[10,20,30,40,50]],
@@ -878,8 +880,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 116 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 116);
+test('all 117 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 117);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];

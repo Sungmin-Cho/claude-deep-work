@@ -463,6 +463,26 @@ function awaitFindingProjection(input){
 function journalDigest(value){
   return require('./operation-journal.js').sha256(canonicalJson(value));
 }
+function validateSessionAuthority({stateCapability}={}){
+  const loaded=loadGovernedContext({stateCapability});
+  const fields=require('./frontmatter.js').parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const created=String(loaded.plan?.contract_binding?.created_by_version||
+    fields.created_by_version||'');
+  const major=Number((created.match(/^(\d+)\./)||[])[1]||0);
+  if(major<7)return{governed:false,status:'legacy',
+    projection_sha256:loaded.sha256};
+  const replanActive=loaded.projection.replan.status==='active'||
+    loaded.projection.replan.status==='completing';
+  if(loaded.projection.warnings.includes('authority-drift')||
+      !replanActive&&loaded.projection.plan_identity.status!=='current')
+    fail('session-authority-invalidated');
+  return{governed:true,status:replanActive?'replan-active':'current',
+    projection_sha256:loaded.sha256,
+    plan_authority_sha256:loaded.projection.plan_identity.plan_authority_sha256,
+    verification_plan_sha256:
+      loaded.projection.plan_identity.verification_plan_sha256};
+}
 
 module.exports={buildProgressProjectionV1,validateProgressProjectionV1,
-  selectGovernedAdmission,loadGovernedContext};
+  selectGovernedAdmission,loadGovernedContext,validateSessionAuthority};

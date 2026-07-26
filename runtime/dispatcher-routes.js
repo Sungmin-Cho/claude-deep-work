@@ -218,6 +218,11 @@ async function enforceDispatcherPhase({entry,f,cwd}={}){
 
 function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{if(handlers.has(id))fail('handler-duplicate',id);handlers.set(id,fn);};
   on('session context',({f,cwd})=>session.resolveSessionContext({cwd,sessionId:f.session}));
+  on('session authority validate',({f,cwd})=>{const state=stateCapability(f,cwd);
+    return transaction.withRankedLocks([{rank:transaction.RANKS.state,
+      capability:transaction.stateLock(state)}],()=>
+      require('./governed-context-runtime.js').validateSessionAuthority({
+        stateCapability:state}));});
   on('git capability',({f,cwd})=>{const project=projectCapability(f,cwd);return{kind:'git-capability',projectRoot:project.path,shell:false};});
   on('git changed',async({f,cwd})=>{const project=projectCapability(f,cwd);return transaction.withRankedLocks([
     routeLock(project,'repository',transaction.RANKS.repository)],async()=>{const cap=git.gitCapability(project);const args=['diff','--name-only',f.base,'--'];
