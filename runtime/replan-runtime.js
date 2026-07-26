@@ -330,16 +330,31 @@ function prepareReplanAuthority({stateCapability,plan,sliceId,reason,producerOpe
   observationKind,observation}={}){
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
   const risk=stateRiskClass(fields);
+  const scope=sliceId===null?'session':'slice';
   const observationDigest=semanticDigest(observationKind,observation);
-  const trigger={schema_version:1,reason,scope:'slice',slice_id:sliceId,
+  const trigger={schema_version:1,reason,scope,slice_id:sliceId,
     plan_authority_sha256:plan.plan_authority_sha256,
     risk_profile_sha256:plan.contract_binding.risk_profile_sha256,from_risk:risk,to_risk:risk,
     producer_operation_id:producerOperationId,observation_kind:observationKind,
     observation_digest:observationDigest,trigger_id:null};
   trigger.trigger_id=digestExcluding(trigger,'trigger_id');
-  const invalidation={schema_version:1,scope:'slice',slice_id:sliceId,receipt_sha256:null,
-    prior_plan_authority_sha256:plan.plan_authority_sha256,trigger_id:trigger.trigger_id,
-    invalidation_sha256:null};
+  let invalidation;
+  if(scope==='slice')invalidation={schema_version:1,scope:'slice',slice_id:sliceId,
+    receipt_sha256:null,prior_plan_authority_sha256:plan.plan_authority_sha256,
+    trigger_id:trigger.trigger_id,invalidation_sha256:null};
+  else{
+    let pointer=null;
+    if(fields.evidence_pointer_json!==undefined&&fields.evidence_pointer_json!==null&&
+        fields.evidence_pointer_json!=='')pointer=parseStoredObject(
+          fields.evidence_pointer_json,'replan-evidence-pointer');
+    invalidation=pointer?{schema_version:1,scope:'session-package',session_id:
+      sessionId(stateCapability),evidence_pointer_sha256:journal.sha256(canonical(pointer)),
+    prior_plan_authority_sha256:plan.plan_authority_sha256,
+    trigger_id:trigger.trigger_id,invalidation_sha256:null}:
+      {schema_version:1,scope:'session-plan',session_id:sessionId(stateCapability),
+        prior_plan_authority_sha256:plan.plan_authority_sha256,
+        trigger_id:trigger.trigger_id,invalidation_sha256:null};
+  }
   invalidation.invalidation_sha256=digestExcluding(invalidation,'invalidation_sha256');
   return{fields,observation,observationDigest,trigger,invalidation};
 }

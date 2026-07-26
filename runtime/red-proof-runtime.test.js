@@ -562,6 +562,25 @@ test('owned discovery crosses the public dispatcher into same-risk replan',async
     fs.readFileSync(f.statePath,'utf8')).fields.replan_reason,'invariant');
 });
 
+test('session-scoped discovery publishes a session-plan invalidation',async(t)=>{
+  const f=fixture(t),sourcePath='runtime/a.js';
+  const observation={schema_version:1,reason:'public-contract',scope:'session',
+    slice_id:null,requirement_id:'REQ-001',invariant_id:null,
+    failure_mode_id:null,source_path:sourcePath,
+    source_sha256:journal.sha256(fs.readFileSync(path.join(f.root,sourcePath))),
+    detail_code:'session-contract-expanded'};
+  const published=await publishOwnedDiscovery({stateCapability:f.stateCapability,
+    plan:f.plan,observation});
+  await dispatchOwnedDiscoveryReplan({stateCapability:f.stateCapability,
+    plan:f.plan,sliceId:null,producerOperationId:published.operation_id});
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(f.statePath,'utf8')).fields;
+  const invalidations=JSON.parse(fields.replan_invalidations_json);
+  assert.equal(invalidations.length,1);
+  assert.equal(invalidations[0].scope,'session-plan');
+  assert.equal(invalidations[0].session_id,'s-aaaaaaaa');
+});
+
 test('replan completion requires epoch-bound completed Spec and Plan approvals',
   async(t)=>{
     const f=fixture(t),sourcePath='runtime/a.js';
