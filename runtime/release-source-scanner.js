@@ -293,9 +293,14 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         call.value==='spawnSync'&&member==='childProcess'&&
         expression.startsWith('identity.target_path')){
       const carrier=enclosingNamedFunction(source,tokens,index,'gitRead');
-      if(carrier&&
-          /const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/.test(carrier)&&
-          /toolchain\.validateToolIdentity\(\s*identity\s*\)/.test(carrier)&&
+      const launchOffset=carrier?.indexOf(invocation)??-1,
+        identityMatch=carrier?.match(
+          /const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/),
+        postValidations=carrier?[...carrier.matchAll(
+          /toolchain\.validateToolIdentity\(\s*identity\s*\)/g)]:[];
+      if(carrier&&identityMatch?.index<launchOffset&&
+          postValidations.some((match)=>match.index>
+            launchOffset+invocation.length)&&
           /identity\.name\s*!==\s*['"]git['"]/.test(carrier)&&
           /^spawnSync\(\s*identity\.target_path\s*,\s*args\s*,\s*\{[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
@@ -306,9 +311,14 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         expression.startsWith('identity.target_path')){
       const carrier=enclosingNamedFunction(source,tokens,index,
         'runAuthenticatedGit');
-      if(carrier&&
-          /const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/.test(carrier)&&
-          /validateToolIdentity\(\s*identity\s*\)/.test(carrier)&&
+      const launchOffset=carrier?.indexOf(invocation)??-1,
+        identityMatch=carrier?.match(
+          /const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/),
+        postValidations=carrier?[...carrier.matchAll(
+          /validateToolIdentity\(\s*identity\s*\)/g)]:[];
+      if(carrier&&identityMatch?.index<launchOffset&&
+          postValidations.some((match)=>match.index>
+            launchOffset+invocation.length)&&
           /^spawnSync\(\s*identity\.target_path\s*,\s*\[\s*['"]-C['"]\s*,\s*fs\.realpathSync\(\s*root\s*\)\s*,\s*\.\.\.args\s*\]\s*,\s*\{[\s\S]*cwd\s*:\s*fs\.realpathSync\(\s*root\s*\)[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
