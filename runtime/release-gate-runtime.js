@@ -90,6 +90,33 @@ const CHECKER_INPUT_CATALOG=Object.freeze({
     'semantic-review-execution']),
   'human-ack-v1':Object.freeze(['human-ack']),
 });
+const INPUT_PRODUCER_KINDS=Object.freeze({
+  'spec-approval':Object.freeze(['phase-approval']),
+  'spec-contract':Object.freeze(['phase-approval']),
+  'spec-gate-result':Object.freeze(['phase-approval']),
+  'git-diff-manifest':Object.freeze(['evidence-capture']),
+  'plan-authority':Object.freeze(['phase-approval']),
+  'claude-manifest':Object.freeze(['evidence-capture']),
+  'codex-manifest':Object.freeze(['evidence-capture']),
+  'docs-rule':Object.freeze(['evidence-capture']),
+  'external-operation-index':Object.freeze(['evidence-capture']),
+  'git-snapshot':Object.freeze(['evidence-capture']),
+  'package-manifest':Object.freeze(['evidence-capture']),
+  'runtime-version':Object.freeze(['evidence-capture']),
+  'finding-ref':Object.freeze(['finding-publish']),
+  'review-execution':Object.freeze(['phase-review-record']),
+  'mutation-round-result':Object.freeze(['mutation-round']),
+  'rollback-rehearsal':Object.freeze(['evidence-adapter-run']),
+  'health-report':Object.freeze(['evidence-capture']),
+  'evidence-package':Object.freeze(['evidence-capture','evidence-publish']),
+  'verification-plan':Object.freeze(['phase-approval']),
+  'redaction-policy':Object.freeze(['evidence-capture']),
+  'executability-finding-ref':Object.freeze(['finding-publish']),
+  'executability-review-execution':Object.freeze(['phase-review-record']),
+  'semantic-finding-ref':Object.freeze(['finding-publish']),
+  'semantic-review-execution':Object.freeze(['phase-review-record']),
+  'human-ack':Object.freeze(['evidence-capture']),
+});
 
 function validateCoverage(row){
   if(!exactKeys(row,['total','covered','uncovered_ids','ratio'])||
@@ -419,7 +446,9 @@ async function authenticateInputRefs({stateCapability,checkerId,inputRefs}){
     if(raw.sha256!==ref.sha256)fail('gate-input-ref');
     const producer=await journal.resumeOperation({projectCapability:project,
       operationId:ref.producer_operation_id,sessionId});
-    if(producer.stage!=='completed-ledger')fail('gate-input-producer');
+    if(producer.stage!=='completed-ledger'||
+        !INPUT_PRODUCER_KINDS[ref.kind]?.includes(producer.kind))
+      fail('gate-input-producer');
     rows.push({ref,raw,producer});
   }
   return rows;
@@ -444,6 +473,77 @@ function deriveFacts(checkerId,rows){
         'gate-fact-compute'),
       failure_matrix_coverage:coverageFrom(gate?.failure_matrix_coverage,
         'gate-fact-compute'),pass:gate?.pass===true};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='release-integrity-v1'){
+    const claude=byKind.get('claude-manifest'),codex=byKind.get('codex-manifest'),
+      pkg=byKind.get('package-manifest'),runtime=byKind.get('runtime-version'),
+      git=byKind.get('git-snapshot'),external=byKind.get('external-operation-index'),
+      docs=rows.find((row)=>row.ref.kind==='docs-rule');
+    const facts={manifest_versions:{claude:claude?.version,codex:codex?.version},
+      package_version:pkg?.version,runtime_version:runtime?.version,
+      docs_rule_sha256:docs?.raw.sha256,
+      v7_surface_violations:runtime?.v7_surface_violations||[],
+      git_state:git,external_effect_operation_ids:external?.operation_ids||[]};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='single-review-v1'){
+    const ref=byKind.get('finding-ref'),execution=byKind.get('review-execution');
+    const facts={point:ref?.finding_ref?.point||ref?.point,
+      finding_ref_sha256:ref?.finding_ref_sha256,
+      review_execution_sha256:execution?.review_execution_sha256,
+      blocking_ids:execution?.blocking_ids||[]};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='mutation-critical-path-v1'){
+    const facts={round_result_refs:rows.map((row)=>row.ref),
+      survived_count:rows.reduce((sum,row)=>sum+(row.raw.value.survived_count||0),0)};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='rollback-rehearsal-v1'){
+    const row=rows[0],facts={rehearsal_result_ref:row.ref,
+      passed:row.raw.value.passed===true};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='governed-health-v1'){
+    const value=byKind.get('health-report'),facts={
+      health_report_sha256:value.health_report_sha256,
+      required_missing:value.required_missing||[],failed:value.failed||[]};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='governed-evidence-v1'){
+    const pkg=byKind.get('evidence-package'),verification=
+      byKind.get('verification-plan');
+    const facts={package_sha256:pkg.package_sha256,
+      required_ids:verification.required_gate_ids,
+      completed_ids:pkg.completed_ids||[],missing_ids:pkg.missing_ids||[],
+      invalidated_ids:pkg.invalidated_ids||[]};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='evidence-redaction-v1'){
+    const pkg=byKind.get('evidence-package'),policy=byKind.get('redaction-policy');
+    const violations=policy.violation_ids||[];
+    const facts={package_sha256:pkg.package_sha256,
+      passed:policy.passed===true,violation_ids:violations};
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='dual-final-review-v1'){
+    const semantic=byKind.get('semantic-finding-ref'),
+      executable=byKind.get('executability-finding-ref'),
+      semanticRun=byKind.get('semantic-review-execution'),
+      executableRun=byKind.get('executability-review-execution');
+    const facts={semantic_finding_ref_sha256:semantic.finding_ref_sha256,
+      executability_finding_ref_sha256:executable.finding_ref_sha256,
+      blocking_ids:[...(semanticRun.blocking_ids||[]),
+        ...(executableRun.blocking_ids||[])].sort((a,b)=>
+        Buffer.compare(Buffer.from(a),Buffer.from(b)))};
+    if(new Set(facts.blocking_ids).size!==facts.blocking_ids.length)
+      fail('gate-fact-compute');
+    validateFacts(checkerId,facts);return facts;
+  }
+  if(checkerId==='human-ack-v1'){
+    const value=byKind.get('human-ack'),facts={point:value.point,
+      actor:value.actor,at:value.at,ack_sha256:value.ack_sha256};
     validateFacts(checkerId,facts);return facts;
   }
   fail('gate-fact-compute');
