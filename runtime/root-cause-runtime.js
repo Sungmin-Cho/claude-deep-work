@@ -1,7 +1,12 @@
 'use strict';
 
 const crypto=require('node:crypto');
+const fs=require('node:fs');
+const path=require('node:path');
 const journal=require('./operation-journal.js');
+const frontmatter=require('./frontmatter.js');
+const platform=require('./platform.js');
+const transaction=require('./transaction-runtime.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
 const OPERATION=/^op-[0-9a-f]{64}$/;
@@ -262,8 +267,166 @@ function validateRepeatedRootCauseObservation(value){
     fail('repeated-root-cause-observation');
   return structuredClone(value);
 }
+function writeExclusive(file,value,code){
+  const bytes=Buffer.from(canonical(value));fs.mkdirSync(path.dirname(file),
+    {recursive:true});let fd;
+  try{fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_EXCL|
+    fs.constants.O_WRONLY,0o600);fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}
+  catch(error){if(error.code!=='EEXIST'||!fs.readFileSync(file).equals(bytes))
+    fail(code);}
+  finally{if(fd!==undefined)fs.closeSync(fd);}
+  if(!fs.readFileSync(file).equals(bytes))fail(code);
+  return journal.sha256(bytes);
+}
+function parseStoredLedger(fields,{sessionId,planAuthoritySha256,replanEpoch}){
+  if(fields.root_cause_ledger_json===undefined||
+      fields.root_cause_ledger_json===null||
+      fields.root_cause_ledger_json==='')
+    return emptyRootCauseLedger({sessionId,planAuthoritySha256,replanEpoch});
+  let value;try{value=JSON.parse(fields.root_cause_ledger_json);}
+  catch{fail('root-cause-ledger-state');}
+  const ledger=validateRootCauseLedger(value);
+  if(ledger.session_id!==sessionId||
+      ledger.plan_authority_sha256!==planAuthoritySha256||
+      ledger.replan_epoch!==replanEpoch||
+      fields.root_cause_ledger_sha256!==ledger.ledger_sha256)
+    fail('root-cause-ledger-state');
+  return ledger;
+}
+async function authenticateDebugRoot({stateCapability,plan,sourceOperationId}){
+  const sessionId=transaction.sessionIdFromState(stateCapability),
+    project=transaction.projectCapabilityFor(stateCapability),
+    receipt=await journal.resumeOperation({projectCapability:project,
+      operationId:sourceOperationId,sessionId,kind:'debug-complete'});
+  const result=receipt.result;
+  if(receipt.stage!=='completed-ledger'||!exactKeys(result,
+      ['status','sliceId','notePath','noteSha256','receiptSha256',
+        'stateSha256'])||result.status!=='completed'||
+      !/^SLICE-\d{3}$/.test(result.sliceId||'')||
+      !DIGEST.test(result.noteSha256||'')||
+      ![result.receiptSha256,result.stateSha256].every((row)=>DIGEST.test(row)))
+    fail('root-cause-debug-source');
+  const workDir=path.join(stateCapability.projectRoot,'.deep-work',sessionId),
+    expectedParent=path.join(workDir,'debug-log'),physical=fs.realpathSync(
+      result.notePath);
+  if(path.dirname(physical)!==expectedParent||
+      !/^RC-\d{3}\.md$/.test(path.basename(physical)))fail('root-cause-debug-source');
+  const stat=fs.lstatSync(physical),bytes=fs.readFileSync(physical);
+  if(!stat.isFile()||stat.isSymbolicLink()||
+      journal.sha256(bytes)!==result.noteSha256)fail('root-cause-debug-source');
+  const contractTraceSha256=semanticDigest('root-cause-contract-trace-v1',{
+    plan_authority_sha256:plan.plan_authority_sha256,
+    replan_epoch:plan.replan_epoch,slice_id:result.sliceId});
+  return{observation:validateRootCauseObservation({schema_version:1,
+    source_kind:'debug-root',source_operation_id:sourceOperationId,
+    slice_id:result.sliceId,failure_class:'debug-root',
+    normalized_signal_sha256:semanticDigest('debug-root-signal-v1',{
+      note_sha256:result.noteSha256}),
+    contract_trace_sha256:contractTraceSha256,
+    root_cause_sha256:result.noteSha256}),
+  sourceResultSha256:receipt.resultSha256,sourceReceipt:receipt};
+}
+async function authenticateRootCauseSource({stateCapability,plan,sourceKind,
+  sourceOperationId}={}){
+  if(sourceKind==='debug-root')return authenticateDebugRoot({stateCapability,
+    plan,sourceOperationId});
+  fail('root-cause-source-kind');
+}
+async function recordRootCause({stateCapability,plan,sourceKind,
+  sourceOperationId,seam,_locksHeld=false}={}){
+  const sessionId=transaction.sessionIdFromState(stateCapability);
+  if(!_locksHeld){
+    const root=stateCapability.projectRoot,lock=(name,role)=>
+      platform.issueProjectStateCapability(root,path.join(root,'.claude',name),
+        {allowMissingLeaf:true,role});
+    return transaction.withRankedLocks([
+      {rank:transaction.RANKS.session,capability:lock(
+        `deep-work.${sessionId}.rank-operation.lock`,'lock')},
+      {rank:transaction.RANKS.journal,capability:lock(
+        `deep-work.${sessionId}.rank-journal.lock`,'lock')},
+      {rank:transaction.RANKS.state,
+        capability:transaction.stateLock(stateCapability)},
+      {rank:transaction.RANKS.target,capability:lock(
+        `deep-work.target.${journal.sha256('root-causes')}.lock`,'lock')}],
+    ()=>recordRootCause({stateCapability,plan,sourceKind,sourceOperationId,
+      seam,_locksHeld:true}));
+  }
+  if(!DIGEST.test(plan?.plan_authority_sha256||'')||
+      !DIGEST.test(plan?.replan_epoch||''))fail('root-cause-plan');
+  const source=await authenticateRootCauseSource({stateCapability,plan,
+    sourceKind,sourceOperationId}),fields=frontmatter.parseFrontmatter(
+      fs.readFileSync(stateCapability.path,'utf8')).fields,
+    ledger=parseStoredLedger(fields,{sessionId,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      replanEpoch:plan.replan_epoch}),
+    inserted=insertRootCause({ledger,observation:source.observation,
+      sourceResultSha256:source.sourceResultSha256});
+  const preconditions={session_id:sessionId,
+    plan_authority_sha256:plan.plan_authority_sha256,
+    replan_epoch:plan.replan_epoch,source_kind:sourceKind,
+    source_operation_id:sourceOperationId,
+    source_result_sha256:source.sourceResultSha256,
+    root_cause_sha256:source.observation.root_cause_sha256};
+  const operationId=`op-${semanticDigest('root-cause-record-v1',
+    preconditions)}`,project=transaction.projectCapabilityFor(stateCapability);
+  const existing=await journal.resumeOperation({projectCapability:project,
+    operationId,sessionId,kind:'root-cause-record'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger'){
+    const current=parseStoredLedger(frontmatter.parseFrontmatter(
+      fs.readFileSync(stateCapability.path,'utf8')).fields,{sessionId,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      replanEpoch:plan.replan_epoch});
+    if(!current.entries.some((row)=>row.observation_id===
+        existing.result.observation_id&&row.source_operation_id===
+        sourceOperationId))fail('root-cause-record-replay');
+    return{...existing.result,operation_id:operationId,
+      operation_receipt:existing,adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId,kind:'root-cause-record',operationId,
+    slice:source.observation.slice_id,preconditions});
+  await journal.recordOperationStage(operation,'source-authenticated',{owned:{
+    sourceLedgerResultSha256:source.sourceReceipt.resultSha256,
+    sourceResultSha256:source.sourceResultSha256}});
+  const base=`.deep-work/${sessionId}/root-causes`,
+    observationPath=`${base}/${inserted.entry.observation_id}.json`;
+  writeExclusive(path.join(stateCapability.projectRoot,
+    ...observationPath.split('/')),source.observation,
+  'root-cause-observation-publish');
+  if(inserted.qualification)writeExclusive(path.join(
+    stateCapability.projectRoot,
+    ...inserted.pending_derivation.qualification_path.split('/')),
+  inserted.qualification,'root-cause-qualification-publish');
+  await journal.recordOperationStage(operation,'observation-published',{owned:{
+    observationPath,observationId:inserted.entry.observation_id,
+    qualificationLedgerSha256:
+      inserted.qualification?.qualification_ledger_sha256||null}});
+  const ledgerPath=`${base}/ledger-${inserted.ledger.ledger_sha256}.json`;
+  writeExclusive(path.join(stateCapability.projectRoot,
+    ...ledgerPath.split('/')),inserted.ledger,'root-cause-ledger-publish');
+  const before=fs.readFileSync(stateCapability.path,'utf8'),after=
+    frontmatter.updateFrontmatterText(before,{root_cause_ledger_json:
+      canonical(inserted.ledger).trimEnd(),
+      root_cause_ledger_sha256:inserted.ledger.ledger_sha256,
+      root_cause_ledger_ref:ledgerPath});
+  seam?.('before-root-cause-ledger-state-write',{operationId});
+  platform.atomicWriteFile(stateCapability,after);
+  await journal.recordOperationStage(operation,'ledger-committed',{owned:{
+    ledgerPath,ledgerSha256:inserted.ledger.ledger_sha256,
+    postStateSha256:journal.sha256(Buffer.from(after))}});
+  const result={observation_id:inserted.entry.observation_id,
+    record_sequence:inserted.entry.record_sequence,
+    ledger_sha256:inserted.ledger.ledger_sha256,
+    pending_repeated_operation_id:
+      inserted.pending_derivation?.operation_id||null};
+  const receipt=await journal.completeOperation(operation,result);
+  return{...result,operation_id:operationId,operation_receipt:receipt,
+    adopted:false};
+}
 
 module.exports={semanticDigest,validateRootCauseObservation,
   validateRootCauseLedger,emptyRootCauseLedger,insertRootCause,
   validateRepeatedRootCauseObservation,entryObservationId,
-  qualificationDigest,validateQualification,repeatedOperationId};
+  qualificationDigest,validateQualification,repeatedOperationId,
+  recordRootCause,authenticateRootCauseSource};

@@ -12,6 +12,7 @@ const findingRef=require('./finding-ref-runtime.js');
 const functionalReceipt=require('./functional-receipt-runtime.js');
 const refactorDecision=require('./refactor-decision-runtime.js');
 const replan=require('./replan-runtime.js');
+const rootCause=require('./root-cause-runtime.js');
 const releaseGate=require('./release-gate-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
@@ -379,6 +380,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     return replan.dispatchRiskIncreaseReplan({stateCapability:bound.state,
       plan:bound.value,sliceId:f.scope==='slice'?f.slice:null,
       producerOperationId:f['producer-operation-id']});});
+  on('replan root-cause record',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return rootCause.recordRootCause({stateCapability:bound.state,
+      plan:bound.value,sourceKind:f['source-kind'],
+      sourceOperationId:f['source-operation-id']});});
   on('replan complete',({f,cwd})=>{const bound=readPlan(f,cwd);
     return replan.completeReplan({stateCapability:bound.state,plan:bound.value});});
   on('release gate fact-publish',({f,cwd})=>{const bound=readPlan(f,cwd);

@@ -2,7 +2,14 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
 const rootCause=require('./root-cause-runtime.js');
+const journal=require('./operation-journal.js');
+const platform=require('./platform.js');
+const transaction=require('./transaction-runtime.js');
+const frontmatter=require('./frontmatter.js');
 
 function observation({operation='1',slice='SLICE-001',root='a'}={}){
   return{schema_version:1,source_kind:'verification-result',
@@ -72,3 +79,59 @@ test('qualification is isolated by slice and retained beyond the 32-entry cap',(
   for(const id of qualified.pending_derivation.qualifying_observation_ids)
     assert.equal(current.entries.some((row)=>row.observation_id===id),true);
 });
+
+test('debug-root producers publish an authenticated ledger and one pending derivation',
+  async(t)=>{
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),
+      'dw-root-cause-record-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+    const sessionId='s-aaaaaaaa',work=path.join(root,'.deep-work',sessionId),
+      debugDir=path.join(work,'debug-log');
+    fs.mkdirSync(debugDir,{recursive:true});
+    const statePath=path.join(root,'.claude',`deep-work.${sessionId}.md`);
+    fs.writeFileSync(statePath,frontmatter.updateFrontmatterText('',{
+      session_id:sessionId,work_dir:`.deep-work/${sessionId}`,
+      current_phase:'implement'}));
+    const stateCapability=platform.issueProjectStateCapability(root,statePath,
+      {role:'session-state'}),project=
+      transaction.projectCapabilityFor(stateCapability),
+      plan={plan_authority_sha256:'d'.repeat(64),
+        replan_epoch:'e'.repeat(64)};
+    async function debugProducer(index,bytes){
+      const operationId=`op-${String(index).repeat(64)}`,
+        notePath=path.join(debugDir,`RC-${String(index).padStart(3,'0')}.md`);
+      fs.writeFileSync(notePath,bytes);
+      const operation=await journal.beginOperation({projectCapability:project,
+        sessionId,kind:'debug-complete',operationId,
+        preconditions:{index}});
+      for(const stage of ['stores-prepared','note-written','receipt-written',
+        'state-written'])await journal.recordOperationStage(operation,stage,{
+        owned:{index}});
+      await journal.completeOperation(operation,{status:'completed',
+        sliceId:'SLICE-001',notePath,
+        noteSha256:journal.sha256(bytes),receiptSha256:
+          String(index+2).repeat(64),stateSha256:String(index+3).repeat(64)});
+      return operationId;
+    }
+    const firstOperation=await debugProducer(1,Buffer.from('root one\n'));
+    const first=await rootCause.recordRootCause({stateCapability,plan,
+      sourceKind:'debug-root',sourceOperationId:firstOperation});
+    assert.equal(first.record_sequence,1);
+    assert.equal(first.pending_repeated_operation_id,null);
+    const secondOperation=await debugProducer(2,Buffer.from('root two\n'));
+    const second=await rootCause.recordRootCause({stateCapability,plan,
+      sourceKind:'debug-root',sourceOperationId:secondOperation});
+    assert.equal(second.record_sequence,2);
+    assert.match(second.pending_repeated_operation_id,/^op-[0-9a-f]{64}$/);
+    const fields=frontmatter.parseFrontmatter(
+      fs.readFileSync(statePath,'utf8')).fields,
+      stored=rootCause.validateRootCauseLedger(JSON.parse(
+        fields.root_cause_ledger_json));
+    assert.equal(stored.repeated_derivations[0].status,'pending');
+    assert.equal(fs.existsSync(path.join(root,
+      ...stored.repeated_derivations[0].qualification_path.split('/'))),true);
+    const replay=await rootCause.recordRootCause({stateCapability,plan,
+      sourceKind:'debug-root',sourceOperationId:firstOperation});
+    assert.equal(replay.adopted,true);
+  });
