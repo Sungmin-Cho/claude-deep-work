@@ -7,6 +7,22 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [6.14.0] — 2026-07-27 (Correct RED와 Governed Completion)
+
+### Added
+
+- **인증된 correct RED**: strict functional slice가 제한된 test observation을 분류하고 불변 RED proof를 게시하며, 완료된 proof chain이 있어야 production write를 허용합니다.
+- **Governed functional completion**: 결정론적 slice receipt가 production GREEN, performed-refactor 또는 no-refactor evidence, fresh sensor result와 완료된 producer ledger를 결속합니다.
+
+### Changed
+
+- **자동 stop-and-replan**: verification side effect, write scope 확장, manifest divergence가 stale authority를 무효화하고 하나의 crash-safe replan epoch로 재개합니다.
+- **정본 progress visibility**: status, report, test admission, finish admission이 동일한 governed evidence, risk, finding, receipt, replan projection을 사용합니다.
+
+### Fixed
+
+- **Bootstrap 첫 slice 안전성**: 일회성 first RED bridge가 별도 adoption과 canonical proof publication을 요구하며, 생성된 proof는 이후 GREEN 및 sensor transition 뒤에도 검증됩니다.
+
 ## [6.13.0] — 2026-07-22 (Spec Contract & Evidence Policy)
 
 ### Added

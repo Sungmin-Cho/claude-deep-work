@@ -14,12 +14,12 @@ deep-work는 복잡한 작업에서 AI 코딩이 흔히 빠지는 실패 모드�
 
 deep-work는 [claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suite)의 **핵심 하네스 엔진**으로, [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) 프레임워크(Böckeler/Fowler, 2026)를 구현합니다. Guide/Sensor × Computational/Inferential 매트릭스에서:
 
-- **Computational Guides** — Phase Guard hook(편집 물리적 차단), Worktree Guard(P0, worktree 외부 쓰기 hard-block), TDD RED→GREEN 상태 머신, 토폴로지 템플릿.
+- **Computational Guides** — Phase Guard hook(편집 물리적 차단), Worktree Guard(P0, worktree 외부 쓰기 hard-block), 자동 stop-and-replan이 포함된 인증된 correct-RED → GREEN → REFACTOR 권위, 토폴로지 템플릿.
 - **Computational Sensors** — linter/typecheck/coverage/mutation 파이프라인, 드리프트 센서, fitness 규칙, review-check 센서, Phase Transition Injector(P1).
 - **Inferential Guides** — research / plan / brainstorm 문서, Sprint Contract.
 - **Self-Correction Loop** — SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN, 센서별 3-round 제한.
 
-[deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와 [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard)가 소비하는 receipt과 health report를 생성합니다.
+[deep-review](https://github.com/Sungmin-Cho/claude-deep-review)와 [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard)가 소비하는 producer-authenticated functional receipt, governed progress projection, health report를 생성합니다.
 
 ## 설치
 

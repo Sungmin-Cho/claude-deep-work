@@ -7,6 +7,22 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.14.0] — 2026-07-27 (Correct RED and Governed Completion)
+
+### Added
+
+- **Authenticated correct RED**: strict functional slices classify bounded test observations, publish immutable RED proof, and require the completed proof chain before production writes.
+- **Governed functional completion**: deterministic slice receipts bind production GREEN, performed-refactor or no-refactor evidence, fresh sensor results, and their completed producer ledgers.
+
+### Changed
+
+- **Automatic stop-and-replan**: verification side effects, widened write scope, and manifest divergence invalidate stale authority and resume through one crash-safe replan epoch.
+- **Canonical progress visibility**: status, reports, test admission, and finish admission consume the same governed evidence, risk, finding, receipt, and replan projection.
+
+### Fixed
+
+- **Bootstrap first-slice safety**: the one-time first RED bridge now requires separate adoption and canonical proof publication, and the resulting proof remains verifiable after later GREEN and sensor transitions.
+
 ## [6.13.0] — 2026-07-22 (Spec Contract & Evidence Policy)
 
 ### Added
