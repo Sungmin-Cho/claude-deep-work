@@ -24,7 +24,8 @@ const {transitionOrdinaryRed,publishOrdinaryRedProof,semanticDigest}=
 const {runVerificationV2,buildSupervisorControl}=require('./verification-v2-runtime.js');
 const {loadGovernedContext}=require('./governed-context-runtime.js');
 const {publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,
-  publishRiskObservation,dispatchRiskIncreaseReplan}=
+  publishRiskObservation,dispatchRiskIncreaseReplan,
+  prepareManifestReplanAuthority,recordPreparedReplan}=
   require('./replan-runtime.js');
 const {dispatch}=require('../scripts/deep-work-runtime.js');
 
@@ -603,6 +604,24 @@ test('authenticated risk observation crosses the public dispatcher with a strict
       stateCapability:f.stateCapability,plan:f.plan,sliceId:null,
       producerOperationId:published.operation_id}),/replan-active-conflict/);
   });
+
+test('stale prepared replan cannot overwrite an active trigger',async(t)=>{
+  const f=fixture(t),make=(digit,affectedPath)=>
+    prepareManifestReplanAuthority({stateCapability:f.stateCapability,
+      plan:f.plan,sliceId:'SLICE-001',
+      parentWriteOperationId:`op-${digit.repeat(64)}`,
+      observationKind:'scope-expansion',
+      preManifestSha256:'a'.repeat(64),
+      candidatePostManifestSha256:digit.repeat(64),
+      observedPostManifestSha256:null,affectedPaths:[affectedPath]});
+  const first=make('b','runtime/a.js');
+  const stale=make('c','runtime/a.test.js');
+  await recordPreparedReplan({stateCapability:f.stateCapability,plan:f.plan,
+    sliceId:'SLICE-001',prepared:first});
+  await assert.rejects(()=>recordPreparedReplan({
+    stateCapability:f.stateCapability,plan:f.plan,sliceId:'SLICE-001',
+    prepared:stale}),/replan-active-conflict/);
+});
 
 test('session-scoped discovery publishes a session-plan invalidation',async(t)=>{
   const f=fixture(t),sourcePath='runtime/a.js';

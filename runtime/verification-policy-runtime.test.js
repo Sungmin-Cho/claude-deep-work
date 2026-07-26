@@ -1,7 +1,8 @@
 'use strict';
 const test=require('node:test');const assert=require('node:assert/strict');const crypto=require('node:crypto');
 const {canonicalJson}=require('./operation-journal.js');
-const {compileVerificationPlan,requiredGateIds,validateVerificationPlan,computeResidualRisk}=require('./verification-policy-runtime.js');
+const {compileVerificationPlan,requiredGateIds,validateVerificationPlan,
+  computeResidualRisk,isAtLeast614}=require('./verification-policy-runtime.js');
 const labels={lean:'최소 검증 (기록 전용)',standard:'표준 검증',strict:'강화 검증',critical:'전수 검증 + human gate'};
 function input(risk_class,profile){return{riskProfile:{class:risk_class,score:5,triggers:[]},riskProfileSha256:'c'.repeat(64),
   policySnapshot:{risk_class,profile,verification_policy:{recommended:labels[profile]}},
@@ -11,6 +12,12 @@ function input(risk_class,profile){return{riskProfile:{class:risk_class,score:5,
       risk_profile_sha256:'c'.repeat(64),spec_contract:{spec_id:'SPEC-POLICY',spec_sha256:'a'.repeat(64),
         spec_approved_hash:'b'.repeat(64)}},slices:[]},capabilities:{},
   compatibilityFacts:{created_by_version:'6.13.0',spec_policy_required:true}};}
+test('governed version floor handles unbounded semver majors and minors',()=>{
+  assert.equal(isAtLeast614('6.13.99'),false);
+  assert.equal(isAtLeast614('6.14.0'),true);
+  assert.equal(isAtLeast614('6.100.0'),true);
+  assert.equal(isAtLeast614('10.0.0'),true);
+});
 test('required gate sets are monotonic low through critical',()=>{const rows=[['low','lean'],['medium','standard'],['high','strict'],['critical','critical']]
   .map(([risk,profile])=>compileVerificationPlan(input(risk,profile)));for(const plan of rows)assert.equal(validateVerificationPlan(plan).pass,true);
   for(let i=1;i<rows.length;i++){const prev=new Set(rows[i-1].required_gate_ids);for(const id of prev)assert.equal(rows[i].required_gate_ids.includes(id),true,id);}
