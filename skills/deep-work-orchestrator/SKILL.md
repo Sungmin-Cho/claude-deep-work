@@ -487,7 +487,8 @@ AskUserQuestion:
 
 `skipped_phases`에 "research" 포함 시 Exit Gate 생략하고 `current_phase: plan`으로 직접 전환 → 3-3.
 
-**Spec resume 우선 분기 (v6.13)**: `current_phase: research + subphase: spec`이면
+**Spec resume 우선 분기 (v7; legacy v6.13 호환)**: `current_phase: spec` 또는
+legacy `current_phase: research + subphase: spec`이면
 `deep-research`를 재실행하지 않는다. 현재 `$WORK_DIR/spec.md` bytes와
 `spec_approved_hash`를 재대조하고, 불일치/미승인이면
 `Skill("deep-spec", args=ARGS)`로 spec gate에서 복구한다. 일치하고
@@ -537,16 +538,18 @@ Gate 전에 반드시 runtime `phase spec enter`를 호출하고
 `Skill("deep-spec", args=ARGS)`를 dispatch한다. Low는 명시적 opt-in일 때만
 같은 경로를 사용한다.
 
-- `current_phase`는 `research`로 유지하고 runtime만 `subphase: spec`을 기록한다.
+- runtime은 정식 `current_phase: spec`을 기록한다. legacy
+  `research + subphase: spec`은 resume reader에서만 허용한다.
 - `deep-spec` 반환 후 현재 `spec.md` bytes, validator `pass:true`, document
   review 승인, `spec_approved_hash`, `spec_contract_json`,
   `spec_gate_result_json`을 runtime `phase spec approve`로 결박한다.
 - unresolved marker, blocking question, validator/runtime 오류, stale whole-file
   hash가 하나라도 있으면 Medium+는 fail-closed하며 Research Exit Gate를
   표시하지 않는다.
-- 성공한 `research + spec` resume은 research를 재실행하지 않는다. 유효한
-  runtime `phase advance --from research --to plan`만 `subphase`를 null로
-  clear한다.
+- 성공한 Spec resume은 research를 재실행하지 않는다. canonical session은
+  runtime `phase advance --from spec --to plan`을 사용한다. legacy session은
+  `phase advance --from research --to plan` compatibility route가 `subphase`를
+  null로 clear한다.
 
 → 아래 Exit Gate 실행.
 
@@ -561,7 +564,7 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → runtime `phase advance --from research --to plan`으로 fresh spec
+- option 1 → runtime `phase advance --from spec --to plan`으로 fresh spec
   admission을 재검증한 뒤 **§3-3 Plan으로 dispatch**한다. state 직접 전환은
   금지한다.
 - option 2 → **재실행 전 approval state clear (NC2 규칙 + NW5)**: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.

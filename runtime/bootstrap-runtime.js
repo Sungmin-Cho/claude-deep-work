@@ -2111,7 +2111,9 @@ function acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath})
   const receipt=raw.value;
   const active=fields.current_phase==='implement'&&fields.active_slice===sliceId&&
     fields.tdd_state==='PENDING';
-  const sideEffectReplan=fields.current_phase==='research'&&fields.subphase==='spec'&&
+  const inSpecPhase=(fields.current_phase==='spec'&&fields.subphase==null)||
+    (fields.current_phase==='research'&&fields.subphase==='spec');
+  const sideEffectReplan=inSpecPhase&&
     fields.replan_required===true&&fields.replan_reason==='external-side-effect'&&
     fields.active_slice===sliceId&&fields.tdd_state==='PENDING';
   if(!OPERATION.test(receipt?.operationId||'')||
@@ -2139,7 +2141,9 @@ function assertBootstrapSideEffectReplanState({stateCapability,sliceId,riskProfi
   const matching=Array.isArray(invalidations)&&invalidations.some((row)=>
     row?.slice_id===sliceId&&row.reason==='external-side-effect'&&
     row.invalidated_by_risk_profile_sha256===riskProfileSha256&&row.at===at);
-  if(fields.current_phase!=='research'||fields.subphase!=='spec'||
+  const inSpecPhase=(fields.current_phase==='spec'&&fields.subphase==null)||
+    (fields.current_phase==='research'&&fields.subphase==='spec');
+  if(!inSpecPhase||
     fields.replan_required!==true||fields.replan_reason!=='external-side-effect'||
     fields.risk_profile_sha256!==riskProfileSha256||
     canonicalText(transition)!==canonicalText({

@@ -348,7 +348,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       specApprovedHash:hash(bytes),specContract,specGateResult,
       specReviewRefSha256:f['spec-review-ref-sha256'],at:f.at});});
   on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);let specCurrentSha256;
-    if(f.from==='research'){const candidate=path.join(sessionCapability(state).path,'spec.md');
+    if(['research','spec'].includes(f.from)){const candidate=path.join(sessionCapability(state).path,'spec.md');
       if(fs.existsSync(candidate))specCurrentSha256=hash(boundedFile(candidate));}
     return phase.advancePhase({stateCapability:state,from:f.from,to:f.to,at:f.at,specCurrentSha256});});
   on('phase rerun',({f,cwd})=>phase.rerunPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,

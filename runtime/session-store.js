@@ -340,7 +340,7 @@ async function updateLastActivity({sessionId,stateCapability,at = new Date().toI
 }
 
 async function updateRegistryPhase({sessionId,stateCapability,phase,at = new Date().toISOString(),seam}) {
-  if (!['brainstorm','research','plan','implement','test','idle'].includes(phase)) fail('registry-phase');
+  if (!['brainstorm','research','spec','plan','implement','test','idle'].includes(phase)) fail('registry-phase');
   if (!Number.isFinite(Date.parse(at))) fail('registry-timestamp');
   return journaledRegistryMutation('registry-phase',{sessionId,stateCapability},{sessionId,phase,at}, (registry) => {
     registry.sessions[sessionId].current_phase = phase;
@@ -550,7 +550,7 @@ function forkArtifactPhase(name){if(name==='brainstorm.md')return'brainstorm';if
   if(/^plan(?:-diff|-v\d+)?\.md$/.test(name))return'plan';if(['cross-slice-review.md','solid-review.md','insight-report.md',
     'drift-report.md','fidelity-score.json','debug-root-cause.md'].includes(name))return'implement';
   if(['test-results.md','quality-gates.md'].includes(name))return'test';return null;}
-function publishForkArtifacts({parentFields,childStateCapability,fromPhase}){const order=['brainstorm','research','plan','implement','test'];
+function publishForkArtifacts({parentFields,childStateCapability,fromPhase}){const order=['brainstorm','research','spec','plan','implement','test'];
   const boundary=order.indexOf(fromPhase);const parentWork=typeof parentFields.work_dir==='string'?path.join(childStateCapability.projectRoot,
     ...parentFields.work_dir.split('/')):null;const childFields=parseFrontmatter(fs.readFileSync(childStateCapability.path,'utf8')).fields;
   const childWork=path.join(childStateCapability.projectRoot,...childFields.work_dir.split('/'));fs.mkdirSync(childWork,{recursive:true});
@@ -566,7 +566,7 @@ function publishForkArtifacts({parentFields,childStateCapability,fromPhase}){con
 async function forkSession({projectCapability,parentStateCapability,parentSessionId,childSessionId,
   fromPhase='plan',dirtyResolution='abort',seam}={}){
   requireSessionId(parentSessionId);requireSessionId(childSessionId);requireProject(projectCapability);
-  if(!['brainstorm','research','plan','implement','test'].includes(fromPhase))fail('fork-phase');
+  if(!['brainstorm','research','spec','plan','implement','test'].includes(fromPhase))fail('fork-phase');
   if(!['commit','stash-apply','abort'].includes(dirtyResolution||'abort'))fail('fork-dirty-resolution');
   if(!parentStateCapability||parentStateCapability.role!=='session-state'||parentStateCapability.projectRoot!==projectCapability.path||
       !parentStateCapability.path.endsWith(`deep-work.${parentSessionId}.md`))fail('fork-parent-capability');

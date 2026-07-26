@@ -7,7 +7,7 @@ const ENUMS=Object.freeze({tdd:new Set(['strict','relaxed','coaching','spike']),
   team:new Set(['solo','team']),exec:new Set(['inline','delegate'])});
 const RECOMMENDER_ALLOWLIST=/^(haiku|sonnet|opus)$/;const EXEC_ALLOWLIST=/^(inline|delegate)$/;
 const PROFILE_NAME_ALLOWLIST=/^[a-z0-9][a-z0-9_-]{0,30}$/i;const TDD_ALLOWLIST=/^(strict|relaxed|coaching|spike)$/;
-const RESUME_FROM_ALLOWLIST=/^(brainstorm|research|plan|implement|test)$/;const SESSION_ALLOWLIST=/^[\w.-]+$/;
+const RESUME_FROM_ALLOWLIST=/^(brainstorm|research|spec|plan|implement|test)$/;const SESSION_ALLOWLIST=/^[\w.-]+$/;
 const POLICY_ALLOWLIST=/^(adaptive|shadow)$/;const RISK_ALLOWLIST=/^(low|medium|high|critical)$/;
 const REVIEW_ALLOWLIST=/^(auto|single|dual)$/;
 const WORKTREE_PATH_BLOCKLIST=/[;|&`$(){}[\]<>!#*?\\]/;
@@ -55,8 +55,8 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
       else if(EXEC_ALLOWLIST.test(v))flags.exec_mode=v;else flags.warnings.push(`'${v}'은(는) 허용되지 않는 exec 모드 — 무시. 허용: inline|delegate`);}
     else if(arg.startsWith('--recommender=')){const v=arg.slice(14);if(RECOMMENDER_ALLOWLIST.test(v))flags.recommender=v;
       else flags.warnings.push(`'${v}'은(는) 허용되지 않는 recommender 모델 — sonnet으로 fallback. 허용: haiku|sonnet|opus`);}
-    else if(arg.startsWith('--resume-from=')){const v=arg.slice(14);if(!v)flags.warnings.push('--resume-from= 빈 값 — 무시. 허용: brainstorm|research|plan|implement|test');
-      else if(RESUME_FROM_ALLOWLIST.test(v))flags.resume_from=v;else flags.warnings.push(`'${v}' 허용되지 않는 resume phase — 무시. 허용: brainstorm|research|plan|implement|test`);}
+    else if(arg.startsWith('--resume-from=')){const v=arg.slice(14);if(!v)flags.warnings.push('--resume-from= 빈 값 — 무시. 허용: brainstorm|research|spec|plan|implement|test');
+      else if(RESUME_FROM_ALLOWLIST.test(v))flags.resume_from=v;else flags.warnings.push(`'${v}' 허용되지 않는 resume phase — 무시. 허용: brainstorm|research|spec|plan|implement|test`);}
     else if(arg.startsWith('--session=')){const v=arg.slice(10);if(!v)flags.warnings.push('--session= 빈 값 — 무시');
       else if(SESSION_ALLOWLIST.test(v))flags.session=v;else flags.warnings.push(`'${v}' 잘못된 session ID — 영문/숫자/dash/dot만 허용, 무시`);}
     else if(arg.startsWith('--worktree=')){const v=arg.slice(11);if(!v)flags.warnings.push('--worktree= 빈 값 — 무시');

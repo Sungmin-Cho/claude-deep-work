@@ -19,7 +19,7 @@ user-invocable: true
 |---|---|
 | (없음) | Auto-detect active session + 현재 phase resume |
 | `--session=<id>` | 명시 세션 ID resume |
-| `--resume-from=<phase>` | `brainstorm|research|plan|implement|test` 강제 |
+| `--resume-from=<phase>` | `brainstorm|research|spec|plan|implement|test` 강제 |
 | `--worktree=<path>` | worktree 경로 명시 |
 
 빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.

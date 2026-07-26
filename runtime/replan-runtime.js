@@ -394,7 +394,7 @@ function invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperation
   triggerPath,invalidationPath,statePatch={}}){
   const prior=parseArray(fields.replan_invalidations_json,'replan-invalidation-state');
   const history=parseArray(fields.replan_trigger_history_json,'replan-trigger-state');
-  const patch={current_phase:'research',subphase:'spec',replan_required:true,
+  const patch={current_phase:'spec',subphase:null,replan_required:true,
     replan_reason:trigger.reason,active_slice:null,tdd_state:'PENDING',
     active_replan_trigger_id:trigger.trigger_id,
     replan_trigger_operation_id:triggerOperationId,replan_trigger_ref:triggerPath,
@@ -636,7 +636,9 @@ async function dispatchVerificationSideEffectReplan({stateCapability,planCapabil
 }
 
 async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,spec,fields}={}){
-  if(fields.current_phase!=='research'||fields.subphase!=='spec'||
+  const inSpecPhase=(fields.current_phase==='spec'&&fields.subphase==null)||
+    (fields.current_phase==='research'&&fields.subphase==='spec');
+  if(!inSpecPhase||
       fields.replan_required!==true||fields.replan_reason!=='test-side-effect'||
       !DIGEST.test(fields.active_replan_trigger_id||'')||
       typeof fields.replan_trigger_ref!=='string')return null;

@@ -7,7 +7,8 @@ const {journaledStateMutation,readBoundedJson}=require('./transaction-runtime.js
 const {mutateState}=require('./slice-runtime.js');
 const platform=require('./platform.js');const {updateFrontmatterText}=require('./frontmatter.js');
 
-const PHASE_GRAPH = Object.freeze({brainstorm:['research'],research:['plan'],plan:['implement'],implement:['test']});
+const PHASE_GRAPH = Object.freeze({brainstorm:['research'],research:['spec'],
+  spec:['plan'],plan:['implement'],implement:['test']});
 const TDD_GRAPH = Object.freeze({
   PENDING:['RED_VERIFIED','SPIKE'], RED_VERIFIED:['GREEN'], GREEN:['SENSOR_RUN'],
   SENSOR_RUN:['SENSOR_FIX','SENSOR_CLEAN'], SENSOR_FIX:['SENSOR_RUN','SENSOR_CLEAN'],
@@ -66,7 +67,7 @@ function completePhase({state,stateCapability,phase,result={},at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
     preconditions:{action:'complete',phase,at,resultSha256:crypto.createHash('sha256').update(canonicalJson(result)).digest('hex')},
     seam,reducer:(fields)=>completePhase({state:fields,phase,result,at})});
-  if (!['brainstorm','research','plan','implement'].includes(phase)) fail('phase-complete');
+  if (!['brainstorm','research','spec','plan','implement'].includes(phase)) fail('phase-complete');
   const next=clone(state); next[`${phase}_completed_at`]=at; next.phase_review={...(next.phase_review||{}),
     [phase]:clone(result)}; return next;
 }
@@ -113,7 +114,8 @@ function enterSpecSubphase({state,stateCapability,at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
     preconditions:{action:'spec-enter',at},seam,reducer:(fields)=>enterSpecSubphase({state:fields,at})});
   if(state?.current_phase!=='research')fail('spec-subphase-phase');
-  const next=clone(state);next.subphase='spec';next.spec_policy_required=true;
+  const next=clone(state);next.current_phase='spec';next.subphase=null;
+  next.spec_started_at=at||new Date().toISOString();next.spec_policy_required=true;
   next.spec_completed_at=null;next.spec_approved_hash=null;next.spec_contract_json=null;next.spec_gate_result_json=null;
   return next;
 }
@@ -125,7 +127,9 @@ function approveSpecSubphase({state,stateCapability,specApprovedHash,specContrac
       specContractSha256:specContract&&require('./contract-runtime.js').specContractDigest(specContract),at},seam,
     reducer:(fields,context)=>approveSpecSubphase({state:fields,specApprovedHash,specContract,
       specGateResult,specReviewRefSha256,approvalOperationId:context.operationId,at})});
-  if(state?.current_phase!=='research'||state.subphase!=='spec'||!/^[0-9a-f]{64}$/.test(specApprovedHash||''))
+  const canonical=state?.current_phase==='spec'&&state.subphase==null;
+  const legacy=state?.current_phase==='research'&&state.subphase==='spec';
+  if((!canonical&&!legacy)||!/^[0-9a-f]{64}$/.test(specApprovedHash||''))
     fail('spec-approval');
   const contractRuntime=require('./contract-runtime.js');const result=contractRuntime.validateSpecContract(specContract,
     {riskClass:specContract?.risk_class});const specSha256=contractRuntime.specContractDigest(specContract);
@@ -169,7 +173,9 @@ function verificationPlanRequired(state){
 
 function requireFreshSpec(state){
   if(!specPolicyRequired(state))return;
-  if(state.subphase!=='spec'||!/^[0-9a-f]{64}$/.test(state.spec_approved_hash||'')||
+  const inSpec=state.current_phase==='spec'||
+    (state.current_phase==='research'&&state.subphase==='spec');
+  if(!inSpec||!/^[0-9a-f]{64}$/.test(state.spec_approved_hash||'')||
       !state.spec_contract_json||!state.spec_gate_result_json)fail('spec-approval-required');
   if(!/^[0-9a-f]{64}$/.test(state.spec_current_sha256||'')||state.spec_current_sha256!==state.spec_approved_hash)
     fail('spec-approval-stale');
@@ -183,8 +189,11 @@ function advancePhase({state,stateCapability,from,to,at,seam,specCurrentSha256}=
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-checkpoint',
     preconditions:{action:'advance',from,to,at,specCurrentSha256},seam,
     reducer:(fields)=>advancePhase({state:{...fields,...(specCurrentSha256?{spec_current_sha256:specCurrentSha256}:{})},from,to,at})});
-  if (state.current_phase !== from || !(PHASE_GRAPH[from]||[]).includes(to)) fail('phase-transition');
-  if(from==='research'&&to==='plan')requireFreshSpec(state);
+  const legacySpecTransition=from==='research'&&to==='plan'&&state.subphase==='spec';
+  if (state.current_phase !== from ||
+      (!(PHASE_GRAPH[from]||[]).includes(to)&&!legacySpecTransition))
+    fail('phase-transition');
+  if((from==='spec'&&to==='plan')||legacySpecTransition)requireFreshSpec(state);
   if(from==='plan'&&to==='implement'&&verificationPlanRequired(state)){
     const planGate=parseJson(state.plan_spec_gate_result_json||'{}','plan-spec-gate-state');
     if(planGate.pass!==true)fail('plan-spec-gate-required');
@@ -197,14 +206,14 @@ function advancePhase({state,stateCapability,from,to,at,seam,specCurrentSha256}=
       fail('verification-plan-required');
   }
   const next=clone(state);delete next.spec_current_sha256;next.current_phase=to;
-  if(from==='research'&&to==='plan')next.subphase=null;
+  if(to==='plan')next.subphase=null;
   next[`${to}_started_at`]=at||new Date().toISOString(); return next;
 }
 
 function rerunPhase({state,stateCapability,phase,affectedSlices=[],seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-rerun',
     preconditions:{phase,affectedSlices},seam,reducer:(fields)=>rerunPhase({state:fields,phase})});
-  if (!['brainstorm','research','plan','implement','test'].includes(phase)) fail('phase-rerun');
+  if (!['brainstorm','research','spec','plan','implement','test'].includes(phase)) fail('phase-rerun');
   const next=clone(state);
   delete next[`${phase}_completed_at`]; delete next[`${phase}_approved`];
   if (phase==='test') {next.test_passed=false;next.test_retry_count=0;}
@@ -231,7 +240,7 @@ function invalidateForReplan({state,stateCapability,reason,fromRisk,toRisk,affec
     receipt_sha256:row.receipt_sha256||null,prior_plan_sha256:row.plan_sha256||state.plan_projection_sha256||null,
     prior_risk_profile_sha256:row.risk_profile_sha256||state.risk_profile_sha256||null,
     invalidated_by_risk_profile_sha256:riskProfileSha256,reason,at};});
-  const next=clone(state);next.current_phase='research';next.subphase='spec';next.replan_required=true;
+  const next=clone(state);next.current_phase='spec';next.subphase=null;next.replan_required=true;
   next.replan_reason=reason;next.risk_profile_sha256=riskProfileSha256;
   next.risk_transition_json=canonicalJson({from:fromRisk,to:toRisk,reason,at});
   next.receipt_invalidations_json=canonicalJson([...priorInvalidations,...additions]);
