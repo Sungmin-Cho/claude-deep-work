@@ -91,6 +91,54 @@ function validateExecutableRows(rows,code){
       byteCompare(canonical(a),canonical(b)))))fail(code);
   return rows;
 }
+function validatePlatformDerivedExecutable(value){
+  if(!exactKeys(value,['source_path','source_sha256','derivation_kind',
+      'derivation_input_sha256','platform','target_identity'])||
+      !portable(value.source_path)||!DIGEST.test(value.source_sha256||'')||
+      !['active-node-process-exec-path','windows-systemroot-system32-tool',
+        'windows-systemroot-windows-powershell-v1','windows-comspec']
+        .includes(value.derivation_kind)||
+      !DIGEST.test(value.derivation_input_sha256||'')||
+      !['posix','win32'].includes(value.platform))
+    fail('platform-derived-executable');
+  const identity=validateToolIdentity(value.target_identity);
+  if(value.derivation_kind==='active-node-process-exec-path'){
+    if(identity.target_path!==fs.realpathSync(process.execPath)||
+        value.derivation_input_sha256!==semanticDigest(
+          'active-node-process-exec-path',identity))
+      fail('platform-derived-executable');
+  }else if(value.platform!=='win32')fail('platform-derived-executable');
+  return structuredClone(value);
+}
+function buildActiveNodeExecutable({sourcePath,sourceSha256,
+  name='node'}={}){
+  const targetIdentity=buildToolIdentity({name,targetPath:process.execPath});
+  return validatePlatformDerivedExecutable({source_path:sourcePath,
+    source_sha256:sourceSha256,
+    derivation_kind:'active-node-process-exec-path',
+    derivation_input_sha256:semanticDigest(
+      'active-node-process-exec-path',targetIdentity),
+    platform:'posix',target_identity:targetIdentity});
+}
+function scalar(value){return value===null||typeof value==='string'||
+  typeof value==='boolean'||Number.isSafeInteger(value);}
+function validateTestFixtureExecutable(value){
+  if(!exactKeys(value,['factory_source_path','factory_source_sha256',
+      'factory_args','fixture_relpath','fixture_sha256','platform',
+      'invocation_kind','child_path_sha256'])||
+      !portable(value.factory_source_path)||
+      !DIGEST.test(value.factory_source_sha256||'')||
+      !Array.isArray(value.factory_args)||!value.factory_args.every(scalar)||
+      !portable(value.fixture_relpath)||!DIGEST.test(value.fixture_sha256||'')||
+      !['posix','win32'].includes(value.platform)||
+      !['absolute-owned-temp','child-path-owned-temp-first']
+        .includes(value.invocation_kind)||
+      (value.invocation_kind==='absolute-owned-temp'?
+        value.child_path_sha256!==null:
+        !DIGEST.test(value.child_path_sha256||'')))
+    fail('test-fixture-executable');
+  return structuredClone(value);
+}
 function validateReleaseSourceGraph(value){
   const rowKeys=['path','kind','sha256','outgoing'];
   if(!exactKeys(value,['schema_version','roots','rows','platform_executables',
@@ -126,8 +174,10 @@ function validateReleaseSourceGraph(value){
       !value.rows.some((row)=>row.path==='package.json#scripts.test')||
       graphDigest(value)!==value.source_graph_sha256)
     fail('release-source-graph');
-  validateExecutableRows(value.platform_executables,'release-source-graph');
-  validateExecutableRows(value.test_fixture_executables,'release-source-graph');
+  validateExecutableRows(value.platform_executables,'release-source-graph')
+    .forEach(validatePlatformDerivedExecutable);
+  validateExecutableRows(value.test_fixture_executables,'release-source-graph')
+    .forEach(validateTestFixtureExecutable);
   return structuredClone(value);
 }
 function buildReleaseSourceGraph({rows,platformExecutables=[],
@@ -342,6 +392,8 @@ async function executeCatalogCommand({commandId,cwd,sourceGraphRef,
 module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
   commandRootRow,compareGraphRows,buildReleaseSourceGraph,
   validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest,
+  buildActiveNodeExecutable,validatePlatformDerivedExecutable,
+  validateTestFixtureExecutable,
   materializeOwnedBin,validateMaterializedBin,pathIdentity,
   validatePathIdentity,buildReleaseEnvironment,validateReleaseEnvironment,
   runHermetic,executeCatalogCommand};

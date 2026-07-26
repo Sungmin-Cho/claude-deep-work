@@ -40,6 +40,25 @@ test('ReleaseSourceGraphV1 authenticates exact roots, rows, edges, and digest',(
     /release-source-graph/);
 });
 
+test('source graph executable carriers use exact platform and fixture schemas',()=>{
+  const nodeSource=Buffer.from('spawn(process.execPath, [])\n'),
+    platformRow=toolchain.buildActiveNodeExecutable({
+      sourcePath:'runtime/example.test.js',
+      sourceSha256:toolchain.sha256(nodeSource)});
+  assert.equal(platformRow.derivation_kind,
+    'active-node-process-exec-path');
+  assert.deepEqual(toolchain.validatePlatformDerivedExecutable(platformRow),
+    platformRow);
+  const fixture={factory_source_path:'runtime/example.test.js',
+    factory_source_sha256:toolchain.sha256(nodeSource),
+    factory_args:['body',1,true,null],fixture_relpath:'bin/fake-tool',
+    fixture_sha256:'7'.repeat(64),platform:'posix',
+    invocation_kind:'absolute-owned-temp',child_path_sha256:null};
+  assert.deepEqual(toolchain.validateTestFixtureExecutable(fixture),fixture);
+  assert.throws(()=>toolchain.validateTestFixtureExecutable({
+    ...fixture,caller_note:'forged'}),/test-fixture-executable/);
+});
+
 test('ReleaseToolchainManifestV1 rejects an unsorted or graph-drifted entry set',()=>{
   const graph=toolchain.buildReleaseSourceGraph({rows:[
     toolchain.commandRootRow('npm-pack-dry-run-json',
