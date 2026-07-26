@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
+const {spawnSync}=require('node:child_process');
 const gate=require('./release-gate-runtime.js');
 const journal=require('./operation-journal.js');
 const platform=require('./platform.js');
@@ -220,4 +221,89 @@ test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes
       stateCapability,planCapability,plan:completedPlan,sliceId:'SLICE-001',
       gateResults:result.gate_result_refs,functionalReceipts:[]});
     assert.equal(completionReplay.adopted,true);
+  });
+
+test('command-run publishes an authenticated pack GateResult through the dispatcher',
+  {skip:process.platform==='win32'},async(t)=>{
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),
+      'dw-command-gate-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.mkdirSync(path.join(root,'.claude'));
+    fs.writeFileSync(path.join(root,'package.json'),journal.canonicalJson({
+      name:'deep-work-command-gate-fixture',version:'1.0.0',
+      scripts:{test:'node --test fixture.test.js'}}));
+    fs.writeFileSync(path.join(root,'fixture.test.js'),
+      "'use strict';\nrequire('node:test')('fixture',()=>{});\n");
+    for(const args of [['init','-q'],['config','user.email','fixture@example.invalid'],
+      ['config','user.name','Fixture'],['add','package.json','fixture.test.js'],
+      ['commit','-qm','fixture']]){
+      const result=spawnSync('git',args,{cwd:root,encoding:'utf8'});
+      assert.equal(result.status,0,result.stderr);
+    }
+    const sessionId='s-aaaaaaaa',work=path.join(root,'.deep-work',sessionId);
+    fs.mkdirSync(work,{recursive:true});
+    const statePath=path.join(root,'.claude',`deep-work.${sessionId}.md`);
+    fs.writeFileSync(statePath,frontmatter.updateFrontmatterText('',{
+      session_id:sessionId,work_dir:`.deep-work/${sessionId}`,
+      current_phase:'test',verification_plan_sha256:'2'.repeat(64)}));
+    const stateCapability=platform.issueProjectStateCapability(root,statePath,
+      {role:'session-state'});
+    const sessionCapability=platform.issueProjectStateCapability(root,work,{
+      role:'session-work-dir',sessionStateCapability:stateCapability});
+    const planCapability=transaction.issueSessionFileCapability({
+      sessionCapability,candidate:path.join(work,'plan.json'),
+      allowedBasenames:['plan.json'],allowMissingLeaf:true,role:'locked-plan'});
+    const facts={schema_version:1,authority:'reviewed-plan',destructive:false,
+      external_action:false,has_backward_compat:true,has_migration:true,
+      host_dependent:false,source_requirement_ids:['REQ-001'],
+      source_slice_ids:['SLICE-001']};
+    facts.facts_sha256=gate.semanticDigest('capability-facts-v1',facts);
+    const plan={schema_version:2,replan_epoch:null,contract_binding:{
+      mode:'strict-spec',created_by_version:'6.14.0',
+      source_plan_sha256:'3'.repeat(64),
+      risk_profile_sha256:'4'.repeat(64),spec_contract:{schema_version:1,
+        spec_id:'SPEC-COMMAND',spec_sha256:'5'.repeat(64),
+        spec_approved_hash:'6'.repeat(64)}},capability_facts:facts,slices:[{
+      id:'SLICE-001',slice_kind:'release-verification',checked:false,
+      scope_schema_version:1,files:[],write_scope:{failing_test:[],
+        production:[],refactor:[]},verification_scope:[
+        'npm pack --dry-run --json'],
+      release_gate_ids:['GATE-fresh-install-build'],
+      verification_spec:null,verification_spec_sha256:null}]};
+    plan.plan_authority_sha256=
+      compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
+    fs.writeFileSync(planCapability.path,journal.canonicalJson(plan));
+    const published=await dispatch(['release','gate','command-run','--state',
+      statePath,'--plan',planCapability.path,'--command','pack'],{cwd:root});
+    assert.equal(published.status,'passed');
+    assert.deepEqual(published.gate_result_refs.map((row)=>row.gate_id),
+      ['GATE-fresh-install-build']);
+    const stored=JSON.parse(fs.readFileSync(path.join(root,
+      ...published.result_path.split('/')),'utf8'));
+    assert.equal(stored.checker_id,'command-v1');
+    assert.equal(stored.status,'passed');
+    const gateRefsPath=path.join(root,'gate-refs.json');
+    const functionalRefsPath=path.join(root,'functional-refs.json');
+    fs.writeFileSync(gateRefsPath,journal.canonicalJson(
+      published.gate_result_refs));
+    fs.writeFileSync(functionalRefsPath,'[]');
+    const graphPath=path.join(root,...stored.input_refs[0].path.split('/'));
+    const graphBytes=fs.readFileSync(graphPath);
+    fs.appendFileSync(graphPath,' ');
+    await assert.rejects(()=>dispatch(['release','verification','complete',
+      '--state',statePath,'--plan',planCapability.path,'--slice','SLICE-001',
+      '--gate-results-json',gateRefsPath,'--functional-receipts-json',
+      functionalRefsPath],{cwd:root}),/release-verification-gates/);
+    fs.writeFileSync(graphPath,graphBytes);
+    const completed=await dispatch(['release','verification','complete',
+      '--state',statePath,'--plan',planCapability.path,'--slice','SLICE-001',
+      '--gate-results-json',gateRefsPath,'--functional-receipts-json',
+      functionalRefsPath],{cwd:root});
+    assert.match(completed.receipt_sha256,/^[0-9a-f]{64}$/);
+    assert.equal(loadGovernedContext({stateCapability}).projection.receipts
+      .rows[0].status,'complete');
+    const replay=await dispatch(['release','gate','command-run','--state',
+      statePath,'--plan',planCapability.path,'--command','pack'],{cwd:root});
+    assert.equal(replay.adopted,true);
+    assert.equal(replay.operation_id,published.operation_id);
   });

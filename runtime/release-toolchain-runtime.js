@@ -2,6 +2,7 @@
 
 const fs=require('node:fs');
 const crypto=require('node:crypto');
+const path=require('node:path');
 const journal=require('./operation-journal.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
@@ -25,6 +26,7 @@ function statNanos(stat){return decimal(stat.mtimeNs===undefined?
 function byteCompare(left,right){return Buffer.compare(Buffer.from(left),Buffer.from(right));}
 function portable(value){return typeof value==='string'&&value.length>0&&
   !value.startsWith('/')&&!value.includes('\\')&&!value.split('/').includes('..');}
+function operationId(domain,value){return `op-${semanticDigest(domain,value)}`;}
 
 function buildToolIdentity({name,targetPath,shimKind='none',shimPath=null,
   shimSha256=null}={}){
@@ -40,6 +42,35 @@ function buildToolIdentity({name,targetPath,shimKind='none',shimPath=null,
     target_mode:decimal(stat.mode),target_size:decimal(stat.size),
     target_mtime_ns:statNanos(stat),shim_kind:shimKind,shim_path:shimPath,
     shim_sha256:shimSha256});
+}
+function resolveReleaseToolIdentities(names,{environment=process.env,
+  platformName=process.platform}={}){
+  if(!Array.isArray(names)||names.length===0||
+      canonical(names)!==canonical([...names].sort(byteCompare))||
+      new Set(names).size!==names.length||
+      names.some((name)=>!/^[A-Za-z0-9._-]+$/.test(name)))
+    fail('release-tool-resolution');
+  if(platformName==='win32')fail('release-tool-resolution-platform');
+  const pathEntries=String(environment.PATH||'').split(path.delimiter)
+    .filter((entry)=>entry&&path.isAbsolute(entry));
+  return names.map((name)=>{
+    if(name==='node')return buildToolIdentity({name,targetPath:process.execPath});
+    if(name==='git')return buildToolIdentity({name,targetPath:
+      require('./platform.js').resolveGitExecutable(environment,fs)});
+    for(const directory of pathEntries){
+      const candidate=path.join(directory,name);
+      try{
+        const stat=fs.lstatSync(candidate);
+        if(!stat.isFile()&&!stat.isSymbolicLink())continue;
+        fs.accessSync(candidate,fs.constants.X_OK);
+        return buildToolIdentity({name,targetPath:candidate});
+      }catch(error){
+        if(!['ENOENT','EACCES','ENOTDIR','release-tool-identity']
+          .includes(error.code))throw error;
+      }
+    }
+    fail('release-tool-missing',name);
+  });
 }
 function validateToolIdentity(value){
   const keys=['name','target_path','target_sha256','target_dev','target_ino',
@@ -394,11 +425,111 @@ async function executeCatalogCommand({commandId,cwd,sourceGraphRef,
   }
 }
 
+function writeExclusive(file,bytes,code){
+  fs.mkdirSync(path.dirname(file),{recursive:true});
+  let fd;try{fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_EXCL|
+    fs.constants.O_WRONLY,0o600);fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}
+  catch(error){if(error.code!=='EEXIST'||!fs.readFileSync(file).equals(bytes))
+    fail(code);}finally{if(fd!==undefined)fs.closeSync(fd);}
+  if(!fs.readFileSync(file).equals(bytes))fail(code);
+}
+async function publishReleaseSourceGraph({stateCapability,cwd}={}){
+  const transaction=require('./transaction-runtime.js');
+  if(!stateCapability?.projectRoot||fs.realpathSync(cwd)!==
+      fs.realpathSync(stateCapability.projectRoot))
+    fail('release-source-root');
+  const sessionId=transaction.sessionIdFromState(stateCapability);
+  const gitIdentity=buildToolIdentity({name:'git',targetPath:
+    require('./platform.js').resolveGitExecutable(process.env,fs)});
+  const scanner=require('./release-source-scanner.js');
+  const committedFiles=scanner.loadCommittedFiles({root:cwd,gitIdentity,
+    requireWorktreeMatch:true});
+  const scanned=scanner.scanReleaseSources({committedFiles});
+  const graph=validateReleaseSourceGraph(scanned.graph);
+  const graphBytes=Buffer.from(canonical(graph));
+  const graphArtifactSha256=sha256(graphBytes);
+  const id=operationId('release-source-graph-publish-v1',{
+    session_id:sessionId,source_graph_sha256:graph.source_graph_sha256,
+    source_graph_artifact_sha256:graphArtifactSha256});
+  const relative=`.deep-work/${sessionId}/release/source-graph-${
+    graph.source_graph_sha256}.json`;
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const existing=journal.lookupCompletedOperation({projectCapability:project,
+    operationId:id,sessionId,kind:'release-source-graph-publish'});
+  if(existing){
+    const result=existing.result,target=path.join(stateCapability.projectRoot,
+      ...relative.split('/'));
+    if(existing.stage!=='completed-ledger'||!exactKeys(result,
+      ['source_graph_path','source_graph_sha256',
+        'source_graph_artifact_sha256','required_tools'])||
+        result.source_graph_path!==relative||
+        result.source_graph_sha256!==graph.source_graph_sha256||
+        result.source_graph_artifact_sha256!==graphArtifactSha256||
+        canonical(result.required_tools)!==canonical(scanned.required_tools)||
+        !fs.readFileSync(target).equals(graphBytes))
+      fail('release-source-graph-replay');
+    return{graph,graph_ref:{kind:'release-source-graph',path:relative,
+      sha256:graphArtifactSha256,producer_operation_id:id},
+    required_tools:[...scanned.required_tools],operation_id:id,
+    operation_receipt:existing,adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId,kind:'release-source-graph-publish',operationId:id,
+    preconditions:{source_graph_sha256:graph.source_graph_sha256,
+      source_graph_artifact_sha256:graphArtifactSha256}});
+  writeExclusive(path.join(stateCapability.projectRoot,...relative.split('/')),
+    graphBytes,'release-source-graph-publish');
+  await journal.recordOperationStage(operation,'graph-published',{owned:{
+    path:relative,sha256:graphArtifactSha256,
+    sourceGraphSha256:graph.source_graph_sha256}});
+  const result={source_graph_path:relative,
+    source_graph_sha256:graph.source_graph_sha256,
+    source_graph_artifact_sha256:graphArtifactSha256,
+    required_tools:[...scanned.required_tools]};
+  const receipt=await journal.completeOperation(operation,result);
+  return{graph,graph_ref:{kind:'release-source-graph',path:relative,
+    sha256:graphArtifactSha256,producer_operation_id:id},
+  required_tools:[...scanned.required_tools],operation_id:id,
+  operation_receipt:receipt,adopted:false};
+}
+function authenticateReleaseSourceGraphRef({stateCapability,ref}={}){
+  const transaction=require('./transaction-runtime.js');
+  if(!validateSourceGraphRef(ref))fail('release-source-graph-ref');
+  const sessionId=transaction.sessionIdFromState(stateCapability);
+  const receipt=journal.lookupCompletedOperation({projectCapability:
+    transaction.projectCapabilityFor(stateCapability),
+  operationId:ref.producer_operation_id,sessionId,
+  kind:'release-source-graph-publish'});
+  const result=receipt?.result;
+  if(receipt?.stage!=='completed-ledger'||!exactKeys(result,
+    ['source_graph_path','source_graph_sha256',
+      'source_graph_artifact_sha256','required_tools'])||
+      result.source_graph_path!==ref.path||
+      result.source_graph_artifact_sha256!==ref.sha256||
+      !Array.isArray(result.required_tools)||
+      canonical(result.required_tools)!==canonical([...result.required_tools]
+        .sort(byteCompare))||new Set(result.required_tools).size!==
+        result.required_tools.length||
+      ref.path!==`.deep-work/${sessionId}/release/source-graph-${
+        result.source_graph_sha256}.json`)
+    fail('release-source-graph-producer');
+  const target=path.join(stateCapability.projectRoot,...ref.path.split('/'));
+  let stat,bytes,value;try{stat=fs.lstatSync(target);bytes=fs.readFileSync(target);
+    value=JSON.parse(bytes);}catch{fail('release-source-graph-producer');}
+  const graph=validateReleaseSourceGraph(value);
+  if(!stat.isFile()||stat.isSymbolicLink()||
+      !bytes.equals(Buffer.from(canonical(graph)))||sha256(bytes)!==ref.sha256||
+      graph.source_graph_sha256!==result.source_graph_sha256)
+    fail('release-source-graph-producer');
+  return{graph,receipt,required_tools:[...result.required_tools]};
+}
+
 module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
   commandRootRow,compareGraphRows,buildReleaseSourceGraph,
   validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest,
   buildActiveNodeExecutable,validatePlatformDerivedExecutable,
-  validateTestFixtureExecutable,
+  validateTestFixtureExecutable,resolveReleaseToolIdentities,
+  publishReleaseSourceGraph,authenticateReleaseSourceGraphRef,
   materializeOwnedBin,validateMaterializedBin,pathIdentity,
   validatePathIdentity,buildReleaseEnvironment,validateReleaseEnvironment,
   runHermetic,executeCatalogCommand};

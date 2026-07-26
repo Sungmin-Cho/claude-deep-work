@@ -31,6 +31,7 @@ const OPERATION_KINDS = new Set([
     'risk-observation-publish', 'root-cause-record',
     'repeated-root-cause-derive', 'replan-complete',
     'accept-or-replan', 'finding-publish', 'gate-fact-publish',
+    'release-source-graph-publish',
     'release-gate-result', 'release-verification-complete',
     'functional-slice-complete-v2', 'refactor-no-change-decision',
 ]);
@@ -111,6 +112,7 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
     'producers-authenticated','observation-published','ledger-committed'],
   'replan-complete':['epoch-authenticated','approvals-authenticated','state-written'],
   'gate-fact-publish':['authority-authenticated','facts-computed','fact-published'],
+  'release-source-graph-publish':['graph-published'],
   'release-gate-result':['inputs-authenticated','checker-completed','result-published'],
   'release-verification-complete':['aggregate-authenticated','receipt-published',
     'progress-committed'],
@@ -129,7 +131,8 @@ const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publi
   'replan-epoch-publication','replan-discovery-publish',
   'risk-observation-publish','root-cause-record',
   'repeated-root-cause-derive','replan-complete',
-  'accept-or-replan','finding-publish','gate-fact-publish','release-gate-result',
+  'accept-or-replan','finding-publish','gate-fact-publish',
+  'release-source-graph-publish','release-gate-result',
   'release-verification-complete',
   'functional-slice-complete-v2','refactor-no-change-decision']);
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,

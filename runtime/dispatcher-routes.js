@@ -401,6 +401,9 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     return releaseGate.publishDeterministicGateResult({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,
       factOperationId:f['fact-operation-id']});});
+  on('release gate command-run',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishCommandGateResult({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,commandId:f.command});});
   on('release verification complete',({f,cwd})=>{const bound=readPlan(f,cwd);
     return releaseGate.publishReleaseVerificationReceipt({
       stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,

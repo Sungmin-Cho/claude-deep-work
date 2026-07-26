@@ -391,7 +391,7 @@ async function semanticArgv(entry, fx) {
     'producer-operation-id':`op-${'b'.repeat(64)}`,
     'next-risk-profile-json':fx.files.structural,
     'source-kind':'debug-root','source-operation-id':`op-${'d'.repeat(64)}`,
-    checker:'spec-gate-v1','input-refs-json':fx.files.changed,
+    checker:'spec-gate-v1',command:'pack','input-refs-json':fx.files.changed,
     'fact-operation-id':`op-${'c'.repeat(64)}`,
     'functional-receipts-json':fx.files.changed,
     plan:fx.plan,'assignment-json':fx.files.assignment,snapshot:'a'.repeat(40),slice:'SLICE-001',
@@ -492,6 +492,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['replan complete',[10,20,50,70]],
     ['release gate fact-publish',[10,20,50,70]],
     ['release gate result-publish',[10,20,50,70]],
+    ['release gate command-run',[10,20,50,70]],
     ['release verification complete',[10,20,50,70]],
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
@@ -876,8 +877,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 114 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 114);
+test('all 115 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 115);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -901,7 +902,7 @@ test('all 114 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 114);
+  assert.equal(outcomes.length, 115);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

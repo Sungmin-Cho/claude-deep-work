@@ -73,6 +73,8 @@ const rows=[
       'rollback-rehearsal-v1','governed-health-v1','governed-evidence-v1',
       'evidence-redaction-v1','dual-final-review-v1','human-ack-v1']}),
   grammar('release gate result-publish',['state','plan','fact-operation-id']),
+  grammar('release gate command-run',['state','plan','command'],[],{
+    command:['carrier','tdd','replan','integration','full','pack']}),
   grammar('release verification complete',['state','plan','slice',
     'gate-results-json','functional-receipts-json']),
   grammar('implement delegation set',['state','plan','assignment-json','snapshot']),

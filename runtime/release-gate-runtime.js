@@ -692,6 +692,94 @@ async function publishDeterministicGateResult({stateCapability,planCapability,pl
     gate_result_refs:gateResultRefs({result,operationId:id,resultPath:relative,
       ledgerResultSha256:receipt.resultSha256}),adopted:false};
 }
+async function publishCommandGateResult({stateCapability,planCapability,plan,
+  commandId,seam}={}){
+  const current=loadPlan(planCapability,plan),sid=
+    transaction.sessionIdFromState(stateCapability);
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  if(!DIGEST.test(fields.verification_plan_sha256||'')||
+      !Object.hasOwn(RELEASE_GATE_CATALOG,commandId))
+    fail('release-command-gate');
+  const toolchain=require('./release-toolchain-runtime.js');
+  const source=await toolchain.publishReleaseSourceGraph({
+    stateCapability,cwd:stateCapability.projectRoot});
+  const sourceReceipt=source.operation_receipt;
+  if(sourceReceipt?.stage!=='completed-ledger'||
+      sourceReceipt.kind!=='release-source-graph-publish'||
+      sourceReceipt.result?.source_graph_path!==source.graph_ref.path||
+      sourceReceipt.result?.source_graph_artifact_sha256!==
+        source.graph_ref.sha256||
+      sourceReceipt.result?.source_graph_sha256!==
+        source.graph.source_graph_sha256)
+    fail('release-command-source-graph');
+  const entries=toolchain.resolveReleaseToolIdentities(source.required_tools);
+  const inputRefs=[source.graph_ref];
+  const catalog=RELEASE_GATE_CATALOG[commandId];
+  const preconditions={session_id:sid,plan_authority_sha256:
+    current.plan_authority_sha256,verification_plan_sha256:
+    fields.verification_plan_sha256,checker_id:'command-v1',
+  argv_sha256:argvSha256(catalog.argv),gate_ids:[...catalog.gate_ids],
+  input_refs:inputRefs,source_graph_sha256:source.graph.source_graph_sha256,
+  tool_identities:entries};
+  const id=operationId('release-gate-result-v1',preconditions);
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const existing=await journal.resumeOperation({projectCapability:project,
+    operationId:id,sessionId:sid,kind:'release-gate-result'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger'){
+    if(!exactKeys(existing.result,['checker_id','gate_ids','input_refs',
+      'result_path','result_sha256','status'])||
+        canonical(existing.result.input_refs)!==canonical(inputRefs))
+      fail('release-gate-result-replay');
+    const replayRaw=readCanonical(path.join(stateCapability.projectRoot,
+      ...existing.result.result_path.split('/')),'release-gate-result-replay');
+    const replayResult=validateGateResult(replayRaw.value);
+    if(replayResult.result_sha256!==existing.result.result_sha256||
+        replayResult.argv_sha256!==argvSha256(catalog.argv)||
+        replayResult.plan_authority_sha256!==current.plan_authority_sha256||
+        replayResult.verification_plan_sha256!==
+          fields.verification_plan_sha256)
+      fail('release-gate-result-replay');
+    return{...existing.result,operation_id:id,operation_receipt:existing,
+      gate_result_refs:gateResultRefs({result:replayResult,operationId:id,
+        resultPath:existing.result.result_path,
+        ledgerResultSha256:existing.resultSha256}),adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId:sid,kind:'release-gate-result',operationId:id,preconditions});
+  await journal.recordOperationStage(operation,'inputs-authenticated',{owned:{
+    sourceGraphOperationId:source.operation_id,
+    sourceGraphLedgerResultSha256:sourceReceipt.resultSha256,
+    sourceGraphSha256:source.graph.source_graph_sha256,
+    toolIdentitySetSha256:journal.sha256(canonical(entries))}});
+  const execution=await toolchain.executeCatalogCommand({commandId,
+    cwd:stateCapability.projectRoot,sourceGraphRef:source.graph_ref,
+    sourceGraphSha256:source.graph.source_graph_sha256,entries});
+  const result=buildCommandGateResult({sessionId:sid,
+    planAuthoritySha256:current.plan_authority_sha256,
+    verificationPlanSha256:fields.verification_plan_sha256,commandId,
+    inputRefs,releaseEnvironmentSha256:
+      execution.release_environment_sha256,
+    processResult:execution.process_result});
+  await journal.recordOperationStage(operation,'checker-completed',{owned:{
+    status:result.status,resultSha256:result.result_sha256,
+    releaseEnvironmentSha256:execution.release_environment_sha256,
+    stdoutSha256:execution.process_result.stdout_sha256,
+    stderrSha256:execution.process_result.stderr_sha256}});
+  const relative=`.deep-work/${sid}/gate-results/${id}.json`;
+  seam?.('before-gate-result-write',{operationId:id,path:relative});
+  writeExclusive(path.join(stateCapability.projectRoot,
+    ...relative.split('/')),result,'release-gate-result-publish');
+  await journal.recordOperationStage(operation,'result-published',{owned:{
+    resultPath:relative,resultSha256:result.result_sha256,status:result.status}});
+  const receipt=await journal.completeOperation(operation,{checker_id:
+    result.checker_id,gate_ids:result.gate_ids,input_refs:result.input_refs,
+  result_path:relative,result_sha256:result.result_sha256,status:result.status});
+  return{...receipt.result,operation_id:id,operation_receipt:receipt,
+    gate_result_refs:gateResultRefs({result,operationId:id,resultPath:relative,
+      ledgerResultSha256:receipt.resultSha256}),adopted:false};
+}
 function gateRefSortKey(ref){return `${ref.gate_id}\0${ref.checker_id}\0${
   ref.operation_id}`;}
 async function authenticateGateResultRefs({stateCapability,plan,verificationPlanSha256,
@@ -725,6 +813,15 @@ async function authenticateGateResultRefs({stateCapability,plan,verificationPlan
         result.checker_id!==ref.checker_id||result.argv_sha256!==ref.argv_sha256||
         !result.gate_ids.includes(ref.gate_id)||result.status!=='passed')
       fail('release-verification-gates');
+    if(result.checker_id==='command-v1'){
+      if(result.input_refs.length!==1||
+          result.input_refs[0].kind!=='release-source-graph')
+        fail('release-verification-gates');
+      try{require('./release-toolchain-runtime.js')
+        .authenticateReleaseSourceGraphRef({stateCapability,
+          ref:result.input_refs[0]});}
+      catch{fail('release-verification-gates');}
+    }
     authenticated.push({ref,receipt,result});
   }
   return authenticated;
@@ -859,5 +956,6 @@ module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   buildGateFactArtifact,validateGateFactArtifact,argvSha256,
   buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
   validateGateResultRef,publishGateFact,publishDeterministicGateResult,
+  publishCommandGateResult,
   gateResultRefs,validateReleaseVerificationReceipt,
   publishReleaseVerificationReceipt,semanticDigest};
