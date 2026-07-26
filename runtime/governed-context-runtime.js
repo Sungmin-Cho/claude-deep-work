@@ -267,6 +267,37 @@ function receiptProjection(workDir,plan,replanActive,stateCapability,fields){
             fail('governed-functional-receipt');
           status='complete';receiptSha256=checked.receipt_sha256;
         }catch{status='unknown';unknown=true;}
+      }else if(slice.slice_kind==='release-verification'&&
+          value.schema_version===1){
+        try{
+          const checked=require('./release-gate-runtime.js')
+            .validateReleaseVerificationReceipt(value);
+          const relative=path.relative(stateCapability.projectRoot,file)
+            .split(path.sep).join('/');
+          const producer=journal.lookupCompletedOperation({
+            projectCapability:project,
+            operationId:checked.completion_operation_id,sessionId,
+            kind:'release-verification-complete'});
+          const result=producer?.result;
+          if(checked.slice_id!==slice.id||slice.checked!==true||
+              checked.plan_authority_sha256!==plan.plan_authority_sha256||
+              checked.verification_plan_sha256!==
+                fields.verification_plan_sha256||
+              relative!==`.deep-work/${sessionId}/receipts/${slice.id}.json`||
+              fields.release_verification_operation_id!==
+                checked.completion_operation_id||
+              fields.release_verification_receipt_sha256!==
+                checked.receipt_sha256||
+              producer?.stage!=='completed-ledger'||
+              !exactKeys(result,['slice_id','receipt_path','receipt_sha256',
+                'post_state_sha256'])||
+              result.slice_id!==slice.id||result.receipt_path!==relative||
+              result.receipt_sha256!==checked.receipt_sha256||
+              !DIGEST.test(result.post_state_sha256||'')||
+              producer.resultSha256!==journal.sha256(canonicalJson(result)))
+            fail('governed-release-verification-receipt');
+          status='complete';receiptSha256=checked.receipt_sha256;
+        }catch{status='unknown';unknown=true;}
       }else{status='legacy-read-only';unknown=true;
         receiptSha256=DIGEST.test(value?.receipt_sha256||'')?value.receipt_sha256:null;}
     }else incomplete=true;

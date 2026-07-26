@@ -761,6 +761,28 @@ async function authenticateFunctionalReceiptRefs({stateCapability,plan,refs}={})
 }
 function releaseReceiptDigest(value){const copy=structuredClone(value);
   delete copy.receipt_sha256;return journal.sha256(canonical(copy));}
+function validateReleaseVerificationReceipt(value){
+  if(!exactKeys(value,['schema_version','slice_id','plan_authority_sha256',
+    'verification_plan_sha256','gate_results','functional_receipts',
+    'completion_operation_id','receipt_sha256'])||value.schema_version!==1||
+      !/^SLICE-\d{3}$/.test(value.slice_id||'')||
+      !DIGEST.test(value.plan_authority_sha256||'')||
+      !DIGEST.test(value.verification_plan_sha256||'')||
+      !Array.isArray(value.gate_results)||value.gate_results.length===0||
+      value.gate_results.some((ref)=>{
+        try{validateGateResultRef(ref);return false;}catch{return true;}
+      })||!Array.isArray(value.functional_receipts)||
+      value.functional_receipts.some((ref)=>!exactKeys(ref,
+        ['slice_id','receipt_sha256','completion_operation_id'])||
+        !/^SLICE-\d{3}$/.test(ref.slice_id||'')||
+        !DIGEST.test(ref.receipt_sha256||'')||
+        !OPERATION.test(ref.completion_operation_id||''))||
+      !OPERATION.test(value.completion_operation_id||'')||
+      !DIGEST.test(value.receipt_sha256||'')||
+      value.receipt_sha256!==releaseReceiptDigest(value))
+    fail('release-verification-receipt');
+  return structuredClone(value);
+}
 async function publishReleaseVerificationReceipt({stateCapability,planCapability,plan,
   sliceId,gateResults,functionalReceipts,seam}={}){
   const current=loadPlan(planCapability,plan),sid=
@@ -837,4 +859,5 @@ module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   buildGateFactArtifact,validateGateFactArtifact,argvSha256,
   buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
   validateGateResultRef,publishGateFact,publishDeterministicGateResult,
-  gateResultRefs,publishReleaseVerificationReceipt,semanticDigest};
+  gateResultRefs,validateReleaseVerificationReceipt,
+  publishReleaseVerificationReceipt,semanticDigest};

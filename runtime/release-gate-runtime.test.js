@@ -11,6 +11,7 @@ const platform=require('./platform.js');
 const transaction=require('./transaction-runtime.js');
 const frontmatter=require('./frontmatter.js');
 const {compileImmutablePlanAuthorityV2}=require('./plan-runtime.js');
+const {loadGovernedContext}=require('./governed-context-runtime.js');
 const {dispatch}=require('../scripts/deep-work-runtime.js');
 
 test('release gate catalog fixes all command argv and every v6.14 gate exactly once',()=>{
@@ -97,6 +98,27 @@ test('command GateResultV1 rejects a caller-forged pass on timeout',()=>{
   assert.equal(result.status,'failed');
   assert.throws(()=>gate.validateGateResult({...result,status:'passed'}),
     /gate-result/);
+});
+
+test('ReleaseVerificationReceiptV1 rejects content changed after publication',()=>{
+  const value={schema_version:1,slice_id:'SLICE-001',
+    plan_authority_sha256:'1'.repeat(64),
+    verification_plan_sha256:'2'.repeat(64),
+    gate_results:[{gate_id:'GATE-full-relevant-suite',
+      operation_id:`op-${'3'.repeat(64)}`,
+      result_path:`.deep-work/s-aaaaaaaa/gate-results/op-${'3'.repeat(64)}.json`,
+      result_sha256:'4'.repeat(64),ledger_result_sha256:'5'.repeat(64),
+      checker_id:'command-v1',argv_sha256:gate.argvSha256(['npm','test'])}],
+    functional_receipts:[],completion_operation_id:`op-${'6'.repeat(64)}`,
+    receipt_sha256:null};
+  value.receipt_sha256=journal.sha256(journal.canonicalJson(
+    Object.fromEntries(Object.entries(value).filter(([key])=>
+      key!=='receipt_sha256'))));
+  assert.equal(gate.validateReleaseVerificationReceipt(value).slice_id,
+    'SLICE-001');
+  assert.throws(()=>gate.validateReleaseVerificationReceipt({
+    ...value,verification_plan_sha256:'7'.repeat(64)}),
+  /release-verification-receipt/);
 });
 
 test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes',
@@ -190,6 +212,10 @@ test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes
     assert.match(completed.receipt_sha256,/^[0-9a-f]{64}$/);
     const completedPlan=JSON.parse(fs.readFileSync(planCapability.path,'utf8'));
     assert.equal(completedPlan.slices[0].checked,true);
+    const governed=loadGovernedContext({stateCapability});
+    assert.deepEqual(governed.projection.receipts.rows,[{
+      slice_id:'SLICE-001',slice_kind:'release-verification',status:'complete',
+      receipt_sha256:completed.receipt_sha256}]);
     const completionReplay=await gate.publishReleaseVerificationReceipt({
       stateCapability,planCapability,plan:completedPlan,sliceId:'SLICE-001',
       gateResults:result.gate_result_refs,functionalReceipts:[]});
