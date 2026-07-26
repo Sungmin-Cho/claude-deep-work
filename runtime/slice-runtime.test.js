@@ -68,7 +68,7 @@ test('temporary first-slice admission requires completed bridge, adoption and ca
   assert.throws(()=>assertBootstrapProductionAdmission(common),/bootstrap-proof-required/);
   const bridgeOperationId=`op-${'7'.repeat(64)}`;
   const writeOperationId=`op-${'a'.repeat(64)}`;
-  const verificationOperationId=`op-${'b'.repeat(64)}`;
+  const verificationOperationId=bridgeOperationId;
   const bridgeResultSha256='c'.repeat(64),adoptionResultSha256='d'.repeat(64);
   const canonicalJson=require('./operation-journal.js').canonicalJson;
   const operationId=(domain,preimage)=>`op-${crypto.createHash('sha256').update(Buffer.concat([
@@ -105,9 +105,10 @@ test('temporary first-slice admission requires completed bridge, adoption and ca
     bootstrap_adoption_operation_id:adoptionOperationId,red_proof_operation_id:proofOperationId},
     proof,bridgeReceipt:{operationId:bridgeOperationId,kind:'bootstrap-first-red',
       stage:'completed-ledger',resultSha256:bridgeResultSha256,
-      result:{bridge_consumed:true,slice_id:'SLICE-001',
-        verification_result_sha256:proof.verification_result_sha256,
-        write_receipt_sha256:proof.write_receipt_sha256}},
+      result:{session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+        result_path:`.claude/deep-work.s-aaaaaaaa.verification.${bridgeOperationId}.json`,
+        result_sha256:proof.verification_result_sha256,disposition:'accepted',
+        observed_class:'expected-failure',scope_disposition:'clean'}},
     adoptionReceipt:{operationId:adoptionOperationId,kind:'bootstrap-red-adoption',
       stage:'completed-ledger',resultSha256:adoptionResultSha256,
       result:{slice_id:'SLICE-001',post_state_sha256:'2'.repeat(64),
@@ -122,7 +123,7 @@ test('temporary first-slice admission requires completed bridge, adoption and ca
   assert.throws(()=>assertBootstrapProductionAdmission({...accepted,sliceId:'SLICE-002'}),
     /bootstrap-first-slice/);
   const negatives=[
-    ['pending',{bridgeReceipt:{...accepted.bridgeReceipt,stage:'verification-completed'}}],
+    ['pending',{bridgeReceipt:{...accepted.bridgeReceipt,stage:'result-published'}}],
     ['swapped',{adoptionReceipt:{...accepted.adoptionReceipt,
       operationId:`op-${'2'.repeat(64)}`}}],
     ['mismatched',{proof:{...proof,verification_plan_sha256:'3'.repeat(64)}}],
