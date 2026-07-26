@@ -47,6 +47,12 @@ test('deterministic fact validators emit only their closed blocker vocabulary',(
     git_state:{head:'b'.repeat(40),branch:'worktree-v6-14',dirty:false,
       changed_paths:[]},external_effect_operation_ids:[]};
   assert.deepEqual(gate.computeBlockingCodes('release-integrity-v1',integrity),[]);
+  integrity.git_state.dirty=true;
+  integrity.git_state.changed_paths=['runtime/untracked.js'];
+  assert.deepEqual(gate.computeBlockingCodes('release-integrity-v1',integrity),
+    ['git-dirty']);
+  integrity.git_state.dirty=false;
+  integrity.git_state.changed_paths=[];
   integrity.runtime_version='7.0.0';
   integrity.external_effect_operation_ids=[`op-${'c'.repeat(64)}`];
   assert.deepEqual(gate.computeBlockingCodes('release-integrity-v1',integrity),

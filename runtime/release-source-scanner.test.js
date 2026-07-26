@@ -193,6 +193,56 @@ test('source scanner git reader requires identity revalidation',()=>{
   /release-launch-dynamic/);
 });
 
+test('release toolchain authenticated git carrier is admitted',()=>{
+  const source=[
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    'function runAuthenticatedGit({root,args,environment=process.env}={}){',
+    "  const identity=buildToolIdentity({name:'git',targetPath:",
+    "    require('./platform.js').resolveGitExecutable(environment,fs)});",
+    "  const result=require('node:child_process').spawnSync(identity.target_path,",
+    "    ['-C',fs.realpathSync(root),...args],{cwd:fs.realpathSync(root),",
+    "      env:{LANG:'C',LC_ALL:'C',TZ:'UTC'},encoding:null,shell:false});",
+    '  validateToolIdentity(identity);',
+    '  return result;',
+    '}',
+  ].join('\n');
+  assert.deepEqual(scanner.scanLaunchSites(
+    'runtime/release-toolchain-runtime.js',Buffer.from(source)).required_tools,
+  ['git']);
+  assert.throws(()=>scanner.scanLaunchSites(
+    'runtime/release-toolchain-runtime.js',Buffer.from(source.replace(
+      '  validateToolIdentity(identity);','  void identity;'))),
+  /release-launch-dynamic/);
+});
+
+test('review probes remain optional release tools',()=>{
+  const source=[
+    "const {spawnSync}=require('node:child_process');",
+    'function probe(binary,safeEnv){',
+    "  const result=spawnSync(binary,['--version'],{env:safeEnv,shell:false});",
+    '  return result.status===0;',
+    '}',
+    "probe('codex',safeEnv);",
+    "probe('gemini',safeEnv);",
+  ].join('\n');
+  const launch=scanner.scanLaunchSites(
+    'runtime/review-policy-runtime.js',Buffer.from(source));
+  assert.deepEqual(launch.required_tools,[]);
+  assert.deepEqual(launch.optional_tools,['codex','gemini']);
+});
+
+test('exact committed production release graph is scannable',
+  {skip:process.platform==='win32'},()=>{
+    const root=path.resolve(__dirname,'..');
+    const gitIdentity=toolchain.buildToolIdentity({name:'git',targetPath:
+      require('./platform.js').resolveGitExecutable(process.env,fs)});
+    const files=scanner.loadCommittedFiles({root,gitIdentity,
+      requireWorktreeMatch:false});
+    assert.doesNotThrow(()=>scanner.scanReleaseSources({
+      committedFiles:files}));
+  });
+
 test('committed source loading binds an authenticated git and rejects worktree drift',
   {skip:process.platform==='win32'},t=>{
     const gitPath=process.env.PATH.split(path.delimiter).map((directory)=>
