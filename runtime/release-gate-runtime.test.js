@@ -54,3 +54,38 @@ test('CheckerInputCatalogV1 rejects wrong roles, duplicates, and caller ordering
   assert.throws(()=>gate.validateCheckerInputRefs('spec-gate-v1',
     [refs[0],refs[0],refs[2]]),/checker-input-catalog/);
 });
+
+test('GateResultV1 derives deterministic status and GateResultRefV1 binds its producer',()=>{
+  const facts={changed_paths:['runtime/a.js'],checked_paths:['runtime/a.js'],
+    failure_paths:[]};
+  const artifact=gate.buildGateFactArtifact('changed-js-syntax-v1',facts);
+  const artifactSha256=gate.validateGateFactArtifact(artifact).facts_artifact_sha256;
+  const factsRef={kind:'gate-fact',
+    path:`.deep-work/s-aaaaaaaa/gate-facts/changed-js-syntax-v1-${artifact.facts_sha256}.json`,
+    sha256:artifactSha256,producer_operation_id:`op-${'7'.repeat(64)}`};
+  const result=gate.buildDeterministicGateResult({
+    sessionId:'s-aaaaaaaa',planAuthoritySha256:'1'.repeat(64),
+    verificationPlanSha256:'2'.repeat(64),checkerId:'changed-js-syntax-v1',
+    gateIds:['GATE-impacted-lint-typecheck'],factsRef,artifact});
+  assert.equal(result.status,'passed');
+  assert.equal(gate.validateGateResult(result).result.passed,true);
+  const ref={gate_id:'GATE-impacted-lint-typecheck',
+    operation_id:`op-${'8'.repeat(64)}`,
+    result_path:`.deep-work/s-aaaaaaaa/gate-results/op-${'8'.repeat(64)}.json`,
+    result_sha256:result.result_sha256,ledger_result_sha256:'9'.repeat(64),
+    checker_id:'changed-js-syntax-v1',argv_sha256:gate.argvSha256([])};
+  assert.deepEqual(gate.validateGateResultRef(ref),ref);
+  assert.throws(()=>gate.validateGateResult({...result,status:'failed'}),
+    /gate-result/);
+});
+
+test('command GateResultV1 rejects a caller-forged pass on timeout',()=>{
+  const result=gate.buildCommandGateResult({sessionId:'s-aaaaaaaa',
+    planAuthoritySha256:'1'.repeat(64),verificationPlanSha256:'2'.repeat(64),
+    commandId:'full',inputRefs:[],releaseEnvironmentSha256:'3'.repeat(64),
+    processResult:{exit_code:null,signal:'SIGTERM',timed_out:true,
+      output_overflow:false,stdout_sha256:'4'.repeat(64),stderr_sha256:'5'.repeat(64)}});
+  assert.equal(result.status,'failed');
+  assert.throws(()=>gate.validateGateResult({...result,status:'passed'}),
+    /gate-result/);
+});

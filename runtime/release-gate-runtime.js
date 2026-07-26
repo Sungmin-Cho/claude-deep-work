@@ -31,20 +31,20 @@ const RELEASE_GATE_CATALOG=Object.freeze({
   tdd:Object.freeze({argv:Object.freeze(['node','--test',
     'runtime/verification-runtime.test.js','runtime/phase-runtime.test.js',
     'runtime/slice-runtime.test.js','hooks/scripts/verify-receipt-core.test.js']),
-  gate_ids:Object.freeze(['GATE-receipt-completeness','GATE-tdd-red',
-    'GATE-tdd-green','GATE-targeted-tests','GATE-negative-tests',
-    'GATE-permission-negative'])}),
+  gate_ids:Object.freeze(['GATE-negative-tests','GATE-permission-negative',
+    'GATE-receipt-completeness','GATE-targeted-tests','GATE-tdd-green',
+    'GATE-tdd-red'])}),
   replan:Object.freeze({argv:Object.freeze(['node','--test',
     'runtime/phase-runtime.test.js','runtime/slice-runtime.test.js',
     'runtime/evidence-runtime.test.js','runtime/report-runtime.test.js',
     'runtime/transaction-runtime.test.js','scripts/deep-work-runtime.test.js']),
-  gate_ids:Object.freeze(['GATE-fault-injection','GATE-timeout-retry-partial',
-    'GATE-recovery','GATE-concurrency-stress','GATE-idempotency-proof'])}),
+  gate_ids:Object.freeze(['GATE-concurrency-stress','GATE-fault-injection',
+    'GATE-idempotency-proof','GATE-recovery','GATE-timeout-retry-partial'])}),
   integration:Object.freeze({argv:Object.freeze(['node','--test',
     'tests/v6.13-spec-contract-integration.test.js',
     'tests/v6.13-spec-evidence-integration.test.js']),
-  gate_ids:Object.freeze(['GATE-relevant-integration','GATE-e2e-entrypoint',
-    'GATE-host-smoke'])}),
+  gate_ids:Object.freeze(['GATE-e2e-entrypoint','GATE-host-smoke',
+    'GATE-relevant-integration'])}),
   full:Object.freeze({argv:Object.freeze(['npm','test']),
     gate_ids:Object.freeze(['GATE-full-relevant-suite'])}),
   pack:Object.freeze({argv:Object.freeze(['npm','pack','--dry-run','--json']),
@@ -52,8 +52,8 @@ const RELEASE_GATE_CATALOG=Object.freeze({
 });
 
 const DETERMINISTIC_GATE_MAPPING=Object.freeze({
-  'spec-gate-v1':Object.freeze(['GATE-plan-alignment','GATE-spec-contract',
-    'GATE-requirement-coverage','GATE-failure-matrix']),
+  'spec-gate-v1':Object.freeze(['GATE-failure-matrix','GATE-plan-alignment',
+    'GATE-requirement-coverage','GATE-spec-contract']),
   'changed-js-syntax-v1':Object.freeze(['GATE-impacted-lint-typecheck']),
   'release-integrity-v1':Object.freeze(['GATE-clean-build']),
   'single-review-v1':Object.freeze(['GATE-single-review']),
@@ -249,7 +249,132 @@ function validateGateFactArtifact(value){
     facts_artifact_sha256:journal.sha256(canonical(value)),
     blocking_codes:computeBlockingCodes(value.checker_id,value.facts)};
 }
+function argvSha256(argv){
+  if(!Array.isArray(argv)||argv.some((value)=>typeof value!=='string'||/[\0\r\n]/.test(value)))
+    fail('gate-result-argv');
+  return journal.sha256(canonical(argv));
+}
+function sortInputRefs(refs){
+  if(!Array.isArray(refs)||refs.some((row)=>!locator(row))||
+      new Set(refs.map(locatorSortKey)).size!==refs.length)
+    fail('gate-result-input');
+  const sorted=[...refs].sort((a,b)=>Buffer.compare(Buffer.from(locatorSortKey(a)),
+    Buffer.from(locatorSortKey(b))));
+  if(canonical(sorted)!==canonical(refs))fail('gate-result-input');
+  return structuredClone(refs);
+}
+function resultDigest(value){const copy=structuredClone(value);delete copy.result_sha256;
+  return journal.sha256(canonical(copy));}
+function buildDeterministicGateResult({sessionId,planAuthoritySha256,
+  verificationPlanSha256,checkerId,gateIds,factsRef,artifact}={}){
+  const checked=validateGateFactArtifact(artifact),blocking=checked.blocking_codes;
+  if(!locator(factsRef)||factsRef.kind!=='gate-fact'||
+      factsRef.sha256!==checked.facts_artifact_sha256||
+      !Object.hasOwn(DETERMINISTIC_GATE_MAPPING,checkerId)||
+      canonical(gateIds)!==canonical(DETERMINISTIC_GATE_MAPPING[checkerId]))
+    fail('gate-result');
+  const result={schema_version:1,session_id:sessionId,
+    plan_authority_sha256:planAuthoritySha256,
+    verification_plan_sha256:verificationPlanSha256,checker_id:checkerId,
+    argv_sha256:argvSha256([]),gate_ids:[...gateIds],input_refs:[factsRef],
+    status:blocking.length?'failed':'passed',result:{kind:'deterministic',
+      facts_ref:factsRef,facts_sha256:artifact.facts_sha256,
+      facts_artifact_sha256:checked.facts_artifact_sha256,
+      passed:blocking.length===0,blocking_codes:blocking},result_sha256:null};
+  result.result_sha256=resultDigest(result);return validateGateResult(result);
+}
+function buildCommandGateResult({sessionId,planAuthoritySha256,verificationPlanSha256,
+  commandId,inputRefs,releaseEnvironmentSha256,processResult}={}){
+  const catalog=RELEASE_GATE_CATALOG[commandId];
+  if(!catalog||!DIGEST.test(releaseEnvironmentSha256||'')||
+      !exactKeys(processResult,['exit_code','signal','timed_out','output_overflow',
+        'stdout_sha256','stderr_sha256'])||
+      !(processResult.exit_code===null||Number.isSafeInteger(processResult.exit_code))||
+      !(processResult.signal===null||typeof processResult.signal==='string')||
+      typeof processResult.timed_out!=='boolean'||
+      typeof processResult.output_overflow!=='boolean'||
+      !DIGEST.test(processResult.stdout_sha256||'')||
+      !DIGEST.test(processResult.stderr_sha256||''))fail('gate-result');
+  const passed=processResult.exit_code===0&&processResult.signal===null&&
+    !processResult.timed_out&&!processResult.output_overflow;
+  const result={schema_version:1,session_id:sessionId,
+    plan_authority_sha256:planAuthoritySha256,
+    verification_plan_sha256:verificationPlanSha256,checker_id:'command-v1',
+    argv_sha256:argvSha256(catalog.argv),gate_ids:[...catalog.gate_ids],
+    input_refs:sortInputRefs(inputRefs),status:passed?'passed':'failed',
+    result:{kind:'command',release_environment_sha256:releaseEnvironmentSha256,
+      ...structuredClone(processResult)},result_sha256:null};
+  result.result_sha256=resultDigest(result);return validateGateResult(result);
+}
+function validateGateResult(value){
+  const keys=['schema_version','session_id','plan_authority_sha256',
+    'verification_plan_sha256','checker_id','argv_sha256','gate_ids',
+    'input_refs','status','result','result_sha256'];
+  if(!exactKeys(value,keys)||value.schema_version!==1||
+      !/^s-[0-9a-f]{8}$/.test(value.session_id||'')||
+      !DIGEST.test(value.plan_authority_sha256||'')||
+      !DIGEST.test(value.verification_plan_sha256||'')||
+      !DIGEST.test(value.argv_sha256||'')||
+      !['passed','failed','unknown'].includes(value.status)||
+      !DIGEST.test(value.result_sha256||'')||
+      !sortedUnique(value.gate_ids,(id)=>/^GATE-[A-Za-z0-9-]+$/.test(id))||
+      resultDigest(value)!==value.result_sha256)
+    fail('gate-result');
+  sortInputRefs(value.input_refs);
+  if(value.checker_id==='command-v1'){
+    const command=Object.values(RELEASE_GATE_CATALOG).find((row)=>
+      row.argv&&argvSha256(row.argv)===value.argv_sha256);
+    if(!command||canonical(command.gate_ids)!==canonical(value.gate_ids)||
+        !exactKeys(value.result,['kind','release_environment_sha256','exit_code',
+          'signal','timed_out','output_overflow','stdout_sha256','stderr_sha256'])||
+        value.result.kind!=='command'||
+        !DIGEST.test(value.result.release_environment_sha256||'')||
+        !(value.result.exit_code===null||Number.isSafeInteger(value.result.exit_code))||
+        !(value.result.signal===null||typeof value.result.signal==='string')||
+        typeof value.result.timed_out!=='boolean'||
+        typeof value.result.output_overflow!=='boolean'||
+        !DIGEST.test(value.result.stdout_sha256||'')||
+        !DIGEST.test(value.result.stderr_sha256||''))fail('gate-result');
+    const passed=value.result.exit_code===0&&value.result.signal===null&&
+      !value.result.timed_out&&!value.result.output_overflow;
+    if(value.status!==(passed?'passed':'failed'))fail('gate-result');
+  }else{
+    if(!Object.hasOwn(DETERMINISTIC_GATE_MAPPING,value.checker_id)||
+        canonical(value.gate_ids)!==canonical(
+          DETERMINISTIC_GATE_MAPPING[value.checker_id])||
+        value.argv_sha256!==argvSha256([])||
+        value.input_refs.length!==1||value.input_refs[0].kind!=='gate-fact'||
+        !exactKeys(value.result,['kind','facts_ref','facts_sha256',
+          'facts_artifact_sha256','passed','blocking_codes'])||
+        value.result.kind!=='deterministic'||
+        canonical(value.result.facts_ref)!==canonical(value.input_refs[0])||
+        !DIGEST.test(value.result.facts_sha256||'')||
+        value.result.facts_artifact_sha256!==value.input_refs[0].sha256||
+        typeof value.result.passed!=='boolean'||
+        !sortedUnique(value.result.blocking_codes,
+          (code)=>typeof code==='string'&&code.length>0)||
+        value.status!==(value.result.passed?'passed':'failed')||
+        value.result.passed!==(value.result.blocking_codes.length===0))
+      fail('gate-result');
+  }
+  return structuredClone(value);
+}
+function validateGateResultRef(value){
+  if(!exactKeys(value,['gate_id','operation_id','result_path','result_sha256',
+      'ledger_result_sha256','checker_id','argv_sha256'])||
+      !/^GATE-[A-Za-z0-9-]+$/.test(value.gate_id||'')||
+      !OPERATION.test(value.operation_id||'')||!portable(value.result_path)||
+      !DIGEST.test(value.result_sha256||'')||
+      !DIGEST.test(value.ledger_result_sha256||'')||
+      !(value.checker_id==='command-v1'||
+        Object.hasOwn(DETERMINISTIC_GATE_MAPPING,value.checker_id))||
+      !DIGEST.test(value.argv_sha256||''))
+    fail('gate-result-ref');
+  return structuredClone(value);
+}
 
 module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   CHECKER_INPUT_CATALOG,validateCheckerInputRefs,computeBlockingCodes,
-  buildGateFactArtifact,validateGateFactArtifact,semanticDigest};
+  buildGateFactArtifact,validateGateFactArtifact,argvSha256,
+  buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
+  validateGateResultRef,semanticDigest};
