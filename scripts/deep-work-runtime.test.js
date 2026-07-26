@@ -480,6 +480,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['replan discovery publish',[10,20,50,70]],['replan discovery dispatch',[10,20,50,70]],
     ['replan complete',[10,20,50,70]],
     ['release gate fact-publish',[10,20,50,70]],
+    ['release gate result-publish',[10,20,50,70]],
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
     ['implement tdd transition',[10,20,50]],['implement slice complete',[10,20,50,70]],
@@ -863,8 +864,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 107 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 107);
+test('all 108 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 108);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];

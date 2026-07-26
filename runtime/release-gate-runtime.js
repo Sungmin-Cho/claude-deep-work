@@ -505,9 +505,96 @@ async function publishGateFact({stateCapability,planCapability,plan,checkerId,
   return{...receipt.result,operation_id:id,operation_receipt:receipt,
     adopted:false};
 }
+function gateResultRefs({result,operationId:resultOperationId,resultPath,
+  ledgerResultSha256}={}){
+  validateGateResult(result);
+  if(!OPERATION.test(resultOperationId||'')||!portable(resultPath)||
+      !DIGEST.test(ledgerResultSha256||''))fail('gate-result-ref');
+  return result.gate_ids.map((gateId)=>validateGateResultRef({gate_id:gateId,
+    operation_id:resultOperationId,result_path:resultPath,
+    result_sha256:result.result_sha256,
+    ledger_result_sha256:ledgerResultSha256,checker_id:result.checker_id,
+    argv_sha256:result.argv_sha256}));
+}
+async function publishDeterministicGateResult({stateCapability,planCapability,plan,
+  factOperationId,seam}={}){
+  const current=loadPlan(planCapability,plan),sid=
+    transaction.sessionIdFromState(stateCapability);
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const factReceipt=await journal.resumeOperation({projectCapability:project,
+    operationId:factOperationId,sessionId:sid,kind:'gate-fact-publish'});
+  const factTerminal=factReceipt.result;
+  if(factReceipt.stage!=='completed-ledger'||!exactKeys(factTerminal,
+      ['checker_id','input_refs','facts_path','facts_sha256',
+        'facts_artifact_sha256','plan_authority_sha256',
+        'verification_plan_sha256'])||
+      factTerminal.plan_authority_sha256!==current.plan_authority_sha256||
+      factTerminal.verification_plan_sha256!==fields.verification_plan_sha256)
+    fail('release-gate-fact');
+  const raw=readCanonical(path.join(stateCapability.projectRoot,
+    ...factTerminal.facts_path.split('/')),'release-gate-fact');
+  const validated=validateGateFactArtifact(raw.value);
+  if(raw.sha256!==factTerminal.facts_artifact_sha256||
+      raw.value.facts_sha256!==factTerminal.facts_sha256||
+      raw.value.checker_id!==factTerminal.checker_id)
+    fail('release-gate-fact');
+  const factRef={kind:'gate-fact',path:factTerminal.facts_path,
+    sha256:factTerminal.facts_artifact_sha256,
+    producer_operation_id:factOperationId};
+  const gateIds=DETERMINISTIC_GATE_MAPPING[factTerminal.checker_id];
+  if(!gateIds)fail('release-gate-fact');
+  const preconditions={session_id:sid,plan_authority_sha256:
+    current.plan_authority_sha256,verification_plan_sha256:
+    fields.verification_plan_sha256,checker_id:factTerminal.checker_id,
+  argv_sha256:argvSha256([]),gate_ids:gateIds,input_refs:[factRef],
+  release_environment_sha256:null};
+  const id=operationId('release-gate-result-v1',preconditions);
+  const existing=await journal.resumeOperation({projectCapability:project,
+    operationId:id,sessionId:sid,kind:'release-gate-result'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger'){
+    const replayRaw=readCanonical(path.join(stateCapability.projectRoot,
+      ...existing.result.result_path.split('/')),'release-gate-result-replay');
+    const replayResult=validateGateResult(replayRaw.value);
+    if(replayResult.result_sha256!==existing.result.result_sha256)
+      fail('release-gate-result-replay');
+    return{...existing.result,operation_id:id,operation_receipt:existing,
+      gate_result_refs:gateResultRefs({result:replayResult,operationId:id,
+        resultPath:existing.result.result_path,
+        ledgerResultSha256:existing.resultSha256}),adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId:sid,kind:'release-gate-result',operationId:id,preconditions});
+  await journal.recordOperationStage(operation,'inputs-authenticated',{owned:{
+    factOperationId,factLedgerResultSha256:factReceipt.resultSha256,
+    factsArtifactSha256:validated.facts_artifact_sha256}});
+  const result=buildDeterministicGateResult({sessionId:sid,
+    planAuthoritySha256:current.plan_authority_sha256,
+    verificationPlanSha256:fields.verification_plan_sha256,
+    checkerId:factTerminal.checker_id,gateIds,factsRef:factRef,
+    artifact:raw.value});
+  await journal.recordOperationStage(operation,'checker-completed',{owned:{
+    status:result.status,resultSha256:result.result_sha256,
+    blockingCodes:result.result.blocking_codes}});
+  const relative=`.deep-work/${sid}/gate-results/${id}.json`;
+  seam?.('before-gate-result-write',{operationId:id,path:relative});
+  writeExclusive(path.join(stateCapability.projectRoot,
+    ...relative.split('/')),result,'release-gate-result-publish');
+  await journal.recordOperationStage(operation,'result-published',{owned:{
+    resultPath:relative,resultSha256:result.result_sha256,status:result.status}});
+  const receipt=await journal.completeOperation(operation,{checker_id:
+    result.checker_id,gate_ids:result.gate_ids,input_refs:result.input_refs,
+  result_path:relative,result_sha256:result.result_sha256,status:result.status});
+  return{...receipt.result,operation_id:id,operation_receipt:receipt,
+    gate_result_refs:gateResultRefs({result,operationId:id,resultPath:relative,
+      ledgerResultSha256:receipt.resultSha256}),adopted:false};
+}
 
 module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   CHECKER_INPUT_CATALOG,validateCheckerInputRefs,computeBlockingCodes,
   buildGateFactArtifact,validateGateFactArtifact,argvSha256,
   buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
-  validateGateResultRef,publishGateFact,semanticDigest};
+  validateGateResultRef,publishGateFact,publishDeterministicGateResult,
+  gateResultRefs,semanticDigest};

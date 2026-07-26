@@ -64,6 +64,7 @@ const rows=[
       'release-integrity-v1','single-review-v1','mutation-critical-path-v1',
       'rollback-rehearsal-v1','governed-health-v1','governed-evidence-v1',
       'evidence-redaction-v1','dual-final-review-v1','human-ack-v1']}),
+  grammar('release gate result-publish',['state','plan','fact-operation-id']),
   grammar('implement delegation set',['state','plan','assignment-json','snapshot']),
   grammar('implement delegation clear',['state','snapshot']),
   grammar('implement write begin',['state','plan','slice','class','scope-sha256'],['delegation-operation-id','cluster'],{class:['failing-test','production','refactor']}),

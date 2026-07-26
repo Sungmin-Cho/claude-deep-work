@@ -375,6 +375,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     return releaseGate.publishGateFact({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,checkerId:f.checker,
       inputRefs:jsonFile(resolveInput(f['input-refs-json'],cwd))});});
+  on('release gate result-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishDeterministicGateResult({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,
+      factOperationId:f['fact-operation-id']});});
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));

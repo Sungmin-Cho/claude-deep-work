@@ -169,4 +169,14 @@ test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes
     const replay=await gate.publishGateFact({stateCapability,planCapability,
       plan,checkerId:'spec-gate-v1',inputRefs:refs});
     assert.equal(replay.adopted,true);
+    const result=await dispatch(['release','gate','result-publish','--state',
+      statePath,'--plan',planCapability.path,'--fact-operation-id',
+      published.operation_id],{cwd:root});
+    assert.equal(result.status,'passed');
+    assert.equal(result.gate_result_refs.length,4);
+    assert.ok(result.gate_result_refs.every((ref)=>
+      ref.operation_id===result.operation_id));
+    const resultReplay=await gate.publishDeterministicGateResult({
+      stateCapability,planCapability,plan,factOperationId:published.operation_id});
+    assert.equal(resultReplay.adopted,true);
   });
