@@ -13,16 +13,16 @@ function tmpProfile(content) {
   return { dir, file };
 }
 
-test('idempotent — v3 입력 시 즉시 return + 변경 없음', () => {
-  const { file } = tmpProfile('version: 3\ndefault_preset: x\n');
+test('idempotent — v4 입력 시 즉시 return + 변경 없음', () => {
+  const { file } = tmpProfile('version: 4\ndefault_preset: x\n');
   const before = fs.readFileSync(file, 'utf8');
   const result = migrateProfile(file);
-  assert.deepStrictEqual(result, { migrated: false, reason: 'already-v3' });
+  assert.deepStrictEqual(result, { migrated: false, reason: 'already-v4' });
   assert.strictEqual(fs.readFileSync(file, 'utf8'), before);
   assert.strictEqual(fs.existsSync(file + '.v2-backup'), false);
 });
 
-test('v2 → v3 — notifications drop, defaults 이동, model_routing.plan 보존', () => {
+test('v2 → v4 — notifications drop, defaults 이동, model_routing.plan 보존', () => {
   const v2 = `version: 2
 default_preset: solo
 presets:
@@ -47,12 +47,14 @@ presets:
   const result = migrateProfile(file);
   assert.strictEqual(result.migrated, true);
   const after = fs.readFileSync(file, 'utf8');
-  assert.match(after, /^version:\s*3\s*$/m);
+  assert.match(after, /^version:\s*4\s*$/m);
   assert.doesNotMatch(after, /notifications:/);
   assert.match(after, /defaults:/);
   assert.match(after, /interactive_each_session:/);
   // model_routing.plan은 v2 값 그대로 보존 (main → main)
   assert.match(after, /plan:\s*main/);
+  assert.match(after, /methodology_policy:\s*auto/);
+  assert.match(after, /^    policy:\s*$/m);
   // backup 생성됨
   assert.strictEqual(fs.existsSync(file + '.v2-backup'), true);
 });
@@ -82,14 +84,14 @@ test('atomic write — rename 실패 시 원본 보존 (real simulation)', () =>
   // v3-tmp leftover는 가질 수 있지만 backup은 atomic하게 작성됐어야 함 — 검증은 release 단계에서
 });
 
-test('idempotent — 순차 호출 시 두 번째는 v3 read 후 skip', () => {
+test('idempotent — 순차 호출 시 두 번째는 v4 read 후 skip', () => {
   const v2 = 'version: 2\ndefault_preset: solo\npresets:\n  solo:\n    team_mode: solo\n';
   const { file } = tmpProfile(v2);
   const r1 = migrateProfile(file);
   const r2 = migrateProfile(file);
   assert.strictEqual(r1.migrated, true);
   assert.strictEqual(r2.migrated, false);
-  assert.strictEqual(r2.reason, 'already-v3');
+  assert.strictEqual(r2.reason, 'already-v4');
 });
 
 test('stale lock — dead PID 검출 후 강제 해제', () => {
@@ -134,10 +136,10 @@ test('CLI entrypoint — node migrate-profile-v2-to-v3.js <path>', () => {
   assert.strictEqual(result.status, 0, `stderr: ${result.stderr}`);
   const out = JSON.parse(result.stdout.trim());
   assert.strictEqual(out.migrated, true);
-  assert.strictEqual(out.reason, 'v2-to-v3');
+  assert.strictEqual(out.reason, 'v2-to-v4');
 });
 
-test('CLI entrypoint — not-found 시 createV3Profile 호출', () => {
+test('CLI entrypoint — not-found 시 createV4Profile 호출', () => {
   const { spawnSync } = require('node:child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-profile-'));
   const file = path.join(dir, 'deep-work-profile.yaml');
@@ -145,8 +147,9 @@ test('CLI entrypoint — not-found 시 createV3Profile 호출', () => {
   const result = spawnSync(process.execPath, [require.resolve('./migrate-profile-v2-to-v3.js'), file], { encoding: 'utf8' });
   assert.strictEqual(result.status, 0);
   const out = JSON.parse(result.stdout.trim());
-  assert.strictEqual(out.reason, 'not-found-created-v3');
+  assert.strictEqual(out.reason, 'not-found-created-v4');
   assert.ok(fs.existsSync(file));
+  assert.match(fs.readFileSync(file,'utf8'),/^version:\s*4\s*$/m);
 });
 
 test('C1: 탭 들여쓰기 — 변환 거부 + 수동 이전 가이드', () => {
@@ -205,7 +208,7 @@ presets:
   const result = migrateProfile(file);
   assert.strictEqual(result.migrated, true, '마이그레이션이 성공해야 함');
   const after = fs.readFileSync(file, 'utf8');
-  assert.match(after, /^version:\s*3\s*$/m, 'version: 3으로 갱신');
+  assert.match(after, /^version:\s*4\s*$/m, 'version: 4로 갱신');
   assert.match(after, /use_branch:\s*false/, 'git_branch: false가 use_branch: false로 변환');
   assert.match(after, /use_worktree:\s*false/, 'use_worktree: false 자동 삽입');
   // git_branch: 원본 라인은 남아있으면 안 됨
@@ -247,12 +250,12 @@ presets:
 });
 
 test('I4: version: 2  # legacy comment — 정상 파싱', () => {
-  // 트레일링 주석이 붙은 version 라인도 v2로 인식하고 v3으로 변환되어야 함
+  // 트레일링 주석이 붙은 version 라인도 v2로 인식하고 v4로 변환되어야 함
   const v2 = 'version: 2  # legacy\ndefault_preset: solo\npresets:\n  solo:\n    team_mode: solo\n';
   const { file } = tmpProfile(v2);
   const result = migrateProfile(file);
   assert.strictEqual(result.migrated, true);
   const after = fs.readFileSync(file, 'utf8');
-  assert.match(after, /^version:\s*3\s*$/m, 'version: 3으로 갱신되어야 함');
+  assert.match(after, /^version:\s*4\s*$/m, 'version: 4로 갱신되어야 함');
   assert.doesNotMatch(after, /version:\s*2/, '버전 2 라인이 남아 있으면 안 됨');
 });
