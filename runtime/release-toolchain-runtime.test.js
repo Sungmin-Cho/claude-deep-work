@@ -152,4 +152,16 @@ test('catalog command execution rejects caller argv and cleans its owned runtime
     assert.equal(Array.isArray(JSON.parse(execution.stdout)),true);
     await assert.rejects(()=>toolchain.executeCatalogCommand({commandId:'unknown',
       cwd:path.resolve(__dirname,'..')}),/release-command/);
+    const fullAtMeasuredBound=toolchain.executeCatalogCommand({
+      commandId:'full',cwd:path.resolve(__dirname,'..'),
+      sourceGraphRef:{kind:'release-source-graph',
+        path:'.deep-work/s-aaaaaaaa/release/source-graph.json',
+        sha256:'1'.repeat(64),producer_operation_id:`op-${'2'.repeat(64)}`},
+      sourceGraphSha256:'3'.repeat(64),entries:[],timeoutMs:480000,
+      maxOutputBytes:1048576});
+    await assert.rejects(fullAtMeasuredBound,(error)=>
+      error.code==='release-command-tool');
+    await assert.rejects(()=>toolchain.executeCatalogCommand({
+      commandId:'pack',cwd:path.resolve(__dirname,'..'),
+      timeoutMs:480000}),error=>error.code==='release-command');
   });

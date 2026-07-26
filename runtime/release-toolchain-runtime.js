@@ -6,6 +6,8 @@ const journal=require('./operation-journal.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
 const OPERATION=/^op-[0-9a-f]{64}$/;
+const COMMAND_TIMEOUT_LIMITS=Object.freeze({carrier:120000,tdd:120000,
+  replan:120000,integration:120000,full:480000,pack:120000});
 function fail(code,message=code){const error=new Error(`[${code}] ${message}`);
   error.code=code;throw error;}
 function canonical(value){return journal.canonicalJson(value);}
@@ -346,13 +348,16 @@ async function runHermetic({manifest,environment,executableName,args,cwd,
   return result;
 }
 async function executeCatalogCommand({commandId,cwd,sourceGraphRef,
-  sourceGraphSha256,entries,platformName=process.platform,timeoutMs=120000,
+  sourceGraphSha256,entries,platformName=process.platform,timeoutMs,
   maxOutputBytes=1048576}={}){
   const catalog=require('./release-gate-runtime.js').RELEASE_GATE_CATALOG[commandId];
+  const timeoutLimit=COMMAND_TIMEOUT_LIMITS[commandId],
+    effectiveTimeout=timeoutMs===undefined?timeoutLimit:timeoutMs;
   let physicalCwd,cwdStat;try{physicalCwd=fs.realpathSync(cwd);
     cwdStat=fs.lstatSync(physicalCwd);}catch{fail('release-command');}
   if(!catalog||!cwdStat.isDirectory()||cwdStat.isSymbolicLink()||
-      !Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000||
+      !Number.isSafeInteger(effectiveTimeout)||effectiveTimeout<100||
+      effectiveTimeout>timeoutLimit||
       !Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1024||
       maxOutputBytes>1048576)fail('release-command');
   const executableName=catalog.argv[0],args=catalog.argv.slice(1);
@@ -371,7 +376,7 @@ async function executeCatalogCommand({commandId,cwd,sourceGraphRef,
     environment=buildReleaseEnvironment({platformName,homePath:home,
       binPath:materialized.binPath,manifestPath,manifest});
     const result=await runHermetic({manifest,environment,executableName,args,
-      cwd:physicalCwd,timeoutMs,maxOutputBytes});
+      cwd:physicalCwd,timeoutMs:effectiveTimeout,maxOutputBytes});
     return{command_id:commandId,argv:[...catalog.argv],
       release_environment_sha256:environment.release_environment_sha256,
       process_result:{exit_code:result.exitCode,signal:result.signal,
