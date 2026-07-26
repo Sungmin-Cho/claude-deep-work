@@ -12,7 +12,7 @@
 // require에 의존하지 않는 로컬 리터럴. require가 실패해도(모듈 손상/누락)
 // fallback 경로는 동작해야 하므로 runtime 모듈의 PHASES를 가져오지 않고 여기서
 // 직접 리터럴로 고정한다.
-const FALLBACK_PHASES = ['brainstorm', 'research', 'plan', 'implement', 'test'];
+const FALLBACK_PHASES = ['brainstorm', 'research', 'spec', 'plan', 'implement', 'test'];
 
 // 정상 출력(main()의 try 블록 성공)이 이미 이뤄졌다면 uncaughtException 핸들러가
 // 뒤늦게 발동하더라도 stdout에 두 번째 JSON을 쓰지 않도록 하는 가드.
@@ -47,7 +47,8 @@ process.on('uncaughtException', (e) => {
 
 function parseArgs(argv) {
   const out = { root: process.cwd(), task: '', difficulty: null, runtime: null, pinnedRaw: '',
-    riskClassRaw: null, policyModeRaw: null, floorBaselineRaw: null };
+    riskClassRaw: null, policyModeRaw: null, floorBaselineRaw: null,
+    methodologyPolicyRaw:null };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--root') out.root = argv[++i] || out.root;
@@ -58,6 +59,7 @@ function parseArgs(argv) {
     else if (a === '--risk-class') out.riskClassRaw = argv[++i] || '';
     else if (a === '--policy-mode') out.policyModeRaw = argv[++i] || '';
     else if (a === '--floor-baseline') out.floorBaselineRaw = argv[++i] || '';
+    else if (a === '--methodology-policy') out.methodologyPolicyRaw=argv[++i]||'';
   }
   return out;
 }
@@ -118,8 +120,13 @@ function main() {
     const signals = collectCodebaseSignals(args.root);
     const pinned = parsePinned(args.pinnedRaw, warnings);
     const policyArgs = parsePolicyArgs(args, warnings);
+    let methodologyPolicy=null;
+    if(args.methodologyPolicyRaw!==null){
+      try{methodologyPolicy=JSON.parse(args.methodologyPolicyRaw);}
+      catch{throw new Error('methodology-policy JSON invalid');}
+    }
     const decision = decideModelRouting({ signals, taskText: args.task,
-      difficulty: args.difficulty, runtime, pinned, ...policyArgs });
+      difficulty: args.difficulty, runtime, pinned,methodologyPolicy,...policyArgs });
     decision.warnings = [...warnings, ...decision.warnings];
     if (process.env.DEEP_WORK_MR_CLI_TEST_BAD_JSON === '1') decision.meta.cycle = decision; // test-only: JSON.stringify throw 유도
     process.stdout.write(JSON.stringify(decision));
