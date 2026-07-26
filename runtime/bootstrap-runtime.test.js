@@ -51,6 +51,7 @@ const {
 const {canonicalJson}=require('./operation-journal.js');
 const journalRuntime=require('./operation-journal.js');
 const processSupervisor=require('./process-supervisor.js');
+const phaseRuntime=require('./phase-runtime.js');
 const {beginScopedWrite,acceptScopedWrite}=require('./slice-runtime.js');
 const {deriveScopedWriteAuthority,compileImmutablePlanAuthorityV2}=require('./plan-runtime.js');
 const {compileVerificationPlan}=require('./verification-policy-runtime.js');
@@ -1872,6 +1873,44 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       try{
         await expectRejected(prepared,'test-side-effect','governed-path-changed');
       }finally{processSupervisor.runSupervisedProcess=original;}
+    });
+    await t.test('authenticated-side-effect-replan-recovers-after-ledger-crash',async()=>{
+      const prepared=await preparePublicFirstRedCase(t);
+      const originalSupervisor=processSupervisor.runSupervisedProcess;
+      const originalInvalidate=phaseRuntime.invalidateForReplan;
+      processSupervisor.runSupervisedProcess=async()=>{
+        fs.writeFileSync(path.join(prepared.fixture.root,'runtime','a.js'),'side effect\n');
+        return {exitCode:1,signal:null,
+          stdout:Buffer.from(directAssertionTap({root:prepared.fixture.root,
+            testPath:'runtime/a.test.js'})),stderr:Buffer.alloc(0),
+          timedOut:false,outputOverflow:false,durationMs:1};
+      };
+      let crashed=false;
+      phaseRuntime.invalidateForReplan=async()=>{
+        crashed=true;
+        throw new Error('crash-after-first-red-ledger');
+      };
+      try{
+        await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+          /crash-after-first-red-ledger/);
+        assert.equal(crashed,true);
+        const beforeReplay=parseFrontmatter(
+          fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
+        assert.equal(beforeReplay.current_phase,'implement');
+        phaseRuntime.invalidateForReplan=originalInvalidate;
+        processSupervisor.runSupervisedProcess=originalSupervisor;
+        const replay=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+        assert.equal(replay.adopted,true);
+        const afterReplay=parseFrontmatter(
+          fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
+        assert.equal(afterReplay.current_phase,'research');
+        assert.equal(afterReplay.subphase,'spec');
+        assert.equal(afterReplay.replan_required,true);
+        assert.equal(afterReplay.replan_reason,'external-side-effect');
+      }finally{
+        phaseRuntime.invalidateForReplan=originalInvalidate;
+        processSupervisor.runSupervisedProcess=originalSupervisor;
+      }
     });
     await t.test('unexpected-pass',async()=>{
       const source=["'use strict';","const test=require('node:test');",
