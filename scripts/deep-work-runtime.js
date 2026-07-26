@@ -50,7 +50,7 @@ const rows=[
   grammar('phase complete',['state','phase','result-json','at'],[],{phase:PHASES.slice(0,4)}),
   grammar('phase approve',['state','phase','artifact','at'],[],{phase:['research','plan']}),
   grammar('phase spec enter',['state','at']),
-  grammar('phase spec approve',['state','artifact','at']),
+  grammar('phase spec approve',['state','artifact','at'],['spec-review-ref-sha256']),
   grammar('phase advance',['state','from','to','at'],[],{from:PHASES.slice(0,4),to:['research','plan','implement','test']}),
   grammar('phase rerun',['state','phase'],['affected-slices-json'],{phase:PHASES.slice(0,5)}),
   grammar('phase invalidate-replan',['state','reason','from-risk','to-risk','affected-slices-json','risk-profile-sha256','at'],[],{
@@ -58,6 +58,7 @@ const rows=[
     'from-risk':['low','medium','high'],'to-risk':['medium','high','critical']}),
   grammar('replan discovery publish',['state','plan','observation-json']),
   grammar('replan discovery dispatch',['state','plan','producer-operation-id'],['slice']),
+  grammar('replan complete',['state','plan']),
   grammar('implement delegation set',['state','plan','assignment-json','snapshot']),
   grammar('implement delegation clear',['state','snapshot']),
   grammar('implement write begin',['state','plan','slice','class','scope-sha256'],['delegation-operation-id','cluster'],{class:['failing-test','production','refactor']}),

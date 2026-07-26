@@ -345,7 +345,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
         spec_id:specContract.spec_id,spec_sha256:contractRuntime.specContractDigest(specContract),risk_class:specContract.risk_class,
         errors:validation.errors,warnings:validation.warnings,requirement_coverage:validation.requirementCoverage,
         failure_matrix_coverage:validation.failureMatrixCoverage};return phase.approveSpecSubphase({stateCapability:state,
-      specApprovedHash:hash(bytes),specContract,specGateResult,at:f.at});});
+      specApprovedHash:hash(bytes),specContract,specGateResult,
+      specReviewRefSha256:f['spec-review-ref-sha256'],at:f.at});});
   on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);let specCurrentSha256;
     if(f.from==='research'){const candidate=path.join(sessionCapability(state).path,'spec.md');
       if(fs.existsSync(candidate))specCurrentSha256=hash(boundedFile(candidate));}
@@ -367,6 +368,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     return replan.dispatchOwnedDiscoveryReplan({stateCapability:bound.state,
       plan:bound.value,sliceId:f.slice||null,
       producerOperationId:f['producer-operation-id']});});
+  on('replan complete',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.completeReplan({stateCapability:bound.state,plan:bound.value});});
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));

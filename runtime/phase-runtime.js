@@ -72,17 +72,21 @@ function completePhase({state,stateCapability,phase,result={},at,seam}={}) {
 }
 
 function approvePhase({state,stateCapability,phase,artifactSha256,planProjectionSha256=null,
-    sourcePlanSha256=null,verificationCompilerInput=null,verificationPlan=null,planSpecGateResult=null,at,seam}={}) {
+    sourcePlanSha256=null,verificationCompilerInput=null,verificationPlan=null,planSpecGateResult=null,
+    approvalOperationId,at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-approval',
     preconditions:{phase,artifactSha256,planProjectionSha256,sourcePlanSha256,at,
       verificationCompilerInputSha256:verificationCompilerInput?sha256(canonicalJson(verificationCompilerInput)):null},seam,
-    reducer:(fields)=>{const next=approvePhase({state:fields,phase,artifactSha256,planProjectionSha256,sourcePlanSha256,
-      verificationCompilerInput,verificationPlan,planSpecGateResult,at}),key=`${phase}_approved`;
+    reducer:(fields,context)=>{const next=approvePhase({state:fields,phase,artifactSha256,
+      planProjectionSha256,sourcePlanSha256,verificationCompilerInput,verificationPlan,
+      planSpecGateResult,approvalOperationId:context.operationId,at}),key=`${phase}_approved`;
       return{...next,[key]:canonicalJson(next[key])};}});
   if (!['research','plan'].includes(phase) || !/^[0-9a-f]{64}$/.test(artifactSha256||'')) fail('phase-approval');
   if(phase==='plan'&&(!/^[0-9a-f]{64}$/.test(planProjectionSha256||'')||
       !/^[0-9a-f]{64}$/.test(sourcePlanSha256||'')))fail('plan-projection-required');
-  const next=clone(state); next[`${phase}_approved`]={artifact_sha256:artifactSha256,at};
+  const next=clone(state);next[`${phase}_approved`]={artifact_sha256:artifactSha256,at,
+    ...(phase==='plan'?{replan_epoch:state.active_replan_epoch_id||null,
+      approval_operation_id:approvalOperationId||null}:{})};
   if(phase==='plan'){next.plan_projection_sha256=planProjectionSha256;next.plan_source_sha256=sourcePlanSha256;
     if(verificationPlanRequired(state)||verificationCompilerInput?.planProjection?.contract_binding?.mode==='strict-spec'){
       const policy=require('./verification-policy-runtime.js');
@@ -114,11 +118,13 @@ function enterSpecSubphase({state,stateCapability,at,seam}={}) {
   return next;
 }
 
-function approveSpecSubphase({state,stateCapability,specApprovedHash,specContract,specGateResult,at,seam}={}) {
+function approveSpecSubphase({state,stateCapability,specApprovedHash,specContract,specGateResult,
+  specReviewRefSha256,approvalOperationId,at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-approval',
     preconditions:{phase:'spec',specApprovedHash,
       specContractSha256:specContract&&require('./contract-runtime.js').specContractDigest(specContract),at},seam,
-    reducer:(fields)=>approveSpecSubphase({state:fields,specApprovedHash,specContract,specGateResult,at})});
+    reducer:(fields,context)=>approveSpecSubphase({state:fields,specApprovedHash,specContract,
+      specGateResult,specReviewRefSha256,approvalOperationId:context.operationId,at})});
   if(state?.current_phase!=='research'||state.subphase!=='spec'||!/^[0-9a-f]{64}$/.test(specApprovedHash||''))
     fail('spec-approval');
   const contractRuntime=require('./contract-runtime.js');const result=contractRuntime.validateSpecContract(specContract,
@@ -131,6 +137,20 @@ function approveSpecSubphase({state,stateCapability,specApprovedHash,specContrac
   const next=clone(state);next.spec_policy_required=['medium','high','critical'].includes(specContract.risk_class);
   next.spec_completed_at=at;next.spec_approved_hash=specApprovedHash;
   next.spec_contract_json=canonicalJson(specContract);next.spec_gate_result_json=canonicalJson(specGateResult);
+  const epoch=state.active_replan_epoch_id||null;
+  if(epoch&&!/^[0-9a-f]{64}$/.test(specReviewRefSha256||''))
+    fail('spec-review-ref-required');
+  if(epoch){
+    const approval={schema_version:1,session_id:state.session_id,
+      spec_sha256:specSha256,spec_approved_hash:specApprovedHash,
+      risk_profile_sha256:state.risk_profile_sha256,replan_epoch:epoch,
+      spec_review_ref_sha256:specReviewRefSha256,
+      approval_operation_id:approvalOperationId,approval_sha256:null};
+    approval.approval_sha256=sha256(canonicalJson(Object.fromEntries(
+      Object.entries(approval).filter(([key])=>key!=='approval_sha256'))));
+    next.spec_approval_json=canonicalJson(approval);
+    next.spec_approval_operation_id=approvalOperationId;
+  }
   return next;
 }
 

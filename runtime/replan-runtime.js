@@ -9,6 +9,7 @@ const journal=require('./operation-journal.js');
 const frontmatter=require('./frontmatter.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
+const OPERATION=/^op-[0-9a-f]{64}$/;
 function fail(code,message=code){const error=new Error(`[${code}] ${message}`);error.code=code;throw error;}
 function canonical(value){return journal.canonicalJson(value);}
 function semanticDigest(domain,value,omitted){
@@ -148,6 +149,114 @@ async function dispatchOwnedDiscoveryReplan({stateCapability,plan,sliceId,
     producerOperationId,observationKind:'owned-discovery',observation});
   return recordPreparedReplan({stateCapability,plan,
     sliceId:observation.slice_id,prepared,seam});
+}
+function parseStoredObject(value,code){
+  try{const parsed=typeof value==='string'?JSON.parse(value):value;
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))fail(code);
+    return parsed;}catch(error){if(error.code===code)throw error;fail(code);}
+}
+async function completeReplan({stateCapability,plan,seam}={}){
+  const sid=sessionId(stateCapability);
+  const before=fs.readFileSync(stateCapability.path,'utf8');
+  const fields=frontmatter.parseFrontmatter(before).fields;
+  if(fields.replan_required===false&&DIGEST.test(plan?.replan_epoch||'')&&
+      OPERATION.test(fields.replan_epoch_operation_id||'')){
+    const priorSpec=parseStoredObject(fields.spec_approval_json,
+      'replan-complete-spec-approval');
+    const priorPlan=parseStoredObject(fields.plan_approved,
+      'replan-complete-plan-approval');
+    const replayPreconditions={session_id:sid,epoch_id:plan.replan_epoch,
+      epoch_operation_id:fields.replan_epoch_operation_id,
+      spec_approval_operation_id:priorSpec.approval_operation_id,
+      spec_approval_sha256:priorSpec.approval_sha256,
+      plan_approval_operation_id:priorPlan.approval_operation_id,
+      plan_authority_sha256:plan.plan_authority_sha256};
+    const replayId=operationId('replan-complete-v1',replayPreconditions);
+    const replay=await journal.resumeOperation({projectCapability:project(stateCapability),
+      operationId:replayId,sessionId:sid,kind:'replan-complete'});
+    if(replay.stage!=='completed-ledger'||replay.result?.epoch_id!==plan.replan_epoch||
+        replay.result?.plan_authority_sha256!==plan.plan_authority_sha256)
+      fail('replan-complete-replay');
+    return{...replay.result,operation_id:replayId,operation_receipt:replay,
+      adopted:true};
+  }
+  if(fields.replan_required!==true||!DIGEST.test(fields.active_replan_epoch_id||'')||
+      plan?.replan_epoch!==fields.active_replan_epoch_id||
+      journal.sha256(canonical(plan))!==fields.plan_projection_sha256)
+    fail('replan-complete-state');
+  const epoch=parseStoredObject(fields.active_replan_epoch_json,'replan-complete-epoch');
+  if(!exactKeys(epoch,['schema_version','session_id','trigger_id',
+      'trigger_operation_id','trigger_ledger_result_sha256',
+      'prior_plan_authority_sha256','epoch_operation_id','epoch_id'])||
+      epoch.schema_version!==1||epoch.session_id!==sid||
+      epoch.epoch_id!==fields.active_replan_epoch_id||
+      semanticDigest('replan-epoch-v1',epoch,'epoch_id')!==epoch.epoch_id||
+      epoch.epoch_operation_id!==fields.replan_epoch_operation_id)
+    fail('replan-complete-epoch');
+  const epochReceipt=await journal.resumeOperation({projectCapability:project(stateCapability),
+    operationId:epoch.epoch_operation_id,sessionId:sid,kind:'replan-epoch-publication'});
+  if(epochReceipt.stage!=='completed-ledger'||!exactKeys(epochReceipt.result,
+      ['epoch_id','epoch_sha256','post_state_sha256'])||
+      epochReceipt.result.epoch_id!==epoch.epoch_id)
+    fail('replan-complete-epoch');
+  const specApproval=parseStoredObject(fields.spec_approval_json,
+    'replan-complete-spec-approval');
+  if(!exactKeys(specApproval,['schema_version','session_id','spec_sha256',
+      'spec_approved_hash','risk_profile_sha256','replan_epoch',
+      'spec_review_ref_sha256','approval_operation_id','approval_sha256'])||
+      specApproval.schema_version!==1||specApproval.session_id!==sid||
+      specApproval.replan_epoch!==epoch.epoch_id||
+      specApproval.spec_approved_hash!==fields.spec_approved_hash||
+      specApproval.risk_profile_sha256!==fields.risk_profile_sha256||
+      specApproval.approval_operation_id!==fields.spec_approval_operation_id||
+      specApproval.approval_sha256!==journal.sha256(canonical(Object.fromEntries(
+        Object.entries(specApproval).filter(([key])=>key!=='approval_sha256')))))
+    fail('replan-complete-spec-approval');
+  const planApproval=parseStoredObject(fields.plan_approved,'replan-complete-plan-approval');
+  if(planApproval.replan_epoch!==epoch.epoch_id||
+      planApproval.approval_operation_id===null||
+      planApproval.approval_operation_id===undefined||
+      planApproval.artifact_sha256!==fields.plan_source_sha256)
+    fail('replan-complete-plan-approval');
+  const [specReceipt,planReceipt]=await Promise.all([
+    journal.resumeOperation({projectCapability:project(stateCapability),
+      operationId:specApproval.approval_operation_id,sessionId:sid,kind:'phase-approval'}),
+    journal.resumeOperation({projectCapability:project(stateCapability),
+      operationId:planApproval.approval_operation_id,sessionId:sid,kind:'phase-approval'}),
+  ]);
+  if(specReceipt.stage!=='completed-ledger'||planReceipt.stage!=='completed-ledger'||
+      specReceipt.operationId===planReceipt.operationId)
+    fail('replan-complete-approval-ledger');
+  const preconditions={session_id:sid,epoch_id:epoch.epoch_id,
+    epoch_operation_id:epoch.epoch_operation_id,
+    spec_approval_operation_id:specApproval.approval_operation_id,
+    spec_approval_sha256:specApproval.approval_sha256,
+    plan_approval_operation_id:planApproval.approval_operation_id,
+    plan_authority_sha256:plan.plan_authority_sha256};
+  const id=operationId('replan-complete-v1',preconditions);
+  const existing=await journal.resumeOperation({projectCapability:project(stateCapability),
+    operationId:id,sessionId:sid,kind:'replan-complete'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger')return{...existing.result,
+    operation_id:id,operation_receipt:existing,adopted:true};
+  const operation=await journal.beginOperation({projectCapability:project(stateCapability),
+    sessionId:sid,kind:'replan-complete',operationId:id,preconditions});
+  await journal.recordOperationStage(operation,'epoch-authenticated',{owned:{
+    epochId:epoch.epoch_id,epochLedgerResultSha256:epochReceipt.resultSha256}});
+  await journal.recordOperationStage(operation,'approvals-authenticated',{owned:{
+    specApprovalLedgerResultSha256:specReceipt.resultSha256,
+    planApprovalLedgerResultSha256:planReceipt.resultSha256}});
+  const patch={replan_required:false,replan_reason:null,
+    active_replan_epoch_json:null,active_replan_epoch_id:null};
+  const after=frontmatter.updateFrontmatterText(before,patch);
+  if(after!==before){seam?.('before-replan-complete-state-write',{operationId:id});
+    platform.atomicWriteFile(stateCapability,after);}
+  await journal.recordOperationStage(operation,'state-written',{owned:{
+    statePath:stateCapability.path,postStateSha256:journal.sha256(Buffer.from(after))}});
+  const receipt=await journal.completeOperation(operation,{epoch_id:epoch.epoch_id,
+    plan_authority_sha256:plan.plan_authority_sha256,
+    post_state_sha256:journal.sha256(Buffer.from(after))});
+  return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
 }
 function invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperationId,
   triggerPath,invalidationPath}){
@@ -430,5 +539,6 @@ async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,s
 
 module.exports={dispatchVerificationSideEffectReplan,adoptVerificationSideEffectReplay,
   publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,validateDiscoveryObservation,
+  completeReplan,
   prepareManifestReplanAuthority,loadPreparedReplan,recordPreparedReplan,
   semanticDigest,operationId};

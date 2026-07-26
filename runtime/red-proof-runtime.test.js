@@ -562,6 +562,70 @@ test('owned discovery crosses the public dispatcher into same-risk replan',async
     fs.readFileSync(f.statePath,'utf8')).fields.replan_reason,'invariant');
 });
 
+test('replan completion requires epoch-bound completed Spec and Plan approvals',
+  async(t)=>{
+    const f=fixture(t),sourcePath='runtime/a.js';
+    const observation={schema_version:1,reason:'invariant',scope:'slice',
+      slice_id:'SLICE-001',requirement_id:null,invariant_id:'INV-001',
+      failure_mode_id:null,source_path:sourcePath,
+      source_sha256:journal.sha256(fs.readFileSync(path.join(f.root,sourcePath))),
+      detail_code:'invariant-discovered'};
+    const published=await publishOwnedDiscovery({stateCapability:f.stateCapability,
+      plan:f.plan,observation});
+    const replanned=await dispatchOwnedDiscoveryReplan({
+      stateCapability:f.stateCapability,plan:f.plan,sliceId:'SLICE-001',
+      producerOperationId:published.operation_id});
+    const approvedPlan=structuredClone(f.plan);
+    approvedPlan.replan_epoch=replanned.replan_epoch;
+    approvedPlan.plan_authority_sha256=
+      compileImmutablePlanAuthorityV2(approvedPlan).plan_authority_sha256;
+    fs.writeFileSync(f.planCapability.path,journal.canonicalJson(approvedPlan));
+    const project=transaction.projectCapabilityFor(f.stateCapability);
+    async function approval(id){
+      const operation=await journal.beginOperation({projectCapability:project,
+        sessionId:'s-aaaaaaaa',kind:'phase-approval',operationId:id,
+        preconditions:{epoch:replanned.replan_epoch}});
+      await journal.recordOperationStage(operation,'state-written',{owned:{
+        epoch:replanned.replan_epoch}});
+      return journal.completeOperation(operation,{status:'completed',
+        epoch:replanned.replan_epoch});
+    }
+    const specOperationId=`op-${'a'.repeat(64)}`;
+    const planOperationId=`op-${'b'.repeat(64)}`;
+    await approval(specOperationId);await approval(planOperationId);
+    const riskProfileSha256='2'.repeat(64),specApprovedHash='4'.repeat(64);
+    const specApproval={schema_version:1,session_id:'s-aaaaaaaa',
+      spec_sha256:'3'.repeat(64),spec_approved_hash:specApprovedHash,
+      risk_profile_sha256:riskProfileSha256,replan_epoch:replanned.replan_epoch,
+      spec_review_ref_sha256:'c'.repeat(64),
+      approval_operation_id:specOperationId,approval_sha256:null};
+    specApproval.approval_sha256=journal.sha256(journal.canonicalJson(
+      Object.fromEntries(Object.entries(specApproval).filter(([key])=>
+        key!=='approval_sha256'))));
+    const sourcePlanSha256='d'.repeat(64);
+    const before=fs.readFileSync(f.statePath,'utf8');
+    fs.writeFileSync(f.statePath,frontmatter.updateFrontmatterText(before,{
+      current_phase:'plan',risk_profile_sha256:riskProfileSha256,
+      spec_approved_hash:specApprovedHash,
+      spec_approval_json:journal.canonicalJson(specApproval),
+      spec_approval_operation_id:specOperationId,
+      plan_projection_sha256:journal.sha256(journal.canonicalJson(approvedPlan)),
+      plan_source_sha256:sourcePlanSha256,
+      plan_approved:journal.canonicalJson({artifact_sha256:sourcePlanSha256,
+        at:'2026-07-27T00:00:00.000Z',replan_epoch:replanned.replan_epoch,
+        approval_operation_id:planOperationId})}));
+    const completed=await dispatch(['replan','complete','--state',f.statePath,
+      '--plan',f.planCapability.path],{cwd:f.root});
+    assert.equal(completed.epoch_id,replanned.replan_epoch);
+    const fields=frontmatter.parseFrontmatter(
+      fs.readFileSync(f.statePath,'utf8')).fields;
+    assert.equal(fields.replan_required,false);
+    assert.equal(fields.active_replan_epoch_id,null);
+    const replay=await dispatch(['replan','complete','--state',f.statePath,
+      '--plan',f.planCapability.path],{cwd:f.root});
+    assert.equal(replay.adopted,true);
+  });
+
 test('strict scoped-write acceptance converts expanded scope into needs-replan authority',
   async(t)=>{
     const f=fixture(t);
