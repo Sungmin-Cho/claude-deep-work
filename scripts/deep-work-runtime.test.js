@@ -325,6 +325,7 @@ async function semanticFixture(entry, index) {
     bootstrapReceipt:path.join(workDir,'bootstrap-receipt.json'),
     bootstrapMarker:path.join(workDir,'bootstrap-marker.json'),
     bootstrapWriteReceipt:path.join(workDir,'bootstrap-write-receipt.json'),
+    finding:path.join(workDir,'reviews','research-round1-findings.json'),
   };
   fs.writeFileSync(files.task, 'semantic route');
   writeJson(files.defaults, {}); writeJson(files.profileJson, {}); writeJson(files.flags, {});
@@ -355,6 +356,8 @@ async function semanticFixture(entry, index) {
   writeJson(files.specContract,{});writeJson(files.specGate,{});
   for(const file of [files.bootstrapAuthorization,files.bootstrapFailure,files.bootstrapExecution,
     files.bootstrapReceipt,files.bootstrapMarker,files.bootstrapWriteReceipt])writeJson(file,{fixture:true});
+  fs.mkdirSync(path.dirname(files.finding),{recursive:true});
+  writeJson(files.finding,{schema_version:1,point:'research',round:1,findings:[]});
 
   const stateCapability = platform.issueProjectStateCapability(root, state, {role:'session-state'});
   const sessionCapability = platform.issueProjectStateCapability(root, workDir,
@@ -408,6 +411,7 @@ async function semanticArgv(entry, fx) {
     authorization:fx.files.bootstrapAuthorization,failure:fx.files.bootstrapFailure,
     execution:fx.files.bootstrapExecution,receipt:fx.files.bootstrapReceipt,
     marker:fx.files.bootstrapMarker,'write-receipt':fx.files.bootstrapWriteReceipt,
+    point:'research',finding:fx.files.finding,'artifact-kind':'research-document',
     'bridge-operation-id':`op-${'7'.repeat(64)}`,
     'transition-operation-id':`op-${'8'.repeat(64)}`,
     'verification-operation-id':`op-${'9'.repeat(64)}`,
@@ -492,7 +496,8 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['git report commit',[5,10,20,50]],['slice activate',[50]],['slice spike',[50]],
     ['slice reset',[5,10,20,50,70]],['slice model',[50]],['git delegated rollback',[5,10,20,50,70]],
     ['git stash publish',[5,10,20]],['git stash apply',[5,10,20]],['git stash drop',[5,10,20]],
-    ['review run',[10,20,50,70]],['sensor detect',[]],['sensor run',[10,20,50,70]],
+    ['review run',[10,20,50,70]],['review finding-publish',[10,20,50,70]],
+    ['sensor detect',[]],['sensor run',[10,20,50,70]],
     ['sensor review-check',[10,20,50,70]],['topology detect',[]],['health fitness-proposal',[]],
     ['health check',[70]],['health research-state',[50]],['capability detect',[]],
     ['recommender input',[]],['recommender validate',[]],['ask options',[]],['profile migrate',[70]],
@@ -827,8 +832,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 100 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 100);
+test('all 101 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 101);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -852,7 +857,7 @@ test('all 100 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 100);
+  assert.equal(outcomes.length, 101);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

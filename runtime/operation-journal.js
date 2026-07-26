@@ -27,7 +27,7 @@ const OPERATION_KINDS = new Set([
   'bootstrap-abort', 'bootstrap-failure-publish', 'bootstrap-finalize',
     'bootstrap-first-red', 'bootstrap-red-adoption', 'verification-run-v2',
     'red-transition', 'red-proof-publication', 'replan-trigger-record',
-    'replan-epoch-publication', 'accept-or-replan',
+    'replan-epoch-publication', 'accept-or-replan', 'finding-publish',
 ]);
 
 const COMPLETED_LEDGER_LIMIT = 512;
@@ -100,11 +100,13 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
     'active-epoch-committed'],
   'accept-or-replan':['observation-stable','needs-replan-receipt-published',
     'invalidation-applied','parent-resolved'],
+  'finding-publish':['authority-authenticated','findings-published',
+    'ref-artifact-published','ref-committed'],
 });
 const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publish',
   'bootstrap-finalize','bootstrap-first-red','bootstrap-red-adoption','verification-run-v2',
   'red-transition','red-proof-publication','replan-trigger-record',
-  'replan-epoch-publication','accept-or-replan']);
+  'replan-epoch-publication','accept-or-replan','finding-publish']);
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
 

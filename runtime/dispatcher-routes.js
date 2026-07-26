@@ -8,6 +8,7 @@ const testRuntime=require('./test-runtime.js');const verification=require('./ver
 const bootstrap=require('./bootstrap-runtime.js');
 const redProof=require('./red-proof-runtime.js');
 const verificationV2=require('./verification-v2-runtime.js');
+const findingRef=require('./finding-ref-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -450,8 +451,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       kind:f.kind,inputCapability:input.capability,sliceId:f.slice,area:f.area,iteration:f.iteration?Number(f.iteration):undefined});});
   on('analysis drift record',({f,cwd})=>slice.mutateState(stateCapability(f,cwd),()=>({fidelity_score:Number(boundedFile(resolveInput(f['score-file'],cwd)).toString('utf8').trim()),
     drift_report_sha256:hash(boundedFile(resolveInput(f.report,cwd)))})));
-  on('receipt dashboard',({f,cwd})=>report.readReceiptDashboard({receiptsDir:receiptsCapability(stateCapability(f,cwd)).path}));
-  on('receipt view',({f,cwd})=>report.readReceiptDetail({receiptsDir:receiptsCapability(stateCapability(f,cwd)).path,sliceId:f.slice}));
+  on('receipt dashboard',({f,cwd})=>report.readReceiptDashboard({stateCapability:stateCapability(f,cwd)}));
+  on('receipt view',({f,cwd})=>report.readReceiptDetail({stateCapability:stateCapability(f,cwd),sliceId:f.slice}));
   on('receipt export',({f,cwd})=>report.exportReceipts({stateCapability:stateCapability(f,cwd),format:f.format}));
   on('history list',({f,cwd})=>report.readSessionHistory(resolveInput(f['project-root'],cwd)));
   on('report generate',({f,cwd})=>report.generateReport({stateCapability:stateCapability(f,cwd)}));
@@ -475,6 +476,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     const resolved=await reviewerProcess(f.engine,f.model);const result=await executeReviewProcess({engine:f.engine,resolved,
       prompt:prompt.bytes,timeoutMs:Number(f['timeout-ms']),cwd:source.state.projectRoot,env:{...process.env},effort:f.effort,model:f.model});
     return{engine:f.engine,...result,promptSha256:prompt.sha256,consumerOperationId};});
+  on('review finding-publish',({f,cwd})=>findingRef.publishFindingRef({
+    stateCapability:stateCapability(f,cwd),point:f.point,round:Number(f.round),
+    findingPath:resolveInput(f.finding,cwd),artifactPath:resolveInput(f.artifact,cwd),
+    artifactKind:f['artifact-kind']}));
   on('sensor detect',({f,cwd})=>{const project=projectCapability(f,cwd);let registry=jsonFile(path.resolve(__dirname,'..','sensors','registry.json'));if(registry.$schema==='sensor-registry-v1')registry=sensor.migrateRegistryV1(registry);return sensor.detectSensors(project,registry);});
   on('sensor run',({f,cwd})=>sensor.runSensor({kind:f.kind,processSpec:jsonFile(resolveInput(f['process-spec-json'],cwd)),parser:f.parser,budgetMs:Number(f['budget-ms']),projectRoot:cwd,
     refactorContext:f.state?{sessionId:f.session,stateCapability:stateCapability(f,cwd),planCapability:sessionFile(stateCapability(f,cwd),f.plan),sliceId:f.slice,afterWriteOperationId:f['after-write-operation-id']}:undefined}));

@@ -103,6 +103,8 @@ const rows=[
   grammar('git stash drop',['session','operation-id']),
   grammar('review run',['engine','prompt-file','timeout-ms','mode'],['effort','model'],{
     engine:['codex','gemini'],mode:['read-only'],effort:['medium','high','xhigh','max']}),
+  grammar('review finding-publish',['state','point','round','finding','artifact',
+    'artifact-kind']),
   grammar('sensor detect',['project-root']),grammar('sensor run',['kind','process-spec-json','parser','budget-ms'],['state','session','plan','slice','after-write-operation-id'],{kind:['lint','typecheck','coverage','mutation'],parser:['eslint','tsc','ruff','stryker','clang-tidy','generic-json','generic-line','generic','mutation']}),
   grammar('sensor review-check',['project-root'],['topology','changed-files-json','state','session','plan','slice','after-write-operation-id']),
   grammar('topology detect',['project-root']),grammar('health fitness-proposal',['project-root']),
