@@ -66,3 +66,54 @@ test('v2TextToV3Text: 변환 출력에도 model_routing 부재 + auto 스칼라 
   assert.match(text, /model_routing: auto/);
   assert.ok(!/model_routing:\n\s+brainstorm:/.test(text));
 });
+
+test('profile v4 loads methodology policy while v3 remains a compatibility fallback',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'dw-profile-v4-'));
+  const file=path.join(dir,'profile.yaml');
+  fs.writeFileSync(file,`version: 4
+default_preset: adaptive
+presets:
+  adaptive:
+    interactive_each_session:
+      - team_mode
+    defaults:
+      team_mode: auto
+      start_phase: auto
+      tdd_mode: auto
+      git: auto
+      methodology_policy: auto
+    policy:
+      max_risk_without_confirmation: medium
+      low_risk_profile: lean
+      medium_risk_profile: standard
+      high_risk_profile: strict
+      critical_risk_profile: critical
+      preferred_review_roles:
+        semantic: claude
+        executability: codex
+      context:
+        codex_same_goal: native-compaction
+`);
+  const loaded=loadProfile(file,'adaptive');
+  assert.equal(loaded.version,4);
+  assert.equal(loaded.compatibility_mode,'native-v4');
+  assert.equal(loaded.defaults.methodology_policy,'auto');
+  assert.deepEqual(loaded.policy,{
+    max_risk_without_confirmation:'medium',
+    low_risk_profile:'lean',medium_risk_profile:'standard',
+    high_risk_profile:'strict',critical_risk_profile:'critical',
+    preferred_review_roles:{semantic:'claude',executability:'codex'},
+    context:{codex_same_goal:'native-compaction'},
+  });
+  const invalid=fs.readFileSync(file,'utf8').replace(
+    'max_risk_without_confirmation: medium',
+    'max_risk_without_confirmation: impossible');
+  fs.writeFileSync(file,invalid);
+  assert.throws(()=>loadProfile(file,'adaptive'),/profile-v4-policy/);
+
+  createV3Profile(file,'legacy');
+  const legacy=loadProfile(file,'legacy');
+  assert.equal(legacy.version,3);
+  assert.equal(legacy.compatibility_mode,'legacy-v3');
+  assert.equal(legacy.policy,null);
+});
