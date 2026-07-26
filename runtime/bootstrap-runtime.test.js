@@ -50,6 +50,7 @@ const {
 }=bootstrapRuntime;
 const {canonicalJson}=require('./operation-journal.js');
 const journalRuntime=require('./operation-journal.js');
+const processSupervisor=require('./process-supervisor.js');
 const {beginScopedWrite,acceptScopedWrite}=require('./slice-runtime.js');
 const {deriveScopedWriteAuthority,compileImmutablePlanAuthorityV2}=require('./plan-runtime.js');
 const {compileVerificationPlan}=require('./verification-policy-runtime.js');
@@ -1347,6 +1348,10 @@ test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domai
     expected_digest:tapValueDigest(2),actual_digest:tapValueDigest(1),
     message:'prefix expected exact authority suffix',
   });
+  const negativeZero=parseNodeTapFailure(
+    tap.replace('  actual: 1\n','  actual: -0\n'),{
+      root:WORKTREE,testPath:'runtime/bootstrap-runtime.test.js'});
+  assert.equal(negativeZero.actual_digest,tapValueDigest(-0));
   const malformed=[
     tap.replace("  code: 'ERR_ASSERTION'\n","  code: 'ERR_ASSERTION'\n  code: 'ERR_ASSERTION'\n"),
     tap.replace("  code: 'ERR_ASSERTION'\n","  surprise: 'authority drift'\n  code: 'ERR_ASSERTION'\n"),
@@ -1768,6 +1773,12 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       assert.equal(result.classification.reason_code,reasonCode);
       assert.equal(result.scope_disposition,
         observedClass==='test-side-effect'?'test-side-effect':'clean');
+      const preManifest=JSON.parse(fs.readFileSync(path.join(prepared.fixture.root,
+        ...result.pre_manifest_ref.path.split('/')),'utf8'));
+      const postManifest=JSON.parse(fs.readFileSync(path.join(prepared.fixture.root,
+        ...result.post_manifest_ref.path.split('/')),'utf8'));
+      assert.equal(preManifest.phase,'pre');
+      assert.equal(postManifest.phase,'post');
       assert.deepEqual(Object.keys(terminal.operation_receipt.result).sort(),[
         'session_id','slice_id','result_path','result_sha256','disposition',
         'observed_class','scope_disposition'].sort());
@@ -1821,6 +1832,27 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         await expectRejected(prepared,observedClass,reasonCode);
       });
     }
+    await t.test('invalid-utf8-preserves-raw-channel-bytes',async()=>{
+      const source=["'use strict';","const test=require('node:test');",
+        "const assert=require('node:assert/strict');",
+        "test('fails first',()=>{process.stdout.write(Buffer.from([255]));"+
+          "assert.strictEqual(1,2,'expected exact authority');});",''].join('\n');
+      const prepared=await preparePublicFirstRedCase(t,{testSource:source});
+      const result=await expectRejected(prepared,'invalid-output','invalid-utf8');
+      assert.ok(Buffer.from(result.raw_stdout.base64,'base64').includes(255));
+    });
+    await t.test('spawn-failure-publishes-a-rejected-terminal-result',async()=>{
+      const prepared=await preparePublicFirstRedCase(t);
+      const original=processSupervisor.runSupervisedProcess;
+      processSupervisor.runSupervisedProcess=async()=>{
+        const error=new Error('injected spawn failure');
+        error.code='process-spawn-failed';
+        throw error;
+      };
+      try{
+        await expectRejected(prepared,'pre-spawn-rejected','pre-spawn');
+      }finally{processSupervisor.runSupervisedProcess=original;}
+    });
     await t.test('unexpected-pass',async()=>{
       const source=["'use strict';","const test=require('node:test');",
         "test('fails first',()=>{});",''].join('\n');
@@ -1836,6 +1868,9 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       const prepared=await preparePublicFirstRedCase(t,{testSource});
       const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
       assert.equal(bridge.operation_receipt.stage,'completed-ledger');
+      assert.deepEqual(Object.keys(bridge.operation_receipt.result).sort(),[
+        'session_id','slice_id','result_path','result_sha256','disposition',
+        'observed_class','scope_disposition'].sort());
     });
     await t.test('patch-keyed-suite-wrapper-topology',async()=>{
       const source=[
