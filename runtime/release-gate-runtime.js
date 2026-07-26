@@ -1,7 +1,12 @@
 'use strict';
 
 const crypto=require('node:crypto');
+const fs=require('node:fs');
+const path=require('node:path');
 const journal=require('./operation-journal.js');
+const transaction=require('./transaction-runtime.js');
+const frontmatter=require('./frontmatter.js');
+const planRuntime=require('./plan-runtime.js');
 
 const DIGEST=/^[0-9a-f]{64}$/;
 const OPERATION=/^op-[0-9a-f]{64}$/;
@@ -15,6 +20,7 @@ function semanticDigest(domain,value){
   return crypto.createHash('sha256').update(Buffer.concat([
     Buffer.from(`${domain}\0`),Buffer.from(canonical(value))])).digest('hex');
 }
+function operationId(domain,value){return `op-${semanticDigest(domain,value)}`;}
 function sortedUnique(values,validator=()=>true){
   return Array.isArray(values)&&values.every(validator)&&
     new Set(values).size===values.length&&canonical(values)===canonical([...values]
@@ -372,9 +378,136 @@ function validateGateResultRef(value){
     fail('gate-result-ref');
   return structuredClone(value);
 }
+function readCanonical(file,code){
+  let stat,bytes;try{stat=fs.lstatSync(file);bytes=fs.readFileSync(file);}catch{
+    fail(code);}
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)fail(code);
+  let value;try{value=JSON.parse(bytes);}catch{fail(code);}
+  if(!bytes.equals(Buffer.from(canonical(value))))fail(code);
+  return{value,bytes,sha256:journal.sha256(bytes)};
+}
+function writeExclusive(file,value,code){
+  const bytes=Buffer.from(canonical(value));fs.mkdirSync(path.dirname(file),{recursive:true});
+  let fd;try{fd=fs.openSync(file,fs.constants.O_CREAT|fs.constants.O_EXCL|
+    fs.constants.O_WRONLY,0o600);fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}
+  catch(error){if(error.code!=='EEXIST'||!fs.readFileSync(file).equals(bytes))
+    fail(code);}finally{if(fd!==undefined)fs.closeSync(fd);}
+  if(!fs.readFileSync(file).equals(bytes))fail(code);
+  return journal.sha256(bytes);
+}
+function loadPlan(planCapability,plan){
+  transaction.revalidateSessionFile(planCapability);
+  let current;try{current=JSON.parse(transaction.readSessionFile(planCapability));}
+  catch{fail('gate-plan');}
+  if(canonical(current)!==canonical(plan)||current.contract_binding?.mode!=='strict-spec')
+    fail('gate-plan');
+  const authority=planRuntime.compileImmutablePlanAuthorityV2(current);
+  if(authority.plan_authority_sha256!==current.plan_authority_sha256)
+    fail('gate-plan');
+  return current;
+}
+async function authenticateInputRefs({stateCapability,checkerId,inputRefs}){
+  const refs=validateCheckerInputRefs(checkerId,inputRefs);
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const sessionId=transaction.sessionIdFromState(stateCapability),rows=[];
+  for(const ref of refs){
+    const target=path.resolve(stateCapability.projectRoot,...ref.path.split('/'));
+    if(!require('./platform.js').isPathInside(stateCapability.projectRoot,target))
+      fail('gate-input-ref');
+    const raw=readCanonical(target,'gate-input-ref');
+    if(raw.sha256!==ref.sha256)fail('gate-input-ref');
+    const producer=await journal.resumeOperation({projectCapability:project,
+      operationId:ref.producer_operation_id,sessionId});
+    if(producer.stage!=='completed-ledger')fail('gate-input-producer');
+    rows.push({ref,raw,producer});
+  }
+  return rows;
+}
+function coverageFrom(value,code){
+  const row=value?.contract||value;
+  try{return structuredClone(validateCoverage(row));}catch{fail(code);}
+}
+function deriveFacts(checkerId,rows){
+  const byKind=new Map(rows.map((row)=>[row.ref.kind,row.raw.value]));
+  if(checkerId==='spec-gate-v1'){
+    const approval=byKind.get('spec-approval'),contract=byKind.get('spec-contract');
+    const gate=byKind.get('spec-gate-result');
+    let specSha256=contract?.spec_sha256;
+    if(!DIGEST.test(specSha256||'')){
+      try{specSha256=require('./contract-runtime.js').specContractDigest(contract);}
+      catch{fail('gate-fact-compute');}
+    }
+    const facts={spec_sha256:specSha256,
+      spec_approved_hash:approval?.spec_approved_hash,
+      requirement_coverage:coverageFrom(gate?.requirement_coverage,
+        'gate-fact-compute'),
+      failure_matrix_coverage:coverageFrom(gate?.failure_matrix_coverage,
+        'gate-fact-compute'),pass:gate?.pass===true};
+    validateFacts(checkerId,facts);return facts;
+  }
+  fail('gate-fact-compute');
+}
+async function publishGateFact({stateCapability,planCapability,plan,checkerId,
+  inputRefs,seam}={}){
+  const current=loadPlan(planCapability,plan),sid=
+    transaction.sessionIdFromState(stateCapability);
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  if(!DIGEST.test(fields.verification_plan_sha256||''))
+    fail('gate-verification-plan');
+  const refs=validateCheckerInputRefs(checkerId,inputRefs);
+  const preconditions={session_id:sid,plan_authority_sha256:
+    current.plan_authority_sha256,verification_plan_sha256:
+    fields.verification_plan_sha256,checker_id:checkerId,input_refs:refs};
+  const id=operationId('gate-fact-publish-v1',preconditions);
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const existing=await journal.resumeOperation({projectCapability:project,
+    operationId:id,sessionId:sid,kind:'gate-fact-publish'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger'){
+    const raw=readCanonical(path.join(stateCapability.projectRoot,
+      ...existing.result.facts_path.split('/')),'gate-fact-replay');
+    const checked=validateGateFactArtifact(raw.value);
+    if(raw.sha256!==existing.result.facts_artifact_sha256||
+        checked.artifact.facts_sha256!==existing.result.facts_sha256)
+      fail('gate-fact-replay');
+    return{...existing.result,operation_id:id,operation_receipt:existing,
+      adopted:true};
+  }
+  const rows=await authenticateInputRefs({stateCapability,checkerId,inputRefs:refs});
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId:sid,kind:'gate-fact-publish',operationId:id,
+    preconditions});
+  await journal.recordOperationStage(operation,'authority-authenticated',{owned:{
+    planAuthoritySha256:current.plan_authority_sha256,
+    verificationPlanSha256:fields.verification_plan_sha256}});
+  const facts=deriveFacts(checkerId,rows);
+  const artifact=buildGateFactArtifact(checkerId,facts);
+  const validated=validateGateFactArtifact(artifact);
+  await journal.recordOperationStage(operation,'facts-computed',{owned:{
+    facts,factsSha256:artifact.facts_sha256,
+    factsArtifactSha256:validated.facts_artifact_sha256,
+    artifactBytesBase64:Buffer.from(canonical(artifact)).toString('base64')}});
+  const relative=`.deep-work/${sid}/gate-facts/${checkerId}-${
+    artifact.facts_sha256}.json`;
+  seam?.('before-gate-fact-write',{operationId:id,path:relative});
+  const artifactSha256=writeExclusive(path.join(stateCapability.projectRoot,
+    ...relative.split('/')),artifact,'gate-fact-publish');
+  if(artifactSha256!==validated.facts_artifact_sha256)fail('gate-fact-publish');
+  await journal.recordOperationStage(operation,'fact-published',{owned:{
+    factsPath:relative,factsSha256:artifact.facts_sha256,
+    factsArtifactSha256:artifactSha256}});
+  const receipt=await journal.completeOperation(operation,{checker_id:checkerId,
+    input_refs:refs,facts_path:relative,facts_sha256:artifact.facts_sha256,
+    facts_artifact_sha256:artifactSha256,
+    plan_authority_sha256:current.plan_authority_sha256,
+    verification_plan_sha256:fields.verification_plan_sha256});
+  return{...receipt.result,operation_id:id,operation_receipt:receipt,
+    adopted:false};
+}
 
 module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   CHECKER_INPUT_CATALOG,validateCheckerInputRefs,computeBlockingCodes,
   buildGateFactArtifact,validateGateFactArtifact,argvSha256,
   buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
-  validateGateResultRef,semanticDigest};
+  validateGateResultRef,publishGateFact,semanticDigest};

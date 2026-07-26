@@ -2,7 +2,16 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
 const gate=require('./release-gate-runtime.js');
+const journal=require('./operation-journal.js');
+const platform=require('./platform.js');
+const transaction=require('./transaction-runtime.js');
+const frontmatter=require('./frontmatter.js');
+const {compileImmutablePlanAuthorityV2}=require('./plan-runtime.js');
+const {dispatch}=require('../scripts/deep-work-runtime.js');
 
 test('release gate catalog fixes all command argv and every v6.14 gate exactly once',()=>{
   assert.deepEqual(Object.keys(gate.RELEASE_GATE_CATALOG),
@@ -89,3 +98,75 @@ test('command GateResultV1 rejects a caller-forged pass on timeout',()=>{
   assert.throws(()=>gate.validateGateResult({...result,status:'passed'}),
     /gate-result/);
 });
+
+test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes',
+  async(t)=>{
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-gate-fact-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+    const sessionId='s-aaaaaaaa';
+    const work=path.join(root,'.deep-work',sessionId);fs.mkdirSync(work,{recursive:true});
+    const statePath=path.join(root,'.claude',`deep-work.${sessionId}.md`);
+    fs.writeFileSync(statePath,frontmatter.updateFrontmatterText('',{
+      session_id:sessionId,work_dir:`.deep-work/${sessionId}`,
+      current_phase:'test',verification_plan_sha256:'2'.repeat(64)}));
+    const stateCapability=platform.issueProjectStateCapability(root,statePath,
+      {role:'session-state'});
+    const sessionCapability=platform.issueProjectStateCapability(root,work,{
+      role:'session-work-dir',sessionStateCapability:stateCapability});
+    const planCapability=transaction.issueSessionFileCapability({sessionCapability,
+      candidate:path.join(work,'plan.json'),allowedBasenames:['plan.json'],
+      allowMissingLeaf:true,role:'locked-plan'});
+    const facts={schema_version:1,authority:'reviewed-plan',destructive:false,
+      external_action:false,has_backward_compat:true,has_migration:true,
+      host_dependent:false,source_requirement_ids:['REQ-001'],
+      source_slice_ids:['SLICE-001']};
+    facts.facts_sha256=gate.semanticDigest('capability-facts-v1',facts);
+    const plan={schema_version:2,replan_epoch:null,contract_binding:{
+      mode:'strict-spec',created_by_version:'6.14.0',source_plan_sha256:'3'.repeat(64),
+      risk_profile_sha256:'4'.repeat(64),spec_contract:{schema_version:1,
+        spec_id:'SPEC-GATE',spec_sha256:'5'.repeat(64),
+        spec_approved_hash:'6'.repeat(64)}},capability_facts:facts,slices:[{
+      id:'SLICE-001',slice_kind:'release-verification',checked:false,
+      scope_schema_version:1,files:[],write_scope:{failing_test:[],production:[],
+        refactor:[]},verification_scope:['npm test'],
+      release_gate_ids:[...gate.DETERMINISTIC_GATE_MAPPING['spec-gate-v1']],
+      verification_spec:null,verification_spec_sha256:null}]};
+    plan.plan_authority_sha256=
+      compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
+    fs.writeFileSync(planCapability.path,journal.canonicalJson(plan));
+    const inputs={
+      'spec-approval':{spec_approved_hash:'6'.repeat(64)},
+      'spec-contract':{spec_sha256:'5'.repeat(64)},
+      'spec-gate-result':{pass:true,requirement_coverage:{
+        total:1,covered:1,uncovered_ids:[],ratio:1},failure_matrix_coverage:{
+        total:1,covered:1,uncovered_ids:[],ratio:1}},
+    };
+    const project=transaction.projectCapabilityFor(stateCapability),refs=[];
+    let index=7;
+    for(const [kind,value] of Object.entries(inputs)){
+      const operationId=`op-${String(index).repeat(64)}`;index++;
+      const operation=await journal.beginOperation({projectCapability:project,
+        sessionId,kind:'phase-approval',operationId,preconditions:{kind}});
+      await journal.recordOperationStage(operation,'state-written',{owned:{kind}});
+      await journal.completeOperation(operation,{status:'completed',kind});
+      const relative=`.deep-work/${sessionId}/release-inputs/${kind}.json`;
+      const target=path.join(root,...relative.split('/'));
+      fs.mkdirSync(path.dirname(target),{recursive:true});
+      fs.writeFileSync(target,journal.canonicalJson(value));
+      refs.push({kind,path:relative,sha256:journal.sha256(
+        journal.canonicalJson(value)),producer_operation_id:operationId});
+    }
+    const refsPath=path.join(root,'input-refs.json');
+    fs.writeFileSync(refsPath,journal.canonicalJson(refs));
+    const published=await dispatch(['release','gate','fact-publish','--state',
+      statePath,'--plan',planCapability.path,'--checker','spec-gate-v1',
+      '--input-refs-json',refsPath],{cwd:root});
+    assert.match(published.facts_sha256,/^[0-9a-f]{64}$/);
+    const stored=JSON.parse(fs.readFileSync(path.join(root,
+      ...published.facts_path.split('/')),'utf8'));
+    assert.equal(stored.facts.pass,true);
+    const replay=await gate.publishGateFact({stateCapability,planCapability,
+      plan,checkerId:'spec-gate-v1',inputRefs:refs});
+    assert.equal(replay.adopted,true);
+  });

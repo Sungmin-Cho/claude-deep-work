@@ -12,6 +12,7 @@ const findingRef=require('./finding-ref-runtime.js');
 const functionalReceipt=require('./functional-receipt-runtime.js');
 const refactorDecision=require('./refactor-decision-runtime.js');
 const replan=require('./replan-runtime.js');
+const releaseGate=require('./release-gate-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -370,6 +371,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       producerOperationId:f['producer-operation-id']});});
   on('replan complete',({f,cwd})=>{const bound=readPlan(f,cwd);
     return replan.completeReplan({stateCapability:bound.state,plan:bound.value});});
+  on('release gate fact-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishGateFact({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,checkerId:f.checker,
+      inputRefs:jsonFile(resolveInput(f['input-refs-json'],cwd))});});
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));
