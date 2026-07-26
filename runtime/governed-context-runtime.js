@@ -313,6 +313,10 @@ function loadGovernedContext({stateCapability}={}){
   const transaction=require('./transaction-runtime.js');
   const frontmatter=require('./frontmatter.js');
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const reviewExecution=parseStored(fields.review_execution_json,{},
+    'governed-review-state');
+  const reviewGate=require('./review-policy-runtime.js')
+    .finishGateAllowed(reviewExecution);
   const sid=transaction.sessionIdFromState(stateCapability);
   if(typeof fields.work_dir!=='string')fail('governed-context-work-dir');
   const workDir=path.join(stateCapability.projectRoot,...fields.work_dir.split('/'));
@@ -360,9 +364,9 @@ function loadGovernedContext({stateCapability}={}){
   if(verificationPlan){
     evidence.required_ids=sorted(verificationPlan.evidence_required_gate_ids);
     try{
-      const review=parseStored(fields.review_execution_json,{},'governed-review-state');
       const evidenceRuntime=require('./evidence-runtime.js');
-      const pkg=evidenceRuntime.loadCommittedPackage(workDir,review.evidence,verificationPlan);
+      const pkg=evidenceRuntime.loadCommittedPackage(workDir,
+        reviewExecution.evidence,verificationPlan);
       if(pkg){
         const summary=evidenceRuntime.evaluateEvidenceCompleteness(pkg,verificationPlan,
           {artifactRoot:workDir});
@@ -410,12 +414,16 @@ function loadGovernedContext({stateCapability}={}){
   const requiredByPoint=Object.fromEntries(POINTS.map((point)=>[point,verificationPlan?
     policy.requiredGateIds(verificationPlan,{at:point==='test'?'test':'finish'}):[]]));
   const satisfiedByPoint=Object.fromEntries(POINTS.map((point)=>[point,satisfied]));
+  const humanAckRequired=verificationPlan?.risk_class==='critical';
+  const hasRequiredHumanAck=Object.values(reviewExecution.points||{}).some((point)=>
+    point?.human_ack?.required===true);
   const built=buildProgressProjectionV1({plan_identity:planIdentity,evidence,
     residual_risk:residualRisk,replan,invalidations,findings,receipts,
     required_gates_by_point:requiredByPoint,satisfied_gates_by_point:satisfiedByPoint,
-    warnings:sorted(warnings),human_ack_required:verificationPlan?.risk_class==='critical',
-    human_ack_satisfied:fields.governed_human_ack_satisfied===true,
-    external_change_lock:fields.external_change_lock===true,
+    warnings:sorted(warnings),human_ack_required:humanAckRequired,
+    human_ack_satisfied:!humanAckRequired||hasRequiredHumanAck&&
+      reviewGate.blocking.missing_acks.length===0,
+    external_change_lock:reviewGate.blocking.external_change_lock,
     redaction_failed:warnings.includes('evidence-pointer-stale')});
   return{...built,plan,verificationPlan,sessionId:sid,workDir};
 }
