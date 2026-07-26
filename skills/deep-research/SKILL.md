@@ -276,7 +276,9 @@ research.md 완성 직후 Orchestrator 복귀 전에 수행한다. 라우팅 car
 # (미설정 시 CLI가 cwd로 fallback해 signals를 오수집: Task 7 리뷰 W1)
 PROJECT_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)"
 RISK_IN=$(mktemp)
-# 1의 task/evidence/prior_profile JSON을 $RISK_IN에 기록
+# 1의 task/evidence/prior_profile와 현재 policy mode 및 검증된
+# floor_baseline JSON을 $RISK_IN에 기록한다. legacy v6.12 policy에는
+# policy_sha256가 없으므로 closed legacy shape를 읽어 새 authority로 승격한다.
 RISK_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
   --stage authoritative --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" \
   --input-file "$RISK_IN" --state-file "$STATE_FILE")
@@ -286,17 +288,21 @@ rm -f "$RISK_IN"
 3. 성공한 authoritative class로 재라우팅한다. 초기 spawn에서 이미
    Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)를
    수행했으므로 pin은 `decodedRoutingMeta.pinned`, runtime은 CLI 자동 감지를 사용한다.
-   `methodology_policy_json.floors_effective`는 직전 floor 정본이며 JSON 한 줄 그대로 넘긴다.
+   v1이면 `methodology_policy_json.policy_sha256`를 먼저 검증한다. legacy
+   v6.12 shape는 closed fallback parser로 읽어 새 authority로 승격한다. `RISK_OUT`은 새
+   authoritative risk와 직전 floor를 결합한 `methodology_authority`를 산출하며,
+   이 authority 전체를 router facade에 넘긴다.
 
 ```bash
 AUTH_CLASS=$(printf '%s' "$RISK_OUT" | node -e \
   'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.risk_profile?.class||"")')
-FLOOR_BASELINE="<methodology_policy_json.floors_effective JSON>"
+METHODOLOGY_AUTHORITY=$(printf '%s' "$RISK_OUT" | node -e \
+  'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));
+   process.stdout.write(JSON.stringify(r.methodology_authority??{}))')
 MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
   --root "$PROJECT_ROOT" --task "$TASK_TEXT" --difficulty "${REC_TASK_DIFFICULTY:-}" \
   --pinned "<decodedRoutingMeta.pinned as phase=value CSV>" \
-  --risk-class "$AUTH_CLASS" --policy-mode "<methodology_policy_json.mode 또는 adaptive>" \
-  --floor-baseline "$FLOOR_BASELINE")
+  --methodology-policy "$METHODOLOGY_AUTHORITY")
 ```
 
 4. state를 한 번의 atomic RMW로 갱신한다.
@@ -307,9 +313,10 @@ MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
    - `policy_shadow_json.authoritative`에 `RISK_OUT.policy_snapshot`을 병합하되 provisional은
      보존한다.
    - 재라우팅 성공 시 `model_routing_json`과 `model_routing_meta_json`을 각각 MR_OUT의
-     routing/meta JSON-string으로 교체하고, `methodology_policy_json`을 새
-     `floors_applied`, `floors_effective`, `floor_overridden_by_pin`, `efforts`, class/profile,
-     mode, `based_on:"authoritative"`, decided_at으로 갱신한다.
+     routing/meta JSON-string으로 교체하고, `methodology_policy_json`을
+     `RISK_OUT.methodology_authority`의 exact JSON으로 교체한다. 저장 전후
+     `policy_sha256`를 재검증하며 routing meta의 `methodology_policy_sha256`와
+     동일해야 한다.
    - high/critical이고 `floor_overridden_by_pin`이 true인 phase마다
      `⚠️ 사용자 pin이 <phase> policy floor보다 낮습니다`를 1회 표시한다.
 5. 요약 1줄: `Risk: <provisional class> → <authoritative class> (policy: <profile>)`.
