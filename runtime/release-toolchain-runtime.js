@@ -233,6 +233,15 @@ function validatePathIdentity(value){
     fail('release-path-identity');
   return structuredClone(value);
 }
+function validateDirectoryAnchor(value){
+  if(!exactKeys(value,['path','kind','dev','ino','mode','size','mtime_ns',
+      'sha256'])||value.kind!=='directory'||value.sha256!==null)
+    fail('release-path-identity');
+  const current=pathIdentity(value.path,'directory');
+  for(const key of ['path','kind','dev','ino','mode'])
+    if(current[key]!==value[key])fail('release-path-identity');
+  return structuredClone(value);
+}
 function environmentDigest(value){return semanticDigest('release-command-env-v1',
   value);}
 function buildReleaseEnvironment({platformName=process.platform,homePath,binPath,
@@ -249,7 +258,7 @@ function buildReleaseEnvironment({platformName=process.platform,homePath,binPath
   return{...environment,release_environment_sha256:
     environmentDigest(environment)};
 }
-function validateReleaseEnvironment(value,manifest){
+function validateReleaseEnvironment(value,manifest,{allowHomeMetadataDrift=false}={}){
   const core={platform:value?.platform,mode:value?.mode,values:value?.values,
     identities:value?.identities};
   if(!exactKeys(value,['platform','mode','values','identities',
@@ -259,7 +268,8 @@ function validateReleaseEnvironment(value,manifest){
       canonical({LANG:value.values.LANG,LC_ALL:value.values.LC_ALL,
         TZ:value.values.TZ})!==canonical({LANG:'C',LC_ALL:'C',TZ:'UTC'})||
       !exactKeys(value.identities,['home','owned_bin','toolchain_manifest'])||
-      validatePathIdentity(value.identities.home).path!==value.values.HOME||
+      (allowHomeMetadataDrift?validateDirectoryAnchor(value.identities.home):
+        validatePathIdentity(value.identities.home)).path!==value.values.HOME||
       validatePathIdentity(value.identities.owned_bin).path!==value.values.PATH||
       !exactKeys(value.identities.toolchain_manifest,
         ['path','sha256','source_graph_sha256'])||
@@ -282,8 +292,51 @@ async function runHermetic({manifest,environment,executableName,args,cwd,
     executable:entry.shim_path,args},{cwd,timeoutMs,maxOutputBytes,
     env:structuredClone(environment.values)});
   validateMaterializedBin(environment.values.PATH,manifest.entries);
-  validateReleaseEnvironment(environment,manifest);
+  validateReleaseEnvironment(environment,manifest,{allowHomeMetadataDrift:true});
   return result;
+}
+async function executeCatalogCommand({commandId,cwd,sourceGraphRef,
+  sourceGraphSha256,entries,platformName=process.platform,timeoutMs=120000,
+  maxOutputBytes=1048576}={}){
+  const catalog=require('./release-gate-runtime.js').RELEASE_GATE_CATALOG[commandId];
+  let physicalCwd,cwdStat;try{physicalCwd=fs.realpathSync(cwd);
+    cwdStat=fs.lstatSync(physicalCwd);}catch{fail('release-command');}
+  if(!catalog||!cwdStat.isDirectory()||cwdStat.isSymbolicLink()||
+      !Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000||
+      !Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1024||
+      maxOutputBytes>1048576)fail('release-command');
+  const executableName=catalog.argv[0],args=catalog.argv.slice(1);
+  if(!Array.isArray(entries)||!entries.some((row)=>row.name===executableName))
+    fail('release-command-tool');
+  const parent=fs.mkdtempSync(require('node:path').join(
+    require('node:os').tmpdir(),'deep-work-release-'));
+  let materialized,home,manifestPath,manifest,environment;
+  try{
+    materialized=materializeOwnedBin({parent,entries,platformName});
+    home=fs.mkdtempSync(require('node:path').join(parent,'home-'));
+    manifest=buildToolchainManifest({platform:platformName,sourceGraphRef,
+      sourceGraphSha256,entries:materialized.entries});
+    manifestPath=require('node:path').join(parent,'toolchain.json');
+    fs.writeFileSync(manifestPath,canonical(manifest),{flag:'wx',mode:0o600});
+    environment=buildReleaseEnvironment({platformName,homePath:home,
+      binPath:materialized.binPath,manifestPath,manifest});
+    const result=await runHermetic({manifest,environment,executableName,args,
+      cwd:physicalCwd,timeoutMs,maxOutputBytes});
+    return{command_id:commandId,argv:[...catalog.argv],
+      release_environment_sha256:environment.release_environment_sha256,
+      process_result:{exit_code:result.exitCode,signal:result.signal,
+        timed_out:result.timedOut,output_overflow:result.outputOverflow,
+        stdout_sha256:sha256(Buffer.from(result.stdout)),
+        stderr_sha256:sha256(Buffer.from(result.stderr))},
+      stdout:result.stdout,stderr:result.stderr};
+  }finally{
+    if(materialized)validateMaterializedBin(materialized.binPath,
+      manifest?.entries||materialized.entries);
+    if(environment&&manifest)validateReleaseEnvironment(environment,manifest,
+      {allowHomeMetadataDrift:true});
+    fs.rmSync(parent,{recursive:true,force:true});
+    if(fs.existsSync(parent))fail('release-command-cleanup');
+  }
 }
 
 module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
@@ -291,4 +344,4 @@ module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
   validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest,
   materializeOwnedBin,validateMaterializedBin,pathIdentity,
   validatePathIdentity,buildReleaseEnvironment,validateReleaseEnvironment,
-  runHermetic};
+  runHermetic,executeCatalogCommand};

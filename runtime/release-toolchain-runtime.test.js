@@ -102,3 +102,35 @@ test('POSIX owned bin exposes only authenticated tools through the closed enviro
     assert.equal(childKeys.includes('__CF_USER_TEXT_ENCODING'),process.platform==='darwin');
     toolchain.validateMaterializedBin(materialized.binPath,manifest.entries);
   });
+
+test('catalog command execution rejects caller argv and cleans its owned runtime',
+  {skip:process.platform==='win32'},async()=>{
+    const npmPath=process.env.PATH.split(path.delimiter).map((directory)=>
+      path.join(directory,'npm')).find((candidate)=>{
+      try{return fs.lstatSync(candidate).isFile()||
+        fs.lstatSync(candidate).isSymbolicLink();}catch{return false;}
+    });
+    assert.ok(npmPath,'npm must be available for the release oracle');
+    const graph=toolchain.buildReleaseSourceGraph({rows:[
+      toolchain.commandRootRow('npm-pack-dry-run-json',
+        gate.RELEASE_GATE_CATALOG.pack.argv,[]),
+      {path:'package.json#scripts.test',kind:'package-script',
+        sha256:'1'.repeat(64),outgoing:[]},
+    ].sort(toolchain.compareGraphRows),platformExecutables:[],
+    testFixtureExecutables:[]});
+    const execution=await toolchain.executeCatalogCommand({commandId:'pack',
+      cwd:path.resolve(__dirname,'..'),sourceGraphRef:{
+        kind:'release-source-graph',
+        path:'.deep-work/s-aaaaaaaa/release/source-graph.json',
+        sha256:toolchain.sha256(toolchain.canonical(graph)),
+        producer_operation_id:`op-${'2'.repeat(64)}`},
+      sourceGraphSha256:graph.source_graph_sha256,entries:[
+        toolchain.buildToolIdentity({name:'node',targetPath:process.execPath}),
+        toolchain.buildToolIdentity({name:'npm',targetPath:npmPath}),
+      ],timeoutMs:30000,maxOutputBytes:1048576});
+    assert.deepEqual(execution.argv,['npm','pack','--dry-run','--json']);
+    assert.equal(execution.process_result.exit_code,0,execution.stderr);
+    assert.equal(Array.isArray(JSON.parse(execution.stdout)),true);
+    await assert.rejects(()=>toolchain.executeCatalogCommand({commandId:'unknown',
+      cwd:path.resolve(__dirname,'..')}),/release-command/);
+  });
