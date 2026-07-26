@@ -92,14 +92,39 @@ test('the governed loader derives finish locks from the review execution carrier
   fs.mkdirSync(path.join(root,'.claude'));const sessionId='s-aaaaaaaa';
   const work=path.join(root,'.deep-work',sessionId);
   fs.mkdirSync(work,{recursive:true});
-  const riskSha='4'.repeat(64),specSha='5'.repeat(64),approved='6'.repeat(64);
+  const riskSha='4'.repeat(64),specContract={schema_version:1,
+    spec_id:'SPEC-GOVERNED',risk_class:'critical',
+    requirements:[{id:'REQ-001',
+      evidence_gate_ids:['GATE-backward-compat','GATE-migration-dry-run']}],
+    failure_modes:[],compatibility:{legacy_inputs:'covered',migration:'covered'}};
+  const specText=`# Executable Spec: Governed
+## Scope
+x
+## Non-goals
+x
+## Contract
+\`\`\`json spec-contract
+${JSON.stringify(specContract)}
+\`\`\`
+## Requirement Notes
+x
+## Failure and Recovery Notes
+x
+## Decisions and Trade-offs
+x
+## Open Questions
+x
+## Spec Gate Result
+x
+`,approved=journal.sha256(Buffer.from(specText)),specSha=
+    require('./contract-runtime.js').specContractDigest(specContract);
   const facts={schema_version:1,authority:'reviewed-plan',destructive:false,
     external_action:false,has_backward_compat:true,has_migration:true,
     host_dependent:false,source_requirement_ids:['REQ-001'],
     source_slice_ids:['SLICE-001']};
   facts.facts_sha256=semanticDigest('capability-facts-v1',facts);
   const plan={schema_version:2,replan_epoch:null,contract_binding:{
-    mode:'strict-spec',created_by_version:'6.14.0',
+    mode:'strict-spec',created_by_version:'7.0.0',
     source_plan_sha256:'3'.repeat(64),risk_profile_sha256:riskSha,
     spec_contract:{schema_version:1,spec_id:'SPEC-GOVERNED',
       spec_sha256:specSha,spec_approved_hash:approved}},
@@ -112,17 +137,14 @@ test('the governed loader derives finish locks from the review execution carrier
     compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
   const verificationPlan=compileVerificationPlan({
     riskProfile:{class:'critical',score:8,triggers:[]},
-    riskProfileSha256:riskSha,policySnapshot:{risk_class:'critical',
-      profile:'critical',verification_policy:{recommended:
-        '전수 검증 + human gate'}},
-    specContract:{schema_version:1,spec_id:'SPEC-GOVERNED',
-      risk_class:'critical',requirements:[{id:'REQ-001',
-        evidence_gate_ids:['GATE-backward-compat','GATE-migration-dry-run']}],
-      failure_modes:[],compatibility:{legacy_inputs:'covered',
-        migration:'covered'}},
+    riskProfileSha256:riskSha,policySnapshot:
+      require('./policy-runtime.js').compileMethodologyAuthority({
+        riskProfile:{class:'critical'},difficulty:'high',mode:'adaptive'}),
+    specContract,
     specSha256:specSha,specApprovedHash:approved,planProjection:plan,
     capabilities:{},compatibilityFacts:{created_by_version:'6.14.0',
-      spec_policy_required:true}});
+      spec_policy_required:true,created_by_version:'7.0.0'}});
+  fs.writeFileSync(path.join(work,'spec.md'),specText);
   fs.writeFileSync(path.join(work,'plan.json'),journal.canonicalJson(plan));
   const statePath=path.join(root,'.claude',`deep-work.${sessionId}.md`);
   const review={external_change_lock:true,points:{final:{
@@ -131,6 +153,9 @@ test('the governed loader derives finish locks from the review execution carrier
     session_id:sessionId,work_dir:`.deep-work/${sessionId}`,
     current_phase:'test',verification_plan_sha256:verificationPlan.plan_sha256,
     verification_plan_json:JSON.stringify(verificationPlan),
+    methodology_policy_json:JSON.stringify(require('./policy-runtime.js')
+      .compileMethodologyAuthority({riskProfile:{class:'critical'},
+        difficulty:'high',mode:'adaptive'})),
     review_execution_json:JSON.stringify(review)}));
   const stateCapability=platform.issueProjectStateCapability(root,statePath,{
     role:'session-state'});
@@ -148,4 +173,22 @@ test('the governed loader derives finish locks from the review execution carrier
     loadGovernedContext({stateCapability}).projection,'finish-finalize');
   assert.equal(admission.blocking_codes.includes('human-ack-missing'),false);
   assert.equal(admission.blocking_codes.includes('external-change-lock'),false);
+
+  const current=frontmatter.parseFrontmatter(fs.readFileSync(statePath,'utf8')).fields;
+  const tamperedPolicy=JSON.parse(current.methodology_policy_json);
+  tamperedPolicy.profile='lean';
+  fs.writeFileSync(statePath,frontmatter.updateFrontmatterText(
+    fs.readFileSync(statePath,'utf8'),{
+      methodology_policy_json:JSON.stringify(tamperedPolicy)}));
+  let drifted=loadGovernedContext({stateCapability}).projection;
+  assert.equal(drifted.plan_identity.status,'invalidated');
+  assert.equal(selectGovernedAdmission(drifted,'finish-finalize')
+    .blocking_codes.includes('authority-invalidated'),true);
+
+  fs.writeFileSync(statePath,frontmatter.updateFrontmatterText(
+    fs.readFileSync(statePath,'utf8'),{
+      methodology_policy_json:current.methodology_policy_json}));
+  fs.appendFileSync(path.join(work,'spec.md'),'drift\n');
+  drifted=loadGovernedContext({stateCapability}).projection;
+  assert.equal(drifted.plan_identity.status,'invalidated');
 });
