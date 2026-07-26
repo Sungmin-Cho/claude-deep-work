@@ -519,7 +519,8 @@ function parsePlanContractMarkdown(source, context = {}) {
   if(binding){
     const capabilityRows=[...normalized.matchAll(/^capability_facts:\s*(\{.*\})\s*$/gm)];
     const replanRows=[...normalized.matchAll(/^replan_epoch:\s*(\S+)\s*$/gm)];
-    const v614=/^(?:[7-9]|\d{2,})\.|^6\.(?:1[4-9]|[2-9]\d)\./.test(binding.created_by_version||'');
+    const v614=require('./verification-policy-runtime.js').isAtLeast614(
+      binding.created_by_version);
     if(capabilityRows.length>1||replanRows.length>1||v614&&capabilityRows.length!==1)
       fail('plan-carrier-count',context.path||'plan.md');
     if(capabilityRows.length){
@@ -582,8 +583,8 @@ function parsePlanContractMarkdown(source, context = {}) {
   if (new Set(slices.map((slice) => slice.id)).size !== slices.length) fail('plan-duplicate-slice', 'slices');
   if(capabilityFacts)capabilityFacts=validateCapabilityFactsV1(capabilityFacts,{
     requirementIds:context.specIndex?.requirements,sliceIds:new Set(slices.map((slice)=>slice.id)),
-    ...(/^(?:[7-9]|\d{2,})\.|^6\.(?:1[4-9]|[2-9]\d)\./
-      .test(binding?.created_by_version||'')?{
+    ...(require('./verification-policy-runtime.js').isAtLeast614(
+      binding?.created_by_version)?{
         expectedBackwardCompat:Object.hasOwn(context.specIndex?.compatibility||{},'legacy_inputs'),
         expectedMigration:Object.hasOwn(context.specIndex?.compatibility||{},'migration'),
         expectedRequirementIds:(context.specIndex?.requirementRows||[])

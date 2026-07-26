@@ -173,8 +173,8 @@ function compileImmutablePlanAuthorityV2(input) {
     const verificationSpec=require('./contract-runtime.js').validateVerificationSpecV2(slice.verification_spec);
     const verificationSpecSha256=sha256(Buffer.from(canonicalJson(verificationSpec)));
     const authoritativeCarrier=input.replan_epoch!==null&&input.replan_epoch!==undefined||
-      /^(?:[7-9]|\d{2,})\.|^6\.(?:1[4-9]|[2-9]\d)\./
-        .test(input.contract_binding?.created_by_version||'');
+      require('./verification-policy-runtime.js').isAtLeast614(
+        input.contract_binding?.created_by_version);
     if(authoritativeCarrier&&slice.verification_spec_sha256!==verificationSpecSha256)
       fail('verification-spec-digest');
     return {id:slice.id,slice_kind:slice.slice_kind,scope_schema_version:slice.scope_schema_version,

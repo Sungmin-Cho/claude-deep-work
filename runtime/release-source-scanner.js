@@ -184,6 +184,19 @@ function jsTokens(source){
   }
   return tokens;
 }
+function callSourceAt(source,tokens,index){
+  let depth=0;
+  for(let cursor=index+1;cursor<tokens.length;cursor++){
+    const token=tokens[cursor];
+    if(token.type!=='punct')continue;
+    if(token.value==='(')depth++;
+    else if(token.value===')'){
+      depth--;
+      if(depth===0)return source.slice(tokens[index].start,token.start+1);
+    }
+  }
+  fail('release-source-js',String(tokens[index].start));
+}
 function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   const source=bytes.toString('utf8');
   if(!Buffer.from(source).equals(bytes))fail('release-source-utf8');
@@ -217,6 +230,7 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         tokens[index-4]?.value==='('&&tokens[index-5]?.value==='require';
     if(call.value!=='spawnImpl'&&!direct&&!boundMember&&!inlineRequire)continue;
     if(call.value==='fork'){activeNode=true;continue;}
+    const invocation=callSourceAt(source,tokens,index);
     const expression=[first,tokens[index+3],tokens[index+4],
       tokens[index+5],tokens[index+6]].filter(Boolean)
       .map((token)=>token.value).join('');
@@ -243,8 +257,7 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
       if(/const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/.test(source)&&
           /toolchain\.validateToolIdentity\(\s*identity\s*\)/.test(source)&&
           /identity\.name\s*!==\s*['"]git['"]/.test(source)&&
-          /env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}/.test(source)&&
-          /\bshell\s*:\s*false\b/.test(source)){
+          /^spawnSync\(\s*identity\.target_path\s*,\s*args\s*,\s*\{[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
     }
@@ -253,9 +266,7 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         expression.startsWith('identity.target_path')){
       if(/const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/.test(source)&&
           /validateToolIdentity\(\s*identity\s*\)/.test(source)&&
-          /\[\s*['"]-C['"]\s*,\s*fs\.realpathSync\(\s*root\s*\)\s*,\s*\.\.\.args\s*\]/.test(source)&&
-          /env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}/.test(source)&&
-          /\bshell\s*:\s*false\b/.test(source)){
+          /^spawnSync\(\s*identity\.target_path\s*,\s*\[\s*['"]-C['"]\s*,\s*fs\.realpathSync\(\s*root\s*\)\s*,\s*\.\.\.args\s*\]\s*,\s*\{[\s\S]*cwd\s*:\s*fs\.realpathSync\(\s*root\s*\)[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
     }
