@@ -818,7 +818,7 @@ test('fresh pure-LOW v6.13 production flow compiles minimal authority and reache
     last_activity:ROUTE_TIMESTAMP}}});fs.writeFileSync(path.join(root,'.claude','deep-work-current-session'),`${session}\n`);
   await dispatch(['phase','spec','enter','--state',state,'--at',ROUTE_TIMESTAMP],{cwd:root});
   await dispatch(['phase','spec','approve','--state',state,'--artifact',specPath,'--at',ROUTE_TIMESTAMP],{cwd:root});
-  await dispatch(['phase','advance','--state',state,'--from','research','--to','plan','--at',ROUTE_TIMESTAMP],{cwd:root});
+  await dispatch(['phase','advance','--state',state,'--from','spec','--to','plan','--at',ROUTE_TIMESTAMP],{cwd:root});
   await dispatch(['phase','approve','--state',state,'--phase','plan','--artifact',planPath,'--at',ROUTE_TIMESTAMP],{cwd:root});
   let fields=parseFrontmatter(fs.readFileSync(state,'utf8')).fields;assert.match(fields.verification_plan_sha256,/^[0-9a-f]{64}$/);
   const verificationPlan=JSON.parse(fields.verification_plan_json),plan=JSON.parse(fs.readFileSync(path.join(work,'plan.json'),'utf8'));

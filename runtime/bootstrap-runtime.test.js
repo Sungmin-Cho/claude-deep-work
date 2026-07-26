@@ -1797,8 +1797,8 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       const state=parseFrontmatter(
         fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
       if(observedClass==='test-side-effect'){
-        assert.equal(state.current_phase,'research');
-        assert.equal(state.subphase,'spec');
+        assert.equal(state.current_phase,'spec');
+        assert.equal(state.subphase,null);
         assert.equal(state.replan_required,true);
         assert.equal(state.replan_reason,'external-side-effect');
       }else assert.equal(state.tdd_state,'PENDING');
@@ -1914,8 +1914,8 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         assert.equal(replay.adopted,true);
         const afterReplay=parseFrontmatter(
           fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
-        assert.equal(afterReplay.current_phase,'research');
-        assert.equal(afterReplay.subphase,'spec');
+        assert.equal(afterReplay.current_phase,'spec');
+        assert.equal(afterReplay.subphase,null);
         assert.equal(afterReplay.replan_required,true);
         assert.equal(afterReplay.replan_reason,'external-side-effect');
       }finally{
@@ -1948,15 +1948,15 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         assert.equal(armed,false);
         const afterCrash=parseFrontmatter(
           fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
-        assert.equal(afterCrash.current_phase,'research');
+        assert.equal(afterCrash.current_phase,'spec');
         phaseRuntime.invalidateForReplan=originalInvalidate;
         processSupervisor.runSupervisedProcess=originalSupervisor;
         const replay=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
         assert.equal(replay.adopted,true);
         const afterReplay=parseFrontmatter(
           fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
-        assert.equal(afterReplay.current_phase,'research');
-        assert.equal(afterReplay.subphase,'spec');
+        assert.equal(afterReplay.current_phase,'spec');
+        assert.equal(afterReplay.subphase,null);
         assert.equal(afterReplay.replan_required,true);
         assert.equal(afterReplay.replan_reason,'external-side-effect');
       }finally{

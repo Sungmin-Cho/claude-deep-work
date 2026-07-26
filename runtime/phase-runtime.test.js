@@ -19,6 +19,8 @@ const {canonicalJson,sha256}=require('./operation-journal.js');
 
 test('phase graph is closed and skip edges are explicit', () => {
   assert.deepEqual(PHASE_GRAPH.brainstorm, ['research']);
+  assert.deepEqual(PHASE_GRAPH.research, ['spec']);
+  assert.deepEqual(PHASE_GRAPH.spec, ['plan']);
   assert.deepEqual(PHASE_GRAPH.implement, ['test']);
   assert.throws(() => advancePhase({state:{current_phase:'research'}, from:'research', to:'test'}),
     /phase-transition/);
@@ -34,10 +36,10 @@ test('research to plan requires fresh mandatory spec approval', () => {
   at:'2026-07-22T00:00:00Z'}), /spec-approval-stale/);
 });
 
-test('spec resume does not rerun research', () => {
+test('spec is an explicit phase and legacy research subphase remains readable', () => {
   const entered=enterSpecSubphase({state:{current_phase:'research',research_completed_at:'2026-07-21T00:00:00Z',
     research_approved:{artifact_sha256:'c'.repeat(64)}},at:'2026-07-22T00:00:00Z'});
-  assert.equal(entered.current_phase,'research');assert.equal(entered.subphase,'spec');
+  assert.equal(entered.current_phase,'spec');assert.equal(entered.subphase,null);
   assert.equal(entered.spec_policy_required,true);assert.equal(entered.research_completed_at,'2026-07-21T00:00:00Z');
   const contract={schema_version:1,spec_id:'SPEC-PHASE',risk_class:'medium',requirements:[{id:'REQ-001',
     statement:'Require spec approval',acceptance:'Plan admission succeeds only after approval',priority:'must',
@@ -54,10 +56,20 @@ test('spec resume does not rerun research', () => {
       failure_matrix_coverage:{contract:{ratio:null},execution:null}},
     approvalOperationId,at:'2026-07-22T00:01:00Z'});
   assert.equal(approved.spec_approval_operation_id,approvalOperationId);
-  const advanced=advancePhase({state:{...approved,spec_current_sha256:approvedHash},from:'research',to:'plan',
+  const advanced=advancePhase({state:{...approved,spec_current_sha256:approvedHash},from:'spec',to:'plan',
     at:'2026-07-22T00:02:00Z'});
   assert.equal(advanced.current_phase,'plan');assert.equal(advanced.subphase,null);
   assert.equal(advanced.research_completed_at,'2026-07-21T00:00:00Z');
+
+  const legacy={...entered,current_phase:'research',subphase:'spec'};
+  const legacyApproved=approveSpecSubphase({state:legacy,specApprovedHash:approvedHash,
+    specContract:contract,specGateResult:{schema_version:1,pass:true,
+      spec_id:'SPEC-PHASE',spec_sha256:specSha256,risk_class:'medium',
+      errors:[],warnings:[],requirement_coverage:{contract:{ratio:1},execution:null},
+      failure_matrix_coverage:{contract:{ratio:null},execution:null}},
+    at:'2026-07-22T00:01:00Z'});
+  assert.equal(advancePhase({state:{...legacyApproved,spec_current_sha256:approvedHash},
+    from:'research',to:'plan',at:'2026-07-22T00:02:00Z'}).current_phase,'plan');
 });
 
 test('plan approval compiles and stores one exact authoritative verification plan',()=>{
@@ -112,7 +124,7 @@ test('risk-only escalation clears prior authority and records every receipt inva
   const transition=phaseRuntime.invalidateForReplan||((args)=>phaseRuntime.rerunPhase({state:args.state,phase:'plan'}));
   const next=transition({state,reason:'risk-class-increase',fromRisk:'medium',toRisk:'high',
     affectedSliceIds:['SLICE-002','SLICE-001'],riskProfileSha256:'9'.repeat(64),at:'2026-07-22T00:03:00Z'});
-  assert.equal(next.current_phase,'research');assert.equal(next.subphase,'spec');assert.equal(next.replan_required,true);
+  assert.equal(next.current_phase,'spec');assert.equal(next.subphase,null);assert.equal(next.replan_required,true);
   assert.equal(next.plan_approved,null);assert.equal(next.verification_plan_json,null);
   assert.equal(next.verification_consumptions_json,'{}');assert.equal(next.test_passed,false);
   assert.equal(next.evidence_summary_json,null);assert.equal(next.spec_approved_hash,null);
