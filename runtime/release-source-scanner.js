@@ -187,7 +187,7 @@ function jsTokens(source){
 function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   const source=bytes.toString('utf8');
   if(!Buffer.from(source).equals(bytes))fail('release-source-utf8');
-  const required=new Set(),platform=[];let activeNode=false;
+  const required=new Set(),optional=new Set(),platform=[];let activeNode=false;
   let tokens;try{tokens=jsTokens(source);}catch(error){
     if(error.code==='release-source-js')
       fail('release-source-js',`${path}:${error.message}`);throw error;}
@@ -248,6 +248,17 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         required.add('git');continue;
       }
     }
+    if(path==='runtime/release-toolchain-runtime.js'&&
+        call.value==='spawnSync'&&inlineRequire&&
+        expression.startsWith('identity.target_path')){
+      if(/const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/.test(source)&&
+          /validateToolIdentity\(\s*identity\s*\)/.test(source)&&
+          /\[\s*['"]-C['"]\s*,\s*fs\.realpathSync\(\s*root\s*\)\s*,\s*\.\.\.args\s*\]/.test(source)&&
+          /env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}/.test(source)&&
+          /\bshell\s*:\s*false\b/.test(source)){
+        required.add('git');continue;
+      }
+    }
     if(first.type==='identifier'&&first.value==='git'&&
         path==='runtime/platform.js'&&
         /const git = resolveGitExecutable\(/.test(source)){
@@ -260,9 +271,9 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     }
     if(first.type==='identifier'&&first.value==='binary'&&
         path==='runtime/review-policy-runtime.js'&&
-        /probe\('codex', safeEnv\)/.test(source)&&
-        /probe\('gemini', safeEnv\)/.test(source)){
-      required.add('codex');required.add('gemini');continue;
+        /probe\(\s*['"]codex['"]\s*,\s*safeEnv\s*\)/.test(source)&&
+        /probe\(\s*['"]gemini['"]\s*,\s*safeEnv\s*\)/.test(source)){
+      optional.add('codex');optional.add('gemini');continue;
     }
     if(first.type==='identifier'&&first.value==='executable'&&
         path==='runtime/platform.test.js'&&
@@ -276,6 +287,7 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   if(activeNode)platform.push(toolchain.buildActiveNodeExecutable({
     sourcePath:path,sourceSha256:toolchain.sha256(bytes)}));
   return{required_tools:[...required].sort(byteCompare),
+    optional_tools:[...optional].sort(byteCompare),
     platform_executables:platform};
 }
 function resolveCommittedLiteral(sourcePath,literal,files,extension){
@@ -607,7 +619,8 @@ function scanReleaseSources({committedFiles}={}){
       {path:'package.json#document',kind:'package-document',
         sha256:toolchain.sha256(document.bytes),outgoing:[]},
       ...scanned.rows.values(),
-    ],required=new Set(['node','npm']),nodeRequired=new Set(['node','npm']),
+    ],required=new Set(['node','npm']),optional=new Set(),
+    nodeRequired=new Set(['node','npm']),
     platform=[],fixtures=[];
   const nodeRows=new Map(),shellRows=new Map(),visiting=new Set(),
     shellRequired=new Map(),shellFunctions=new Set(),
@@ -663,6 +676,7 @@ function scanReleaseSources({committedFiles}={}){
     for(const name of launch.required_tools){
       required.add(name);nodeRequired.add(name);
     }
+    for(const name of launch.optional_tools)optional.add(name);
     platform.push(...launch.platform_executables);
     visiting.delete(target);
   }
@@ -679,7 +693,9 @@ function scanReleaseSources({committedFiles}={}){
     toolchain.compareGraphRows),platformExecutables:platform,
   testFixtureExecutables:fixtures.sort((left,right)=>byteCompare(
     toolchain.canonical(left),toolchain.canonical(right)))}),
-  required_tools:[...required].sort(byteCompare)};
+  required_tools:[...required].sort(byteCompare),
+  optional_tools:[...optional].filter((name)=>!required.has(name))
+    .sort(byteCompare)};
 }
 function gitRead(gitIdentity,args,{cwd,maxBuffer=32*1024*1024}={}){
   const identity=toolchain.validateToolIdentity(gitIdentity);

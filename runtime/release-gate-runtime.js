@@ -247,6 +247,8 @@ function computeBlockingCodes(checkerId,facts){
     if(new Set(versions).size!==1)blockers.push('version-mismatch');
     if(facts.v7_surface_violations.length)blockers.push('v7-surface-present');
     if(!facts.git_state.head||!facts.git_state.branch)blockers.push('git-state-invalid');
+    if(facts.git_state.dirty||facts.git_state.changed_paths.length)
+      blockers.push('git-dirty');
     if(facts.external_effect_operation_ids.length)blockers.push('external-effect-seen');break;}
   case 'single-review-v1':
     if(facts.blocking_ids.length)blockers.push('review-blocking');break;
@@ -901,7 +903,10 @@ async function publishCommandGateResult({stateCapability,planCapability,plan,
       sourceReceipt.result?.source_graph_sha256!==
         source.graph.source_graph_sha256)
     fail('release-command-source-graph');
-  const entries=toolchain.resolveReleaseToolIdentities(source.required_tools);
+  const entries=[...toolchain.resolveReleaseToolIdentities(source.required_tools),
+    ...toolchain.resolveOptionalReleaseToolIdentities(source.optional_tools)]
+    .sort((left,right)=>Buffer.compare(Buffer.from(left.name),
+      Buffer.from(right.name)));
   const inputRefs=[source.graph_ref];
   const catalog=RELEASE_GATE_CATALOG[commandId];
   const preconditions={session_id:sid,plan_authority_sha256:

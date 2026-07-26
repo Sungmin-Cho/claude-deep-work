@@ -72,6 +72,19 @@ function resolveReleaseToolIdentities(names,{environment=process.env,
     fail('release-tool-missing',name);
   });
 }
+function resolveOptionalReleaseToolIdentities(names,options={}){
+  if(!Array.isArray(names)||
+      canonical(names)!==canonical([...names].sort(byteCompare))||
+      new Set(names).size!==names.length||
+      names.some((name)=>!/^[A-Za-z0-9._-]+$/.test(name)))
+    fail('release-tool-resolution');
+  const resolved=[];
+  for(const name of names){
+    try{resolved.push(resolveReleaseToolIdentities([name],options)[0]);}
+    catch(error){if(error.code!=='release-tool-missing')throw error;}
+  }
+  return resolved;
+}
 function runAuthenticatedGit({root,args,environment=process.env,
   maxOutputBytes=4_194_304}={}){
   if(!path.isAbsolute(root||'')||!Array.isArray(args)||
@@ -478,16 +491,18 @@ async function publishReleaseSourceGraph({stateCapability,cwd}={}){
       ...relative.split('/'));
     if(existing.stage!=='completed-ledger'||!exactKeys(result,
       ['source_graph_path','source_graph_sha256',
-        'source_graph_artifact_sha256','required_tools'])||
+        'source_graph_artifact_sha256','required_tools','optional_tools'])||
         result.source_graph_path!==relative||
         result.source_graph_sha256!==graph.source_graph_sha256||
         result.source_graph_artifact_sha256!==graphArtifactSha256||
         canonical(result.required_tools)!==canonical(scanned.required_tools)||
+        canonical(result.optional_tools)!==canonical(scanned.optional_tools)||
         !fs.readFileSync(target).equals(graphBytes))
       fail('release-source-graph-replay');
     return{graph,graph_ref:{kind:'release-source-graph',path:relative,
       sha256:graphArtifactSha256,producer_operation_id:id},
     required_tools:[...scanned.required_tools],operation_id:id,
+    optional_tools:[...scanned.optional_tools],
     operation_receipt:existing,adopted:true};
   }
   const operation=await journal.beginOperation({projectCapability:project,
@@ -502,11 +517,13 @@ async function publishReleaseSourceGraph({stateCapability,cwd}={}){
   const result={source_graph_path:relative,
     source_graph_sha256:graph.source_graph_sha256,
     source_graph_artifact_sha256:graphArtifactSha256,
-    required_tools:[...scanned.required_tools]};
+    required_tools:[...scanned.required_tools],
+    optional_tools:[...scanned.optional_tools]};
   const receipt=await journal.completeOperation(operation,result);
   return{graph,graph_ref:{kind:'release-source-graph',path:relative,
     sha256:graphArtifactSha256,producer_operation_id:id},
   required_tools:[...scanned.required_tools],operation_id:id,
+  optional_tools:[...scanned.optional_tools],
   operation_receipt:receipt,adopted:false};
 }
 function authenticateReleaseSourceGraphRef({stateCapability,ref}={}){
@@ -520,13 +537,18 @@ function authenticateReleaseSourceGraphRef({stateCapability,ref}={}){
   const result=receipt?.result;
   if(receipt?.stage!=='completed-ledger'||!exactKeys(result,
     ['source_graph_path','source_graph_sha256',
-      'source_graph_artifact_sha256','required_tools'])||
+      'source_graph_artifact_sha256','required_tools','optional_tools'])||
       result.source_graph_path!==ref.path||
       result.source_graph_artifact_sha256!==ref.sha256||
       !Array.isArray(result.required_tools)||
       canonical(result.required_tools)!==canonical([...result.required_tools]
         .sort(byteCompare))||new Set(result.required_tools).size!==
         result.required_tools.length||
+      !Array.isArray(result.optional_tools)||
+      canonical(result.optional_tools)!==canonical([...result.optional_tools]
+        .sort(byteCompare))||new Set(result.optional_tools).size!==
+        result.optional_tools.length||
+      result.optional_tools.some((name)=>result.required_tools.includes(name))||
       ref.path!==`.deep-work/${sessionId}/release/source-graph-${
         result.source_graph_sha256}.json`)
     fail('release-source-graph-producer');
@@ -538,15 +560,16 @@ function authenticateReleaseSourceGraphRef({stateCapability,ref}={}){
       !bytes.equals(Buffer.from(canonical(graph)))||sha256(bytes)!==ref.sha256||
       graph.source_graph_sha256!==result.source_graph_sha256)
     fail('release-source-graph-producer');
-  return{graph,receipt,required_tools:[...result.required_tools]};
+  return{graph,receipt,required_tools:[...result.required_tools],
+    optional_tools:[...result.optional_tools]};
 }
 
 module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
+  resolveReleaseToolIdentities,resolveOptionalReleaseToolIdentities,
   commandRootRow,compareGraphRows,buildReleaseSourceGraph,
   validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest,
   buildActiveNodeExecutable,validatePlatformDerivedExecutable,
-  validateTestFixtureExecutable,resolveReleaseToolIdentities,
-  runAuthenticatedGit,
+  validateTestFixtureExecutable,runAuthenticatedGit,
   publishReleaseSourceGraph,authenticateReleaseSourceGraphRef,
   materializeOwnedBin,validateMaterializedBin,pathIdentity,
   validatePathIdentity,buildReleaseEnvironment,validateReleaseEnvironment,
