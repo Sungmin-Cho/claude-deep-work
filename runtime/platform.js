@@ -1605,9 +1605,6 @@ function closedReleaseEnvironment(environment, fsApi = fs) {
       typeof environment.PATH !== 'string' ||
       !path.isAbsolute(environment.HOME) || !path.isAbsolute(environment.PATH) ||
       environment.PATH.includes(path.delimiter)) return null;
-  const allowedKeys = new Set(['LANG','LC_ALL','TZ','HOME','PATH']);
-  if (process.platform === 'darwin') allowedKeys.add('__CF_USER_TEXT_ENCODING');
-  if (Object.keys(environment).some((key) => !allowedKeys.has(key))) return null;
   let homeStat;
   let binStat;
   try {
@@ -2242,13 +2239,20 @@ function nativeExecutable(executable, platformValue, environment, fsApi) {
     fail('process-native-executable', 'shell interpreters are not portable process targets');
   }
   let real;
+  let releaseCarrier = null;
   try {
     const stat = fsApi.lstatSync(executable);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('not a physical file');
-    if (platformValue !== 'win32') fsApi.accessSync(executable, fs.constants.X_OK);
-    real = fsApi.realpathSync(executable);
+    if (stat.isSymbolicLink()) {
+      releaseCarrier = validateClosedReleaseGitCarrier(executable, environment, fsApi);
+      if (!releaseCarrier) throw new Error('not an authenticated release carrier');
+      real = releaseCarrier.target;
+    } else {
+      if (!stat.isFile()) throw new Error('not a physical file');
+      if (platformValue !== 'win32') fsApi.accessSync(executable, fs.constants.X_OK);
+      real = fsApi.realpathSync(executable);
+    }
   } catch (cause) { fail('process-native-executable', 'native executable is unavailable', {cause}); }
-  if (real !== fsApi.realpathSync(process.execPath)) {
+  if (!releaseCarrier && real !== fsApi.realpathSync(process.execPath)) {
     const delimiter = platformValue === 'win32' ? ';' : path.delimiter;
     const pathValue = environmentValue(environment, 'PATH', platformValue) || '';
     const allowed = pathValue.split(delimiter).filter(Boolean).some((directory) => {
@@ -3580,6 +3584,8 @@ module.exports = {
   sanitizePathInput,
   canonicalizePortableProjectPathV1,
   parseGitWorktreePorcelainZ,
+  resolveGitExecutable,
+  safeGitEnvironment,
   resolveProjectRoot,
   normalizeForCompare,
   isPathInside,

@@ -13,6 +13,8 @@ const {
   canonicalizePortableProjectPathV1,
   normalizeForCompare,
   parseGitWorktreePorcelainZ,
+  resolveGitExecutable,
+  safeGitEnvironment,
   WORKTREE_MANIFEST_MAX_ENTRIES,
   WORKTREE_MANIFEST_MAX_RELATIVE_PATH_BYTES,
   WORKTREE_MANIFEST_MAX_PATH_TOTAL_BYTES,
@@ -49,15 +51,13 @@ function samePortablePath(left,right,{allowMissing=false,fsApi=fs,platform=proce
     return normalizeForCompare(pathApi.resolve(left),platform)===normalizeForCompare(pathApi.resolve(right),platform);}}
 
 function resolveGit(){
-  const search=(process.env.PATH||'').split(path.delimiter);
-  const names=process.platform==='win32'?['git.exe']:['git'];
-  for(const directory of search){for(const name of names){const candidate=path.join(directory,name);
-    try{const stat=fs.lstatSync(candidate);if(stat.isFile()&&!stat.isSymbolicLink())return candidate;}catch{}}}
-  fail('git-unavailable');
+  try{return resolveGitExecutable(process.env,fs);}
+  catch(error){if(error?.code==='worktree-manifest-git-unavailable')
+    fail('git-unavailable');throw error;}
 }
 
-function gitEnvironment(lineEndingConversion){
-  const environment={...process.env};
+function gitEnvironment(executable,lineEndingConversion){
+  const environment=safeGitEnvironment(executable,process.env,fs);
   if(lineEndingConversion===undefined)return environment;
   if(lineEndingConversion!=='disabled')fail('git-line-ending-mode');
   for(const key of Object.keys(environment)){
@@ -82,7 +82,7 @@ function gitCapability(projectCapability,{spawnPortable:spawnImpl=spawnPortable}
       if(!Array.isArray(args)||args.some((arg)=>typeof arg!=='string'||/[\0\r\n]/.test(arg)))fail('git-argv');
       if(input!==undefined)fail('git-input-unsupported','portable Git runtime does not accept stdin');
       return spawnImpl({kind:'native-executable',executable,args},{projectCapability,
-        timeoutMs,maxOutputBytes,env:gitEnvironment(lineEndingConversion)});
+        timeoutMs,maxOutputBytes,env:gitEnvironment(executable,lineEndingConversion)});
     }});
 }
 

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { gitCapability, parseWorktreePorcelain, listWorktrees, prepareInitialRepository,
   publishPullRequestWithinOperation,stashPublish,stashApply,stashDrop,delegatedRollback,
   samePortablePath,isRuntimePath } = require('./git-runtime.js');
@@ -35,6 +35,55 @@ test('git capability executes argv with shell false and parses worktrees', async
   assert.equal(rows[0].path, root);
   assert.equal(calls[0].options.shell, undefined);
   assert.deepEqual(calls[0].spec.args, ['worktree','list','--porcelain','-z']);
+});
+
+test('git capability preserves an owned-bin carrier through nested release environment keys', {
+  skip:process.platform === 'win32' ? 'POSIX release environment only' : false,
+}, () => {
+  const {root} = repository();
+  const releaseRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-git-release-env-'));
+  try {
+    const gitTarget = process.env.PATH.split(path.delimiter)
+      .map((directory) => path.join(directory, 'git'))
+      .find((candidate) => {
+        try {
+          fs.accessSync(candidate, fs.constants.X_OK);
+          return fs.lstatSync(fs.realpathSync(candidate)).isFile();
+        } catch { return false; }
+      });
+    assert.ok(gitTarget, 'physical Git executable is required');
+    const bin = path.join(releaseRoot, 'bin');
+    const home = path.join(releaseRoot, 'home');
+    fs.mkdirSync(bin);
+    fs.mkdirSync(home);
+    fs.symlinkSync(fs.realpathSync(gitTarget), path.join(bin, 'git'), 'file');
+    const script = [
+      `'use strict';`,
+      `const platform=require(${JSON.stringify(path.join(__dirname, 'platform.js'))});`,
+      `const runtime=require(${JSON.stringify(path.join(__dirname, 'git-runtime.js'))});`,
+      `const root=process.argv[1];`,
+      `const project=platform.issueProjectStateCapability(root,root,{role:'project-root'});`,
+      `(async()=>{const rows=await runtime.listWorktrees(runtime.gitCapability(project));`,
+      `process.stdout.write(JSON.stringify(rows));})().catch((error)=>{`,
+      `process.stderr.write(String(error.stack||error));process.exitCode=1;});`,
+    ].join('\n');
+    const result = spawnSync(process.execPath, ['-e', script, root], {
+      cwd:root,
+      env:{LANG:'C', LC_ALL:'C', TZ:'UTC', HOME:fs.realpathSync(home),
+        PATH:fs.realpathSync(bin), NODE_TEST_CONTEXT:'child-v8',
+        npm_lifecycle_event:'test'},
+      encoding:'utf8',
+      shell:false,
+      windowsHide:true,
+    });
+    assert.deepEqual({status:result.status, signal:result.signal, stderr:result.stderr},
+      {status:0, signal:null, stderr:''});
+    const rows = JSON.parse(result.stdout);
+    assert.equal(rows.some((row) => fs.realpathSync(row.path) === fs.realpathSync(root)), true);
+  } finally {
+    fs.rmSync(releaseRoot, {recursive:true, force:true});
+    fs.rmSync(root, {recursive:true, force:true});
+  }
 });
 
 test('worktree porcelain -z parser preserves path bytes without CRLF trimming', () => {
