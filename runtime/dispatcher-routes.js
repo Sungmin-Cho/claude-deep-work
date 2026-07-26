@@ -578,6 +578,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     const resolved=await reviewerProcess(f.engine,f.model);const result=await executeReviewProcess({engine:f.engine,resolved,
       prompt:prompt.bytes,timeoutMs:Number(f['timeout-ms']),cwd:source.state.projectRoot,env:{...process.env},effort:f.effort,model:f.model});
     return{engine:f.engine,...result,promptSha256:prompt.sha256,consumerOperationId};});
+  on('review envelope validate',({f,cwd})=>{
+    const request=jsonFile(resolveInput(f['request-json'],cwd));
+    return require('./review-envelope-runtime.js').validateReviewReceiptEnvelope(
+      jsonFile(resolveInput(f['receipt-json'],cwd)),request);});
   on('review finding-publish',({f,cwd})=>findingRef.publishFindingRef({
     stateCapability:stateCapability(f,cwd),point:f.point,round:Number(f.round),
     findingPath:resolveInput(f.finding,cwd),artifactPath:resolveInput(f.artifact,cwd),
