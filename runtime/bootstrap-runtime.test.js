@@ -1912,6 +1912,47 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         processSupervisor.runSupervisedProcess=originalSupervisor;
       }
     });
+    await t.test('authenticated-side-effect-replan-recovers-after-state-write-crash',async()=>{
+      const prepared=await preparePublicFirstRedCase(t);
+      const originalSupervisor=processSupervisor.runSupervisedProcess;
+      const originalInvalidate=phaseRuntime.invalidateForReplan;
+      processSupervisor.runSupervisedProcess=async()=>{
+        fs.writeFileSync(path.join(prepared.fixture.root,'runtime','a.js'),'side effect\n');
+        return {exitCode:1,signal:null,
+          stdout:Buffer.from(directAssertionTap({root:prepared.fixture.root,
+            testPath:'runtime/a.test.js'})),stderr:Buffer.alloc(0),
+          timedOut:false,outputOverflow:false,durationMs:1};
+      };
+      let armed=true;
+      phaseRuntime.invalidateForReplan=async(args)=>originalInvalidate({...args,
+        seam(name){
+          if(armed&&name==='after-state-write-before-stage'){
+            armed=false;
+            throw new Error('crash-during-side-effect-replan');
+          }
+        }});
+      try{
+        await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+          /crash-during-side-effect-replan/);
+        assert.equal(armed,false);
+        const afterCrash=parseFrontmatter(
+          fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
+        assert.equal(afterCrash.current_phase,'research');
+        phaseRuntime.invalidateForReplan=originalInvalidate;
+        processSupervisor.runSupervisedProcess=originalSupervisor;
+        const replay=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+        assert.equal(replay.adopted,true);
+        const afterReplay=parseFrontmatter(
+          fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
+        assert.equal(afterReplay.current_phase,'research');
+        assert.equal(afterReplay.subphase,'spec');
+        assert.equal(afterReplay.replan_required,true);
+        assert.equal(afterReplay.replan_reason,'external-side-effect');
+      }finally{
+        phaseRuntime.invalidateForReplan=originalInvalidate;
+        processSupervisor.runSupervisedProcess=originalSupervisor;
+      }
+    });
     await t.test('unexpected-pass',async()=>{
       const source=["'use strict';","const test=require('node:test');",
         "test('fails first',()=>{});",''].join('\n');
