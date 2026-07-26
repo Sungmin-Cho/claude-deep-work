@@ -34,7 +34,10 @@ const rows=[
   grammar('session registry phase',['state','session','phase','at'],[],{phase:PHASES}),
   grammar('session pointer select',['session']),
   grammar('session repository prepare',['session','mode','task-file','defaults-json'],['profile-json','base-ref'],{mode:['worktree','new-branch','current-branch']}),
-  grammar('session fork',['parent','from-phase'],['dirty-resolution'],{'from-phase':ACTIVE_PHASES,'dirty-resolution':['commit','stash-apply','abort']}),
+  grammar('session fork',['parent','from-phase','reason'],['dirty-resolution'],{
+    'from-phase':ACTIVE_PHASES,'dirty-resolution':['commit','stash-apply','abort'],
+    reason:['alternative-experiment','independent-review','parallel-slice',
+      'recovery','security-isolation']}),
   grammar('session finish merge',['state','session','receipt-payload'],['dirty-resolution'],{'dirty-resolution':['commit','abort']}),
   grammar('session finish publish-pr',['state','session','receipt-payload','title-file','body-file']),
   grammar('session finish keep',['state','session','receipt-payload']),

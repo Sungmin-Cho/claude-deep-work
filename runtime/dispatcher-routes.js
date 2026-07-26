@@ -250,7 +250,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     profile:f['profile-json']?jsonFile(resolveInput(f['profile-json'],cwd)):{},baseRef:f['base-ref']||'HEAD'}));
   on('session fork',async({f,cwd})=>{const parent=stateCapability({state:session.resolveSessionContext({cwd,sessionId:f.parent}).stateCapability.path},cwd);
     const child=session.generateSessionId();return session.forkSession({projectCapability:projectCapability(f,cwd),parentStateCapability:parent,
-      parentSessionId:f.parent,childSessionId:child,fromPhase:f['from-phase'],dirtyResolution:f['dirty-resolution']});});
+      parentSessionId:f.parent,childSessionId:child,fromPhase:f['from-phase'],
+      reason:f.reason,dirtyResolution:f['dirty-resolution']});});
   for(const outcome of ['merge','publish-pr','keep','discard'])on(`session finish ${outcome}`,async({f,cwd})=>{
     const state=stateCapability(f,cwd);if(sessionId(state)!==f.session)fail('session-state-identity');
     return session.withFinishTransaction({sessionId:f.session,stateCapability:state,outcome},async({projectCapability:project,caps,finishContext})=>{

@@ -431,6 +431,7 @@ async function semanticArgv(entry, fx) {
   if (entry.id === 'verification run') delete values['gate-id'];
   if (entry.id === 'sensor run') values.kind = 'lint';
   if (entry.id === 'phase invalidate-replan') values.reason = 'risk-class-increase';
+  if (entry.id === 'session fork') values.reason = 'alternative-experiment';
   if (entry.id === 'implement refactor no-change') values.reason = 'no-duplication';
   if (entry.id === 'session execution set') values.mode = 'inline';
   if (entry.id === 'review run') values.mode = 'read-only';

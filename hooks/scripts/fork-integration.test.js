@@ -18,7 +18,8 @@ function writeParent(){const workDir=`.deep-work/${parentId}`;fs.mkdirSync(path.
     [parentId]:{pid:process.pid,task_description:'Parent task',work_dir:workDir,current_phase:'implement',file_ownership:[],
       last_activity:'2026-07-13T00:00:00Z',branch,head_oid:head,fork_generation:0}}})}\n`);}
 async function fork(childId,parent=parentId,phase='plan'){return session.forkSession({projectCapability:project,parentStateCapability:stateCap(parent),
-  parentSessionId:parent,childSessionId:childId,fromPhase:phase,dirtyResolution:'abort'});}
+  parentSessionId:parent,childSessionId:childId,fromPhase:phase,
+  reason:'alternative-experiment',dirtyResolution:'abort'});}
 
 before(()=>{root=fs.mkdtempSync(path.join(os.tmpdir(),'fork-integration-node-'));execFileSync('git',['init',root],{stdio:'ignore'});
   gitExec(['config','user.email','task2@example.test']);gitExec(['config','user.name','Task 2']);fs.writeFileSync(path.join(root,'README.md'),'# fixture\n');
@@ -33,7 +34,9 @@ test('fork lifecycle atomically publishes worktree, child registry, and parent l
   {runtime:'node',shell:false,authority:'git-runtime-v1'});const result=await fork('s-22222222');assert.equal(result.status,'created');
   assert.ok(fs.existsSync(result.path));const registry=session.readRegistry(project);assert.equal(registry.sessions['s-22222222'].fork_parent,parentId);
   assert.equal(registry.sessions['s-22222222'].fork_generation,1);const children=JSON.parse(readState(parentId).fork_children);
-  assert.deepEqual(children,[{session_id:'s-22222222',restart_phase:'plan'}]);assert.equal(readState('s-22222222').current_phase,'plan');});
+  assert.deepEqual(children,[{session_id:'s-22222222',restart_phase:'plan',
+    reason:'alternative-experiment'}]);assert.equal(readState('s-22222222')
+    .current_phase,'plan');});
 
 test('multiple forks preserve independent generation and every parent child link',async()=>{await fork('s-33333333',parentId,'research');
   const value=session.readRegistry(project);assert.equal(value.sessions['s-22222222'].fork_generation,1);
@@ -48,7 +51,8 @@ test('fork lifecycle adopts every Git and store return-loss seam and prunes arti
   const parentWork=path.join(root,'.deep-work',parentId);for(const [name,bytes] of [['brainstorm.md','b'],['research.md','r'],
     ['plan.md','p'],['test-results.md','t']])fs.writeFileSync(path.join(parentWork,name),bytes);const child='s-77777777';
   const attempt=(target)=>session.forkSession({projectCapability:project,parentStateCapability:stateCap(parentId),parentSessionId:parentId,
-    childSessionId:child,fromPhase:'plan',dirtyResolution:'abort',seam:(name)=>{if(name===target)throw new Error(`lost:${target}`);}});
+    childSessionId:child,fromPhase:'plan',reason:'alternative-experiment',
+    dirtyResolution:'abort',seam:(name)=>{if(name===target)throw new Error(`lost:${target}`);}});
   for(const target of ['after-call-before-stage','after-child-state-write-before-stage','after-artifacts-copy-before-stage',
     'after-snapshot-write-before-stage','after-registry-write-before-stage','after-parent-link-write-before-stage'])
     await assert.rejects(()=>attempt(target),new RegExp(`lost:${target}`));const result=await attempt(null);assert.equal(result.status,'created');
@@ -151,4 +155,6 @@ test('artifacts-only fork blocks Implement/Test while worktree and non-fork mode
 test('idle and nonexistent parents fail before Git mutation',async()=>{const before=gitExec(['worktree','list','--porcelain']);
   await assert.rejects(()=>fork('s-55555555','s-33333333'),/registry-session-missing|fork-parent/);
   await assert.rejects(()=>session.forkSession({projectCapability:project,parentStateCapability:stateCap(parentId),parentSessionId:parentId,
-    childSessionId:'s-66666666',fromPhase:'idle'}),/fork-phase/);assert.equal(gitExec(['worktree','list','--porcelain']),before);});
+    childSessionId:'s-66666666',fromPhase:'idle',
+    reason:'alternative-experiment'}),/fork-phase/);
+  assert.equal(gitExec(['worktree','list','--porcelain']),before);});

@@ -564,9 +564,11 @@ function publishForkArtifacts({parentFields,childStateCapability,fromPhase}){con
     else transaction.atomicWriteSessionFile(target,bytes);manifest.push({name,sha256:sha256(bytes),phase});}
   return{sessionCapability,manifest,manifestSha256:sha256(canonicalJson(manifest))};}
 async function forkSession({projectCapability,parentStateCapability,parentSessionId,childSessionId,
-  fromPhase='plan',dirtyResolution='abort',seam}={}){
+  fromPhase='plan',reason,dirtyResolution='abort',seam}={}){
   requireSessionId(parentSessionId);requireSessionId(childSessionId);requireProject(projectCapability);
   if(!['brainstorm','research','spec','plan','implement','test'].includes(fromPhase))fail('fork-phase');
+  if(!require('./context-policy-runtime.js').ALLOWED_REASONS.includes(reason))
+    fail('fork-reason');
   if(!['commit','stash-apply','abort'].includes(dirtyResolution||'abort'))fail('fork-dirty-resolution');
   if(!parentStateCapability||parentStateCapability.role!=='session-state'||parentStateCapability.projectRoot!==projectCapability.path||
       !parentStateCapability.path.endsWith(`deep-work.${parentSessionId}.md`))fail('fork-parent-capability');
@@ -584,7 +586,7 @@ async function forkSession({projectCapability,parentStateCapability,parentSessio
     if(!parentRow)fail('fork-parent-missing');const preExistingChild=registry.sessions[childSessionId];const parentText=fs.readFileSync(parentStateCapability.path,'utf8');const parentFields=
       parseFrontmatter(parentText).fields;if(parentFields.session_id!==undefined&&parentFields.session_id!==parentSessionId)
       fail('fork-parent-identity');if(parentFields.current_phase==='idle'||parentRow.current_phase==='idle')fail('fork-parent-idle');
-    const preconditions={parentSessionId,fromPhase,dirtyResolution,
+    const preconditions={parentSessionId,fromPhase,reason,dirtyResolution,
       parentStatePath:parentStateCapability.path};const operation=await beginOperation({projectCapability,sessionId:childSessionId,
       kind:'fork-create',preconditions});let pending=await resumeOperation({projectCapability,operationId:operation.operationId,
       sessionId:childSessionId,kind:'fork-create'});if(preExistingChild&&pending.stages?.length===1)fail('fork-child-exists');
@@ -600,7 +602,8 @@ async function forkSession({projectCapability,parentStateCapability,parentSessio
     const childState=buildSessionState({sessionId:childSessionId,task,defaults:parseStoredObject(parentFields.defaults_json),
       profile:parseStoredObject(parentFields.profile_json),repositoryContext:{headOid:created.headOid,branch:created.branch,dirty:false,
         repositoryMode:'fork',worktreePurpose:'fork',worktreePath:created.path}});Object.assign(childState,{current_phase:fromPhase,fork_parent:parentSessionId,
-      parent_branch:created.parentBranch,fork_generation:inspection.forkGeneration,worktree_enabled:true,worktree_path:created.path});
+      parent_branch:created.parentBranch,fork_generation:inspection.forkGeneration,
+      fork_reason:reason,worktree_enabled:true,worktree_path:created.path});
     const childText=updateFrontmatterText('',childState);let existing=null;try{existing=fs.readFileSync(childPath,'utf8');}
     catch(error){if(error.code!=='ENOENT')throw error;}if(existing!==null&&existing!==childText)fail('fork-child-state-foreign');
     if(existing===null){call('before-child-state-write');atomicWriteFile(childCap,childText);call('after-child-state-write-before-stage');}
@@ -608,7 +611,8 @@ async function forkSession({projectCapability,parentStateCapability,parentSessio
     call('before-artifacts-copy');const artifacts=publishForkArtifacts({parentFields,childStateCapability:childCap,fromPhase});
     call('after-artifacts-copy-before-stage',{manifestSha256:artifacts.manifestSha256});await recordOperationStage(operation,
       'artifacts-copied',{owned:{manifest:artifacts.manifest,manifestSha256:artifacts.manifestSha256}});
-    const snapshot={version:1,parent_session_id:parentSessionId,child_session_id:childSessionId,restart_phase:fromPhase,
+    const snapshot={version:1,parent_session_id:parentSessionId,
+      child_session_id:childSessionId,restart_phase:fromPhase,reason,
       parent_branch:created.parentBranch,child_branch:created.branch,head_oid:created.headOid,parent_state_sha256:inspection.parentStateSha256,
       artifact_manifest_sha256:artifacts.manifestSha256};const snapshotBytes=Buffer.from(canonicalJson(snapshot));const snapshotCap=
       transaction.issueSessionFileCapability({sessionCapability:artifacts.sessionCapability,candidate:path.join(artifacts.sessionCapability.path,
@@ -618,7 +622,8 @@ async function forkSession({projectCapability,parentStateCapability,parentSessio
     await recordOperationStage(operation,'snapshot-written',{owned:{path:snapshotCap.path,sha256:sha256(snapshotBytes)}});
     let nextRegistry=readRegistryUnlocked(caps.registry);let childRow=nextRegistry.sessions[childSessionId];const expectedRow={task_description:task,
       work_dir:childState.work_dir,current_phase:fromPhase,file_ownership:[],fork_parent:parentSessionId,
-      fork_generation:inspection.forkGeneration,parent_branch:created.parentBranch,branch:created.branch,head_oid:created.headOid};
+      fork_generation:inspection.forkGeneration,fork_reason:reason,
+      parent_branch:created.parentBranch,branch:created.branch,head_oid:created.headOid};
     if(childRow){for(const [key,value] of Object.entries(expectedRow))if(canonicalJson(childRow[key])!==canonicalJson(value))
         fail('fork-registry-foreign');}else{pending=await resumeOperation({projectCapability,operationId:operation.operationId,
         sessionId:childSessionId,kind:'fork-create'});childRow={pid:process.pid,...expectedRow,last_activity:pending.createdAt};
@@ -630,9 +635,11 @@ async function forkSession({projectCapability,parentStateCapability,parentSessio
       try{children=JSON.parse(children);}catch{fail('fork-children-invalid');}}if(children===undefined)children=[];if(!Array.isArray(children))
       fail('fork-children-invalid');const found=children.filter((row)=>row?.session_id===childSessionId);if(found.length>1||
         found.length===1&&found[0].restart_phase!==fromPhase)fail('fork-parent-link-foreign');if(!found.length){children=[...children,
-        {session_id:childSessionId,restart_phase:fromPhase}];call('before-parent-link-write');atomicWriteFile(parentStateCapability,
+        {session_id:childSessionId,restart_phase:fromPhase,reason}];
+      call('before-parent-link-write');atomicWriteFile(parentStateCapability,
         updateFrontmatterText(currentParentText,{fork_children:JSON.stringify(children)}));call('after-parent-link-write-before-stage');}
-    await recordOperationStage(operation,'parent-linked',{owned:{parentSessionId,childSessionId,restartPhase:fromPhase}});
+    await recordOperationStage(operation,'parent-linked',{owned:{parentSessionId,
+      childSessionId,restartPhase:fromPhase,reason}});
     const result={status:'created',parentSessionId,childSessionId,path:created.path,branch:created.branch,
       generation:inspection.forkGeneration,snapshotSha256:sha256(snapshotBytes),artifactManifestSha256:artifacts.manifestSha256};
     const receipt=await completeOperation(operation,result);return{...result,stateCapability:childCap,worktreeCapability:created.worktreeCapability,
