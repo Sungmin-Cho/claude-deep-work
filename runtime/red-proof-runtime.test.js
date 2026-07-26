@@ -14,6 +14,10 @@ const frontmatter=require('./frontmatter.js');
 const bootstrap=require('./bootstrap-runtime.js');
 const {compileImmutablePlanAuthorityV2,deriveScopedWriteAuthority}=require('./plan-runtime.js');
 const {beginScopedWrite,acceptScopedWrite}=require('./slice-runtime.js');
+const {transitionSliceTdd}=require('./phase-runtime.js');
+const {runSensor,runReviewCheck,aggregateSensorResults}=require('./sensor-runtime.js');
+const {publishFunctionalSliceReceiptV2,semanticDigest:receiptDigest}=
+  require('./functional-receipt-runtime.js');
 const {transitionOrdinaryRed,publishOrdinaryRedProof,semanticDigest}=
   require('./red-proof-runtime.js');
 const {runVerificationV2,buildSupervisorControl}=require('./verification-v2-runtime.js');
@@ -55,7 +59,7 @@ function fixture(t){
   execFileSync('git',['commit','-qm','base'],{cwd:root});
   const failing=["'use strict';","const test=require('node:test');",
     "const assert=require('node:assert/strict');",
-    "test('expected red',()=>assert.strictEqual(1,2));",''].join('\n');
+    "test('expected red',()=>assert.strictEqual(require('./a.js'),2));",''].join('\n');
   fs.writeFileSync(path.join(root,'runtime','a.test.js'),failing);
   fs.mkdirSync(path.join(root,'.tmp-probe'));
   const probe=spawnSync(process.execPath,
@@ -91,7 +95,8 @@ function fixture(t){
     capability_facts:facts,slices:[
       {id:'SLICE-001',slice_kind:'functional',checked:false,scope_schema_version:1,
         files:['runtime/a.js','runtime/a.test.js'],write_scope:{
-          failing_test:['runtime/a.test.js'],production:['runtime/a.js'],refactor:[]},
+          failing_test:['runtime/a.test.js'],production:['runtime/a.js'],
+          refactor:['runtime/a.js']},
         verification_spec:spec,verification_spec_sha256:specSha256},
       {id:'SLICE-002',slice_kind:'release-verification',checked:false,
         scope_schema_version:1,files:[],write_scope:{
@@ -177,6 +182,131 @@ test('ordinary RED transition and proof publication authorize the exact strict p
       planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
       writeClass:'production',expectedScopeSha256:productionScope.sha256});
     assert.match(production.operationId,/^op-[0-9a-f]{64}$/);
+    fs.writeFileSync(path.join(f.root,'runtime','a.js'),'module.exports=2;\n');
+    const productionAccepted=await acceptScopedWrite({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:f.plan,sliceId:'SLICE-001',operationId:production.operationId,
+      preManifestSha256:production.preManifestSha256});
+    assert.equal(productionAccepted.status,'accepted');
+    const green=await runVerificationV2({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
+      expectedOutcome:'must-pass'});
+    assert.equal(green.disposition,'accepted');
+    assert.equal(green.observed_class,'unexpected-pass');
+    const greenReplay=await runVerificationV2({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
+      expectedOutcome:'must-pass'});
+    assert.equal(greenReplay.adopted,true);
+    const greenResult=JSON.parse(fs.readFileSync(path.join(f.root,
+      green.verification_result_path),'utf8'));
+    await transitionSliceTdd({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',to:'GREEN',
+      verificationResult:greenResult,
+      verificationSha256:green.verification_result_sha256,
+      verificationOperationId:green.operation_id});
+    await transitionSliceTdd({stateCapability:f.stateCapability,
+      sliceId:'SLICE-001',to:'SENSOR_RUN'});
+    await transitionSliceTdd({stateCapability:f.stateCapability,
+      sliceId:'SLICE-001',to:'SENSOR_CLEAN'});
+    const refactorScope=deriveScopedWriteAuthority({plan:f.plan,
+      sliceId:'SLICE-001',writeClass:'refactor'});
+    const refactorWrite=await beginScopedWrite({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
+      writeClass:'refactor',expectedScopeSha256:refactorScope.sha256});
+    fs.writeFileSync(path.join(f.root,'runtime','a.js'),
+      "'use strict';\nmodule.exports=2;\n");
+    const refactorAccepted=await acceptScopedWrite({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:f.plan,sliceId:'SLICE-001',operationId:refactorWrite.operationId,
+      preManifestSha256:refactorWrite.preManifestSha256});
+    const postRefactor=await runVerificationV2({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:f.plan,sliceId:'SLICE-001',expectedOutcome:'must-pass'});
+    const postResult=JSON.parse(fs.readFileSync(path.join(f.root,
+      postRefactor.verification_result_path),'utf8'));
+    await transitionSliceTdd({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',to:'GREEN',
+      verificationResult:postResult,
+      verificationSha256:postRefactor.verification_result_sha256,
+      verificationOperationId:postRefactor.operation_id});
+    await transitionSliceTdd({stateCapability:f.stateCapability,
+      sliceId:'SLICE-001',to:'SENSOR_RUN'});
+    const context={sessionId:'s-aaaaaaaa',stateCapability:f.stateCapability,
+      planCapability:f.planCapability,sliceId:'SLICE-001',
+      afterWriteOperationId:refactorWrite.operationId};
+    const projectCap=platform.issueProjectStateCapability(
+      f.root,f.root,{role:'project-root'});
+    const processSpec={kind:'native-executable',executable:process.execPath,
+      args:['-e','process.stdout.write("[]")']};
+    const lint=await runSensor({kind:'lint',processSpec,parser:'generic-json',
+      budgetMs:5000,projectCapability:projectCap,refactorContext:context});
+    const typecheck=await runSensor({kind:'typecheck',processSpec,
+      parser:'generic-json',budgetMs:5000,projectCapability:projectCap,
+      refactorContext:context});
+    const reviewCheck=await runReviewCheck(projectCap,{},context);
+    const sensors=[lint,typecheck,reviewCheck];
+    const sensorDigest=aggregateSensorResults(sensors);
+    const sensorOperationIds=sensors.map((row)=>row.operationId)
+      .sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+    await transitionSliceTdd({stateCapability:f.stateCapability,
+      planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
+      to:'SENSOR_CLEAN',sensorOperationIds,
+      sensorResultsSha256:sensorDigest,
+      afterWriteOperationId:refactorWrite.operationId});
+    const greenRef={operation_id:green.operation_id,
+      result_path:green.verification_result_path,
+      result_sha256:green.verification_result_sha256,
+      ledger_result_sha256:green.operation_receipt.resultSha256};
+    const postRef={operation_id:postRefactor.operation_id,
+      result_path:postRefactor.verification_result_path,
+      result_sha256:postRefactor.verification_result_sha256,
+      ledger_result_sha256:postRefactor.operation_receipt.resultSha256};
+    const sensorRefs=sensors.map((row)=>({kind:row.kind,
+      operation_id:row.operationId,result_path:path.relative(
+        f.root,row.resultCapability.path).split(path.sep).join('/'),
+      result_sha256:row.resultSha256,
+      ledger_result_sha256:row.operationReceipt.resultSha256}))
+      .sort((a,b)=>Buffer.compare(Buffer.from(journal.canonicalJson(
+        [a.kind,a.operation_id])),Buffer.from(journal.canonicalJson(
+        [b.kind,b.operation_id]))));
+    const refactorEvidence={kind:'performed-refactor',
+      write_operation_id:refactorWrite.operationId,
+      write_receipt_sha256:refactorAccepted.receiptSha256,
+      post_refactor_green:postRef,sensor_results:sensorRefs,
+      evidence_sha256:null};
+    refactorEvidence.evidence_sha256=receiptDigest('refactor-evidence-v1',
+      refactorEvidence,'evidence_sha256');
+    let interrupted=false;
+    await assert.rejects(publishFunctionalSliceReceiptV2({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:f.plan,sliceId:'SLICE-001',greenVerification:greenRef,
+      refactorEvidence,seam:(stage)=>{
+        if(stage==='after-receipt-write-before-stage'&&!interrupted){
+          interrupted=true;
+          throw new Error('simulated receipt publication interruption');
+        }
+      }}),/simulated receipt publication interruption/);
+    const completed=await publishFunctionalSliceReceiptV2({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:f.plan,sliceId:'SLICE-001',greenVerification:greenRef,
+      refactorEvidence});
+    assert.match(completed.receipt_sha256,/^[0-9a-f]{64}$/);
+    const receiptPath=path.join(f.root,...completed.receipt_path.split('/'));
+    const storedReceipt=JSON.parse(fs.readFileSync(receiptPath,'utf8'));
+    assert.equal(storedReceipt.schema_version,2);
+    const checkedPlan=JSON.parse(fs.readFileSync(f.planCapability.path,'utf8'));
+    const replayed=await publishFunctionalSliceReceiptV2({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:checkedPlan,sliceId:'SLICE-001',greenVerification:greenRef,
+      refactorEvidence});
+    assert.equal(replayed.adopted,true);
+    fs.writeFileSync(receiptPath,journal.canonicalJson({
+      ...storedReceipt,receipt_sha256:'0'.repeat(64)}));
+    await assert.rejects(publishFunctionalSliceReceiptV2({
+      stateCapability:f.stateCapability,planCapability:f.planCapability,
+      plan:checkedPlan,sliceId:'SLICE-001',greenVerification:greenRef,
+      refactorEvidence}),/functional-receipt/);
+    fs.writeFileSync(receiptPath,journal.canonicalJson(storedReceipt));
   });
 
 test('a ledger-complete verification side effect automatically enters authenticated replan',

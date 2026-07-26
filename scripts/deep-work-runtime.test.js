@@ -390,6 +390,8 @@ async function semanticArgv(entry, fx) {
     class:'failing-test','scope-sha256':'a'.repeat(64),'delegation-operation-id':`op-${'2'.repeat(64)}`,
     cluster:'C1','operation-id':`op-${'3'.repeat(64)}`,'pre-manifest-sha256':'a'.repeat(64),
     'verification-result':fx.files.verification,'verification-sha256':'a'.repeat(64),
+    'green-ref-json':fx.files.verification,
+    'refactor-evidence-json':fx.files.verification,
     'verification-operation-id':`op-${'4'.repeat(64)}`,'sensor-operation-ids':JSON.stringify([`op-${'5'.repeat(64)}`]),
     'sensor-results-sha256':'a'.repeat(64),'after-write-operation-id':`op-${'6'.repeat(64)}`,
     'receipts-dir':fx.receipts,
@@ -476,6 +478,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
     ['implement tdd transition',[10,20,50]],['implement slice complete',[10,20,50,70]],
+    ['implement slice complete-v2',[10,20,50,70]],
     ['implement override set',[10,20,50,70]],['implement override clear',[50]],
     ['implement takeover set',[50,70]],['implement takeover clear',[50,70]],
     ['verification migrate-spec',[10,20,50,70]],['verification run',[10,20,50,70]],
@@ -854,8 +857,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 101 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 101);
+test('all 102 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 102);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -879,7 +882,7 @@ test('all 101 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 101);
+  assert.equal(outcomes.length, 102);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

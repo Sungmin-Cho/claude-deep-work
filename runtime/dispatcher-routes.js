@@ -9,6 +9,7 @@ const bootstrap=require('./bootstrap-runtime.js');
 const redProof=require('./red-proof-runtime.js');
 const verificationV2=require('./verification-v2-runtime.js');
 const findingRef=require('./finding-ref-runtime.js');
+const functionalReceipt=require('./functional-receipt-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -368,6 +369,12 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('implement slice complete',({f,cwd})=>{const bound=readPlan(f,cwd);const input=identifyOwnedInput(bound.state,f['receipt-payload'],'receipt-payload');
     return slice.completeSlice({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,receiptsDirCapability:receiptsCapability(bound.state,f['receipts-dir']),
       sliceId:f.slice,receiptTemp:{sourceOperationId:input.operationId,purpose:'receipt-payload',sessionCapability:input.sessionCapability}});});
+  on('implement slice complete-v2',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return functionalReceipt.publishFunctionalSliceReceiptV2({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
+      sliceId:f.slice,greenVerification:jsonFile(resolveInput(
+        f['green-ref-json'],cwd)),refactorEvidence:jsonFile(resolveInput(
+        f['refactor-evidence-json'],cwd))});});
   on('implement override set',async({f,cwd})=>{const state=stateCapability(f,cwd);const source=identifyOwnedInput(state,f['reason-file'],'reason');
     const consumed=await ownedInput(state,f['reason-file'],'reason',derivedOperationId('implement-override-set',{
       session:sessionId(state),slice:f.slice,sourceOperationId:source.operationId}));return phase.setTddOverride({stateCapability:state,
@@ -393,7 +400,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     plan:bound.value,sliceId:f.slice,gateId:f['gate-id'],spec:jsonFile(resolveInput(f['spec-json'],cwd)),expectedOutcome:f.expected,cwd:bound.state.projectRoot});});
   on('verification run-v2',({f,cwd})=>{const bound=readPlan(f,cwd);
     return verificationV2.runVerificationV2({stateCapability:bound.state,
-      planCapability:bound.cap,plan:bound.value,sliceId:f.slice});});
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+      expectedOutcome:f.expected||'must-fail'});});
   on('verification red-transition',({f,cwd})=>{const bound=readPlan(f,cwd);
     return redProof.transitionOrdinaryRed({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,sliceId:f.slice,

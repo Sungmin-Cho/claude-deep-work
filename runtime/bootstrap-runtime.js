@@ -683,7 +683,10 @@ function classifyVerificationObservation({processResult,changedPaths,stdout,stde
       semanticDigest('diagnostic-event-v1',event,null):null,
     normalized_signal:normalizedSignal,reason_code:reasonCode};
 }
-function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
+function validateBootstrapVerificationResultV2(value,{expectedSignal,
+  expectedOutcome='must-fail'}={}){
+  if(!['must-fail','must-pass'].includes(expectedOutcome))
+    fail('bootstrap-verification-outcome');
   const terminalReasons=new Map([
     ['pre-spawn-rejected',new Set(['pre-spawn'])],
     ['timed-out',new Set(['timed-out'])],
@@ -756,8 +759,12 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal}={}){
     classification.adapter!=='node-test-tap'||classification.adapter_version!==1||
     !terminalReasons.get(classification.observed_class)?.has(classification.reason_code))
     fail('bootstrap-verification-classification');
-  const accepted=classification.observed_class==='expected-failure'&&
-    classification.reason_code==='signal-matched'&&value.scope_disposition==='clean';
+  const accepted=(expectedOutcome==='must-fail'?
+    classification.observed_class==='expected-failure'&&
+      classification.reason_code==='signal-matched':
+    classification.observed_class==='unexpected-pass'&&
+      classification.reason_code==='unexpected-pass')&&
+    value.scope_disposition==='clean';
   if(value.disposition!==(accepted?'accepted':'rejected')||
     (classification.observed_class==='test-side-effect')!==
       (value.scope_disposition==='test-side-effect')||

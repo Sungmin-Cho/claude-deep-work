@@ -765,6 +765,11 @@ async function completeSlice({stateCapability,planCapability,plan,receiptsDirCap
 
 function assertProductionCompletionMode(plan,fields){
   if(plan?.contract_binding?.mode==='strict-spec'&&fields?.tdd_state==='SPIKE')fail('spike-production-forbidden');
+  const version=String(plan?.contract_binding?.created_by_version||'').match(
+    /^(\d+)\.(\d+)\.(\d+)$/);
+  if(plan?.contract_binding?.mode==='strict-spec'&&version&&
+      (Number(version[1])>6||Number(version[1])===6&&Number(version[2])>=14))
+    fail('functional-slice-v2-required');
   return true;
 }
 
@@ -781,7 +786,9 @@ function assertProductionRedProofAdmission({sessionId,sliceId,planAuthoritySha25
   if(!/^s-[0-9a-f]{8}$/.test(sessionId||'')||!/^SLICE-\d{3}$/.test(sliceId||'')||
       [planAuthoritySha256,specSha256,specApprovedHash,verificationPlanSha256]
         .some((value)=>!digest.test(value||'')))fail('red-proof-authority');
-  if(state?.tdd_state!=='RED_VERIFIED'||state.red_proof_state!=='complete'||
+  if(!['PENDING','RED_VERIFIED','GREEN','REFACTOR_PENDING','SENSOR_RUN',
+      'SENSOR_FIX','SENSOR_CLEAN'].includes(state?.tdd_state)||
+      state.red_proof_state!=='complete'||
       !digest.test(state.red_proof_sha256||'')||typeof state.red_proof_ref!=='string'||
       !operation.test(state.red_transition_operation_id||'')||
       !operation.test(state.red_proof_operation_id||''))fail('red-proof-required');

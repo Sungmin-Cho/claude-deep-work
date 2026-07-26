@@ -235,9 +235,25 @@ async function transitionSliceTdd({state,stateCapability,sliceId,to,verification
       const sensorAdoption=fields.sensor_cycle_operation_id===context.operationId&&fields.tdd_state===to&&
         fields.sensor_results_sha256===sensorResultsSha256;
       let verificationEvidence=null;let sensorEvidence=null;
-      if(['RED_VERIFIED','GREEN'].includes(to)&&!verificationAdoption)verificationEvidence=await require('./verification-runtime.js')
-        .authenticateVerificationResult({stateCapability,planCapability,plan,sliceId,operationId:verificationOperationId,
-          resultSha256:verificationSha256,claimedResult:verificationResult});
+      if(['RED_VERIFIED','GREEN'].includes(to)&&!verificationAdoption){
+        if(verificationResult?.schema_version===2){
+          const authority=await require('./verification-v2-runtime.js')
+            .authenticateVerificationV2({stateCapability,planCapability,plan,sliceId,
+              operationId:verificationOperationId,resultSha256:verificationSha256,
+              expectedOutcome:to==='GREEN'?'must-pass':'must-fail'});
+          if(canonicalJson(authority.verification)!==canonicalJson(verificationResult))
+            fail('verification-result-digest');
+          verificationEvidence={state:fields,resultSha256:verificationSha256,
+            operationId:verificationOperationId,
+            expectedOutcome:to==='GREEN'?'must-pass':'must-fail',
+            result:{spec_sha256:authority.verification.spec_sha256,
+              plan_sha256:authority.verification.plan_authority_sha256,
+              contract_trace:null},v2:true};
+        }else verificationEvidence=await require('./verification-runtime.js')
+          .authenticateVerificationResult({stateCapability,planCapability,plan,sliceId,
+            operationId:verificationOperationId,resultSha256:verificationSha256,
+            claimedResult:verificationResult});
+      }
       if(['SENSOR_FIX','SENSOR_CLEAN'].includes(to)&&sensorOperationIds&&!sensorAdoption) sensorEvidence=await authenticateSensorEvidence({
         stateCapability,planCapability,plan,sliceId,sensorOperationIds,sensorResultsSha256,afterWriteOperationId,
         requirePass:to==='SENSOR_CLEAN'});
@@ -265,12 +281,15 @@ async function transitionSliceTdd({state,stateCapability,sliceId,to,verification
         _verificationEvidence.resultSha256!==verificationSha256||
         _verificationEvidence.operationId!==verificationOperationId||
         (to==='RED_VERIFIED')!==(_verificationEvidence.expectedOutcome==='must-fail')))fail('verification-evidence-stale');
-    if(_verificationEvidence&&to==='GREEN'&&from==='RED_VERIFIED'){
+    if(_verificationEvidence&&to==='GREEN'&&from==='RED_VERIFIED'&&
+        !_verificationEvidence.v2){
       const prior=Object.values(consumptions).find((row)=>row.sliceId===sliceId&&row.to==='RED_VERIFIED');
       if(!prior||prior.specSha256!==_verificationEvidence.result.spec_sha256||
           canonicalJson(prior.contractTrace)!==canonicalJson(_verificationEvidence.result.contract_trace))
         fail('verification-trace-pair');
     }
+    if(_verificationEvidence?.v2&&to==='GREEN'&&from==='RED_VERIFIED'&&
+        state.red_proof_state!=='complete')fail('verification-trace-pair');
   } else if (verificationResult || verificationSha256 || verificationOperationId) fail('verification-extra');
   if (to==='SENSOR_CLEAN' && from==='SENSOR_RUN' && state.fresh_sensor_required) {
     if (!Array.isArray(sensorOperationIds)||!sensorOperationIds.length||
