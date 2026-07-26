@@ -905,7 +905,7 @@ test('all 117 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 116);
+  assert.equal(outcomes.length, 117);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {
