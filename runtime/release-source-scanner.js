@@ -538,6 +538,63 @@ function relativeDependencies(sourcePath,bytes,files){
   }
   return[...dependencies].sort(byteCompare);
 }
+function fixtureStringArgument(raw,localVersion){
+  const value=raw.trim(),quote=value[0];
+  if(!["'",'"','`'].includes(quote)||value.at(-1)!==quote)
+    fail('test-fixture-factory-argument');
+  let body=value.slice(1,-1);
+  if(quote==='`'){
+    body=body.replace(/\$\{LOCAL_VERSION\}/g,localVersion);
+    if(body.includes('${')||body.includes('`')||body.includes('\\'))
+      fail('test-fixture-factory-argument');
+    return body;
+  }
+  if(body.includes('\\')||body.includes(quote))
+    fail('test-fixture-factory-argument');
+  return body;
+}
+function updateCheckFixtureExecutables(sourcePath,bytes,document){
+  if(sourcePath!=='hooks/scripts/update-check.test.js')
+    return{rows:[],shadowed_tools:[]};
+  const source=bytes.toString('utf8'),version=document.value.version;
+  if(!Buffer.from(source).equals(bytes)||typeof version!=='string'||
+      !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/
+        .test(version)||
+      !/function\s+run\(\s*curlBody\s*\)\s*\{/.test(source)||
+      !/fs\.writeFileSync\(\s*path\.join\(\s*bin\s*,\s*['"]curl['"]\s*\)\s*,\s*`#!\/bin\/sh\\n\$\{curlBody\}\\n`\s*\)/.test(source)||
+      !/fs\.chmodSync\(\s*path\.join\(\s*bin\s*,\s*['"]curl['"]\s*\)\s*,\s*0o755\s*\)/.test(source)||
+      !/spawnSync\(\s*['"]bash['"]\s*,\s*\[\s*SCRIPT\s*\]/.test(source)||
+      !/PATH\s*:\s*`\$\{bin\}:\$\{process\.env\.PATH\}`/.test(source)||
+      !/bin\s*=\s*fs\.mkdtempSync\(\s*path\.join\(\s*os\.tmpdir\(\)\s*,\s*['"]uc-bin-['"]\s*\)\s*\)/.test(source))
+    fail('test-fixture-factory');
+  const argumentsFound=[...source.matchAll(
+    /\bconst\s+r\s*=\s*run\(\s*((?:'[^'\r\n]*'|"[^"\r\n]*"|`[^`\r\n]*`))\s*\)\s*;/g)]
+    .map((match)=>fixtureStringArgument(match[1],version));
+  if(argumentsFound.length===0||
+      new Set(argumentsFound).size!==argumentsFound.length)
+    fail('test-fixture-factory');
+  const factorySha256=toolchain.sha256(bytes),childPathSha256=
+    toolchain.sha256(Buffer.concat([
+      Buffer.from('test-fixture-child-path-v1\0'),
+      Buffer.from(toolchain.canonical({platform:'posix',
+        expression:'${owned_temp_bin}:${authenticated_release_owned_bin}'})),
+    ]));
+  const rows=argumentsFound.map((argument)=>{
+    const fixture=Buffer.from(`#!/bin/sh\n${argument}\n`);
+    return toolchain.validateTestFixtureExecutable({
+      factory_source_path:sourcePath,
+      factory_source_sha256:factorySha256,
+      factory_args:[argument],
+      fixture_relpath:'curl',
+      fixture_sha256:toolchain.sha256(fixture),
+      platform:'posix',
+      invocation_kind:'child-path-owned-temp-first',
+      child_path_sha256:childPathSha256,
+    });
+  }).sort((left,right)=>byteCompare(toolchain.canonical(left),
+    toolchain.canonical(right)));
+  return{rows,shadowed_tools:['curl']};
+}
 function scanReleaseSources({committedFiles}={}){
   const files=fileMap(committedFiles),document=packageDocument(files),
     scanned=scanPackageScripts(files,document),rows=[
@@ -547,16 +604,21 @@ function scanReleaseSources({committedFiles}={}){
       {path:'package.json#document',kind:'package-document',
         sha256:toolchain.sha256(document.bytes),outgoing:[]},
       ...scanned.rows.values(),
-    ],required=new Set(['node','npm']),platform=[];
+    ],required=new Set(['node','npm']),nodeRequired=new Set(['node','npm']),
+    platform=[],fixtures=[];
   const nodeRows=new Map(),shellRows=new Map(),visiting=new Set(),
-    shellRequired=new Set(),shellFunctions=new Set();
+    shellRequired=new Map(),shellFunctions=new Set(),
+    shadowedShellTools=new Set();
   function visitShell(target){
     if(shellRows.has(target))return;
     if(visiting.has(target))return;
     visiting.add(target);const bytes=files.get(target);
     if(!bytes)fail('release-source-dependency');
     const shell=scanShellEntrypoint(target,bytes,files);
-    for(const name of shell.required_tools)shellRequired.add(name);
+    for(const name of shell.required_tools){
+      if(!shellRequired.has(name))shellRequired.set(name,new Set());
+      shellRequired.get(name).add(target);
+    }
     for(const name of shell.declared_functions)shellFunctions.add(name);
     for(const dependency of shell.shell_dependencies)visitShell(dependency);
     for(const dependency of shell.node_dependencies)visitNode(dependency);
@@ -572,24 +634,37 @@ function scanReleaseSources({committedFiles}={}){
     const dependencies=relativeDependencies(target,bytes,files);
     for(const dependency of dependencies)visitNode(dependency);
     const launch=scanLaunchSites(target,bytes);
-    for(const entrypoint of nodeShellEntrypoints(target,bytes,files,
-      launch.required_tools))visitShell(entrypoint);
+    const fixture=updateCheckFixtureExecutables(target,bytes,document),
+      shellEntrypoints=nodeShellEntrypoints(target,bytes,files,
+        launch.required_tools);
+    fixtures.push(...fixture.rows);
+    for(const entrypoint of shellEntrypoints){
+      for(const name of fixture.shadowed_tools)
+        shadowedShellTools.add(`${entrypoint}\0${name}`);
+      visitShell(entrypoint);
+    }
     nodeRows.set(target,{path:target,kind:'node-entry',
       sha256:toolchain.sha256(bytes),outgoing:[]});
-    for(const name of launch.required_tools)required.add(name);
+    for(const name of launch.required_tools){
+      required.add(name);nodeRequired.add(name);
+    }
     platform.push(...launch.platform_executables);
     visiting.delete(target);
   }
   for(const target of [...scanned.nodeTargets].sort(byteCompare))
     visitNode(target);
-  for(const name of shellRequired)
-    if(!shellFunctions.has(name))required.add(name);
+  for(const [name,sources] of shellRequired)
+    if(!shellFunctions.has(name)&&
+        (nodeRequired.has(name)||[...sources].some((source)=>
+          !shadowedShellTools.has(`${source}\0${name}`))))required.add(name);
   rows.push(...nodeRows.values(),...shellRows.values());
   platform.sort((a,b)=>byteCompare(toolchain.canonical(a),
     toolchain.canonical(b)));
   return{graph:toolchain.buildReleaseSourceGraph({rows:rows.sort(
     toolchain.compareGraphRows),platformExecutables:platform,
-  testFixtureExecutables:[]}),required_tools:[...required].sort(byteCompare)};
+  testFixtureExecutables:fixtures.sort((left,right)=>byteCompare(
+    toolchain.canonical(left),toolchain.canonical(right)))}),
+  required_tools:[...required].sort(byteCompare)};
 }
 function gitRead(gitIdentity,args,{cwd,maxBuffer=32*1024*1024}={}){
   const identity=toolchain.validateToolIdentity(gitIdentity);
@@ -634,4 +709,5 @@ function canonicalNames(values){return JSON.stringify(values);}
 module.exports={shellWords,globRegex,jsTokens,scanLaunchSites,
   resolveCommittedLiteral,nodeShellEntrypoints,scanShellEntrypoint,
   shellCommandSegments,shellCommandWords,shellDeclaredFunctions,
-  relativeDependencies,scanReleaseSources,loadCommittedFiles};
+  relativeDependencies,updateCheckFixtureExecutables,
+  scanReleaseSources,loadCommittedFiles};

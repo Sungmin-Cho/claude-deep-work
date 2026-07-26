@@ -85,6 +85,50 @@ test('recursive source scan follows invoked shell entrypoints and utilities',()=
     row.path==='runtime/check.js'&&row.kind==='node-entry'),true);
 });
 
+test('nested fake curl factories are graph fixtures rather than release tools',()=>{
+  const fixtureSource=[
+    "'use strict';",
+    "const fs=require('node:fs');",
+    "const os=require('node:os');",
+    "const path=require('node:path');",
+    "const {spawnSync}=require('node:child_process');",
+    "const SCRIPT=path.resolve(__dirname,'update-check.sh');",
+    "const LOCAL_VERSION=require('../../package.json').version;",
+    'function run(curlBody) {',
+    "  fs.writeFileSync(path.join(bin, 'curl'), `#!/bin/sh\\n${curlBody}\\n`);",
+    "  fs.chmodSync(path.join(bin, 'curl'), 0o755);",
+    "  return spawnSync('bash', [SCRIPT], {env:{",
+    '    PATH: `${bin}:${process.env.PATH}`,',
+    '  }});',
+    '}',
+    "bin = fs.mkdtempSync(path.join(os.tmpdir(), 'uc-bin-'));",
+    "const r = run('exit 22');",
+    "const r = run(`printf '%s' '{\"version\":\"${LOCAL_VERSION}\"}'`);",
+    '',
+  ].join('\n');
+  const files={
+    'package.json':JSON.stringify({version:'6.14.0',scripts:{test:
+      'node --test hooks/scripts/update-check.test.js'}}),
+    'hooks/scripts/update-check.test.js':fixtureSource,
+    'hooks/scripts/update-check.sh':'#!/usr/bin/env bash\ncurl -fsSL https://example.invalid/version\n',
+  };
+  const result=scanner.scanReleaseSources({committedFiles:files});
+  assert.deepEqual(result.required_tools,['bash','node','npm']);
+  assert.equal(result.graph.test_fixture_executables.length,2);
+  assert.deepEqual(result.graph.test_fixture_executables.map((row)=>
+    row.factory_args),[
+    ['exit 22'],
+    [`printf '%s' '{"version":"6.14.0"}'`],
+  ]);
+  for(const row of result.graph.test_fixture_executables){
+    assert.equal(row.factory_source_path,
+      'hooks/scripts/update-check.test.js');
+    assert.equal(row.fixture_relpath,'curl');
+    assert.equal(row.invocation_kind,'child-path-owned-temp-first');
+    assert.match(row.child_path_sha256,/^[0-9a-f]{64}$/);
+  }
+});
+
 test('recursive scripts fail closed on cycles, missing targets, and dynamic roots',()=>{
   assert.throws(()=>scanner.scanReleaseSources({committedFiles:{
     'package.json':JSON.stringify({scripts:{test:'npm run test:all',
