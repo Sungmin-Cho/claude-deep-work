@@ -70,6 +70,7 @@ test('recursive source scan follows invoked shell entrypoints and utilities',()=
       "cat <<'JSON'",
       'heredoc-command is data',
       'JSON',
+      'if command -v flock >/dev/null 2>&1; then flock -w 2 9; fi',
       'node "$ROOT/check.js"',
       '',
     ].join('\n'),

@@ -493,6 +493,9 @@ function scanShellEntrypoint(sourcePath,bytes,files){
     nodeDependencies=new Set();
   for(const name of shellCommandWords(source))required.add(name);
   for(const match of source.matchAll(
+    /\bif\s+command\s+-v\s+([A-Za-z][A-Za-z0-9._-]*)\b/g))
+    required.delete(match[1]);
+  for(const match of source.matchAll(
     /(?:source|\.|bash|sh|node)\s+["']?[^ \t\r\n"']*?([A-Za-z0-9_.-]+\.(?:sh|js))(?![A-Za-z0-9_.-])/g)){
     const literal=match[1],extension=literal.endsWith('.sh')?'.sh':'.js',
       selected=resolveCommittedLiteral(sourcePath,literal,files,extension);
