@@ -54,8 +54,10 @@ test('git capability preserves an owned-bin carrier through nested release envir
     assert.ok(gitTarget, 'physical Git executable is required');
     const bin = path.join(releaseRoot, 'bin');
     const home = path.join(releaseRoot, 'home');
+    const lifecycleBin = path.join(root, 'node_modules', '.bin');
     fs.mkdirSync(bin);
     fs.mkdirSync(home);
+    fs.mkdirSync(lifecycleBin, {recursive:true});
     fs.symlinkSync(fs.realpathSync(gitTarget), path.join(bin, 'git'), 'file');
     const script = [
       `'use strict';`,
@@ -67,19 +69,25 @@ test('git capability preserves an owned-bin carrier through nested release envir
       `process.stdout.write(JSON.stringify(rows));})().catch((error)=>{`,
       `process.stderr.write(String(error.stack||error));process.exitCode=1;});`,
     ].join('\n');
-    const result = spawnSync(process.execPath, ['-e', script, root], {
-      cwd:root,
-      env:{LANG:'C', LC_ALL:'C', TZ:'UTC', HOME:fs.realpathSync(home),
-        PATH:fs.realpathSync(bin), NODE_TEST_CONTEXT:'child-v8',
+    const run = (pathValue) => spawnSync(process.execPath, ['-e', script, root], {
+      cwd:root, env:{LANG:'C', LC_ALL:'C', TZ:'UTC', HOME:fs.realpathSync(home),
+        PATH:pathValue,
+        NODE_TEST_CONTEXT:'child-v8',
         npm_lifecycle_event:'test'},
       encoding:'utf8',
       shell:false,
       windowsHide:true,
     });
+    const result = run(`${fs.realpathSync(lifecycleBin)}${path.delimiter}${fs.realpathSync(bin)}`);
     assert.deepEqual({status:result.status, signal:result.signal, stderr:result.stderr},
       {status:0, signal:null, stderr:''});
     const rows = JSON.parse(result.stdout);
     assert.equal(rows.some((row) => fs.realpathSync(row.path) === fs.realpathSync(root)), true);
+    const foreignBin = path.join(root, 'node-gyp-bin');
+    fs.mkdirSync(foreignBin);
+    const foreign = run(`${fs.realpathSync(foreignBin)}${path.delimiter}${fs.realpathSync(bin)}`);
+    assert.equal(foreign.status, 1);
+    assert.match(foreign.stderr, /git-unavailable/);
   } finally {
     fs.rmSync(releaseRoot, {recursive:true, force:true});
     fs.rmSync(root, {recursive:true, force:true});

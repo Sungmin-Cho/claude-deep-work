@@ -1603,19 +1603,29 @@ function closedReleaseEnvironment(environment, fsApi = fs) {
       environment.LANG !== 'C' || environment.LC_ALL !== 'C' ||
       environment.TZ !== 'UTC' || typeof environment.HOME !== 'string' ||
       typeof environment.PATH !== 'string' ||
-      !path.isAbsolute(environment.HOME) || !path.isAbsolute(environment.PATH) ||
-      environment.PATH.includes(path.delimiter)) return null;
+      !path.isAbsolute(environment.HOME)) return null;
+  const pathEntries = environment.PATH.split(path.delimiter);
+  if (pathEntries.length === 0 || pathEntries.some((entry) => !path.isAbsolute(entry))) return null;
+  const bin = pathEntries.at(-1);
+  const lifecycleEntries = pathEntries.slice(0, -1);
+  if (lifecycleEntries.some((entry) => {
+    const base = path.basename(entry);
+    const npmNodeGyp = entry.split(path.sep).join('/').endsWith(
+      '/node_modules/@npmcli/run-script/lib/node-gyp-bin');
+    return !(base === '.bin' && path.basename(path.dirname(entry)) === 'node_modules') &&
+      !npmNodeGyp;
+  })) return null;
   let homeStat;
   let binStat;
   try {
     if (fsApi.realpathSync(environment.HOME) !== environment.HOME ||
-        fsApi.realpathSync(environment.PATH) !== environment.PATH) return null;
+        fsApi.realpathSync(bin) !== bin) return null;
     homeStat = fsApi.lstatSync(environment.HOME);
-    binStat = fsApi.lstatSync(environment.PATH);
+    binStat = fsApi.lstatSync(bin);
   } catch { return null; }
   if (!homeStat.isDirectory() || homeStat.isSymbolicLink() ||
       !binStat.isDirectory() || binStat.isSymbolicLink()) return null;
-  return {home:environment.HOME, bin:environment.PATH};
+  return {home:environment.HOME, bin};
 }
 
 function validateClosedReleaseGitCarrier(executable, environment = process.env, fsApi = fs) {
