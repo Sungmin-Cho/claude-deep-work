@@ -6,6 +6,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const rootCause=require('./root-cause-runtime.js');
+const replan=require('./replan-runtime.js');
 const journal=require('./operation-journal.js');
 const platform=require('./platform.js');
 const transaction=require('./transaction-runtime.js');
@@ -97,8 +98,11 @@ test('debug-root producers publish an authenticated ledger and one pending deriv
       {role:'session-state'}),project=
       transaction.projectCapabilityFor(stateCapability),
       plan={plan_authority_sha256:'d'.repeat(64),
-        replan_epoch:'e'.repeat(64)};
-    async function debugProducer(index,bytes){
+        replan_epoch:'e'.repeat(64),contract_binding:{
+          risk_profile_sha256:'a'.repeat(64)}};
+    fs.writeFileSync(statePath,frontmatter.updateFrontmatterText(
+      fs.readFileSync(statePath,'utf8'),{risk_class:'critical'}));
+    async function debugProducer(index,bytes,sliceId='SLICE-001'){
       const operationId=`op-${String(index).repeat(64)}`,
         notePath=path.join(debugDir,`RC-${String(index).padStart(3,'0')}.md`);
       fs.writeFileSync(notePath,bytes);
@@ -109,7 +113,7 @@ test('debug-root producers publish an authenticated ledger and one pending deriv
         'state-written'])await journal.recordOperationStage(operation,stage,{
         owned:{index}});
       await journal.completeOperation(operation,{status:'completed',
-        sliceId:'SLICE-001',notePath,
+        sliceId,notePath,
         noteSha256:journal.sha256(bytes),receiptSha256:
           String(index+2).repeat(64),stateSha256:String(index+3).repeat(64)});
       return operationId;
@@ -131,6 +135,38 @@ test('debug-root producers publish an authenticated ledger and one pending deriv
     assert.equal(stored.repeated_derivations[0].status,'pending');
     assert.equal(fs.existsSync(path.join(root,
       ...stored.repeated_derivations[0].qualification_path.split('/'))),true);
+    const thirdOperation=await debugProducer(3,Buffer.from('other one\n'),
+      'SLICE-002');
+    await rootCause.recordRootCause({stateCapability,plan,
+      sourceKind:'debug-root',sourceOperationId:thirdOperation});
+    const fourthOperation=await debugProducer(4,Buffer.from('other two\n'),
+      'SLICE-002');
+    const fourth=await rootCause.recordRootCause({stateCapability,plan,
+      sourceKind:'debug-root',sourceOperationId:fourthOperation});
+    await assert.rejects(()=>rootCause.deriveRepeatedRootCause({
+      stateCapability,plan,operationId:fourth.pending_repeated_operation_id}),
+    /repeated-root-cause-order/);
+    const derived=await rootCause.deriveRepeatedRootCause({stateCapability,
+      plan,operationId:second.pending_repeated_operation_id});
+    assert.equal(derived.operation_id,second.pending_repeated_operation_id);
+    assert.match(derived.observation_sha256,/^[0-9a-f]{64}$/);
+    const completed=rootCause.validateRootCauseLedger(JSON.parse(
+      frontmatter.parseFrontmatter(fs.readFileSync(statePath,'utf8')).fields
+        .root_cause_ledger_json));
+    assert.equal(completed.repeated_derivations[0].status,'completed');
+    const deriveReplay=await rootCause.deriveRepeatedRootCause({
+      stateCapability,plan,operationId:second.pending_repeated_operation_id});
+    assert.equal(deriveReplay.adopted,true);
+    const otherDerived=await rootCause.deriveRepeatedRootCause({
+      stateCapability,plan,operationId:fourth.pending_repeated_operation_id});
+    assert.equal(otherDerived.adopted,false);
+    const replanned=await replan.dispatchRepeatedRootCauseReplan({
+      stateCapability,plan,
+      producerOperationId:second.pending_repeated_operation_id});
+    assert.match(replanned.replan_epoch,/^[0-9a-f]{64}$/);
+    assert.equal(frontmatter.parseFrontmatter(
+      fs.readFileSync(statePath,'utf8')).fields.replan_reason,
+    'repeated-root-cause');
     const replay=await rootCause.recordRootCause({stateCapability,plan,
       sourceKind:'debug-root',sourceOperationId:firstOperation});
     assert.equal(replay.adopted,true);

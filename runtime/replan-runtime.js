@@ -245,6 +245,17 @@ async function dispatchRiskIncreaseReplan({stateCapability,plan,sliceId,
       to:observation.to_risk,reason:'risk-class-increase'}).trimEnd()};
   return recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam});
 }
+async function dispatchRepeatedRootCauseReplan({stateCapability,plan,
+  producerOperationId,seam}={}){
+  const authenticated=await require('./root-cause-runtime.js')
+    .authenticateRepeatedDerivation({stateCapability,plan,
+      operationId:producerOperationId}),observation=authenticated.observation,
+    prepared=prepareReplanAuthority({stateCapability,plan,
+      sliceId:observation.slice_id,reason:'repeated-root-cause',
+      producerOperationId,observationKind:'root-cause-ledger',observation});
+  return recordPreparedReplan({stateCapability,plan,
+    sliceId:observation.slice_id,prepared,seam});
+}
 async function dispatchOwnedDiscoveryReplan({stateCapability,plan,sliceId,
   producerOperationId,seam}={}){
   const sid=sessionId(stateCapability);
@@ -696,6 +707,7 @@ async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,s
 module.exports={dispatchVerificationSideEffectReplan,adoptVerificationSideEffectReplay,
   publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,validateDiscoveryObservation,
   publishRiskObservation,dispatchRiskIncreaseReplan,validateRiskObservation,
+  dispatchRepeatedRootCauseReplan,
   completeReplan,
   prepareManifestReplanAuthority,loadPreparedReplan,recordPreparedReplan,
   semanticDigest,operationId};

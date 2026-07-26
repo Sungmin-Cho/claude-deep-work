@@ -487,6 +487,8 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['replan discovery publish',[10,20,50,70]],['replan discovery dispatch',[10,20,50,70]],
     ['replan risk publish',[10,20,50,70]],['replan risk dispatch',[10,20,50,70]],
     ['replan root-cause record',[10,20,50,70]],
+    ['replan root-cause derive',[10,20,50,70]],
+    ['replan root-cause dispatch',[10,20,50,70]],
     ['replan complete',[10,20,50,70]],
     ['release gate fact-publish',[10,20,50,70]],
     ['release gate result-publish',[10,20,50,70]],
@@ -874,8 +876,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 112 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 112);
+test('all 114 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 114);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -899,7 +901,7 @@ test('all 112 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 112);
+  assert.equal(outcomes.length, 114);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

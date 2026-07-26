@@ -382,8 +382,15 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       producerOperationId:f['producer-operation-id']});});
   on('replan root-cause record',({f,cwd})=>{const bound=readPlan(f,cwd);
     return rootCause.recordRootCause({stateCapability:bound.state,
-      plan:bound.value,sourceKind:f['source-kind'],
+      planCapability:bound.cap,plan:bound.value,sourceKind:f['source-kind'],
       sourceOperationId:f['source-operation-id']});});
+  on('replan root-cause derive',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return rootCause.deriveRepeatedRootCause({stateCapability:bound.state,
+      plan:bound.value,operationId:f['operation-id']});});
+  on('replan root-cause dispatch',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.dispatchRepeatedRootCauseReplan({
+      stateCapability:bound.state,plan:bound.value,
+      producerOperationId:f['operation-id']});});
   on('replan complete',({f,cwd})=>{const bound=readPlan(f,cwd);
     return replan.completeReplan({stateCapability:bound.state,plan:bound.value});});
   on('release gate fact-publish',({f,cwd})=>{const bound=readPlan(f,cwd);

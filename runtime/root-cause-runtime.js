@@ -326,13 +326,53 @@ async function authenticateDebugRoot({stateCapability,plan,sourceOperationId}){
     root_cause_sha256:result.noteSha256}),
   sourceResultSha256:receipt.resultSha256,sourceReceipt:receipt};
 }
-async function authenticateRootCauseSource({stateCapability,plan,sourceKind,
-  sourceOperationId}={}){
+async function authenticateVerificationRoot({stateCapability,planCapability,
+  plan,sourceOperationId}){
+  if(!planCapability)fail('root-cause-verification-source');
+  const sessionId=transaction.sessionIdFromState(stateCapability),
+    project=transaction.projectCapabilityFor(stateCapability),
+    receipt=await journal.resumeOperation({projectCapability:project,
+      operationId:sourceOperationId,sessionId,kind:'verification-run-v2'}),
+    result=receipt.result;
+  if(receipt.stage!=='completed-ledger'||!exactKeys(result,
+      ['session_id','slice_id','result_path','result_sha256','disposition',
+        'observed_class','scope_disposition'])||result.session_id!==sessionId||
+      !/^SLICE-\d{3}$/.test(result.slice_id||'')||
+      !DIGEST.test(result.result_sha256||''))
+    fail('root-cause-verification-source');
+  const authenticated=await require('./verification-v2-runtime.js')
+    .authenticateVerificationV2({stateCapability,planCapability,plan,
+      sliceId:result.slice_id,operationId:sourceOperationId,
+      resultSha256:result.result_sha256}),verification=
+      authenticated.verification,classification=verification.classification;
+  if(classification.normalized_signal===null||
+      !DIGEST.test(classification.diagnostic_event_sha256||''))
+    fail('root-cause-verification-source');
+  const normalizedSignalSha256=journal.sha256(
+    canonical(classification.normalized_signal)),
+    contractTraceSha256=semanticDigest('root-cause-contract-trace-v1',{
+      plan_authority_sha256:plan.plan_authority_sha256,
+      replan_epoch:plan.replan_epoch,slice_id:result.slice_id,
+      verification_plan_sha256:verification.verification_plan_sha256,
+      spec_sha256:verification.spec_sha256});
+  return{observation:validateRootCauseObservation({schema_version:1,
+    source_kind:'verification-result',
+    source_operation_id:sourceOperationId,slice_id:result.slice_id,
+    failure_class:classification.observed_class,
+    normalized_signal_sha256:normalizedSignalSha256,
+    contract_trace_sha256:contractTraceSha256,
+    root_cause_sha256:classification.diagnostic_event_sha256}),
+  sourceResultSha256:result.result_sha256,sourceReceipt:receipt};
+}
+async function authenticateRootCauseSource({stateCapability,planCapability,
+  plan,sourceKind,sourceOperationId}={}){
   if(sourceKind==='debug-root')return authenticateDebugRoot({stateCapability,
     plan,sourceOperationId});
+  if(sourceKind==='verification-result')return authenticateVerificationRoot({
+    stateCapability,planCapability,plan,sourceOperationId});
   fail('root-cause-source-kind');
 }
-async function recordRootCause({stateCapability,plan,sourceKind,
+async function recordRootCause({stateCapability,planCapability,plan,sourceKind,
   sourceOperationId,seam,_locksHeld=false}={}){
   const sessionId=transaction.sessionIdFromState(stateCapability);
   if(!_locksHeld){
@@ -348,13 +388,14 @@ async function recordRootCause({stateCapability,plan,sourceKind,
         capability:transaction.stateLock(stateCapability)},
       {rank:transaction.RANKS.target,capability:lock(
         `deep-work.target.${journal.sha256('root-causes')}.lock`,'lock')}],
-    ()=>recordRootCause({stateCapability,plan,sourceKind,sourceOperationId,
-      seam,_locksHeld:true}));
+    ()=>recordRootCause({stateCapability,planCapability,plan,sourceKind,
+      sourceOperationId,seam,_locksHeld:true}));
   }
   if(!DIGEST.test(plan?.plan_authority_sha256||'')||
       !DIGEST.test(plan?.replan_epoch||''))fail('root-cause-plan');
-  const source=await authenticateRootCauseSource({stateCapability,plan,
-    sourceKind,sourceOperationId}),fields=frontmatter.parseFrontmatter(
+  const source=await authenticateRootCauseSource({stateCapability,
+    planCapability,plan,sourceKind,sourceOperationId}),
+    fields=frontmatter.parseFrontmatter(
       fs.readFileSync(stateCapability.path,'utf8')).fields,
     ledger=parseStoredLedger(fields,{sessionId,
       planAuthoritySha256:plan.plan_authority_sha256,
@@ -424,9 +465,183 @@ async function recordRootCause({stateCapability,plan,sourceKind,
   return{...result,operation_id:operationId,operation_receipt:receipt,
     adopted:false};
 }
+function readCanonical(file,code){
+  let stat,bytes;try{stat=fs.lstatSync(file);bytes=fs.readFileSync(file);}
+  catch{fail(code);}
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)
+    fail(code);
+  let value;try{value=JSON.parse(bytes);}catch{fail(code);}
+  if(!bytes.equals(Buffer.from(canonical(value))))fail(code);
+  return{value,sha256:journal.sha256(bytes)};
+}
+function recordOperationId(ledger,entry){
+  return `op-${semanticDigest('root-cause-record-v1',{
+    session_id:ledger.session_id,
+    plan_authority_sha256:ledger.plan_authority_sha256,
+    replan_epoch:ledger.replan_epoch,source_kind:entry.source_kind,
+    source_operation_id:entry.source_operation_id,
+    source_result_sha256:entry.source_result_sha256,
+    root_cause_sha256:entry.root_cause_sha256})}`;
+}
+async function authenticateRepeatedDerivation({stateCapability,plan,
+  operationId}={}){
+  const sessionId=transaction.sessionIdFromState(stateCapability),
+    project=transaction.projectCapabilityFor(stateCapability),
+    receipt=await journal.resumeOperation({projectCapability:project,
+      operationId,sessionId,kind:'repeated-root-cause-derive'}),result=
+      receipt.result;
+  if(receipt.stage!=='completed-ledger'||!exactKeys(result,
+      ['operation_id','qualification_path','qualification_ledger_sha256',
+        'completed_ledger_sha256','observation_path','observation_sha256'])||
+      result.operation_id!==operationId||
+      !DIGEST.test(result.qualification_ledger_sha256||'')||
+      !DIGEST.test(result.completed_ledger_sha256||'')||
+      !DIGEST.test(result.observation_sha256||''))
+    fail('repeated-root-cause-producer');
+  const observationRaw=readCanonical(path.join(stateCapability.projectRoot,
+    ...result.observation_path.split('/')),'repeated-root-cause-producer'),
+    observation=validateRepeatedRootCauseObservation(observationRaw.value);
+  if(observationRaw.sha256!==result.observation_sha256||
+      observation.qualification_path!==result.qualification_path||
+      observation.qualification_ledger_sha256!==
+        result.qualification_ledger_sha256)
+    fail('repeated-root-cause-producer');
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields,
+    ledger=parseStoredLedger(fields,{sessionId,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      replanEpoch:plan.replan_epoch}),
+    row=ledger.repeated_derivations.find((item)=>
+      item.operation_id===operationId);
+  if(!row||row.status!=='completed'||
+      row.observation_path!==result.observation_path||
+      row.observation_sha256!==result.observation_sha256)
+    fail('repeated-root-cause-producer');
+  return{observation,receipt,ledger,row};
+}
+async function deriveRepeatedRootCause({stateCapability,plan,operationId,
+  seam,_locksHeld=false}={}){
+  const sessionId=transaction.sessionIdFromState(stateCapability);
+  if(!_locksHeld){
+    const root=stateCapability.projectRoot,lock=(name)=>
+      platform.issueProjectStateCapability(root,path.join(root,'.claude',name),
+        {allowMissingLeaf:true,role:'lock'});
+    return transaction.withRankedLocks([
+      {rank:transaction.RANKS.session,capability:lock(
+        `deep-work.${sessionId}.rank-operation.lock`)},
+      {rank:transaction.RANKS.journal,capability:lock(
+        `deep-work.${sessionId}.rank-journal.lock`)},
+      {rank:transaction.RANKS.state,
+        capability:transaction.stateLock(stateCapability)},
+      {rank:transaction.RANKS.target,capability:lock(
+        `deep-work.target.${journal.sha256('root-causes')}.lock`)}],
+    ()=>deriveRepeatedRootCause({stateCapability,plan,operationId,seam,
+      _locksHeld:true}));
+  }
+  if(!OPERATION.test(operationId||'')||
+      !DIGEST.test(plan?.plan_authority_sha256||'')||
+      !DIGEST.test(plan?.replan_epoch||''))fail('repeated-root-cause-derive');
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields,
+    ledger=parseStoredLedger(fields,{sessionId,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      replanEpoch:plan.replan_epoch}),
+    row=ledger.repeated_derivations.find((item)=>
+      item.operation_id===operationId);
+  if(row?.status==='completed'){
+    const authenticated=await authenticateRepeatedDerivation({
+      stateCapability,plan,operationId});
+    return{...authenticated.receipt.result,operation_receipt:
+      authenticated.receipt,adopted:true};
+  }
+  const pending=ledger.repeated_derivations.filter((item)=>
+    item.status==='pending').sort((a,b)=>byteCompare(a.slice_id,b.slice_id));
+  if(!row||row.status!=='pending'||pending[0]?.operation_id!==operationId)
+    fail('repeated-root-cause-order');
+  const qualificationRaw=readCanonical(path.join(stateCapability.projectRoot,
+    ...row.qualification_path.split('/')),'root-cause-qualification'),
+    qualification=validateQualification(qualificationRaw.value);
+  if(qualification.qualification_ledger_sha256!==
+        row.qualification_ledger_sha256||
+      qualification.slice_id!==row.slice_id||
+      canonical(qualification.qualifying_observation_ids)!==
+        canonical(row.qualifying_observation_ids))
+    fail('root-cause-qualification');
+  const project=transaction.projectCapabilityFor(stateCapability),entries=
+    qualification.qualifying_observation_ids.map((id)=>{
+      const entry=qualification.entries.find((item)=>item.observation_id===id);
+      if(!entry)fail('repeated-root-cause-producers');return entry;});
+  const producerReceipts=[];
+  for(const entry of entries){
+    const producerId=recordOperationId(ledger,entry),receipt=
+      await journal.resumeOperation({projectCapability:project,
+        operationId:producerId,sessionId,kind:'root-cause-record'});
+    if(receipt.stage!=='completed-ledger'||
+        receipt.result?.observation_id!==entry.observation_id||
+        receipt.result?.record_sequence!==entry.record_sequence)
+      fail('repeated-root-cause-producers');
+    producerReceipts.push(receipt);
+  }
+  const preimage={session_id:sessionId,
+    plan_authority_sha256:plan.plan_authority_sha256,
+    replan_epoch:plan.replan_epoch,
+    qualification_ledger_sha256:row.qualification_ledger_sha256,
+    slice_id:row.slice_id,
+    qualifying_observation_ids:row.qualifying_observation_ids};
+  if(repeatedOperationId(preimage)!==operationId)
+    fail('repeated-root-cause-derive');
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId,kind:'repeated-root-cause-derive',operationId,
+    slice:row.slice_id,preconditions:preimage});
+  await journal.recordOperationStage(operation,'qualification-authenticated',
+    {owned:{qualificationLedgerSha256:row.qualification_ledger_sha256}});
+  await journal.recordOperationStage(operation,'producers-authenticated',
+    {owned:{producerLedgerResultSha256s:producerReceipts.map((item)=>
+      item.resultSha256).sort(byteCompare)}});
+  const observation=validateRepeatedRootCauseObservation({schema_version:1,
+    qualification_path:row.qualification_path,
+    qualification_ledger_sha256:row.qualification_ledger_sha256,
+    slice_id:row.slice_id,
+    qualifying_observation_ids:[...row.qualifying_observation_ids],
+    qualifying_root_cause_sha256s:entries.map((entry)=>
+      entry.root_cause_sha256).sort(byteCompare)});
+  const observationPath=`.deep-work/${sessionId}/root-causes/`+
+    `repeated-${operationId}.json`,observationSha256=writeExclusive(
+      path.join(stateCapability.projectRoot,...observationPath.split('/')),
+      observation,'repeated-root-cause-publish');
+  await journal.recordOperationStage(operation,'observation-published',
+    {owned:{observationPath,observationSha256}});
+  const updated=structuredClone(ledger),target=
+    updated.repeated_derivations.find((item)=>item.operation_id===operationId);
+  target.status='completed';target.observation_path=observationPath;
+  target.observation_sha256=observationSha256;
+  updated.ledger_sha256=ledgerDigest(updated);
+  validateRootCauseLedger(updated);
+  const ledgerPath=`.deep-work/${sessionId}/root-causes/`+
+    `ledger-${updated.ledger_sha256}.json`;
+  writeExclusive(path.join(stateCapability.projectRoot,
+    ...ledgerPath.split('/')),updated,'root-cause-ledger-publish');
+  const before=fs.readFileSync(stateCapability.path,'utf8'),after=
+    frontmatter.updateFrontmatterText(before,{root_cause_ledger_json:
+      canonical(updated).trimEnd(),root_cause_ledger_sha256:
+      updated.ledger_sha256,root_cause_ledger_ref:ledgerPath});
+  seam?.('before-repeated-root-ledger-state-write',{operationId});
+  platform.atomicWriteFile(stateCapability,after);
+  await journal.recordOperationStage(operation,'ledger-committed',{owned:{
+    ledgerPath,ledgerSha256:updated.ledger_sha256,
+    postStateSha256:journal.sha256(Buffer.from(after))}});
+  const result={operation_id:operationId,
+    qualification_path:row.qualification_path,
+    qualification_ledger_sha256:row.qualification_ledger_sha256,
+    completed_ledger_sha256:updated.ledger_sha256,
+    observation_path:observationPath,observation_sha256:observationSha256};
+  const receipt=await journal.completeOperation(operation,result);
+  return{...result,operation_receipt:receipt,adopted:false};
+}
 
 module.exports={semanticDigest,validateRootCauseObservation,
   validateRootCauseLedger,emptyRootCauseLedger,insertRootCause,
   validateRepeatedRootCauseObservation,entryObservationId,
   qualificationDigest,validateQualification,repeatedOperationId,
-  recordRootCause,authenticateRootCauseSource};
+  recordRootCause,authenticateRootCauseSource,deriveRepeatedRootCause,
+  authenticateRepeatedDerivation};

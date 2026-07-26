@@ -64,6 +64,8 @@ const rows=[
   grammar('replan root-cause record',['state','plan','source-kind',
     'source-operation-id'],[],{'source-kind':['debug-root',
       'verification-result']}),
+  grammar('replan root-cause derive',['state','plan','operation-id']),
+  grammar('replan root-cause dispatch',['state','plan','operation-id']),
   grammar('replan complete',['state','plan']),
   grammar('release gate fact-publish',['state','plan','checker',
     'input-refs-json'],[],{checker:['spec-gate-v1','changed-js-syntax-v1',
