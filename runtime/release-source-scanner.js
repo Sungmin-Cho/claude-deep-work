@@ -234,6 +234,17 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
           /const\s+checked\s*=\s*validateNativeSpec\(\s*spec\s*,\s*\{\s*environment\s*\}\s*\)/.test(source)&&
           /\benv\s*:\s*environment\b/.test(source))continue;
     }
+    if(path==='runtime/release-source-scanner.js'&&
+        call.value==='spawnSync'&&member==='childProcess'&&
+        expression.startsWith('identity.target_path')){
+      if(/const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/.test(source)&&
+          /toolchain\.validateToolIdentity\(\s*identity\s*\)/.test(source)&&
+          /identity\.name\s*!==\s*['"]git['"]/.test(source)&&
+          /env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}/.test(source)&&
+          /\bshell\s*:\s*false\b/.test(source)){
+        required.add('git');continue;
+      }
+    }
     if(first.type==='identifier'&&first.value==='git'&&
         path==='runtime/platform.js'&&
         /const git = resolveGitExecutable\(/.test(source)){

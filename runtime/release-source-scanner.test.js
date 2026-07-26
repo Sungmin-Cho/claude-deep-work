@@ -84,6 +84,27 @@ test('health runtime dynamic carrier requires closed-environment validation',()=
       '  void checked.executable;'))),/release-launch-dynamic/);
 });
 
+test('source scanner git reader requires identity revalidation',()=>{
+  const authenticated=[
+    "const childProcess=require('node:child_process');",
+    'function gitRead(gitIdentity,args){',
+    '  const identity=toolchain.validateToolIdentity(gitIdentity);',
+    "  if(identity.name!=='git')throw new Error('wrong tool');",
+    '  const result=childProcess.spawnSync(identity.target_path,args,{',
+    "    env:{LANG:'C',LC_ALL:'C',TZ:'UTC'},shell:false});",
+    '  toolchain.validateToolIdentity(identity);',
+    '  return result;',
+    '}',
+  ].join('\n');
+  assert.deepEqual(scanner.scanLaunchSites(
+    'runtime/release-source-scanner.js',Buffer.from(authenticated))
+    .required_tools,['git']);
+  assert.throws(()=>scanner.scanLaunchSites(
+    'runtime/release-source-scanner.js',Buffer.from(authenticated.replace(
+      '  toolchain.validateToolIdentity(identity);','  void identity;'))),
+  /release-launch-dynamic/);
+});
+
 test('committed source loading binds an authenticated git and rejects worktree drift',
   {skip:process.platform==='win32'},t=>{
     const gitPath=process.env.PATH.split(path.delimiter).map((directory)=>
