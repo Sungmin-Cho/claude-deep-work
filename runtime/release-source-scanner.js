@@ -188,28 +188,103 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   let tokens;try{tokens=jsTokens(source);}catch(error){
     if(error.code==='release-source-js')
       fail('release-source-js',`${path}:${error.message}`);throw error;}
-  const kinds=new Set(['spawn','spawnSync','execFile','execFileSync','fork']);
+  const kinds=new Set(['spawn','spawnSync','execFile','execFileSync','fork']),
+    directBindings=new Set(),moduleBindings=new Set();
+  if(path==='runtime/process-supervisor.js')kinds.add('spawnImpl');
+  for(const match of source.matchAll(
+    /(?:const|let|var)\s*\{([^}]+)\}\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g)){
+    for(const item of match[1].split(',')){
+      const parts=item.trim().split(/\s*:\s*/);
+      if(kinds.has(parts[0]))directBindings.add(parts[1]||parts[0]);
+    }
+  }
+  for(const match of source.matchAll(
+    /(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g))
+    moduleBindings.add(match[1]);
   for(let index=0;index<tokens.length-2;index++){
     const call=tokens[index],open=tokens[index+1],first=tokens[index+2];
     if(call.type!=='identifier'||!kinds.has(call.value)||
         open.type!=='punct'||open.value!=='(')continue;
+    const member=tokens[index-1]?.value==='.'?
+      tokens[index-2]?.value:null,direct=directBindings.has(call.value),
+      boundMember=member&&moduleBindings.has(member),
+      inlineRequire=tokens[index-1]?.value==='.'&&
+        tokens[index-2]?.value===')'&&tokens[index-3]?.type==='string'&&
+        /^(?:node:)?child_process$/.test(tokens[index-3].value)&&
+        tokens[index-4]?.value==='('&&tokens[index-5]?.value==='require';
+    if(call.value!=='spawnImpl'&&!direct&&!boundMember&&!inlineRequire)continue;
     if(call.value==='fork'){activeNode=true;continue;}
-    if(first.type==='identifier'&&first.value==='process'&&
-        tokens[index+3]?.value==='.'&&tokens[index+4]?.value==='execPath'){
+    const expression=[first,tokens[index+3],tokens[index+4],
+      tokens[index+5],tokens[index+6]].filter(Boolean)
+      .map((token)=>token.value).join('');
+    if(expression.startsWith('process.execPath')){
       activeNode=true;continue;
+    }
+    if(path==='runtime/process-supervisor.js'&&
+        (call.value==='spawnImpl'&&
+          ['executable','spec.executable'].some((value)=>
+            expression.startsWith(value))||
+        call.value==='spawn'&&
+          expression.startsWith('message.spec.executable')))continue;
+    if(first.type==='identifier'&&first.value==='git'&&
+        path==='runtime/platform.js'&&
+        /const git = resolveGitExecutable\(/.test(source)){
+      required.add('git');continue;
+    }
+    if(first.type==='identifier'&&first.value==='executable'&&
+        call.value==='execFileSync'&&path==='runtime/platform.js'&&
+        /const executable = resolveGitExecutable\(/.test(source)){
+      required.add('git');continue;
+    }
+    if(first.type==='identifier'&&first.value==='binary'&&
+        path==='runtime/review-policy-runtime.js'&&
+        /probe\('codex', safeEnv\)/.test(source)&&
+        /probe\('gemini', safeEnv\)/.test(source)){
+      required.add('codex');required.add('gemini');continue;
     }
     if(first.type==='identifier'&&first.value==='executable'&&
         path==='runtime/platform.test.js'&&
         /const executable = path\.win32\.join\(systemRoot,\s*'System32',\s*'WindowsPowerShell',\s*'v1\.0',\s*'powershell\.exe'\);/m
           .test(source)&&platformName!=='win32')continue;
     if(first.type!=='string'||!/^[A-Za-z0-9._/-]+$/.test(first.value))
-      fail('release-launch-dynamic',`${path}:${first.value||first.type}`);
+      fail('release-launch-dynamic',`${path}:${member?`${member}.`:''}${
+        call.value}:${first.value||first.type}`);
     required.add(first.value);
   }
   if(activeNode)platform.push(toolchain.buildActiveNodeExecutable({
     sourcePath:path,sourceSha256:toolchain.sha256(bytes)}));
   return{required_tools:[...required].sort(byteCompare),
     platform_executables:platform};
+}
+function relativeDependencies(sourcePath,bytes,files){
+  const source=bytes.toString('utf8');let tokens;
+  try{tokens=jsTokens(source);}catch(error){
+    if(error.code==='release-source-js')
+      fail('release-source-js',`${sourcePath}:${error.message}`);throw error;}
+  const dependencies=new Set(),directory=path.posix.dirname(sourcePath);
+  function add(specifier){
+    if(!specifier.startsWith('.'))return;
+    const base=path.posix.normalize(path.posix.join(directory,specifier));
+    if(!portable(base))fail('release-source-dependency');
+    const candidates=path.posix.extname(base)?[base]:
+      [`${base}.js`,`${base}.cjs`,`${base}.mjs`,
+        path.posix.join(base,'index.js')];
+    const selected=candidates.find((candidate)=>files.has(candidate));
+    if(!selected)fail('release-source-dependency',
+      `${sourcePath}:${specifier}`);
+    if(/\.(?:cjs|mjs|js)$/.test(selected))dependencies.add(selected);
+  }
+  for(let index=0;index<tokens.length-3;index++){
+    const first=tokens[index];
+    if(first.type!=='identifier'||first.value!=='require')continue;
+    if(tokens[index+1].value==='('&&tokens[index+2].type==='string'){
+      add(tokens[index+2].value);continue;
+    }
+    if(tokens[index+1].value==='.'&&tokens[index+2].value==='resolve'&&
+        tokens[index+3]?.value==='('&&tokens[index+4]?.type==='string')
+      add(tokens[index+4].value);
+  }
+  return[...dependencies].sort(byteCompare);
 }
 function scanReleaseSources({committedFiles}={}){
   const files=fileMap(committedFiles),document=packageDocument(files),
@@ -221,13 +296,24 @@ function scanReleaseSources({committedFiles}={}){
         sha256:toolchain.sha256(document.bytes),outgoing:[]},
       ...scanned.rows.values(),
     ],required=new Set(['node','npm']),platform=[];
-  for(const target of [...scanned.nodeTargets].sort(byteCompare)){
-    const bytes=files.get(target),launch=scanLaunchSites(target,bytes);
-    rows.push({path:target,kind:'node-entry',
+  const nodeRows=new Map(),visiting=new Set();
+  function visitNode(target){
+    if(nodeRows.has(target))return;
+    if(visiting.has(target))return;
+    visiting.add(target);const bytes=files.get(target);
+    if(!bytes)fail('release-source-dependency');
+    const dependencies=relativeDependencies(target,bytes,files);
+    for(const dependency of dependencies)visitNode(dependency);
+    const launch=scanLaunchSites(target,bytes);
+    nodeRows.set(target,{path:target,kind:'node-entry',
       sha256:toolchain.sha256(bytes),outgoing:[]});
     for(const name of launch.required_tools)required.add(name);
     platform.push(...launch.platform_executables);
+    visiting.delete(target);
   }
+  for(const target of [...scanned.nodeTargets].sort(byteCompare))
+    visitNode(target);
+  rows.push(...nodeRows.values());
   platform.sort((a,b)=>byteCompare(toolchain.canonical(a),
     toolchain.canonical(b)));
   return{graph:toolchain.buildReleaseSourceGraph({rows:rows.sort(
@@ -274,5 +360,5 @@ function loadCommittedFiles({root,gitIdentity,
 }
 function canonicalNames(values){return JSON.stringify(values);}
 
-module.exports={shellWords,globRegex,jsTokens,scanLaunchSites,scanReleaseSources,
-  loadCommittedFiles};
+module.exports={shellWords,globRegex,jsTokens,scanLaunchSites,
+  relativeDependencies,scanReleaseSources,loadCommittedFiles};

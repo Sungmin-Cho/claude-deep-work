@@ -26,20 +26,25 @@ test('recursive source scan follows exact test scripts, globs, and launch litera
     'runtime/a.test.js':[
       "'use strict';",
       "const {spawnSync}=require('node:child_process');",
+      "require('./helper.js');",
       "spawnSync('git',['status']);",
       'spawnSync(process.execPath,[\'-e\',\'\']);',
       '',
     ].join('\n'),
     'runtime/nested/b.test.js':"'use strict';\n",
+    'runtime/helper.js':"const {execFileSync}=require('node:child_process');\n"+
+      "execFileSync('bash',['-c','true']);\n",
     'runtime/not-a-test.js':"'use strict';\n",
   },result=scanner.scanReleaseSources({committedFiles:files});
-  assert.deepEqual(result.required_tools,['git','node','npm']);
+  assert.deepEqual(result.required_tools,['bash','git','node','npm']);
   assert.deepEqual(result.graph.roots,
     ['command:npm-pack-dry-run-json','package.json#scripts.test']);
   assert.equal(result.graph.rows.some((row)=>
     row.path==='runtime/a.test.js'),true);
   assert.equal(result.graph.rows.some((row)=>
     row.path==='runtime/not-a-test.js'),false);
+  assert.equal(result.graph.rows.some((row)=>
+    row.path==='runtime/helper.js'),true);
   assert.equal(result.graph.platform_executables.length,1);
   assert.deepEqual(toolchain.validateReleaseSourceGraph(result.graph),
     result.graph);
@@ -55,7 +60,8 @@ test('recursive scripts fail closed on cycles, missing targets, and dynamic root
   assert.throws(()=>scanner.scanReleaseSources({committedFiles:{
     'package.json':JSON.stringify({scripts:{test:
       'node --test runtime/a.test.js'}}),
-    'runtime/a.test.js':"spawnSync(executable,[]);\n",
+    'runtime/a.test.js':"const {spawnSync}=require('node:child_process');\n"+
+      "spawnSync(executable,[]);\n",
   }}),/release-launch-dynamic/);
 });
 
