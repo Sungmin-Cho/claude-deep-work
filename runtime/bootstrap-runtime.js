@@ -2665,6 +2665,7 @@ module.exports={
   BOOTSTRAP_VERIFICATION_RESULT_KEYS,BOOTSTRAP_RED_PROOF_KEYS,
   bootstrapManifestSchemaSha256,bootstrapCommandArgvSha256,normalizeNodeTestBootstrapStdout,
   parseNodeTapFailure,tapValueDigest,classifyExpectedTapSignal,classifyTapDiagnostic,
+  classifyVerificationObservation,executableIdentity,
   classifyBootstrapObservedCommandResult,validateBootstrapObservedCommandResult,
   validateBootstrapFailureArtifact,validateBootstrapManifest,validateBootstrapWitness,
   validateBootstrapAuthorization,validateBootstrapExecutionJournal,

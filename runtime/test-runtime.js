@@ -39,6 +39,7 @@ function pureRecordTestPass({state,gateResults,verificationPlan,evidencePackage,
 function recordTestPass({state,stateCapability,gateResults,verificationPlan,evidencePackage,evidenceSummary,
   compatibilityMode,receiptInvalidations,artifactRoot,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,
     verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot,at});
+  require('./slice-runtime.js').assertNoPendingScopedWrite(stateCapability);
   validateGateResults(gateResults,{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot});
   return transaction.journaledStateMutation({stateCapability,kind:'test-pass',
     preconditions:{at,gateResultsSha256:sha256(canonicalJson(gateResults)),
@@ -68,6 +69,7 @@ function failureTransition({state,plan,receipts,failedSlices,exhausted}){
 function receiptCapability(directory,id){return transaction.issueSessionFileCapability({sessionCapability:directory.sessionCapability,
   candidate:path.join(directory.path,`${id}.json`),allowedBasenames:[`${id}.json`],role:'slice-receipt'});}
 async function journaledFailure({stateCapability,planCapability,plan,receiptsDirCapability,failedSlices,at,exhausted,seam}){
+  require('./slice-runtime.js').assertNoPendingScopedWrite(stateCapability);
   if(!Number.isFinite(Date.parse(at)))fail('test-time');if(!Array.isArray(failedSlices)||!failedSlices.length||
       new Set(failedSlices).size!==failedSlices.length||failedSlices.some((id)=>!/^SLICE-\d{3}$/.test(id)))fail('failed-slices');
   const ids=[...failedSlices].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));const sessionId=

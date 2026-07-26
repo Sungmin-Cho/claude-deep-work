@@ -6,6 +6,8 @@ const session=require('./session-store.js');const git=require('./git-runtime.js'
 const planRuntime=require('./plan-runtime.js');const slice=require('./slice-runtime.js');const phase=require('./phase-runtime.js');
 const testRuntime=require('./test-runtime.js');const verification=require('./verification-runtime.js');
 const bootstrap=require('./bootstrap-runtime.js');
+const redProof=require('./red-proof-runtime.js');
+const verificationV2=require('./verification-v2-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -22,7 +24,9 @@ function stateCapability(f,cwd,key='state'){const root=projectRootFor(f,cwd);con
   return platform.issueProjectStateCapability(root,target,{role:'session-state'});}
 function stateFields(capability){platform.revalidatePathCapability(capability,'dispatcher-state');return frontmatter.parseFrontmatter(boundedFile(capability.path).toString('utf8')).fields;}
 function sessionId(capability){const match=path.basename(capability.path).match(/^deep-work\.(s-[0-9a-f]{8})\.md$/);if(!match)fail('session-state-identity');return match[1];}
-function finishAdmission(stateCap,enforcementPoint){const fields=stateFields(stateCap);let review={};
+function finishAdmission(stateCap,enforcementPoint){
+  slice.assertNoPendingScopedWrite(stateCap);
+  const fields=stateFields(stateCap);let review={};
   try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('finish-review-state');}
   let riskProfile={};if(fields.risk_profile_json!==undefined&&fields.risk_profile_json!==null&&fields.risk_profile_json!=='')
     riskProfile=storedObject(fields,'risk_profile_json');const root=sessionCapability(stateCap).path,planPath=path.join(root,'plan.json');
@@ -371,6 +375,18 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('verification run',({f,cwd})=>{const bound=readPlan(f,cwd);if(bound.value.contract_binding?.mode==='strict-spec')
     fail('strict-spec-capture-required');return verification.runVerification({stateCapability:bound.state,planCapability:bound.cap,
     plan:bound.value,sliceId:f.slice,gateId:f['gate-id'],spec:jsonFile(resolveInput(f['spec-json'],cwd)),expectedOutcome:f.expected,cwd:bound.state.projectRoot});});
+  on('verification run-v2',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return verificationV2.runVerificationV2({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice});});
+  on('verification red-transition',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return redProof.transitionOrdinaryRed({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+      verificationOperationId:f['verification-operation-id'],
+      verificationResultSha256:f['verification-result-sha256']});});
+  on('verification proof-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return redProof.publishOrdinaryRedProof({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+      transitionOperationId:f['transition-operation-id']});});
   on('bootstrap failure-publish',({f,cwd})=>bootstrap.publishBootstrapFailure({
     stateCapability:stateCapability(f,cwd),authorizationPath:resolveInput(f.authorization,cwd),
     failurePath:resolveInput(f.failure,cwd)}));

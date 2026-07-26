@@ -37,6 +37,8 @@ const { compilePlanProjectionV1 } = require('../runtime/plan-runtime.js');
 const { compileVerificationPlan, requiredGateIds } = require('../runtime/verification-policy-runtime.js');
 const evidenceRuntime = require('../runtime/evidence-runtime.js');
 const bootstrapRuntime = require('../runtime/bootstrap-runtime.js');
+const redProofRuntime = require('../runtime/red-proof-runtime.js');
+const verificationV2Runtime = require('../runtime/verification-v2-runtime.js');
 const { compileReviewPlan } = require('../runtime/review-policy-runtime.js');
 const { DISPATCHER_GRAMMAR, PHASE5_DISPATCHER_COMMANDS, DISPATCHER_HANDLERS,
   DISPATCHER_METADATA, validateGrammarContract, parseDispatcher, dispatch } =
@@ -128,6 +130,47 @@ test('all six bootstrap commands cross the public dispatcher with exact typed ar
       assert.equal(row.args.sliceId,'SLICE-001',row.name);
   }
 });
+
+test('strict RED producer commands cross the public dispatcher with exact authority inputs',
+  async(t)=>{
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-red-dispatch-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+    const session='s-aaaaaaaa',work=path.join(root,'.deep-work',session);
+    fs.mkdirSync(work,{recursive:true});
+    const state=path.join(root,'.claude',`deep-work.${session}.md`);
+    fs.writeFileSync(state,updateFrontmatterText('',{session_id:session,
+      work_dir:`.deep-work/${session}`,current_phase:'implement'}));
+    const plan=writeJson(path.join(work,'plan.json'),{schema_version:2,
+      plan_authority_sha256:'a'.repeat(64),slices:[]});
+    const verificationOperationId=`op-${'1'.repeat(64)}`;
+    const transitionOperationId=`op-${'2'.repeat(64)}`;
+    const calls=[];
+    const originals={runVerificationV2:verificationV2Runtime.runVerificationV2,
+      transitionOrdinaryRed:redProofRuntime.transitionOrdinaryRed,
+      publishOrdinaryRedProof:redProofRuntime.publishOrdinaryRedProof};
+    t.after(()=>{Object.assign(verificationV2Runtime,{
+      runVerificationV2:originals.runVerificationV2});
+    Object.assign(redProofRuntime,{transitionOrdinaryRed:originals.transitionOrdinaryRed,
+      publishOrdinaryRedProof:originals.publishOrdinaryRedProof});});
+    verificationV2Runtime.runVerificationV2=async(args)=>{
+      calls.push({name:'run',args});return{name:'run'};};
+    redProofRuntime.transitionOrdinaryRed=async(args)=>{
+      calls.push({name:'transition',args});return{name:'transition'};};
+    redProofRuntime.publishOrdinaryRedProof=async(args)=>{
+      calls.push({name:'proof',args});return{name:'proof'};};
+    assert.equal((await dispatch(['verification','run-v2','--state',state,'--plan',plan,
+      '--slice','SLICE-001'],{cwd:root})).name,'run');
+    assert.equal((await dispatch(['verification','red-transition','--state',state,'--plan',
+      plan,'--slice','SLICE-001','--verification-operation-id',verificationOperationId,
+      '--verification-result-sha256','3'.repeat(64)],{cwd:root})).name,'transition');
+    assert.equal((await dispatch(['verification','proof-publish','--state',state,'--plan',
+      plan,'--slice','SLICE-001','--transition-operation-id',transitionOperationId],
+    {cwd:root})).name,'proof');
+    assert.deepEqual(calls.map((row)=>row.name),['run','transition','proof']);
+    assert.equal(calls[1].args.verificationOperationId,verificationOperationId);
+    assert.equal(calls[2].args.transitionOperationId,transitionOperationId);
+  });
 
 function writeJson(file, value) { fs.writeFileSync(file, `${JSON.stringify(value)}\n`); return file; }
 
@@ -367,6 +410,8 @@ async function semanticArgv(entry, fx) {
     marker:fx.files.bootstrapMarker,'write-receipt':fx.files.bootstrapWriteReceipt,
     'bridge-operation-id':`op-${'7'.repeat(64)}`,
     'transition-operation-id':`op-${'8'.repeat(64)}`,
+    'verification-operation-id':`op-${'9'.repeat(64)}`,
+    'verification-result-sha256':'a'.repeat(64),
   };
   if (entry.id === 'implement tdd transition') values.to = 'PENDING';
   if (entry.id === 'verification run') delete values['gate-id'];
@@ -430,6 +475,9 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['implement override set',[10,20,50,70]],['implement override clear',[50]],
     ['implement takeover set',[50,70]],['implement takeover clear',[50,70]],
     ['verification migrate-spec',[10,20,50,70]],['verification run',[10,20,50,70]],
+    ['verification run-v2',[10,20,50,70]],
+    ['verification red-transition',[10,20,50,70]],
+    ['verification proof-publish',[10,20,50,70]],
     ['bootstrap failure-publish',[10,20,50,70]],['bootstrap abort',[10,20,50,70]],
     ['bootstrap finalize',[10,20,50,70]],['bootstrap first-red',[10,20,50,70]],
     ['bootstrap red-adopt',[10,20,50,70]],['bootstrap proof-publish',[10,20,50,70]],
@@ -779,8 +827,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 97 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 97);
+test('all 100 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 100);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -804,7 +852,7 @@ test('all 97 grammar rows cross the parser and invoke their typed route semantic
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 97);
+  assert.equal(outcomes.length, 100);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

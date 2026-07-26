@@ -25,7 +25,9 @@ const OPERATION_KINDS = new Set([
   'evidence-capture', 'evidence-publish',
   'evidence-adapter-run',
   'bootstrap-abort', 'bootstrap-failure-publish', 'bootstrap-finalize',
-  'bootstrap-first-red', 'bootstrap-red-adoption', 'red-proof-publication',
+    'bootstrap-first-red', 'bootstrap-red-adoption', 'verification-run-v2',
+    'red-transition', 'red-proof-publication', 'replan-trigger-record',
+    'replan-epoch-publication', 'accept-or-replan',
 ]);
 
 const COMPLETED_LEDGER_LIMIT = 512;
@@ -89,8 +91,20 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'bootstrap-first-red':['prepared','containment-authenticated','pre-manifest-published',
     'process-completed','post-manifest-published','result-published'],
   'bootstrap-red-adoption':['prepared','bridge-authenticated','red-authority-adopted'],
+  'verification-run-v2':['containment-authenticated','pre-manifest-published',
+    'process-completed','post-manifest-published','result-published'],
+  'red-transition':['red-authenticated','red-state-written'],
   'red-proof-publication':['prepared','proof-published','proof-ref-committed'],
+  'replan-trigger-record':['trigger-authenticated','invalidation-applied','trigger-recorded'],
+  'replan-epoch-publication':['trigger-receipt-authenticated','epoch-published',
+    'active-epoch-committed'],
+  'accept-or-replan':['observation-stable','needs-replan-receipt-published',
+    'invalidation-applied','parent-resolved'],
 });
+const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publish',
+  'bootstrap-finalize','bootstrap-first-red','bootstrap-red-adoption','verification-run-v2',
+  'red-transition','red-proof-publication','replan-trigger-record',
+  'replan-epoch-publication','accept-or-replan']);
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
 
@@ -235,7 +249,7 @@ async function recordOperationStage(handle, stage, details = {}) {
       }
       return journal;
     }
-    if(handle.kind.startsWith('bootstrap-')||handle.kind==='red-proof-publication'){
+    if(ORDERED_WORKFLOW_KINDS.has(handle.kind)){
       const stages=WORKFLOW_STAGE_RULES[handle.kind];
       const current=journal.stages.at(-1)?.stage;
       const expected=stages[stages.indexOf(current)+1];

@@ -13,6 +13,40 @@ const {deriveScopedWriteAuthority,publishDelegationScope,canonicalizePlanScopeV1
 const MODELS = new Set(['haiku','sonnet','opus','main','auto']);
 
 function fail(code,message) { const error = new Error(`[${code}] ${message || code}`); error.code=code; throw error; }
+function pendingScopedWrite(fields){
+  const raw=fields.pending_scoped_write_json;
+  if(raw===undefined||raw===null||raw==='')return null;
+  let value;try{value=typeof raw==='string'?JSON.parse(raw):raw;}catch{
+    fail('pending-scoped-write-state');}
+  if(!value||Object.keys(value).sort().join(',')!==
+      'operation_id,plan_authority_sha256,slice_id,stage'||
+      !/^op-[0-9a-f]{32,64}$/.test(value.operation_id||'')||
+      !/^SLICE-\d{3}$/.test(value.slice_id||'')||
+      !/^[0-9a-f]{64}$/.test(value.plan_authority_sha256||'')||
+      !['begun','accept-or-replan'].includes(value.stage))
+    fail('pending-scoped-write-state');
+  return value;
+}
+function assertNoPendingScopedWrite(stateCapability,{allowOperationId}={}){
+  const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const pending=pendingScopedWrite(fields);
+  if(pending&&pending.operation_id!==allowOperationId)fail('pending-scoped-write');
+  return pending;
+}
+function writePendingScopedWrite(stateCapability,value){
+  const before=fs.readFileSync(stateCapability.path,'utf8');
+  const current=pendingScopedWrite(parseFrontmatter(before).fields);
+  if(current&&canonicalJson(current)!==canonicalJson(value))fail('pending-scoped-write');
+  if(!current)atomicWriteFile(stateCapability,updateFrontmatterText(before,{
+    pending_scoped_write_json:JSON.stringify(value)}));
+}
+function clearPendingScopedWrite(stateCapability,operationId){
+  const before=fs.readFileSync(stateCapability.path,'utf8');
+  const current=pendingScopedWrite(parseFrontmatter(before).fields);
+  if(current&&current.operation_id!==operationId)fail('pending-scoped-write');
+  if(current)atomicWriteFile(stateCapability,updateFrontmatterText(before,{
+    pending_scoped_write_json:null}));
+}
 
 async function mutateState(stateCapability, reducer, { rawGuard = null } = {}) {
   revalidatePathCapability(stateCapability,'slice-state');const transaction=require('./transaction-runtime.js');
@@ -247,7 +281,7 @@ function scopedWriteRuntimeExclusions(stateCapability,operationId,receiptCapabil
         {allowMissingLeaf:true,role:'lock'}));return[...ranked,...claims,issueProjectStateCapability(root,path.join(root,'.claude',
         `deep-work.${sessionId}.op.delegation-scope-publish.${operationId}.json`),{allowMissingLeaf:true,role:'state'}),
       issueProjectStateCapability(root,path.join(root,'.claude',`deep-work.${sessionId}.completed-operations.json`),
-        {allowMissingLeaf:true,role:'state'}),receiptCapability];}
+        {allowMissingLeaf:true,role:'state'}),stateCapability,receiptCapability];}
 function lockedScopedPlan(planCapability,plan){const transaction=require('./transaction-runtime.js');transaction.revalidateSessionFile(planCapability);
   let current;try{current=JSON.parse(transaction.readSessionFile(planCapability));}catch{fail('scoped-write-plan-json');}
   const currentCanonical=canonicalizePlanScopeV1(current),provided=canonicalizePlanScopeV1(plan);
@@ -265,13 +299,39 @@ async function enforceBootstrapProductionAdmission({stateCapability,plan,sliceId
   const sessionId=path.basename(stateCapability.path).slice('deep-work.'.length,-3);
   const root=stateCapability.projectRoot,control=path.join(root,'.deep-work',sessionId,'bootstrap');
   const markerPath=path.join(control,'marker.json');
-  const bootstrapFields=['bootstrap_bridge_operation_id','bootstrap_adoption_operation_id',
-    'red_proof_operation_id','red_proof_ref'];
+  const bootstrapFields=['bootstrap_bridge_operation_id','bootstrap_adoption_operation_id'];
   const bootstrapFiles=['authorization.json','execution.json','execution-journal.json','executor.mjs',
     'test.patch','test-reverse.patch','patch.diff','reverse.patch','bootstrap-receipt.json','marker.json'];
   const bootstrapIndicated=bootstrapFields.some((key)=>fields[key])||
     bootstrapFiles.some((name)=>fs.existsSync(path.join(control,name)));
-  if(!bootstrapIndicated)return;
+  if(!bootstrapIndicated){
+    const transaction=require('./transaction-runtime.js');
+    const project=transaction.projectCapabilityFor(stateCapability);
+    const read=(file,code)=>{let stat;try{stat=fs.lstatSync(file);}catch{fail(code);}
+      if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024*1024)fail(code);
+      try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch{fail(code);}};
+    const target=plan.slices?.find((row)=>row.id===sliceId);
+    if(!target)fail('red-proof-required');
+    const proofPath=path.resolve(root,String(fields.red_proof_ref||''));
+    if(!fields.red_proof_ref||!require('./platform.js').isPathInside(root,proofPath))
+      fail('red-proof-required');
+    const proof=read(proofPath,'red-proof-required');
+    let verificationReceipt,transitionReceipt,proofReceipt;
+    try{
+      verificationReceipt=await resumeOperation({projectCapability:project,
+        operationId:proof.verification_operation_id,sessionId,kind:'verification-run-v2'});
+      transitionReceipt=await resumeOperation({projectCapability:project,
+        operationId:fields.red_transition_operation_id,sessionId,kind:'red-transition'});
+      proofReceipt=await resumeOperation({projectCapability:project,
+        operationId:fields.red_proof_operation_id,sessionId,kind:'red-proof-publication'});
+    }catch{fail('red-proof-required');}
+    return assertProductionRedProofAdmission({sessionId,sliceId,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      specSha256:plan.contract_binding?.spec_contract?.spec_sha256,
+      specApprovedHash:plan.contract_binding?.spec_contract?.spec_approved_hash,
+      verificationPlanSha256:fields.verification_plan_sha256,state:fields,proof,
+      verificationReceipt,transitionReceipt,proofReceipt});
+  }
   if(['marker.json','bootstrap-receipt.json','authorization.json']
     .some((name)=>!fs.existsSync(path.join(control,name))))fail('bootstrap-proof-required');
   const read=(file,code)=>{let stat;try{stat=fs.lstatSync(file);}catch{fail(code);}
@@ -318,16 +378,25 @@ async function beginScopedWrite({stateCapability,plan,planCapability,sliceId,wri
   if(runtimeExclusions.length||assignment!==undefined)fail('scoped-write-exclusion-authority');const transaction=require('./transaction-runtime.js');
   if(!_locksHeld)return transaction.withRankedLocks(scopedWriteRankLocks(stateCapability),()=>beginScopedWrite({stateCapability,plan,
     planCapability,sliceId,writeClass,clusterId,expectedScopeSha256,seam,_locksHeld:true}));const lockedPlan=lockedScopedPlan(planCapability,plan);
-  const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;if(fields.current_phase!=='implement'||
+  const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const strictScoped=lockedPlan.contract_binding?.mode==='strict-spec';
+  const priorPending=strictScoped?pendingScopedWrite(fields):null;
+  if(priorPending&&(priorPending.slice_id!==sliceId||
+      priorPending.plan_authority_sha256!==lockedPlan.plan_authority_sha256))
+    fail('pending-scoped-write');
+  if(fields.current_phase!=='implement'||
       fields.active_slice!==sliceId)fail('scoped-write-state');const expectedTdd={'failing-test':'PENDING',production:'RED_VERIFIED',
     refactor:'SENSOR_CLEAN'}[writeClass];if(!expectedTdd||fields.tdd_state!==expectedTdd)fail('scoped-write-tdd-state');
-  if(writeClass==='production')await enforceBootstrapProductionAdmission({stateCapability,plan:lockedPlan,sliceId,fields});
+  if(writeClass==='production'&&lockedPlan.contract_binding?.mode==='strict-spec')
+    await enforceBootstrapProductionAdmission({stateCapability,plan:lockedPlan,sliceId,fields});
   if(writeClass==='refactor'&&fields.fresh_sensor_required)fail('scoped-write-fresh-sensor');const persisted=persistedScopedAssignment({
     stateCapability,planCapability,fields,clusterId});const authority=deriveScopedWriteAuthority({plan:lockedPlan,sliceId,writeClass,
     assignment:persisted.assignment,clusterId,delegationOperationId:persisted.delegationOperationId,
     delegationSha256:persisted.delegationSha256,expectedSha256:expectedScopeSha256});const projectCapability=manifestCapabilities(stateCapability)
-    .projectCapability;const operation=await beginOperation({projectCapability,sessionId:transaction.sessionIdFromState(stateCapability),
-      kind:'delegation-scope-publish',preconditions:{action:'scoped-write',sliceId,writeClass,authoritySha256:authority.sha256,
+    .projectCapability;const operation=await beginOperation({projectCapability,
+      sessionId:transaction.sessionIdFromState(stateCapability),
+      kind:'delegation-scope-publish',operationId:priorPending?.operation_id,
+      preconditions:{action:'scoped-write',sliceId,writeClass,authoritySha256:authority.sha256,
         planSha256:authority.plan_sha256,tddPreState:fields.tdd_state}});const operationId=operation.operationId;const receiptPath=path.join(
           stateCapability.projectRoot,'.claude',`deep-work.${transaction.sessionIdFromState(stateCapability)}.scoped-write.${operationId}.json`);
   const receiptCapability=issueProjectStateCapability(stateCapability.projectRoot,receiptPath,{allowMissingLeaf:true,role:'state'});
@@ -343,7 +412,11 @@ async function beginScopedWrite({stateCapability,plan,planCapability,sliceId,wri
   if(receipt.operationId!==operationId||receipt.sliceId!==sliceId||receipt.writeClass!==writeClass||receipt.status!=='begun'||
       receipt.authority?.sha256!==authority.sha256||receipt.preManifest?.sha256===undefined)fail('scoped-write-identity');
   await recordOperationStage(operation,'scoped-write-begun',{owned:{receiptPath,receiptSha256:sha256(canonicalJson(receipt)),
-    preManifestSha256:receipt.preManifest.sha256,authoritySha256:authority.sha256}});return {operationId,scopeSha256:authority.sha256,
+    preManifestSha256:receipt.preManifest.sha256,authoritySha256:authority.sha256}});
+  if(priorPending&&priorPending.operation_id!==operationId)fail('pending-scoped-write');
+  if(strictScoped)writePendingScopedWrite(stateCapability,{operation_id:operationId,
+    slice_id:sliceId,plan_authority_sha256:lockedPlan.plan_authority_sha256,stage:'begun'});
+  return {operationId,scopeSha256:authority.sha256,
     preManifestSha256:receipt.preManifest.sha256,receiptCapability,authority};
 }
 
@@ -357,21 +430,68 @@ async function acceptScopedWrite({stateCapability,plan,planCapability,sliceId,op
   let pending=await resumeOperation({projectCapability,operationId,sessionId,kind:'delegation-scope-publish'});const receiptPath=path.join(
     stateCapability.projectRoot,'.claude',`deep-work.${sessionId}.scoped-write.${operationId}.json`);const cap=
     issueProjectStateCapability(stateCapability.projectRoot,receiptPath,{role:'state'});revalidatePathCapability(cap,'scoped-write-receipt');
+  if(lockedPlan.contract_binding?.mode==='strict-spec')
+    assertNoPendingScopedWrite(stateCapability,{allowOperationId:operationId});
   let receipt;try{receipt=JSON.parse(fs.readFileSync(receiptPath,'utf8'));}catch{fail('scoped-write-receipt-json');}
   if(receipt.sliceId!==sliceId||receipt.preManifest.sha256!==preManifestSha256||receipt.planSha256!==
-      canonicalizePlanScopeV1(lockedPlan).sha256||pending.result&&pending.result.receiptSha256!==receipt.receiptSha256)
+      canonicalizePlanScopeV1(lockedPlan).sha256)
     fail('scoped-write-identity');if(pending.stage==='completed-ledger'){if(receipt.status!=='accepted'||
-      !/^[0-9a-f]{64}$/.test(receipt.receiptSha256||''))fail('scoped-write-identity');return receipt;}
+      !/^[0-9a-f]{64}$/.test(receipt.receiptSha256||'')){
+      if(pending.result?.status!=='needs-replan'||lockedPlan.contract_binding?.mode!=='strict-spec')
+        fail('scoped-write-identity');
+      const needsPath=path.join(stateCapability.projectRoot,'.deep-work',sessionId,'receipts',
+        `write-${operationId}-needs-replan.json`);
+      let needs;try{needs=JSON.parse(fs.readFileSync(needsPath,'utf8'));}catch{
+        fail('accept-or-replan-receipt');}
+      if(needs.receipt_sha256!==pending.result.receiptSha256||
+          needs.accept_or_replan_operation_id!==pending.result.acceptOrReplanOperationId)
+        fail('accept-or-replan-receipt');
+      let childReceipt=await resumeOperation({projectCapability,
+        operationId:needs.accept_or_replan_operation_id,sessionId,kind:'accept-or-replan'});
+      if(childReceipt.stage!=='completed-ledger'){
+        await recordOperationStage({projectCapability,
+          operationId:needs.accept_or_replan_operation_id,sessionId,kind:'accept-or-replan'},
+        'parent-resolved',{owned:{parentOperationId:operationId,
+          parentLedgerResultSha256:pending.resultSha256}});
+        const stateText=fs.readFileSync(stateCapability.path,'utf8');
+        childReceipt=await completeOperation({projectCapability,
+          operationId:needs.accept_or_replan_operation_id,sessionId,kind:'accept-or-replan'},{
+          status:'needs-replan',session_id:sessionId,slice_id:sliceId,
+          parent_write_operation_id:operationId,
+          receipt_path:`.deep-work/${sessionId}/receipts/write-${operationId}-needs-replan.json`,
+          receipt_sha256:needs.receipt_sha256,observation_kind:needs.observation_kind,
+          trigger_id:needs.trigger_id,invalidation_sha256:needs.invalidation_sha256,
+          post_state_sha256:sha256(Buffer.from(stateText))});
+      }
+      clearPendingScopedWrite(stateCapability,operationId);
+      return{...pending.result,needsReplanReceipt:needs,acceptOrReplanReceipt:childReceipt};
+    }if(lockedPlan.contract_binding?.mode==='strict-spec')
+      clearPendingScopedWrite(stateCapability,operationId);
+    return receipt;}
   if(pending.preconditions?.action!=='scoped-write'||pending.preconditions?.sliceId!==sliceId||
       pending.preconditions?.authoritySha256!==receipt.authority.sha256)fail('scoped-write-identity');let accepted=receipt;
   if(receipt.status==='begun'){const stateBefore=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
-    if(stateBefore.current_phase!=='implement'||stateBefore.active_slice!==sliceId||stateBefore.tdd_state!==receipt.tddPreState)
+    const indexed=pendingScopedWrite(stateBefore),recovering=lockedPlan.contract_binding?.mode==='strict-spec'&&
+      indexed?.operation_id===operationId&&indexed.stage==='accept-or-replan';
+    if(!recovering&&(stateBefore.current_phase!=='implement'||stateBefore.active_slice!==sliceId||
+        stateBefore.tdd_state!==receipt.tddPreState))
       fail('scoped-write-state');const caps=manifestCapabilities(stateCapability);seam?.('before-post-manifest',{operationId});
     const derivedExclusions=scopedWriteRuntimeExclusions(stateCapability,operationId,cap);const post=
-      captureWorktreeManifest({...caps,runtimeExclusions:derivedExclusions});const changed=
-      changedPaths(receipt.preManifest,post);const allowed=new Set(receipt.authority.authorized_paths);for(const candidate of changed)
-      if(!allowed.has(candidate)&&!derivedExclusions.some((ex)=>path.relative(stateCapability.projectRoot,ex.path).split(path.sep).join('/')===candidate))
-        fail('scoped-write-out-of-scope',candidate);const receiptSha256=sha256(canonicalJson({operationId,
+      captureWorktreeManifest({...caps,runtimeExclusions:derivedExclusions});seam?.(
+        'after-candidate-post-manifest',{operationId,postManifestSha256:post.sha256});
+    const observed=captureWorktreeManifest({...caps,runtimeExclusions:derivedExclusions});
+    const changed=changedPaths(receipt.preManifest,post);const allowed=new Set(receipt.authority.authorized_paths);
+    const excluded=new Set(derivedExclusions.map((ex)=>path.relative(stateCapability.projectRoot,
+      ex.path).split(path.sep).join('/')));
+    const unexpected=changed.filter((candidate)=>!allowed.has(candidate)&&!excluded.has(candidate));
+    const differing=changedPaths(post,observed);
+    if((unexpected.length||differing.length)&&lockedPlan.contract_binding?.mode==='strict-spec')
+      return acceptOrReplanScopedWrite({stateCapability,plan:lockedPlan,sliceId,
+        operationId,parentReceipt:receipt,parentOperation:pending,candidatePostManifest:post,
+        observedPostManifest:observed,affectedPaths:differing.length?differing:unexpected,
+        observationKind:differing.length?'manifest-divergence':'scope-expansion',seam});
+    if(unexpected.length)fail('scoped-write-out-of-scope',unexpected[0]);
+    const receiptSha256=sha256(canonicalJson({operationId,
         postManifestSha256:post.sha256,changedPaths:changed,planSha256:receipt.planSha256,sliceId,writeClass:receipt.writeClass}));
     accepted={...receipt,status:'accepted',postManifest:post,changedPaths:changed,receiptSha256};seam?.('before-accepted-receipt-write',
       {operationId,receiptSha256});atomicWriteFile(cap,canonicalJson(accepted));seam?.('after-receipt-write',{operationId,receiptSha256});}
@@ -395,7 +515,90 @@ async function acceptScopedWrite({stateCapability,plan,planCapability,sliceId,op
     {owned:{statePath:stateCapability.path,operationId,receiptSha256:accepted.receiptSha256}});const operationReceipt=
     await completeOperation({projectCapability,operationId,sessionId,kind:'delegation-scope-publish'},{status:'accepted',
       receiptSha256:accepted.receiptSha256,postManifestSha256:accepted.postManifest.sha256,sliceId,writeClass:accepted.writeClass});
+  if(lockedPlan.contract_binding?.mode==='strict-spec')
+    clearPendingScopedWrite(stateCapability,operationId);
   return{...accepted,operationReceipt};
+}
+
+async function acceptOrReplanScopedWrite({stateCapability,plan,sliceId,operationId,parentReceipt,
+  parentOperation,candidatePostManifest,observedPostManifest,affectedPaths,observationKind,seam}={}){
+  const replan=require('./replan-runtime.js'),transaction=require('./transaction-runtime.js');
+  const sessionId=transaction.sessionIdFromState(stateCapability);
+  const projectCapability=transaction.projectCapabilityFor(stateCapability);
+  const relative=`.deep-work/${sessionId}/receipts/write-${operationId}-needs-replan.json`;
+  const target=path.join(stateCapability.projectRoot,...relative.split('/'));
+  let priorNeeds=null;if(fs.existsSync(target)){try{priorNeeds=JSON.parse(fs.readFileSync(target,'utf8'));}
+    catch{fail('accept-or-replan-receipt');}}
+  const preconditions={session_id:sessionId,parent_write_operation_id:operationId,
+    plan_authority_sha256:plan.plan_authority_sha256,
+    pre_manifest_sha256:parentReceipt.preManifest.sha256,
+    candidate_post_manifest_sha256:priorNeeds?.candidate_post_manifest_sha256||
+      candidatePostManifest.sha256};
+  const childId=priorNeeds?.accept_or_replan_operation_id||
+    `op-${sha256(canonicalJson(preconditions))}`;
+  const child=await beginOperation({projectCapability,sessionId,kind:'accept-or-replan',
+    operationId:childId,slice:sliceId,preconditions});
+  const indexed=assertNoPendingScopedWrite(stateCapability,{allowOperationId:operationId});
+  if(!indexed)fail('pending-scoped-write-state');
+  if(indexed.stage!=='accept-or-replan'){
+    const pendingText=fs.readFileSync(stateCapability.path,'utf8');
+    atomicWriteFile(stateCapability,updateFrontmatterText(pendingText,{
+      pending_scoped_write_json:JSON.stringify({...indexed,stage:'accept-or-replan'})}));
+  }
+  if(priorNeeds&&(priorNeeds.parent_write_operation_id!==operationId||
+      priorNeeds.slice_id!==sliceId||priorNeeds.pre_manifest_sha256!==
+        parentReceipt.preManifest.sha256))fail('accept-or-replan-receipt');
+  let prepared=priorNeeds?replan.loadPreparedReplan({stateCapability,
+    triggerId:priorNeeds.trigger_id,invalidationSha256:priorNeeds.invalidation_sha256}):
+    replan.prepareManifestReplanAuthority({stateCapability,plan,sliceId,
+      parentWriteOperationId:operationId,observationKind,
+      preManifestSha256:parentReceipt.preManifest.sha256,
+      candidatePostManifestSha256:candidatePostManifest.sha256,
+      observedPostManifestSha256:observedPostManifest.sha256,affectedPaths});
+  let needs=priorNeeds||{schema_version:1,status:'needs-replan',session_id:sessionId,slice_id:sliceId,
+    write_class:parentReceipt.writeClass,parent_write_operation_id:operationId,
+    accept_or_replan_operation_id:childId,observation_kind:observationKind,
+    pre_manifest_sha256:parentReceipt.preManifest.sha256,
+    candidate_post_manifest_sha256:candidatePostManifest.sha256,
+    observed_post_manifest_sha256:observedPostManifest.sha256,
+    affected_paths:[...affectedPaths],trigger_id:prepared.trigger.trigger_id,
+    invalidation_sha256:prepared.invalidation.invalidation_sha256,receipt_sha256:null};
+  if(!priorNeeds){const needsPreimage=structuredClone(needs);delete needsPreimage.receipt_sha256;
+    needs.receipt_sha256=sha256(canonicalJson(needsPreimage));}
+  observationKind=needs.observation_kind;affectedPaths=needs.affected_paths;
+  await recordOperationStage(child,'observation-stable',{owned:{observationKind,
+    observedPostManifestSha256:needs.observed_post_manifest_sha256,affectedPaths}});
+  fs.mkdirSync(path.dirname(target),{recursive:true});
+  const bytes=Buffer.from(canonicalJson(needs));let fd;
+  try{fd=fs.openSync(target,fs.constants.O_CREAT|fs.constants.O_EXCL|
+    fs.constants.O_WRONLY,0o600);fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}
+  catch(error){if(error.code!=='EEXIST'||!fs.readFileSync(target).equals(bytes))
+    fail('accept-or-replan-receipt');}finally{if(fd!==undefined)fs.closeSync(fd);}
+  await recordOperationStage(child,'needs-replan-receipt-published',{owned:{
+    receiptPath:relative,receiptSha256:needs.receipt_sha256}});
+  const replanned=await replan.recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam});
+  await recordOperationStage(child,'invalidation-applied',{owned:{
+    triggerId:replanned.trigger_id,invalidationSha256:replanned.invalidation_sha256,
+    replanEpoch:replanned.replan_epoch}});
+  const parentResult={status:'needs-replan',sliceId,writeClass:parentReceipt.writeClass,
+    acceptOrReplanOperationId:childId,receiptSha256:needs.receipt_sha256,
+    postManifestSha256:needs.observed_post_manifest_sha256,observationKind,
+    triggerId:replanned.trigger_id,invalidationSha256:replanned.invalidation_sha256};
+  const parentReceiptResult=await completeOperation({projectCapability,operationId,
+    sessionId,kind:'delegation-scope-publish'},parentResult);
+  seam?.('after-parent-ledger-before-child-resolution',{operationId,childId});
+  await recordOperationStage(child,'parent-resolved',{owned:{
+    parentOperationId:operationId,parentLedgerResultSha256:parentReceiptResult.resultSha256}});
+  const stateText=fs.readFileSync(stateCapability.path,'utf8');
+  const childResult={status:'needs-replan',session_id:sessionId,slice_id:sliceId,
+    parent_write_operation_id:operationId,receipt_path:relative,
+    receipt_sha256:needs.receipt_sha256,observation_kind:observationKind,
+    trigger_id:replanned.trigger_id,invalidation_sha256:replanned.invalidation_sha256,
+    post_state_sha256:sha256(Buffer.from(stateText))};
+  const childReceipt=await completeOperation(child,childResult);
+  clearPendingScopedWrite(stateCapability,operationId);
+  return{...parentResult,needsReplanReceipt:needs,operationReceipt:parentReceiptResult,
+    acceptOrReplanReceipt:childReceipt};
 }
 
 function initialResetReceipt(receipt,sliceId){if(!receipt||typeof receipt!=='object'||Array.isArray(receipt)||receipt.slice_id!==sliceId)
@@ -486,6 +689,7 @@ async function completeSlice({stateCapability,planCapability,plan,receiptsDirCap
       {rank:transaction.RANKS.journal,capability:journalLock},{rank:transaction.RANKS.state,
         capability:transaction.stateLock(stateCapability)},...targets],()=>completeSlice({stateCapability,planCapability,plan,
           receiptsDirCapability,sliceId,receiptPayload,receiptTemp,seam,_locksHeld:true}));}
+  assertNoPendingScopedWrite(stateCapability);
   const slice=requireSlice(plan,sliceId);const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
   assertProductionCompletionMode(plan,fields);
   const adopting=slice.checked&&fields.active_slice===null&&fields.tdd_state==='PENDING';
@@ -561,6 +765,101 @@ async function completeSlice({stateCapability,planCapability,plan,receiptsDirCap
 
 function assertProductionCompletionMode(plan,fields){
   if(plan?.contract_binding?.mode==='strict-spec'&&fields?.tdd_state==='SPIKE')fail('spike-production-forbidden');
+  return true;
+}
+
+function operationIdFor(domain,value){
+  return `op-${crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from(`${domain}\0`),Buffer.from(canonicalJson(value))])).digest('hex')}`;
+}
+function exactObjectKeys(value,keys){return Boolean(value)&&typeof value==='object'&&!Array.isArray(value)&&
+  canonicalJson(Object.keys(value).sort())===canonicalJson([...keys].sort());}
+function assertProductionRedProofAdmission({sessionId,sliceId,planAuthoritySha256,specSha256,
+  specApprovedHash,verificationPlanSha256,state,proof,verificationReceipt,transitionReceipt,
+  proofReceipt}={}){
+  const digest=/^[0-9a-f]{64}$/,operation=/^op-[0-9a-f]{64}$/;
+  if(!/^s-[0-9a-f]{8}$/.test(sessionId||'')||!/^SLICE-\d{3}$/.test(sliceId||'')||
+      [planAuthoritySha256,specSha256,specApprovedHash,verificationPlanSha256]
+        .some((value)=>!digest.test(value||'')))fail('red-proof-authority');
+  if(state?.tdd_state!=='RED_VERIFIED'||state.red_proof_state!=='complete'||
+      !digest.test(state.red_proof_sha256||'')||typeof state.red_proof_ref!=='string'||
+      !operation.test(state.red_transition_operation_id||'')||
+      !operation.test(state.red_proof_operation_id||''))fail('red-proof-required');
+  const verificationResultKeys=['session_id','slice_id','result_path','result_sha256',
+    'disposition','observed_class','scope_disposition'];
+  if(verificationReceipt?.kind!=='verification-run-v2'||
+      verificationReceipt.stage!=='completed-ledger'||
+      !exactObjectKeys(verificationReceipt.result,verificationResultKeys)||
+      verificationReceipt.result.session_id!==sessionId||
+      verificationReceipt.result.slice_id!==sliceId||
+      verificationReceipt.result.disposition!=='accepted'||
+      verificationReceipt.result.observed_class!=='expected-failure'||
+      verificationReceipt.result.scope_disposition!=='clean'||
+      !digest.test(verificationReceipt.resultSha256||''))
+    fail('red-proof-authority');
+  const transitionResultKeys=['slice_id','post_state_sha256','verification_result_sha256',
+    'write_receipt_sha256'];
+  if(transitionReceipt?.kind!=='red-transition'||transitionReceipt.stage!=='completed-ledger'||
+      transitionReceipt.operationId!==state.red_transition_operation_id||
+      !exactObjectKeys(transitionReceipt.result,transitionResultKeys)||
+      transitionReceipt.result.slice_id!==sliceId||
+      transitionReceipt.result.verification_result_sha256!==
+        verificationReceipt.result.result_sha256||
+      !digest.test(transitionReceipt.result.write_receipt_sha256||'')||
+      !digest.test(transitionReceipt.result.post_state_sha256||'')||
+      !digest.test(transitionReceipt.resultSha256||''))
+    fail('red-proof-authority');
+  const transitionPreimage={session_id:sessionId,slice_id:sliceId,
+    plan_authority_sha256:planAuthoritySha256,
+    verification_operation_id:verificationReceipt.operationId,
+    verification_result_sha256:verificationReceipt.result.result_sha256,
+    write_operation_id:proof?.write_operation_id,
+    write_receipt_sha256:transitionReceipt.result.write_receipt_sha256};
+  if(transitionReceipt.operationId!==operationIdFor('red-transition-v1',transitionPreimage))
+    fail('red-proof-authority');
+  const proofOperationPreimage={session_id:sessionId,slice_id:sliceId,
+    plan_authority_sha256:planAuthoritySha256,transition_kind:'ordinary',
+    transition_operation_id:transitionReceipt.operationId,
+    transition_ledger_result_sha256:transitionReceipt.resultSha256,
+    bootstrap_bridge_operation_id:null};
+  const expectedProofOperationId=operationIdFor('red-proof-publication-v1',
+    proofOperationPreimage);
+  const proofKeys=['schema_version','session_id','slice_id','plan_authority_sha256',
+    'spec_sha256','spec_approved_hash','verification_plan_sha256','write_operation_id',
+    'write_receipt_sha256','verification_operation_id','verification_result_sha256',
+    'verification_ledger_result_sha256','transition_kind','transition_operation_id',
+    'transition_ledger_result_sha256','bootstrap_bridge_operation_id','proof_operation_id',
+    'classification_digest','proof_sha256'];
+  if(!exactObjectKeys(proof,proofKeys)||proof.schema_version!==1||
+      proof.session_id!==sessionId||proof.slice_id!==sliceId||
+      proof.plan_authority_sha256!==planAuthoritySha256||proof.spec_sha256!==specSha256||
+      proof.spec_approved_hash!==specApprovedHash||
+      proof.verification_plan_sha256!==verificationPlanSha256||
+      !operation.test(proof.write_operation_id||'')||
+      proof.write_receipt_sha256!==transitionReceipt.result.write_receipt_sha256||
+      proof.verification_operation_id!==verificationReceipt.operationId||
+      proof.verification_result_sha256!==verificationReceipt.result.result_sha256||
+      proof.verification_ledger_result_sha256!==verificationReceipt.resultSha256||
+      proof.transition_kind!=='ordinary'||
+      proof.transition_operation_id!==transitionReceipt.operationId||
+      proof.transition_ledger_result_sha256!==transitionReceipt.resultSha256||
+      proof.bootstrap_bridge_operation_id!==null||
+      proof.proof_operation_id!==expectedProofOperationId||
+      proof.proof_operation_id!==state.red_proof_operation_id||
+      proof.proof_sha256!==state.red_proof_sha256||
+      !digest.test(proof.classification_digest||''))
+    fail('red-proof-authority');
+  const proofPreimage=structuredClone(proof);delete proofPreimage.proof_sha256;
+  const expectedProof=crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('red-proof-v1\0'),Buffer.from(canonicalJson(proofPreimage))])).digest('hex');
+  const proofResultKeys=['post_state_sha256','proof_sha256','red_proof_ref'];
+  if(proof.proof_sha256!==expectedProof||proofReceipt?.kind!=='red-proof-publication'||
+      proofReceipt.stage!=='completed-ledger'||proofReceipt.operationId!==expectedProofOperationId||
+      !exactObjectKeys(proofReceipt.result,proofResultKeys)||
+      proofReceipt.result.proof_sha256!==proof.proof_sha256||
+      proofReceipt.result.red_proof_ref!==state.red_proof_ref||
+      !digest.test(proofReceipt.result.post_state_sha256||''))
+    fail('red-proof-authority');
   return true;
 }
 
@@ -658,4 +957,5 @@ module.exports = {activateSlice,enterSliceSpike,setSliceModel,setExecutionOverri
   setClusterTakeover,clearClusterTakeover,migrateModelRouting,mutateState,setDelegationSnapshot,
   clearDelegationSnapshot,
   beginScopedWrite,acceptScopedWrite,resetSlice,completeSlice,assertProductionCompletionMode,
-  assertBootstrapProductionAdmission};
+  assertBootstrapProductionAdmission,assertProductionRedProofAdmission,
+  assertNoPendingScopedWrite};
