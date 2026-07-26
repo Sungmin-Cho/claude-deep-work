@@ -197,6 +197,44 @@ function callSourceAt(source,tokens,index){
   }
   fail('release-source-js',String(tokens[index].start));
 }
+function enclosingNamedFunction(source,tokens,index,name){
+  for(let start=index-1;start>=0;start--){
+    if(tokens[start].type!=='identifier'||tokens[start].value!=='function'||
+        tokens[start+1]?.type!=='identifier'||tokens[start+1].value!==name)
+      continue;
+    let parameterDepth=0,parametersClosed=-1;
+    for(let cursor=start+2;cursor<index;cursor++){
+      const token=tokens[cursor];
+      if(token.type!=='punct')continue;
+      if(token.value==='(')parameterDepth++;
+      else if(token.value===')'){
+        parameterDepth--;
+        if(parameterDepth===0){parametersClosed=cursor;break;}
+      }
+    }
+    let open=-1;
+    for(let cursor=parametersClosed+1;parametersClosed>=0&&cursor<index;
+      cursor++)if(tokens[cursor].type==='punct'&&tokens[cursor].value==='{'){
+      open=cursor;break;
+    }
+    if(open<0)continue;
+    let depth=0;
+    for(let cursor=open;cursor<tokens.length;cursor++){
+      const token=tokens[cursor];
+      if(token.type!=='punct')continue;
+      if(token.value==='{')depth++;
+      else if(token.value==='}'){
+        depth--;
+        if(depth===0){
+          if(index>open&&index<cursor)
+            return source.slice(tokens[start].start,token.start+1);
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
 function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   const source=bytes.toString('utf8');
   if(!Buffer.from(source).equals(bytes))fail('release-source-utf8');
@@ -254,9 +292,11 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     if(path==='runtime/release-source-scanner.js'&&
         call.value==='spawnSync'&&member==='childProcess'&&
         expression.startsWith('identity.target_path')){
-      if(/const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/.test(source)&&
-          /toolchain\.validateToolIdentity\(\s*identity\s*\)/.test(source)&&
-          /identity\.name\s*!==\s*['"]git['"]/.test(source)&&
+      const carrier=enclosingNamedFunction(source,tokens,index,'gitRead');
+      if(carrier&&
+          /const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/.test(carrier)&&
+          /toolchain\.validateToolIdentity\(\s*identity\s*\)/.test(carrier)&&
+          /identity\.name\s*!==\s*['"]git['"]/.test(carrier)&&
           /^spawnSync\(\s*identity\.target_path\s*,\s*args\s*,\s*\{[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
@@ -264,8 +304,11 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     if(path==='runtime/release-toolchain-runtime.js'&&
         call.value==='spawnSync'&&inlineRequire&&
         expression.startsWith('identity.target_path')){
-      if(/const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/.test(source)&&
-          /validateToolIdentity\(\s*identity\s*\)/.test(source)&&
+      const carrier=enclosingNamedFunction(source,tokens,index,
+        'runAuthenticatedGit');
+      if(carrier&&
+          /const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/.test(carrier)&&
+          /validateToolIdentity\(\s*identity\s*\)/.test(carrier)&&
           /^spawnSync\(\s*identity\.target_path\s*,\s*\[\s*['"]-C['"]\s*,\s*fs\.realpathSync\(\s*root\s*\)\s*,\s*\.\.\.args\s*\]\s*,\s*\{[\s\S]*cwd\s*:\s*fs\.realpathSync\(\s*root\s*\)[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
