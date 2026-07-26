@@ -1886,8 +1886,20 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
         "test('fails first',()=>assert.strictEqual(1,2,'prefix expected exact authority suffix'));",
         ''].join('\n');
       const prepared=await preparePublicFirstRedCase(t,{testSource});
-      const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+      const observedStages=[];
+      const original=journalRuntime.recordOperationStage;
+      journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
+        if(handle.kind==='bootstrap-first-red')observedStages.push(stage);
+        return original(handle,stage,...rest);
+      };
+      let bridge;
+      try{
+        bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
+      }finally{journalRuntime.recordOperationStage=original;}
       assert.equal(bridge.operation_receipt.stage,'completed-ledger');
+      assert.deepEqual(observedStages,[
+        'containment-authenticated','pre-manifest-published','process-completed',
+        'post-manifest-published','result-published']);
       assert.deepEqual(Object.keys(bridge.operation_receipt.result).sort(),[
         'session_id','slice_id','result_path','result_sha256','disposition',
         'observed_class','scope_disposition'].sort());
