@@ -581,14 +581,19 @@ function assertBootstrapProductionAdmission({sliceId,verificationSpecSha256,plan
       !/^op-[0-9a-f]{64}$/.test(state.bootstrap_adoption_operation_id||'')||
       !/^op-[0-9a-f]{64}$/.test(state.red_proof_operation_id||''))
     fail('bootstrap-proof-required');
-  if(bridgeReceipt?.stage!=='completed-ledger'||bridgeReceipt.result?.bridge_consumed!==true||
+  const bridgeResultKeys=['session_id','slice_id','result_path','result_sha256','disposition',
+    'observed_class','scope_disposition'];
+  if(bridgeReceipt?.stage!=='completed-ledger'||
+      canonicalJson(Object.keys(bridgeReceipt.result||{}).sort())!==
+        canonicalJson(bridgeResultKeys.sort())||
+      bridgeReceipt.result?.disposition!=='accepted'||
       bridgeReceipt.result?.slice_id!==sliceId||
       adoptionReceipt?.stage!=='completed-ledger'||
       adoptionReceipt.result?.slice_id!==sliceId||
       adoptionReceipt.result?.bootstrap_bridge_operation_id!==bridgeReceipt.operationId||
       adoptionReceipt.result?.verification_result_sha256!==
-        bridgeReceipt.result?.verification_result_sha256||
-      adoptionReceipt.result?.write_receipt_sha256!==bridgeReceipt.result?.write_receipt_sha256||
+        bridgeReceipt.result?.result_sha256||
+      adoptionReceipt.result?.write_receipt_sha256!==proof?.write_receipt_sha256||
       proofReceipt?.stage!=='completed-ledger'||
       proofReceipt.result?.proof_sha256!==state.red_proof_sha256||
       proofReceipt.result?.red_proof_ref!==state.red_proof_ref)
@@ -604,8 +609,8 @@ function assertBootstrapProductionAdmission({sliceId,verificationSpecSha256,plan
     plan_authority_sha256:planAuthoritySha256,
     bootstrap_bridge_operation_id:bridgeReceipt.operationId,
     bootstrap_bridge_ledger_result_sha256:bridgeReceipt.resultSha256,
-    verification_result_sha256:bridgeReceipt.result.verification_result_sha256,
-    write_receipt_sha256:bridgeReceipt.result.write_receipt_sha256};
+    verification_result_sha256:bridgeReceipt.result.result_sha256,
+    write_receipt_sha256:proof.write_receipt_sha256};
   const expectedAdoptionId=`op-${crypto.createHash('sha256').update(Buffer.concat([
     Buffer.from('bootstrap-red-adoption-v1\0'),Buffer.from(canonicalJson(adoptionPreimage)),
   ])).digest('hex')}`;
@@ -637,8 +642,8 @@ function assertBootstrapProductionAdmission({sliceId,verificationSpecSha256,plan
       proof.proof_operation_id!==proofReceipt.operationId||
       proof.proof_operation_id!==state.red_proof_operation_id||
       proof.transition_ledger_result_sha256!==adoptionReceipt.resultSha256||
-      proof.verification_result_sha256!==bridgeReceipt.result.verification_result_sha256||
-      proof.write_receipt_sha256!==bridgeReceipt.result.write_receipt_sha256||
+      proof.verification_result_sha256!==bridgeReceipt.result.result_sha256||
+      proof.write_receipt_sha256!==adoptionReceipt.result.write_receipt_sha256||
       proof.proof_sha256!==state.red_proof_sha256)
     fail('bootstrap-authority');
   const proofPreimage=structuredClone(proof);delete proofPreimage.proof_sha256;

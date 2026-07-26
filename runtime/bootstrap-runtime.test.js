@@ -1546,7 +1546,7 @@ test('public first-RED requires the exact caller-bound current operation journal
       let armed=true;
       journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
         const result=await original(handle,stage,...rest);
-        if(armed&&stage==='failing-test-write-authenticated'){
+        if(armed&&stage==='containment-authenticated'){
           armed=false;
           mutate(path.join(prepared.fixture.root,'.claude',
             `deep-work.s-aaaaaaaa.op.bootstrap-first-red.${handle.operationId}.json`));
@@ -1782,8 +1782,14 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       assert.deepEqual(Object.keys(terminal.operation_receipt.result).sort(),[
         'session_id','slice_id','result_path','result_sha256','disposition',
         'observed_class','scope_disposition'].sort());
-      assert.equal(parseFrontmatter(
-        fs.readFileSync(prepared.fixture.statePath,'utf8')).fields.tdd_state,'PENDING');
+      const state=parseFrontmatter(
+        fs.readFileSync(prepared.fixture.statePath,'utf8')).fields;
+      if(observedClass==='test-side-effect'){
+        assert.equal(state.current_phase,'research');
+        assert.equal(state.subphase,'spec');
+        assert.equal(state.replan_required,true);
+        assert.equal(state.replan_reason,'external-side-effect');
+      }else assert.equal(state.tdd_state,'PENDING');
       return result;
     };
     const cases=[
@@ -1851,6 +1857,20 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       };
       try{
         await expectRejected(prepared,'pre-spawn-rejected','pre-spawn');
+      }finally{processSupervisor.runSupervisedProcess=original;}
+    });
+    await t.test('authenticated-side-effect-replans-before-return',async()=>{
+      const prepared=await preparePublicFirstRedCase(t);
+      const original=processSupervisor.runSupervisedProcess;
+      processSupervisor.runSupervisedProcess=async()=>{
+        fs.writeFileSync(path.join(prepared.fixture.root,'runtime','a.js'),'side effect\n');
+        return {exitCode:1,signal:null,
+          stdout:Buffer.from(directAssertionTap({root:prepared.fixture.root,
+            testPath:'runtime/a.test.js'})),stderr:Buffer.alloc(0),
+          timedOut:false,outputOverflow:false,durationMs:1};
+      };
+      try{
+        await expectRejected(prepared,'test-side-effect','governed-path-changed');
       }finally{processSupervisor.runSupervisedProcess=original;}
     });
     await t.test('unexpected-pass',async()=>{
@@ -1926,6 +1946,27 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       fs.writeFileSync(resultPath,Buffer.from(canonicalJson(forged)));
       await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
         /bootstrap-verification-stdout/);
+      const relabeled=structuredClone(result);
+      relabeled.classification={adapter:'node-test-tap',adapter_version:1,
+        observed_class:'invalid-output',diagnostic_event:null,
+        diagnostic_event_sha256:null,normalized_signal:null,reason_code:'invalid-utf8'};
+      relabeled.disposition='rejected';
+      relabeled.result_sha256=semantic('verification-result-v2',relabeled,'result_sha256');
+      fs.writeFileSync(resultPath,Buffer.from(canonicalJson(relabeled)));
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-verification-classification/);
+      const impossible=structuredClone(result);
+      impossible.process.signal='SIGTERM';
+      impossible.process.timed_out=true;
+      impossible.process.output_overflow=true;
+      impossible.classification={adapter:'node-test-tap',adapter_version:1,
+        observed_class:'unexpected-pass',diagnostic_event:null,
+        diagnostic_event_sha256:null,normalized_signal:null,reason_code:'unexpected-pass'};
+      impossible.disposition='rejected';
+      impossible.result_sha256=semantic('verification-result-v2',impossible,'result_sha256');
+      fs.writeFileSync(resultPath,Buffer.from(canonicalJson(impossible)));
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
+        /bootstrap-verification-process/);
       const foreign=structuredClone(result);
       foreign.environment.values.LANG='foreign';
       foreign.environment_sha256=semantic('node-test-env-v1',foreign.environment,null);
@@ -1943,7 +1984,7 @@ test('public first-RED rejects every closed process, TAP, scope, environment and
       const original=journalRuntime.recordOperationStage;
       let armed=true;
       journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
-        if(armed&&stage==='verification-completed'){
+        if(armed&&stage==='result-published'){
           armed=false;
           throw new Error('injected-before-verification-stage');
         }

@@ -121,7 +121,7 @@ function terminateWindowsTree(pid, {systemRoot, spawnImpl = childProcess.spawn, 
   });
 }
 
-function collectChild(child, {timeoutMs, maxOutputBytes, terminate}) {
+function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = false}) {
   return new Promise((resolve, reject) => {
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
@@ -181,8 +181,10 @@ function collectChild(child, {timeoutMs, maxOutputBytes, terminate}) {
           ok:code === 0 && !timedOut && !outputOverflow,
           exitCode:code,
           signal,
-          stdout:stdout.subarray(0, maxOutputBytes).toString('utf8'),
-          stderr:stderr.subarray(0, maxOutputBytes).toString('utf8'),
+          stdout:rawOutput ? Buffer.from(stdout.subarray(0, maxOutputBytes)) :
+            stdout.subarray(0, maxOutputBytes).toString('utf8'),
+          stderr:rawOutput ? Buffer.from(stderr.subarray(0, maxOutputBytes)) :
+            stderr.subarray(0, maxOutputBytes).toString('utf8'),
           timedOut,
           outputOverflow,
           error:timedOut ? {code:'process-timeout', message:'process timed out'} : overflowError,
@@ -210,6 +212,7 @@ async function runPosix(spec, options) {
   return collectChild(child, {
     timeoutMs:options.timeoutMs,
     maxOutputBytes:options.maxOutputBytes,
+    rawOutput:options.rawOutput,
     terminate:() => (options.terminationImpl
       ? options.terminationImpl({platform:options.platform, pid:child.pid, child})
       : terminatePosixGroup(child.pid)),
@@ -226,6 +229,7 @@ async function runWindows(spec, options) {
     return collectChild(child, {
       timeoutMs:options.timeoutMs,
       maxOutputBytes:options.maxOutputBytes,
+      rawOutput:options.rawOutput,
       terminate:() => options.terminationImpl
         ? options.terminationImpl({platform:'win32', pid:child.pid, child, knownPids:[child.pid]})
         : terminateWindowsTree(child.pid, {systemRoot:options.env.SystemRoot || options.env.SYSTEMROOT,
@@ -305,8 +309,10 @@ async function runWindows(spec, options) {
           ok:reason === 'normal' && toolResult && toolResult.exitCode === 0,
           exitCode:toolResult ? toolResult.exitCode : null,
           signal:toolResult ? toolResult.signal : null,
-          stdout:stdout.subarray(0, options.maxOutputBytes).toString('utf8'),
-          stderr:stderr.subarray(0, options.maxOutputBytes).toString('utf8'),
+          stdout:options.rawOutput ? Buffer.from(stdout.subarray(0, options.maxOutputBytes)) :
+            stdout.subarray(0, options.maxOutputBytes).toString('utf8'),
+          stderr:options.rawOutput ? Buffer.from(stderr.subarray(0, options.maxOutputBytes)) :
+            stderr.subarray(0, options.maxOutputBytes).toString('utf8'),
           timedOut,
           outputOverflow,
           error:timedOut ? {code:'process-timeout', message:'process timed out'}
