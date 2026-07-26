@@ -226,6 +226,14 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
             expression.startsWith(value))||
         call.value==='spawn'&&
           expression.startsWith('message.spec.executable')))continue;
+    if(path==='runtime/health-runtime.js'&&call.value==='spawnSync'&&
+        expression.startsWith('checked.executable')){
+      const validations=[...source.matchAll(
+        /validateReleaseCarrier\(\s*checked\.executable\s*,\s*environment\s*\)/g)];
+      if(validations.length>=2&&
+          /const\s+checked\s*=\s*validateNativeSpec\(\s*spec\s*,\s*\{\s*environment\s*\}\s*\)/.test(source)&&
+          /\benv\s*:\s*environment\b/.test(source))continue;
+    }
     if(first.type==='identifier'&&first.value==='git'&&
         path==='runtime/platform.js'&&
         /const git = resolveGitExecutable\(/.test(source)){

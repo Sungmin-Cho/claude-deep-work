@@ -65,6 +65,25 @@ test('recursive scripts fail closed on cycles, missing targets, and dynamic root
   }}),/release-launch-dynamic/);
 });
 
+test('health runtime dynamic carrier requires closed-environment validation',()=>{
+  const authenticated=[
+    "const {spawnSync}=require('node:child_process');",
+    'function runStructuredSync(spec,{environment=process.env}={}){',
+    '  const checked=validateNativeSpec(spec,{environment});',
+    '  validateReleaseCarrier(checked.executable,environment);',
+    '  const result=spawnSync(checked.executable,checked.args,{env:environment});',
+    '  validateReleaseCarrier(checked.executable,environment);',
+    '  return result;',
+    '}',
+  ].join('\n');
+  assert.doesNotThrow(()=>scanner.scanLaunchSites(
+    'runtime/health-runtime.js',Buffer.from(authenticated)));
+  assert.throws(()=>scanner.scanLaunchSites('runtime/health-runtime.js',
+    Buffer.from(authenticated.replace(
+      '  validateReleaseCarrier(checked.executable,environment);',
+      '  void checked.executable;'))),/release-launch-dynamic/);
+});
+
 test('committed source loading binds an authenticated git and rejects worktree drift',
   {skip:process.platform==='win32'},t=>{
     const gitPath=process.env.PATH.split(path.delimiter).map((directory)=>
