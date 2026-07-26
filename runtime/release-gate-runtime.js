@@ -434,7 +434,28 @@ function loadPlan(planCapability,plan){
     fail('gate-plan');
   return current;
 }
-async function authenticateInputRefs({stateCapability,checkerId,inputRefs}){
+function producerBindsInputRef({producer,ref,planAuthoritySha256,
+  verificationPlanSha256}={}){
+  const result=producer?.result;
+  if(!result||typeof result!=='object'||Array.isArray(result))return false;
+  if(exactKeys(result,['input_kind','input_path','input_sha256',
+    'plan_authority_sha256','verification_plan_sha256']))
+    return result.input_kind===ref.kind&&result.input_path===ref.path&&
+      result.input_sha256===ref.sha256&&
+      result.plan_authority_sha256===planAuthoritySha256&&
+      result.verification_plan_sha256===verificationPlanSha256;
+  if(['finding-ref','semantic-finding-ref','executability-finding-ref']
+    .includes(ref.kind))
+    return result.finding_ref_path===ref.path&&
+      result.finding_ref_artifact_sha256===ref.sha256&&
+      result.plan_authority_sha256===planAuthoritySha256;
+  const pairs=[['result_path','result_sha256'],
+    ['artifact_path','artifact_sha256'],['package_ref','package_sha256'],
+    ['receipt_path','receipt_sha256'],['path','sha256']];
+  return pairs.some(([pathKey,digestKey])=>
+    result[pathKey]===ref.path&&result[digestKey]===ref.sha256);
+}
+async function authenticateInputRefs({stateCapability,plan,checkerId,inputRefs}){
   const refs=validateCheckerInputRefs(checkerId,inputRefs);
   const project=transaction.projectCapabilityFor(stateCapability);
   const sessionId=transaction.sessionIdFromState(stateCapability),rows=[];
@@ -471,7 +492,10 @@ async function authenticateInputRefs({stateCapability,checkerId,inputRefs}){
           !DIGEST.test(result.patchSha256||'')||
           canonical(raw.value)!==canonical(specInputs[ref.kind]))
         fail('gate-input-producer');
-    }
+    }else if(!producerBindsInputRef({producer,ref,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      verificationPlanSha256:fields.verification_plan_sha256}))
+      fail('gate-input-producer');
     rows.push({ref,raw,producer});
   }
   return rows;
@@ -604,7 +628,8 @@ async function publishGateFact({stateCapability,planCapability,plan,checkerId,
     return{...existing.result,operation_id:id,operation_receipt:existing,
       adopted:true};
   }
-  const rows=await authenticateInputRefs({stateCapability,checkerId,inputRefs:refs});
+  const rows=await authenticateInputRefs({stateCapability,plan:current,
+    checkerId,inputRefs:refs});
   const operation=await journal.beginOperation({projectCapability:project,
     sessionId:sid,kind:'gate-fact-publish',operationId:id,
     preconditions});
