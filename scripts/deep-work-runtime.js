@@ -56,6 +56,8 @@ const rows=[
   grammar('phase invalidate-replan',['state','reason','from-risk','to-risk','affected-slices-json','risk-profile-sha256','at'],[],{
     reason:['risk-class-increase','scope-expansion','public-contract','invariant','failure-state','external-side-effect','unplanned-mock','repeated-root-cause','persistent-state-transition','spike-promotion'],
     'from-risk':['low','medium','high'],'to-risk':['medium','high','critical']}),
+  grammar('replan discovery publish',['state','plan','observation-json']),
+  grammar('replan discovery dispatch',['state','plan','producer-operation-id'],['slice']),
   grammar('implement delegation set',['state','plan','assignment-json','snapshot']),
   grammar('implement delegation clear',['state','snapshot']),
   grammar('implement write begin',['state','plan','slice','class','scope-sha256'],['delegation-operation-id','cluster'],{class:['failing-test','production','refactor']}),

@@ -477,6 +477,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['session finalize',[10,20,30,40,50]],['phase begin',[10,20,50]],['phase complete',[10,20,50]],
     ['phase approve',[10,20,50,70]],['phase spec enter',[10,20,50]],['phase spec approve',[10,20,50]],
     ['phase advance',[10,20,50]],['phase rerun',[10,20,50]],['phase invalidate-replan',[10,20,50]],
+    ['replan discovery publish',[10,20,50,70]],['replan discovery dispatch',[10,20,50,70]],
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
     ['implement tdd transition',[10,20,50]],['implement slice complete',[10,20,50,70]],
@@ -860,8 +861,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 103 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 103);
+test('all 105 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 105);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];

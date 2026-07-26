@@ -11,6 +11,7 @@ const verificationV2=require('./verification-v2-runtime.js');
 const findingRef=require('./finding-ref-runtime.js');
 const functionalReceipt=require('./functional-receipt-runtime.js');
 const refactorDecision=require('./refactor-decision-runtime.js');
+const replan=require('./replan-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -351,9 +352,21 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     return phase.advancePhase({stateCapability:state,from:f.from,to:f.to,at:f.at,specCurrentSha256});});
   on('phase rerun',({f,cwd})=>phase.rerunPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
     affectedSlices:f['affected-slices-json']?jsonFile(resolveInput(f['affected-slices-json'],cwd)):[]}));
-  on('phase invalidate-replan',({f,cwd})=>phase.invalidateForReplan({stateCapability:stateCapability(f,cwd),
-    reason:f.reason,fromRisk:f['from-risk'],toRisk:f['to-risk'],
-    affectedSliceIds:jsonFile(resolveInput(f['affected-slices-json'],cwd)),riskProfileSha256:f['risk-profile-sha256'],at:f.at}));
+  on('phase invalidate-replan',({f,cwd})=>{const state=stateCapability(f,cwd);
+    const fields=stateFields(state),version=String(fields.created_by_version||'');
+    if(/^6\.(?:1[4-9]|[2-9]\d)\.|^[7-9]\./.test(version))
+      fail('authenticated-replan-required');
+    return phase.invalidateForReplan({stateCapability:state,
+      reason:f.reason,fromRisk:f['from-risk'],toRisk:f['to-risk'],
+      affectedSliceIds:jsonFile(resolveInput(f['affected-slices-json'],cwd)),
+      riskProfileSha256:f['risk-profile-sha256'],at:f.at});});
+  on('replan discovery publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.publishOwnedDiscovery({stateCapability:bound.state,
+      plan:bound.value,observation:jsonFile(resolveInput(f['observation-json'],cwd))});});
+  on('replan discovery dispatch',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.dispatchOwnedDiscoveryReplan({stateCapability:bound.state,
+      plan:bound.value,sliceId:f.slice||null,
+      producerOperationId:f['producer-operation-id']});});
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));

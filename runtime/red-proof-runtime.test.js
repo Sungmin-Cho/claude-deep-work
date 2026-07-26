@@ -23,6 +23,9 @@ const {transitionOrdinaryRed,publishOrdinaryRedProof,semanticDigest}=
   require('./red-proof-runtime.js');
 const {runVerificationV2,buildSupervisorControl}=require('./verification-v2-runtime.js');
 const {loadGovernedContext}=require('./governed-context-runtime.js');
+const {publishOwnedDiscovery,dispatchOwnedDiscoveryReplan}=
+  require('./replan-runtime.js');
+const {dispatch}=require('../scripts/deep-work-runtime.js');
 
 test('strict verification v2 exposes the governed production runner',()=>{
   assert.equal(typeof runVerificationV2,'function');
@@ -511,6 +514,53 @@ test('a ledger-complete verification side effect automatically enters authentica
     assert.equal(replay.replan_trigger_id,verification.replan_trigger_id);
     assert.equal(replay.replan_epoch,verification.replan_epoch);
   });
+
+test('owned discovery enters a same-risk authenticated replan and rejects source drift',
+  async(t)=>{
+    const f=fixture(t);
+    const sourcePath='runtime/a.js';
+    const observation={schema_version:1,reason:'public-contract',scope:'slice',
+      slice_id:'SLICE-001',requirement_id:'REQ-001',invariant_id:null,
+      failure_mode_id:null,source_path:sourcePath,
+      source_sha256:journal.sha256(fs.readFileSync(path.join(f.root,sourcePath))),
+      detail_code:'public-api-expanded'};
+    const published=await publishOwnedDiscovery({stateCapability:f.stateCapability,
+      plan:f.plan,observation});
+    const replanned=await dispatchOwnedDiscoveryReplan({
+      stateCapability:f.stateCapability,plan:f.plan,sliceId:'SLICE-001',
+      producerOperationId:published.operation_id});
+    assert.match(replanned.replan_epoch,/^[0-9a-f]{64}$/);
+    const fields=frontmatter.parseFrontmatter(fs.readFileSync(f.statePath,'utf8')).fields;
+    assert.equal(fields.replan_reason,'public-contract');
+    const trigger=JSON.parse(fs.readFileSync(path.join(f.root,
+      ...fields.replan_trigger_ref.split('/')),'utf8'));
+    assert.equal(trigger.from_risk,'critical');
+    assert.equal(trigger.to_risk,'critical');
+    fs.writeFileSync(path.join(f.root,sourcePath),'module.exports=99;\n');
+    await assert.rejects(()=>publishOwnedDiscovery({
+      stateCapability:f.stateCapability,plan:f.plan,observation}),
+    /replan-discovery/);
+  });
+
+test('owned discovery crosses the public dispatcher into same-risk replan',async(t)=>{
+  const f=fixture(t),sourcePath='runtime/a.js';
+  const observation={schema_version:1,reason:'invariant',scope:'slice',
+    slice_id:'SLICE-001',requirement_id:null,invariant_id:'INV-001',
+    failure_mode_id:null,source_path:sourcePath,
+    source_sha256:journal.sha256(fs.readFileSync(path.join(f.root,sourcePath))),
+    detail_code:'invariant-discovered'};
+  const input=path.join(f.root,'discovery.json');
+  fs.writeFileSync(input,journal.canonicalJson(observation));
+  const published=await dispatch(['replan','discovery','publish','--state',
+    f.statePath,'--plan',f.planCapability.path,'--observation-json',input],
+  {cwd:f.root});
+  const replanned=await dispatch(['replan','discovery','dispatch','--state',
+    f.statePath,'--plan',f.planCapability.path,'--producer-operation-id',
+    published.operation_id,'--slice','SLICE-001'],{cwd:f.root});
+  assert.match(replanned.replan_epoch,/^[0-9a-f]{64}$/);
+  assert.equal(frontmatter.parseFrontmatter(
+    fs.readFileSync(f.statePath,'utf8')).fields.replan_reason,'invariant');
+});
 
 test('strict scoped-write acceptance converts expanded scope into needs-replan authority',
   async(t)=>{

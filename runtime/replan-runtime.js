@@ -53,6 +53,102 @@ function parseArray(value,code){if(value===undefined||value===null||value==='')r
 function digestExcluding(value,key){
   const copy=structuredClone(value);delete copy[key];return journal.sha256(canonical(copy));
 }
+function exactKeys(value,keys){return value&&typeof value==='object'&&!Array.isArray(value)&&
+  canonical(Object.keys(value).sort())===canonical([...keys].sort());}
+const DISCOVERY_IDENTIFIER=Object.freeze({
+  'public-contract':'requirement_id','invariant':'invariant_id',
+  'failure-state':'failure_mode_id','external-side-effect':'failure_mode_id',
+  'unplanned-mock':'invariant_id','persistent-state-transition':'invariant_id',
+  'spike-promotion':'requirement_id',
+});
+function validateDiscoveryObservation(value,{stateCapability,plan}={}){
+  const keys=['schema_version','reason','scope','slice_id','requirement_id',
+    'invariant_id','failure_mode_id','source_path','source_sha256','detail_code'];
+  const required=DISCOVERY_IDENTIFIER[value?.reason],identifierKeys=[
+    'requirement_id','invariant_id','failure_mode_id'];
+  if(!exactKeys(value,keys)||value.schema_version!==1||!required||
+      !['slice','session'].includes(value.scope)||
+      (value.scope==='slice'?!/^SLICE-\d{3}$/.test(value.slice_id||''):
+        value.slice_id!==null)||
+      identifierKeys.some((key)=>key===required?
+        typeof value[key]!=='string'||!value[key]:value[key]!==null)||
+      typeof value.detail_code!=='string'||!/^[a-z][a-z0-9-]{0,63}$/.test(value.detail_code)||
+      typeof value.source_path!=='string'||!value.source_path||
+      path.isAbsolute(value.source_path)||value.source_path.split('/').includes('..')||
+      !DIGEST.test(value.source_sha256||''))
+    fail('replan-discovery');
+  if(value.scope==='slice'&&!plan.slices?.some((row)=>row.id===value.slice_id))
+    fail('replan-discovery');
+  const source=path.resolve(stateCapability.projectRoot,...value.source_path.split('/'));
+  if(!platform.isPathInside(stateCapability.projectRoot,source))fail('replan-discovery');
+  let stat,bytes;try{stat=fs.lstatSync(source);bytes=fs.readFileSync(source);}catch{
+    fail('replan-discovery');}
+  if(!stat.isFile()||stat.isSymbolicLink()||journal.sha256(bytes)!==value.source_sha256)
+    fail('replan-discovery');
+  return structuredClone(value);
+}
+async function publishOwnedDiscovery({stateCapability,plan,observation}={}){
+  const sid=sessionId(stateCapability);
+  if(!DIGEST.test(plan?.plan_authority_sha256||''))fail('replan-discovery-plan');
+  const checked=validateDiscoveryObservation(observation,{stateCapability,plan});
+  const observationDigest=semanticDigest('owned-discovery',checked);
+  const preconditions={session_id:sid,plan_authority_sha256:
+    plan.plan_authority_sha256,observation_digest:observationDigest};
+  const id=operationId('replan-discovery-publication-v1',preconditions);
+  const existing=await journal.resumeOperation({projectCapability:project(stateCapability),
+    operationId:id,sessionId:sid,kind:'replan-discovery-publish'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger'){
+    const relative=existing.result?.observation_path;
+    const raw=readCanonical(path.join(stateCapability.projectRoot,
+      ...String(relative||'').split('/')),'replan-discovery-replay');
+    if(raw.sha256!==existing.result.observation_artifact_sha256||
+        semanticDigest('owned-discovery',validateDiscoveryObservation(raw.value,{
+          stateCapability,plan}))!==observationDigest)
+      fail('replan-discovery-replay');
+    return{...existing.result,operation_id:id,operation_receipt:existing,adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project(stateCapability),
+    sessionId:sid,kind:'replan-discovery-publish',operationId:id,
+    preconditions});
+  await journal.recordOperationStage(operation,'authority-authenticated',{owned:{
+    planAuthoritySha256:plan.plan_authority_sha256,observationDigest}});
+  const relative=`.deep-work/${sid}/replans/discovery-${observationDigest}.json`;
+  const artifactSha256=writeExclusive(path.join(stateCapability.projectRoot,
+    ...relative.split('/')),checked,'replan-discovery-publish');
+  await journal.recordOperationStage(operation,'observation-published',{owned:{
+    observationPath:relative,observationDigest,observationArtifactSha256:artifactSha256}});
+  const receipt=await journal.completeOperation(operation,{session_id:sid,
+    plan_authority_sha256:plan.plan_authority_sha256,observation_path:relative,
+    observation_digest:observationDigest,observation_artifact_sha256:artifactSha256});
+  return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
+}
+async function dispatchOwnedDiscoveryReplan({stateCapability,plan,sliceId,
+  producerOperationId,seam}={}){
+  const sid=sessionId(stateCapability);
+  const producer=await journal.resumeOperation({projectCapability:project(stateCapability),
+    operationId:producerOperationId,sessionId:sid,kind:'replan-discovery-publish'});
+  const terminal=producer.result;
+  if(producer.stage!=='completed-ledger'||!exactKeys(terminal,
+      ['session_id','plan_authority_sha256','observation_path',
+        'observation_digest','observation_artifact_sha256'])||
+      terminal.session_id!==sid||
+      terminal.plan_authority_sha256!==plan.plan_authority_sha256)
+    fail('replan-discovery-producer');
+  const raw=readCanonical(path.join(stateCapability.projectRoot,
+    ...terminal.observation_path.split('/')),'replan-discovery-producer');
+  const observation=validateDiscoveryObservation(raw.value,{stateCapability,plan});
+  if(raw.sha256!==terminal.observation_artifact_sha256||
+      semanticDigest('owned-discovery',observation)!==terminal.observation_digest||
+      observation.scope==='slice'&&observation.slice_id!==sliceId||
+      observation.scope==='session'&&sliceId!==null)
+    fail('replan-discovery-producer');
+  const prepared=prepareReplanAuthority({stateCapability,plan,
+    sliceId:observation.slice_id,reason:observation.reason,
+    producerOperationId,observationKind:'owned-discovery',observation});
+  return recordPreparedReplan({stateCapability,plan,
+    sliceId:observation.slice_id,prepared,seam});
+}
 function invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperationId,
   triggerPath,invalidationPath}){
   const prior=parseArray(fields.replan_invalidations_json,'replan-invalidation-state');
@@ -333,5 +429,6 @@ async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,s
 }
 
 module.exports={dispatchVerificationSideEffectReplan,adoptVerificationSideEffectReplay,
+  publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,validateDiscoveryObservation,
   prepareManifestReplanAuthority,loadPreparedReplan,recordPreparedReplan,
   semanticDigest,operationId};
