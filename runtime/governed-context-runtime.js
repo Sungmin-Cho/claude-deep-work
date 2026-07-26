@@ -300,7 +300,7 @@ function loadGovernedContext({stateCapability}={}){
     const copy=structuredClone(row);delete copy.schema_version;return copy;});
   if(activeReplan)warnings.push('invalidation-active');
   let evidence={status:'unknown',required_ids:[],completed_ids:[],missing_ids:[],
-    invalidated_ids:[]},satisfied=[];
+    invalidated_ids:[]},satisfied=[],evidenceSummary=null;
   if(verificationPlan){
     evidence.required_ids=sorted(verificationPlan.evidence_required_gate_ids);
     try{
@@ -310,6 +310,7 @@ function loadGovernedContext({stateCapability}={}){
       if(pkg){
         const summary=evidenceRuntime.evaluateEvidenceCompleteness(pkg,verificationPlan,
           {artifactRoot:workDir});
+        evidenceSummary=summary;
         satisfied=sorted(summary.satisfied_gate_ids);
         evidence={status:summary.complete?'complete':'incomplete',
           required_ids:sorted(verificationPlan.evidence_required_gate_ids),
@@ -321,8 +322,25 @@ function loadGovernedContext({stateCapability}={}){
       sorted(evidence.required_ids);warnings.push('evidence-pointer-stale');}
   }else if(plan)warnings.push('projection-input-missing');
   let residualRisk={status:'unknown',class:null,accepted:null,blocking_reasons:[]};
-  const storedRisk=parseStored(fields.governed_residual_risk_json,null,'governed-risk');
-  if(storedRisk)residualRisk=storedRisk;else warnings.push('projection-input-missing');
+  if(plan&&evidenceSummary){
+    try{
+      const riskProfile=parseStored(fields.risk_profile_json,null,'governed-risk');
+      if(!riskProfile||journalDigest(riskProfile)!==
+          plan.contract_binding?.risk_profile_sha256)fail('governed-risk');
+      const initialRisk=riskProfile.provisional||riskProfile.initial||riskProfile;
+      const finalRisk=riskProfile.authoritative||riskProfile.final||riskProfile;
+      const acceptances=parseStored(fields.risk_acceptances_json,[],
+        'governed-risk-acceptances');
+      const computed=require('./verification-policy-runtime.js').computeResidualRisk({
+        initialRisk,finalRisk,evidenceSummary,
+        unverifiedAreas:evidenceSummary.unverified_areas,
+        riskAcceptances:acceptances});
+      residualRisk={status:computed.accepted?'accepted':'unaccepted',
+        class:computed.class,accepted:computed.accepted,blocking_reasons:sorted([
+          ...computed.reasons,...computed.invalid_acceptance_ids.map((id)=>
+            `invalid-acceptance:${id}`)])};
+    }catch{warnings.push('projection-input-missing');}
+  }else warnings.push('projection-input-missing');
   const findingLoaded=awaitFindingProjection({stateCapability,plan,fields,workDir});
   const findings=findingLoaded.projection;
   warnings.push(...findingLoaded.warnings);
@@ -347,6 +365,9 @@ function loadGovernedContext({stateCapability}={}){
 
 function awaitFindingProjection(input){
   return require('./finding-ref-runtime.js').loadFindingProjection(input);
+}
+function journalDigest(value){
+  return require('./operation-journal.js').sha256(canonicalJson(value));
 }
 
 module.exports={buildProgressProjectionV1,validateProgressProjectionV1,
