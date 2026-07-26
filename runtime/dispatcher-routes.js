@@ -404,6 +404,9 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('release gate command-run',({f,cwd})=>{const bound=readPlan(f,cwd);
     return releaseGate.publishCommandGateResult({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,commandId:f.command});});
+  on('release gate integrity-run',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishReleaseIntegrityGateResult({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value});});
   on('release verification complete',({f,cwd})=>{const bound=readPlan(f,cwd);
     return releaseGate.publishReleaseVerificationReceipt({
       stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,

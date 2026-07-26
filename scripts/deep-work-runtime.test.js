@@ -493,6 +493,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['release gate fact-publish',[10,20,50,70]],
     ['release gate result-publish',[10,20,50,70]],
     ['release gate command-run',[10,20,50,70]],
+    ['release gate integrity-run',[10,20,50,70]],
     ['release verification complete',[10,20,50,70]],
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
@@ -877,8 +878,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 115 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 115);
+test('all 116 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 116);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -902,7 +903,7 @@ test('all 115 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 115);
+  assert.equal(outcomes.length, 116);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

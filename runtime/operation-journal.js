@@ -30,7 +30,8 @@ const OPERATION_KINDS = new Set([
     'replan-epoch-publication', 'replan-discovery-publish',
     'risk-observation-publish', 'root-cause-record',
     'repeated-root-cause-derive', 'replan-complete',
-    'accept-or-replan', 'finding-publish', 'gate-fact-publish',
+    'accept-or-replan', 'finding-publish', 'release-input-publish',
+    'gate-fact-publish',
     'release-source-graph-publish',
     'release-gate-result', 'release-verification-complete',
     'functional-slice-complete-v2', 'refactor-no-change-decision',
@@ -112,6 +113,7 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
     'producers-authenticated','observation-published','ledger-committed'],
   'replan-complete':['epoch-authenticated','approvals-authenticated','state-written'],
   'gate-fact-publish':['authority-authenticated','facts-computed','fact-published'],
+  'release-input-publish':['input-published'],
   'release-source-graph-publish':['graph-published'],
   'release-gate-result':['inputs-authenticated','checker-completed','result-published'],
   'release-verification-complete':['aggregate-authenticated','receipt-published',
@@ -131,7 +133,8 @@ const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publi
   'replan-epoch-publication','replan-discovery-publish',
   'risk-observation-publish','root-cause-record',
   'repeated-root-cause-derive','replan-complete',
-  'accept-or-replan','finding-publish','gate-fact-publish',
+  'accept-or-replan','finding-publish','release-input-publish',
+  'gate-fact-publish',
   'release-source-graph-publish','release-gate-result',
   'release-verification-complete',
   'functional-slice-complete-v2','refactor-no-change-decision']);
@@ -368,6 +371,32 @@ function lookupCompletedOperation({projectCapability,operationId,sessionId,kind}
   return null;
 }
 
+const EXTERNAL_EFFECT_KINDS=new Set(['remote-push','pull-request-create',
+  'finish-publish-pr']);
+function inspectExternalEffectOperationIds({projectCapability,sessionId}={}){
+  if(!validSessionId(sessionId))fail('operation-session');
+  const root=projectRootOf(projectCapability),claude=path.join(root,'.claude');
+  const names=fs.existsSync(claude)?fs.readdirSync(claude):[],ids=new Set();
+  const ledgerPath=path.join(claude,
+    `deep-work.${sessionId}.completed-operations.json`);
+  if(fs.existsSync(ledgerPath)){
+    for(const receipt of readLedger(ledgerPath).receipts)
+      if(EXTERNAL_EFFECT_KINDS.has(receipt.kind))ids.add(receipt.operationId);
+  }
+  const prefix=`deep-work.${sessionId}.op.`;
+  for(const name of names.filter((value)=>value.startsWith(prefix)&&
+    value.endsWith('.json')).sort((a,b)=>
+      Buffer.compare(Buffer.from(a),Buffer.from(b)))){
+    const pending=validateJournal(readJson(path.join(claude,name)));
+    if(!EXTERNAL_EFFECT_KINDS.has(pending.kind))continue;
+    const reachedCall=(pending.stages||[]).some((row)=>
+      /^(?:before-external-call|external-call-(?:started|completed)|before-call(?:-\d+)?|remote-pushed|pull-request-created)$/
+        .test(row.stage));
+    if(reachedCall)ids.add(pending.operationId);
+  }
+  return[...ids].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+}
+
 module.exports = {
   OPERATION_KINDS,
   COMPLETED_LEDGER_LIMIT,
@@ -376,6 +405,7 @@ module.exports = {
   completeOperation,
   resumeOperation,
   lookupCompletedOperation,
+  inspectExternalEffectOperationIds,
   canonicalJson,
   sha256,
   WORKFLOW_STAGE_RULES,

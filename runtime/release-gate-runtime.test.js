@@ -344,6 +344,85 @@ test('release integrity rejects a caller-authored empty external-operation index
     /gate-input-producer/);
   });
 
+test('integrity-run derives trusted release inputs and publishes GATE-clean-build',
+  async(t)=>{
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),
+      'dw-integrity-run-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.mkdirSync(path.join(root,'.claude-plugin'),{recursive:true});
+    fs.mkdirSync(path.join(root,'.codex-plugin'),{recursive:true});
+    fs.mkdirSync(path.join(root,'.claude'));
+    fs.mkdirSync(path.join(root,'docs'));
+    fs.writeFileSync(path.join(root,'package.json'),journal.canonicalJson({
+      name:'deep-work-integrity-fixture',version:'6.14.0',
+      scripts:{test:'node --test fixture.test.js'}}));
+    fs.writeFileSync(path.join(root,'.claude-plugin','plugin.json'),
+      journal.canonicalJson({name:'deep-work',version:'6.14.0'}));
+    fs.writeFileSync(path.join(root,'.codex-plugin','plugin.json'),
+      journal.canonicalJson({name:'deep-work',version:'6.14.0'}));
+    fs.writeFileSync(path.join(root,'docs','DOCS_RULE.md'),'# Docs rule\n');
+    fs.writeFileSync(path.join(root,'fixture.test.js'),
+      "'use strict';\nrequire('node:test')('fixture',()=>{});\n");
+    for(const args of [['init','-q'],['config','user.email',
+      'fixture@example.invalid'],['config','user.name','Fixture'],
+      ['add','package.json','.claude-plugin/plugin.json',
+        '.codex-plugin/plugin.json','docs/DOCS_RULE.md','fixture.test.js'],
+      ['commit','-qm','fixture']]){
+      const result=spawnSync('git',args,{cwd:root,encoding:'utf8'});
+      assert.equal(result.status,0,result.stderr);
+    }
+    const sessionId='s-aaaaaaaa',work=path.join(root,'.deep-work',sessionId);
+    fs.mkdirSync(work,{recursive:true});
+    const statePath=path.join(root,'.claude',`deep-work.${sessionId}.md`);
+    fs.writeFileSync(statePath,frontmatter.updateFrontmatterText('',{
+      session_id:sessionId,work_dir:`.deep-work/${sessionId}`,
+      current_phase:'test',verification_plan_sha256:'2'.repeat(64)}));
+    const stateCapability=platform.issueProjectStateCapability(root,statePath,
+      {role:'session-state'});
+    const sessionCapability=platform.issueProjectStateCapability(root,work,{
+      role:'session-work-dir',sessionStateCapability:stateCapability});
+    const planCapability=transaction.issueSessionFileCapability({
+      sessionCapability,candidate:path.join(work,'plan.json'),
+      allowedBasenames:['plan.json'],allowMissingLeaf:true,role:'locked-plan'});
+    const facts={schema_version:1,authority:'reviewed-plan',destructive:false,
+      external_action:false,has_backward_compat:true,has_migration:true,
+      host_dependent:false,source_requirement_ids:['REQ-001'],
+      source_slice_ids:['SLICE-001']};
+    facts.facts_sha256=gate.semanticDigest('capability-facts-v1',facts);
+    const plan={schema_version:2,replan_epoch:null,contract_binding:{
+      mode:'strict-spec',created_by_version:'6.14.0',
+      source_plan_sha256:'3'.repeat(64),
+      risk_profile_sha256:'4'.repeat(64),spec_contract:{schema_version:1,
+        spec_id:'SPEC-INTEGRITY',spec_sha256:'5'.repeat(64),
+        spec_approved_hash:'6'.repeat(64)}},capability_facts:facts,slices:[{
+      id:'SLICE-001',slice_kind:'release-verification',checked:false,
+      scope_schema_version:1,files:[],write_scope:{failing_test:[],
+        production:[],refactor:[]},verification_scope:['release integrity'],
+      release_gate_ids:[...gate.DETERMINISTIC_GATE_MAPPING[
+        'release-integrity-v1']],
+      verification_spec:null,verification_spec_sha256:null}]};
+    plan.plan_authority_sha256=
+      compileImmutablePlanAuthorityV2(plan).plan_authority_sha256;
+    fs.writeFileSync(planCapability.path,journal.canonicalJson(plan));
+    const published=await dispatch(['release','gate','integrity-run','--state',
+      statePath,'--plan',planCapability.path],{cwd:root});
+    assert.equal(published.status,'passed');
+    assert.deepEqual(published.gate_result_refs.map((row)=>row.gate_id),
+      ['GATE-clean-build']);
+    const project=transaction.projectCapabilityFor(stateCapability);
+    const external=await journal.beginOperation({projectCapability:project,
+      sessionId,kind:'remote-push',operationId:`op-${'e'.repeat(64)}`,
+      preconditions:{remote:'origin'}});
+    await journal.completeOperation(external,{status:'pushed'});
+    const blocked=await dispatch(['release','gate','integrity-run','--state',
+      statePath,'--plan',planCapability.path],{cwd:root});
+    assert.equal(blocked.status,'failed');
+    const blockedResult=JSON.parse(fs.readFileSync(path.join(root,
+      ...blocked.result_path.split('/')),'utf8'));
+    assert.deepEqual(blockedResult.result.blocking_codes,
+      ['external-effect-seen']);
+  });
+
 test('command-run publishes an authenticated pack GateResult through the dispatcher',
   {skip:process.platform==='win32'},async(t)=>{
     const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),

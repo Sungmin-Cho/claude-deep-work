@@ -6,7 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { OPERATION_KINDS, beginOperation, recordOperationStage, completeOperation,
-  resumeOperation, WORKFLOW_STAGE_RULES } = require('./operation-journal.js');
+  resumeOperation, inspectExternalEffectOperationIds,
+  WORKFLOW_STAGE_RULES } = require('./operation-journal.js');
 const { issueProjectStateCapability } = require('./platform.js');
 
 function setup() {
@@ -50,6 +51,23 @@ test('journal stages and terminal ledger replay exactly once', async () => {
   await assert.rejects(() => beginOperation({projectCapability, sessionId:'s-aaaaaaaa',
     kind:'registry-touch', operationId:begun.operationId, preconditions:{}}), /operation-id-complete/);
 });
+
+test('external effect index includes completed and call-started operations only',
+  async()=>{
+    const {projectCapability}=setup(),sessionId='s-aaaaaaaa';
+    const completed=await beginOperation({projectCapability,sessionId,
+      kind:'remote-push',operationId:`op-${'1'.repeat(64)}`,
+      preconditions:{remote:'origin'}});
+    await completeOperation(completed,{status:'pushed'});
+    const pending=await beginOperation({projectCapability,sessionId,
+      kind:'pull-request-create',operationId:`op-${'2'.repeat(64)}`,
+      preconditions:{remote:'origin'}});
+    assert.deepEqual(inspectExternalEffectOperationIds({projectCapability,
+      sessionId}),[completed.operationId]);
+    await recordOperationStage(pending,'before-call',{owned:{remote:'origin'}});
+    assert.deepEqual(inspectExternalEffectOperationIds({projectCapability,
+      sessionId}),[completed.operationId,pending.operationId]);
+  });
 
 test('completed ledger fails closed at capacity and preserves the oldest nonreuse tombstone', async () => {
   const {root,projectCapability}=setup();const sessionId='s-aaaaaaaa';

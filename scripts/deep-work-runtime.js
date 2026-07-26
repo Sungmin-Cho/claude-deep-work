@@ -75,6 +75,7 @@ const rows=[
   grammar('release gate result-publish',['state','plan','fact-operation-id']),
   grammar('release gate command-run',['state','plan','command'],[],{
     command:['carrier','tdd','replan','integration','full','pack']}),
+  grammar('release gate integrity-run',['state','plan']),
   grammar('release verification complete',['state','plan','slice',
     'gate-results-json','functional-receipts-json']),
   grammar('implement delegation set',['state','plan','assignment-json','snapshot']),

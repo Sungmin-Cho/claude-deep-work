@@ -72,6 +72,23 @@ function resolveReleaseToolIdentities(names,{environment=process.env,
     fail('release-tool-missing',name);
   });
 }
+function runAuthenticatedGit({root,args,environment=process.env,
+  maxOutputBytes=4_194_304}={}){
+  if(!path.isAbsolute(root||'')||!Array.isArray(args)||
+      args.some((value)=>typeof value!=='string'||value.includes('\0'))||
+      !Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1024||
+      maxOutputBytes>16_777_216)fail('release-git-command');
+  const identity=buildToolIdentity({name:'git',targetPath:
+    require('./platform.js').resolveGitExecutable(environment,fs)});
+  const result=require('node:child_process').spawnSync(identity.target_path,
+    ['-C',fs.realpathSync(root),...args],{cwd:fs.realpathSync(root),
+      env:{LANG:'C',LC_ALL:'C',TZ:'UTC'},encoding:null,shell:false,
+      windowsHide:true,maxBuffer:maxOutputBytes});
+  validateToolIdentity(identity);
+  if(result.error||result.status!==0||result.signal!==null)
+    fail('release-git-command');
+  return Buffer.from(result.stdout);
+}
 function validateToolIdentity(value){
   const keys=['name','target_path','target_sha256','target_dev','target_ino',
     'target_mode','target_size','target_mtime_ns','shim_kind','shim_path',
@@ -529,6 +546,7 @@ module.exports={canonical,sha256,buildToolIdentity,validateToolIdentity,
   validateReleaseSourceGraph,buildToolchainManifest,validateToolchainManifest,
   buildActiveNodeExecutable,validatePlatformDerivedExecutable,
   validateTestFixtureExecutable,resolveReleaseToolIdentities,
+  runAuthenticatedGit,
   publishReleaseSourceGraph,authenticateReleaseSourceGraphRef,
   materializeOwnedBin,validateMaterializedBin,pathIdentity,
   validatePathIdentity,buildReleaseEnvironment,validateReleaseEnvironment,

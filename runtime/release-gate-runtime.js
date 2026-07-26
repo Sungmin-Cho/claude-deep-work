@@ -96,13 +96,13 @@ const INPUT_PRODUCER_KINDS=Object.freeze({
   'spec-gate-result':Object.freeze(['phase-approval']),
   'git-diff-manifest':Object.freeze(['evidence-capture']),
   'plan-authority':Object.freeze(['phase-approval']),
-  'claude-manifest':Object.freeze(['evidence-capture']),
-  'codex-manifest':Object.freeze(['evidence-capture']),
-  'docs-rule':Object.freeze(['evidence-capture']),
-  'external-operation-index':Object.freeze(['evidence-capture']),
-  'git-snapshot':Object.freeze(['evidence-capture']),
-  'package-manifest':Object.freeze(['evidence-capture']),
-  'runtime-version':Object.freeze(['evidence-capture']),
+  'claude-manifest':Object.freeze(['release-input-publish']),
+  'codex-manifest':Object.freeze(['release-input-publish']),
+  'docs-rule':Object.freeze(['release-input-publish']),
+  'external-operation-index':Object.freeze(['release-input-publish']),
+  'git-snapshot':Object.freeze(['release-input-publish']),
+  'package-manifest':Object.freeze(['release-input-publish']),
+  'runtime-version':Object.freeze(['release-input-publish']),
   'finding-ref':Object.freeze(['finding-publish']),
   'review-execution':Object.freeze(['phase-review-record']),
   'mutation-round-result':Object.freeze(['mutation-round']),
@@ -532,10 +532,10 @@ function deriveFacts(checkerId,rows){
     const claude=byKind.get('claude-manifest'),codex=byKind.get('codex-manifest'),
       pkg=byKind.get('package-manifest'),runtime=byKind.get('runtime-version'),
       git=byKind.get('git-snapshot'),external=byKind.get('external-operation-index'),
-      docs=rows.find((row)=>row.ref.kind==='docs-rule');
+      docs=byKind.get('docs-rule');
     const facts={manifest_versions:{claude:claude?.version,codex:codex?.version},
       package_version:pkg?.version,runtime_version:runtime?.version,
-      docs_rule_sha256:docs?.raw.sha256,
+      docs_rule_sha256:docs?.docs_rule_sha256,
       v7_surface_violations:runtime?.v7_surface_violations||[],
       git_state:git,external_effect_operation_ids:external?.operation_ids||[]};
     validateFacts(checkerId,facts);return facts;
@@ -659,6 +659,140 @@ async function publishGateFact({stateCapability,planCapability,plan,checkerId,
     verification_plan_sha256:fields.verification_plan_sha256});
   return{...receipt.result,operation_id:id,operation_receipt:receipt,
     adopted:false};
+}
+async function publishReleaseInputArtifact({stateCapability,plan,
+  verificationPlanSha256,inputKind,value}={}){
+  if(!INPUT_PRODUCER_KINDS[inputKind]?.includes('release-input-publish')||
+      !value||typeof value!=='object'||Array.isArray(value))
+    fail('release-input-publish');
+  const sid=transaction.sessionIdFromState(stateCapability);
+  const bytes=Buffer.from(canonical(value)),inputSha256=journal.sha256(bytes);
+  const preconditions={session_id:sid,input_kind:inputKind,
+    input_sha256:inputSha256,plan_authority_sha256:
+      plan.plan_authority_sha256,verification_plan_sha256:
+      verificationPlanSha256};
+  const id=operationId('release-input-publish-v1',preconditions);
+  const relative=`.deep-work/${sid}/release-inputs/${inputKind}-${
+    inputSha256}.json`;
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const existing=await journal.resumeOperation({projectCapability:project,
+    operationId:id,sessionId:sid,kind:'release-input-publish'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  const terminal={input_kind:inputKind,input_path:relative,
+    input_sha256:inputSha256,plan_authority_sha256:
+      plan.plan_authority_sha256,verification_plan_sha256:
+      verificationPlanSha256};
+  if(existing?.stage==='completed-ledger'){
+    const raw=readCanonical(path.join(stateCapability.projectRoot,
+      ...relative.split('/')),'release-input-replay');
+    if(canonical(existing.result)!==canonical(terminal)||
+        raw.sha256!==inputSha256||!raw.bytes.equals(bytes))
+      fail('release-input-replay');
+    return{ref:{kind:inputKind,path:relative,sha256:inputSha256,
+      producer_operation_id:id},operation_receipt:existing,adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project,
+    sessionId:sid,kind:'release-input-publish',operationId:id,preconditions});
+  writeExclusive(path.join(stateCapability.projectRoot,...relative.split('/')),
+    value,'release-input-publish');
+  await journal.recordOperationStage(operation,'input-published',{owned:{
+    inputKind,path:relative,sha256:inputSha256}});
+  const receipt=await journal.completeOperation(operation,terminal);
+  return{ref:{kind:inputKind,path:relative,sha256:inputSha256,
+    producer_operation_id:id},operation_receipt:receipt,adopted:false};
+}
+function parseReleaseGitStatus(bytes){
+  const records=bytes.toString('utf8').split('\0').filter(Boolean),paths=[];
+  for(let index=0;index<records.length;index++){
+    const record=records[index];
+    if(record.length<4||record[2]!==' ')fail('release-integrity-git');
+    const status=record.slice(0,2),candidate=record.slice(3);
+    if(!portable(candidate))fail('release-integrity-git');
+    paths.push(candidate);
+    if(/[RC]/.test(status)&&records[index+1]){
+      const source=records[++index];if(!portable(source))
+        fail('release-integrity-git');
+      paths.push(source);
+    }
+  }
+  return[...new Set(paths)].sort((a,b)=>
+    Buffer.compare(Buffer.from(a),Buffer.from(b)));
+}
+function readReleaseJson(file,code){
+  let stat,bytes,value;try{stat=fs.lstatSync(file);bytes=fs.readFileSync(file);
+    value=JSON.parse(bytes);}catch{fail(code);}
+  if(!stat.isFile()||stat.isSymbolicLink()||
+      !value||typeof value!=='object'||Array.isArray(value))fail(code);
+  return value;
+}
+function releaseDocsRulePath(root,toolchain){
+  const local=path.join(root,'docs','DOCS_RULE.md');
+  if(fs.existsSync(local))return local;
+  const raw=toolchain.runAuthenticatedGit({root,
+    args:['rev-parse','--git-common-dir']}).toString('utf8').trim();
+  const common=path.resolve(root,raw),main=path.dirname(fs.realpathSync(common));
+  const fallback=path.join(main,'docs','DOCS_RULE.md');
+  if(!fs.existsSync(fallback))fail('release-integrity-docs-rule');
+  return fallback;
+}
+function releaseIntegrityValues({stateCapability}={}){
+  const root=stateCapability.projectRoot;
+  const toolchain=require('./release-toolchain-runtime.js');
+  const claude=readReleaseJson(path.join(root,'.claude-plugin','plugin.json'),
+    'release-integrity-manifest');
+  const codex=readReleaseJson(path.join(root,'.codex-plugin','plugin.json'),
+    'release-integrity-manifest');
+  const pkg=readReleaseJson(path.join(root,'package.json'),
+    'release-integrity-manifest');
+  const docsPath=releaseDocsRulePath(root,toolchain),docsStat=
+    fs.lstatSync(docsPath),docsBytes=fs.readFileSync(docsPath);
+  if(!docsStat.isFile()||docsStat.isSymbolicLink())
+    fail('release-integrity-docs-rule');
+  const head=toolchain.runAuthenticatedGit({root,
+    args:['rev-parse','--verify','HEAD^{commit}']}).toString('utf8').trim();
+  const branch=toolchain.runAuthenticatedGit({root,
+    args:['symbolic-ref','--short','HEAD']}).toString('utf8').trim();
+  const changed=parseReleaseGitStatus(toolchain.runAuthenticatedGit({root,
+    args:['status','--porcelain=v1','-z','--untracked-files=all']}))
+    .filter((candidate)=>!require('./git-runtime.js').isRuntimePath(candidate)&&
+      candidate!=='reviews'&&!candidate.startsWith('reviews/'));
+  if(!/^[0-9a-f]{40}$/.test(head)||!branch)fail('release-integrity-git');
+  const versions=[['.claude-plugin/plugin.json',claude.version],
+    ['.codex-plugin/plugin.json',codex.version],['package.json',pkg.version]];
+  const v7=versions.filter(([,version])=>/^7\./.test(String(version)))
+    .map(([file])=>file).sort((a,b)=>Buffer.compare(Buffer.from(a),
+      Buffer.from(b)));
+  const external=journal.inspectExternalEffectOperationIds({
+    projectCapability:transaction.projectCapabilityFor(stateCapability),
+    sessionId:transaction.sessionIdFromState(stateCapability)});
+  return{'claude-manifest':{version:claude.version},
+    'codex-manifest':{version:codex.version},
+    'docs-rule':{docs_rule_sha256:journal.sha256(docsBytes)},
+    'external-operation-index':{operation_ids:external},
+    'git-snapshot':{head,branch,dirty:changed.length>0,changed_paths:changed},
+    'package-manifest':{version:pkg.version},
+    'runtime-version':{version:pkg.version,v7_surface_violations:v7}};
+}
+async function publishReleaseIntegrityGateResult({stateCapability,
+  planCapability,plan}={}){
+  const current=loadPlan(planCapability,plan);
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  if(!DIGEST.test(fields.verification_plan_sha256||''))
+    fail('gate-verification-plan');
+  const values=releaseIntegrityValues({stateCapability}),refs=[];
+  for(const kind of CHECKER_INPUT_CATALOG['release-integrity-v1']){
+    const published=await publishReleaseInputArtifact({stateCapability,
+      plan:current,verificationPlanSha256:fields.verification_plan_sha256,
+      inputKind:kind,value:values[kind]});
+    refs.push(published.ref);
+  }
+  refs.sort((left,right)=>Buffer.compare(Buffer.from(locatorSortKey(left)),
+    Buffer.from(locatorSortKey(right))));
+  const fact=await publishGateFact({stateCapability,planCapability,
+    plan:current,checkerId:'release-integrity-v1',inputRefs:refs});
+  return publishDeterministicGateResult({stateCapability,planCapability,
+    plan:current,factOperationId:fact.operation_id});
 }
 function gateResultRefs({result,operationId:resultOperationId,resultPath,
   ledgerResultSha256}={}){
@@ -1011,5 +1145,6 @@ module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   buildDeterministicGateResult,buildCommandGateResult,validateGateResult,
   validateGateResultRef,publishGateFact,publishDeterministicGateResult,
   publishCommandGateResult,
+  publishReleaseIntegrityGateResult,
   gateResultRefs,validateReleaseVerificationReceipt,
   publishReleaseVerificationReceipt,semanticDigest};
