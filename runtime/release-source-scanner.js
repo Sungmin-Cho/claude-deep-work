@@ -9,6 +9,9 @@ function fail(code,message=code){const error=new Error(`[${code}] ${message}`);
   error.code=code;throw error;}
 function byteCompare(left,right){return Buffer.compare(Buffer.from(left),
   Buffer.from(right));}
+function compareGraphIdentity(left,right){
+  return byteCompare(left.kind,right.kind)||byteCompare(left.path,right.path);
+}
 function portable(value){return typeof value==='string'&&value.length>0&&
   !value.startsWith('/')&&!value.includes('\\')&&
   !value.split('/').includes('..');}
@@ -622,8 +625,14 @@ function scanReleaseSources({committedFiles}={}){
     for(const name of shell.declared_functions)shellFunctions.add(name);
     for(const dependency of shell.shell_dependencies)visitShell(dependency);
     for(const dependency of shell.node_dependencies)visitNode(dependency);
+    const outgoing=[
+      ...shell.shell_dependencies.map((dependency)=>({
+        kind:'shell-entry',path:dependency})),
+      ...shell.node_dependencies.map((dependency)=>({
+        kind:'node-entry',path:dependency})),
+    ].sort(compareGraphIdentity);
     shellRows.set(target,{path:target,kind:'shell-entry',
-      sha256:toolchain.sha256(bytes),outgoing:[]});
+      sha256:toolchain.sha256(bytes),outgoing});
     visiting.delete(target);
   }
   function visitNode(target){
@@ -643,8 +652,14 @@ function scanReleaseSources({committedFiles}={}){
         shadowedShellTools.add(`${entrypoint}\0${name}`);
       visitShell(entrypoint);
     }
+    const outgoing=[
+      ...dependencies.map((dependency)=>({
+        kind:'node-entry',path:dependency})),
+      ...shellEntrypoints.map((entrypoint)=>({
+        kind:'shell-entry',path:entrypoint})),
+    ].sort(compareGraphIdentity);
     nodeRows.set(target,{path:target,kind:'node-entry',
-      sha256:toolchain.sha256(bytes),outgoing:[]});
+      sha256:toolchain.sha256(bytes),outgoing});
     for(const name of launch.required_tools){
       required.add(name);nodeRequired.add(name);
     }

@@ -45,6 +45,9 @@ test('recursive source scan follows exact test scripts, globs, and launch litera
     row.path==='runtime/not-a-test.js'),false);
   assert.equal(result.graph.rows.some((row)=>
     row.path==='runtime/helper.js'),true);
+  assert.deepEqual(result.graph.rows.find((row)=>
+    row.path==='runtime/a.test.js').outgoing,
+  [{kind:'node-entry',path:'runtime/helper.js'}]);
   assert.equal(result.graph.platform_executables.length,1);
   assert.deepEqual(toolchain.validateReleaseSourceGraph(result.graph),
     result.graph);
@@ -83,6 +86,12 @@ test('recursive source scan follows invoked shell entrypoints and utilities',()=
     row.path==='runtime/check.sh'&&row.kind==='shell-entry'),true);
   assert.equal(result.graph.rows.some((row)=>
     row.path==='runtime/check.js'&&row.kind==='node-entry'),true);
+  assert.deepEqual(result.graph.rows.find((row)=>
+    row.path==='runtime/a.test.js').outgoing,
+  [{kind:'shell-entry',path:'runtime/check.sh'}]);
+  assert.deepEqual(result.graph.rows.find((row)=>
+    row.path==='runtime/check.sh').outgoing,
+  [{kind:'node-entry',path:'runtime/check.js'}]);
 });
 
 test('nested fake curl factories are graph fixtures rather than release tools',()=>{
