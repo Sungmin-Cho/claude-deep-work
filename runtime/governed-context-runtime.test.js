@@ -11,7 +11,8 @@ const journal=require('./operation-journal.js');
 const {compileImmutablePlanAuthorityV2}=require('./plan-runtime.js');
 const {compileVerificationPlan}=require('./verification-policy-runtime.js');
 const {semanticDigest}=require('./release-gate-runtime.js');
-const {buildProgressProjectionV1,selectGovernedAdmission,loadGovernedContext}=
+const {buildProgressProjectionV1,selectGovernedAdmission,loadGovernedContext,
+  validateSessionAuthority}=
   require('./governed-context-runtime.js');
 
 const empty={evidence:{status:'unknown',required_ids:[],completed_ids:[],missing_ids:[],
@@ -159,6 +160,7 @@ x
     review_execution_json:JSON.stringify(review)}));
   const stateCapability=platform.issueProjectStateCapability(root,statePath,{
     role:'session-state'});
+  assert.equal(validateSessionAuthority({stateCapability}).status,'current');
   let admission=selectGovernedAdmission(
     loadGovernedContext({stateCapability}).projection,'finish-finalize');
   assert.equal(admission.blocking_codes.includes('human-ack-missing'),true);
@@ -182,6 +184,8 @@ x
       methodology_policy_json:JSON.stringify(tamperedPolicy)}));
   let drifted=loadGovernedContext({stateCapability}).projection;
   assert.equal(drifted.plan_identity.status,'invalidated');
+  assert.throws(()=>validateSessionAuthority({stateCapability}),
+    /session-authority-invalidated/);
   assert.equal(selectGovernedAdmission(drifted,'finish-finalize')
     .blocking_codes.includes('authority-invalidated'),true);
 
