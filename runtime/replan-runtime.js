@@ -62,6 +62,12 @@ const DISCOVERY_IDENTIFIER=Object.freeze({
   'unplanned-mock':'invariant_id','persistent-state-transition':'invariant_id',
   'spike-promotion':'requirement_id',
 });
+const RISK_CLASSES=Object.freeze(['low','medium','high','critical']);
+function riskClass(value){
+  const candidate=value?.class||value?.risk_class;
+  if(!RISK_CLASSES.includes(candidate))fail('replan-risk-observation');
+  return candidate;
+}
 function validateDiscoveryObservation(value,{stateCapability,plan}={}){
   const keys=['schema_version','reason','scope','slice_id','requirement_id',
     'invariant_id','failure_mode_id','source_path','source_sha256','detail_code'];
@@ -123,6 +129,121 @@ async function publishOwnedDiscovery({stateCapability,plan,observation}={}){
     plan_authority_sha256:plan.plan_authority_sha256,observation_path:relative,
     observation_digest:observationDigest,observation_artifact_sha256:artifactSha256});
   return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
+}
+function validateRiskObservation(value){
+  if(!exactKeys(value,['schema_version','prior_risk_profile_sha256',
+      'next_risk_profile_sha256','from_risk','to_risk'])||
+      value.schema_version!==1||
+      !DIGEST.test(value.prior_risk_profile_sha256||'')||
+      !DIGEST.test(value.next_risk_profile_sha256||'')||
+      value.prior_risk_profile_sha256===value.next_risk_profile_sha256||
+      !RISK_CLASSES.includes(value.from_risk)||
+      !RISK_CLASSES.includes(value.to_risk)||
+      RISK_CLASSES.indexOf(value.to_risk)<=RISK_CLASSES.indexOf(value.from_risk))
+    fail('replan-risk-observation');
+  return structuredClone(value);
+}
+async function publishRiskObservation({stateCapability,plan,nextRiskProfile}={}){
+  const sid=sessionId(stateCapability),fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const priorSha256=plan?.contract_binding?.risk_profile_sha256,
+    next=structuredClone(nextRiskProfile),nextSha256=journal.sha256(canonical(next));
+  if(!DIGEST.test(priorSha256||''))fail('replan-risk-authority');
+  let fromRisk;
+  if(fields.risk_profile_sha256===priorSha256){
+    const prior=parseStoredObject(fields.risk_profile_json,'replan-risk-observation');
+    if(journal.sha256(canonical(prior))!==priorSha256)fail('replan-risk-authority');
+    fromRisk=riskClass(prior);
+  }else{
+    const transition=parseStoredObject(fields.risk_transition_json,
+      'replan-risk-authority');
+    if(fields.risk_profile_sha256!==nextSha256||
+        journal.sha256(canonical(parseStoredObject(fields.risk_profile_json,
+          'replan-risk-authority')))!==nextSha256||
+        transition.reason!=='risk-class-increase'||transition.to!==riskClass(next)||
+        !RISK_CLASSES.includes(transition.from))
+      fail('replan-risk-authority');
+    fromRisk=transition.from;
+  }
+  const observation=validateRiskObservation({schema_version:1,
+    prior_risk_profile_sha256:priorSha256,next_risk_profile_sha256:nextSha256,
+    from_risk:fromRisk,to_risk:riskClass(next)});
+  const observationDigest=semanticDigest('risk-profile',observation);
+  const preconditions={session_id:sid,plan_authority_sha256:
+    plan.plan_authority_sha256,observation_digest:observationDigest};
+  const id=operationId('risk-observation-publication-v1',preconditions);
+  const existing=await journal.resumeOperation({projectCapability:project(stateCapability),
+    operationId:id,sessionId:sid,kind:'risk-observation-publish'}).catch((error)=>{
+      if(error.code==='operation-not-found')return null;throw error;});
+  if(existing?.stage==='completed-ledger'){
+    const terminal=existing.result,observationRaw=readCanonical(path.join(
+      stateCapability.projectRoot,...terminal.observation_path.split('/')),
+    'replan-risk-replay'),profileRaw=readCanonical(path.join(
+      stateCapability.projectRoot,...terminal.next_risk_profile_path.split('/')),
+    'replan-risk-replay');
+    if(observationRaw.sha256!==terminal.observation_artifact_sha256||
+        profileRaw.sha256!==observation.next_risk_profile_sha256||
+        canonical(validateRiskObservation(observationRaw.value))!==
+          canonical(observation)||canonical(profileRaw.value)!==canonical(next))
+      fail('replan-risk-replay');
+    return{...terminal,operation_id:id,operation_receipt:existing,adopted:true};
+  }
+  const operation=await journal.beginOperation({projectCapability:project(stateCapability),
+    sessionId:sid,kind:'risk-observation-publish',operationId:id,preconditions});
+  await journal.recordOperationStage(operation,'authority-authenticated',{owned:{
+    planAuthoritySha256:plan.plan_authority_sha256,
+    priorRiskProfileSha256:priorSha256}});
+  const base=`.deep-work/${sid}/replans`,observationPath=
+    `${base}/risk-observation-${observationDigest}.json`,
+    profilePath=`${base}/risk-profile-${nextSha256}.json`;
+  const observationArtifactSha256=writeExclusive(path.join(
+    stateCapability.projectRoot,...observationPath.split('/')),observation,
+  'replan-risk-publish');
+  writeExclusive(path.join(stateCapability.projectRoot,...profilePath.split('/')),
+    next,'replan-risk-publish');
+  await journal.recordOperationStage(operation,'observation-published',{owned:{
+    observationPath,observationDigest,observationArtifactSha256,
+    nextRiskProfilePath:profilePath,nextRiskProfileSha256:nextSha256}});
+  const receipt=await journal.completeOperation(operation,{session_id:sid,
+    plan_authority_sha256:plan.plan_authority_sha256,
+    observation_path:observationPath,observation_digest:observationDigest,
+    observation_artifact_sha256:observationArtifactSha256,
+    next_risk_profile_path:profilePath,next_risk_profile_sha256:nextSha256});
+  return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
+}
+async function dispatchRiskIncreaseReplan({stateCapability,plan,sliceId,
+  producerOperationId,seam}={}){
+  const sid=sessionId(stateCapability),producer=await journal.resumeOperation({
+    projectCapability:project(stateCapability),operationId:producerOperationId,
+    sessionId:sid,kind:'risk-observation-publish'}),terminal=producer.result;
+  if(producer.stage!=='completed-ledger'||!exactKeys(terminal,
+      ['session_id','plan_authority_sha256','observation_path',
+        'observation_digest','observation_artifact_sha256',
+        'next_risk_profile_path','next_risk_profile_sha256'])||
+      terminal.session_id!==sid||
+      terminal.plan_authority_sha256!==plan.plan_authority_sha256)
+    fail('replan-risk-producer');
+  const observationRaw=readCanonical(path.join(stateCapability.projectRoot,
+    ...terminal.observation_path.split('/')),'replan-risk-producer');
+  const observation=validateRiskObservation(observationRaw.value);
+  const profileRaw=readCanonical(path.join(stateCapability.projectRoot,
+    ...terminal.next_risk_profile_path.split('/')),'replan-risk-producer');
+  if(observationRaw.sha256!==terminal.observation_artifact_sha256||
+      semanticDigest('risk-profile',observation)!==terminal.observation_digest||
+      profileRaw.sha256!==terminal.next_risk_profile_sha256||
+      profileRaw.sha256!==observation.next_risk_profile_sha256||
+      riskClass(profileRaw.value)!==observation.to_risk)
+    fail('replan-risk-producer');
+  const prepared=prepareReplanAuthority({stateCapability,plan,sliceId,
+    reason:'risk-class-increase',producerOperationId,
+    observationKind:'risk-profile',observation,
+    fromRisk:observation.from_risk,toRisk:observation.to_risk});
+  prepared.statePatch={risk_class:observation.to_risk,
+    risk_profile_json:canonical(profileRaw.value).trimEnd(),
+    risk_profile_sha256:observation.next_risk_profile_sha256,
+    risk_transition_json:canonical({from:observation.from_risk,
+      to:observation.to_risk,reason:'risk-class-increase'}).trimEnd()};
+  return recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam});
 }
 async function dispatchOwnedDiscoveryReplan({stateCapability,plan,sliceId,
   producerOperationId,seam}={}){
@@ -259,7 +380,7 @@ async function completeReplan({stateCapability,plan,seam}={}){
   return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
 }
 function invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperationId,
-  triggerPath,invalidationPath}){
+  triggerPath,invalidationPath,statePatch={}}){
   const prior=parseArray(fields.replan_invalidations_json,'replan-invalidation-state');
   const history=parseArray(fields.replan_trigger_history_json,'replan-trigger-state');
   const patch={current_phase:'research',subphase:'spec',replan_required:true,
@@ -283,6 +404,7 @@ function invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperation
     'evidence_pointer_json','evidence_summary_json','evidence_summary_sha256',
     'governed_finding_refs_json'])patch[key]=null;
   patch.verification_consumptions_json='{}';patch.test_passed=false;
+  Object.assign(patch,statePatch);
   return patch;
 }
 async function publishEpoch({stateCapability,trigger,triggerReceipt,priorPlanAuthoritySha256,
@@ -327,14 +449,29 @@ async function publishEpoch({stateCapability,trigger,triggerReceipt,priorPlanAut
   return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
 }
 function prepareReplanAuthority({stateCapability,plan,sliceId,reason,producerOperationId,
-  observationKind,observation}={}){
+  observationKind,observation,fromRisk,toRisk}={}){
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
   const risk=stateRiskClass(fields);
+  const priorRisk=fromRisk||risk,nextRisk=toRisk||risk;
+  let riskAuthorityMatches=priorRisk===risk;
+  if(!riskAuthorityMatches&&reason==='risk-class-increase'&&
+      fields.replan_required===true&&risk===nextRisk){
+    const transition=parseStoredObject(fields.risk_transition_json,
+      'replan-risk-class');
+    riskAuthorityMatches=transition.from===priorRisk&&transition.to===nextRisk&&
+      transition.reason==='risk-class-increase';
+  }
+  if(!riskAuthorityMatches||!RISK_CLASSES.includes(nextRisk)||
+      (reason==='risk-class-increase'?
+        RISK_CLASSES.indexOf(nextRisk)<=RISK_CLASSES.indexOf(priorRisk):
+        nextRisk!==priorRisk))
+    fail('replan-risk-class');
   const scope=sliceId===null?'session':'slice';
   const observationDigest=semanticDigest(observationKind,observation);
   const trigger={schema_version:1,reason,scope,slice_id:sliceId,
     plan_authority_sha256:plan.plan_authority_sha256,
-    risk_profile_sha256:plan.contract_binding.risk_profile_sha256,from_risk:risk,to_risk:risk,
+    risk_profile_sha256:plan.contract_binding.risk_profile_sha256,
+    from_risk:priorRisk,to_risk:nextRisk,
     producer_operation_id:producerOperationId,observation_kind:observationKind,
     observation_digest:observationDigest,trigger_id:null};
   trigger.trigger_id=digestExcluding(trigger,'trigger_id');
@@ -356,10 +493,14 @@ function prepareReplanAuthority({stateCapability,plan,sliceId,reason,producerOpe
         trigger_id:trigger.trigger_id,invalidation_sha256:null};
   }
   invalidation.invalidation_sha256=digestExcluding(invalidation,'invalidation_sha256');
-  return{fields,observation,observationDigest,trigger,invalidation};
+  return{fields,observation,observationDigest,trigger,invalidation,statePatch:{}};
 }
 async function recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam}={}){
-  const {fields,observation,observationDigest,trigger,invalidation}=prepared;
+  const {fields,observation,observationDigest,trigger,invalidation,
+    statePatch={}}=prepared;
+  if(fields.replan_required===true&&
+      fields.active_replan_trigger_id!==trigger.trigger_id)
+    fail('replan-active-conflict');
   const sid=sessionId(stateCapability),id=operationId('replan-trigger-record-v1',trigger);
   const existing=await journal.resumeOperation({projectCapability:project(stateCapability),
     operationId:id,sessionId:sid,kind:'replan-trigger-record'}).catch((error)=>{
@@ -387,7 +528,7 @@ async function recordPreparedReplan({stateCapability,plan,sliceId,prepared,seam}
       currentFields.replan_invalidation_sha256===invalidation.invalidation_sha256;
     const after=already?before:frontmatter.updateFrontmatterText(before,
       invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperationId:id,
-        triggerPath,invalidationPath}));
+        triggerPath,invalidationPath,statePatch}));
     if(after!==before){seam?.('before-invalidation-state-write',{operationId:id});
       platform.atomicWriteFile(stateCapability,after);
       seam?.('after-invalidation-state-write-before-stage',{operationId:id});}
@@ -554,6 +695,7 @@ async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,s
 
 module.exports={dispatchVerificationSideEffectReplan,adoptVerificationSideEffectReplay,
   publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,validateDiscoveryObservation,
+  publishRiskObservation,dispatchRiskIncreaseReplan,validateRiskObservation,
   completeReplan,
   prepareManifestReplanAuthority,loadPreparedReplan,recordPreparedReplan,
   semanticDigest,operationId};

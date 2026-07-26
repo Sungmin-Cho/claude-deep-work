@@ -389,6 +389,7 @@ async function semanticArgv(entry, fx) {
     from:'brainstorm',to:'research','affected-slices-json':fx.files.affected,
     'observation-json':fx.files.structural,
     'producer-operation-id':`op-${'b'.repeat(64)}`,
+    'next-risk-profile-json':fx.files.structural,
     checker:'spec-gate-v1','input-refs-json':fx.files.changed,
     'fact-operation-id':`op-${'c'.repeat(64)}`,
     'functional-receipts-json':fx.files.changed,
@@ -483,6 +484,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['phase approve',[10,20,50,70]],['phase spec enter',[10,20,50]],['phase spec approve',[10,20,50]],
     ['phase advance',[10,20,50]],['phase rerun',[10,20,50]],['phase invalidate-replan',[10,20,50]],
     ['replan discovery publish',[10,20,50,70]],['replan discovery dispatch',[10,20,50,70]],
+    ['replan risk publish',[10,20,50,70]],['replan risk dispatch',[10,20,50,70]],
     ['replan complete',[10,20,50,70]],
     ['release gate fact-publish',[10,20,50,70]],
     ['release gate result-publish',[10,20,50,70]],
@@ -870,8 +872,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 109 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 109);
+test('all 111 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 111);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -895,7 +897,7 @@ test('all 109 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 109);
+  assert.equal(outcomes.length, 111);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

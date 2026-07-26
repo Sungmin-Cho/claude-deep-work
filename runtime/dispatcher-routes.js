@@ -369,6 +369,16 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     return replan.dispatchOwnedDiscoveryReplan({stateCapability:bound.state,
       plan:bound.value,sliceId:f.slice||null,
       producerOperationId:f['producer-operation-id']});});
+  on('replan risk publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.publishRiskObservation({stateCapability:bound.state,
+      plan:bound.value,nextRiskProfile:jsonFile(resolveInput(
+        f['next-risk-profile-json'],cwd))});});
+  on('replan risk dispatch',({f,cwd})=>{const bound=readPlan(f,cwd);
+    if(f.scope==='slice'&&!f.slice||f.scope==='session'&&f.slice)
+      fail('replan-risk-scope');
+    return replan.dispatchRiskIncreaseReplan({stateCapability:bound.state,
+      plan:bound.value,sliceId:f.scope==='slice'?f.slice:null,
+      producerOperationId:f['producer-operation-id']});});
   on('replan complete',({f,cwd})=>{const bound=readPlan(f,cwd);
     return replan.completeReplan({stateCapability:bound.state,plan:bound.value});});
   on('release gate fact-publish',({f,cwd})=>{const bound=readPlan(f,cwd);

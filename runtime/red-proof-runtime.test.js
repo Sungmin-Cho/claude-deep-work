@@ -23,7 +23,8 @@ const {transitionOrdinaryRed,publishOrdinaryRedProof,semanticDigest}=
   require('./red-proof-runtime.js');
 const {runVerificationV2,buildSupervisorControl}=require('./verification-v2-runtime.js');
 const {loadGovernedContext}=require('./governed-context-runtime.js');
-const {publishOwnedDiscovery,dispatchOwnedDiscoveryReplan}=
+const {publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,
+  publishRiskObservation,dispatchRiskIncreaseReplan}=
   require('./replan-runtime.js');
 const {dispatch}=require('../scripts/deep-work-runtime.js');
 
@@ -561,6 +562,47 @@ test('owned discovery crosses the public dispatcher into same-risk replan',async
   assert.equal(frontmatter.parseFrontmatter(
     fs.readFileSync(f.statePath,'utf8')).fields.replan_reason,'invariant');
 });
+
+test('authenticated risk observation crosses the public dispatcher with a strict increase',
+  async(t)=>{
+    const f=fixture(t),prior={class:'medium',score:5,triggers:['public-api']},
+      next={class:'high',score:8,triggers:['external-side-effect']},
+      priorSha256=journal.sha256(journal.canonicalJson(prior));
+    f.plan.contract_binding.risk_profile_sha256=priorSha256;
+    f.plan.plan_authority_sha256=
+      compileImmutablePlanAuthorityV2(f.plan).plan_authority_sha256;
+    fs.writeFileSync(f.planCapability.path,journal.canonicalJson(f.plan));
+    const before=fs.readFileSync(f.statePath,'utf8');
+    fs.writeFileSync(f.statePath,frontmatter.updateFrontmatterText(before,{
+      risk_class:'medium',risk_profile_json:journal.canonicalJson(prior).trimEnd(),
+      risk_profile_sha256:priorSha256,created_by_version:'6.14.0'}));
+    const nextPath=path.join(f.root,'next-risk.json');
+    fs.writeFileSync(nextPath,journal.canonicalJson(next));
+    const published=await dispatch(['replan','risk','publish','--state',
+      f.statePath,'--plan',f.planCapability.path,'--next-risk-profile-json',
+      nextPath],{cwd:f.root});
+    const replanned=await dispatch(['replan','risk','dispatch','--state',
+      f.statePath,'--plan',f.planCapability.path,'--producer-operation-id',
+      published.operation_id,'--scope','slice','--slice','SLICE-001'],
+    {cwd:f.root});
+    assert.match(replanned.replan_epoch,/^[0-9a-f]{64}$/);
+    const fields=frontmatter.parseFrontmatter(
+      fs.readFileSync(f.statePath,'utf8')).fields;
+    assert.equal(fields.replan_reason,'risk-class-increase');
+    assert.equal(fields.risk_class,'high');
+    assert.equal(fields.risk_profile_sha256,
+      journal.sha256(journal.canonicalJson(next)));
+    const trigger=JSON.parse(fs.readFileSync(path.join(f.root,
+      ...fields.replan_trigger_ref.split('/')),'utf8'));
+    assert.equal(trigger.from_risk,'medium');
+    assert.equal(trigger.to_risk,'high');
+    const replay=await publishRiskObservation({stateCapability:f.stateCapability,
+      plan:f.plan,nextRiskProfile:next});
+    assert.equal(replay.adopted,true);
+    await assert.rejects(()=>dispatchRiskIncreaseReplan({
+      stateCapability:f.stateCapability,plan:f.plan,sliceId:null,
+      producerOperationId:published.operation_id}),/replan-active-conflict/);
+  });
 
 test('session-scoped discovery publishes a session-plan invalidation',async(t)=>{
   const f=fixture(t),sourcePath='runtime/a.js';
