@@ -132,7 +132,14 @@ test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes
     const statePath=path.join(root,'.claude',`deep-work.${sessionId}.md`);
     fs.writeFileSync(statePath,frontmatter.updateFrontmatterText('',{
       session_id:sessionId,work_dir:`.deep-work/${sessionId}`,
-      current_phase:'test',verification_plan_sha256:'2'.repeat(64)}));
+      current_phase:'test',verification_plan_sha256:'2'.repeat(64),
+      spec_approval_operation_id:`op-${'7'.repeat(64)}`,
+      spec_approved_hash:'6'.repeat(64),
+      spec_contract_json:journal.canonicalJson({
+        spec_sha256:'5'.repeat(64)}),
+      spec_gate_result_json:journal.canonicalJson({pass:true,
+        requirement_coverage:{total:1,covered:1,uncovered_ids:[],ratio:1},
+        failure_matrix_coverage:{total:1,covered:1,uncovered_ids:[],ratio:1}})}));
     const stateCapability=platform.issueProjectStateCapability(root,statePath,
       {role:'session-state'});
     const sessionCapability=platform.issueProjectStateCapability(root,work,{
@@ -181,6 +188,40 @@ test('gate-fact-publish authenticates catalog inputs and adopts exact fact bytes
         journal.canonicalJson(value)),producer_operation_id:operationId});
     }
     const refsPath=path.join(root,'input-refs.json');
+    fs.writeFileSync(refsPath,journal.canonicalJson(refs));
+    await assert.rejects(()=>dispatch(['release','gate','fact-publish',
+      '--state',statePath,'--plan',planCapability.path,'--checker',
+      'spec-gate-v1','--input-refs-json',refsPath],{cwd:root}),
+    /gate-input-producer/);
+    const specApprovalOperationId=`op-${'a'.repeat(64)}`;
+    fs.writeFileSync(statePath,frontmatter.updateFrontmatterText(
+      fs.readFileSync(statePath,'utf8'),{
+        spec_approval_operation_id:specApprovalOperationId,
+        spec_approved_hash:'6'.repeat(64),
+        spec_contract_json:journal.canonicalJson(inputs['spec-contract']),
+        spec_gate_result_json:journal.canonicalJson(inputs['spec-gate-result'])}));
+    const approvalOperation=await journal.beginOperation({
+      projectCapability:project,sessionId,kind:'phase-approval',
+      operationId:specApprovalOperationId,preconditions:{phase:'spec'}});
+    await journal.recordOperationStage(approvalOperation,'state-written',{
+      owned:{phase:'spec'}});
+    await journal.completeOperation(approvalOperation,{status:'completed',
+      statePath,stateSha256:'b'.repeat(64),patchSha256:'c'.repeat(64)});
+    for(const ref of refs)ref.producer_operation_id=specApprovalOperationId;
+    fs.writeFileSync(refsPath,journal.canonicalJson(refs));
+    const contractRef=refs.find((ref)=>ref.kind==='spec-contract');
+    const contractPath=path.join(root,...contractRef.path.split('/'));
+    const contractBytes=fs.readFileSync(contractPath);
+    const forgedContract={spec_sha256:'d'.repeat(64)};
+    fs.writeFileSync(contractPath,journal.canonicalJson(forgedContract));
+    contractRef.sha256=journal.sha256(journal.canonicalJson(forgedContract));
+    fs.writeFileSync(refsPath,journal.canonicalJson(refs));
+    await assert.rejects(()=>dispatch(['release','gate','fact-publish',
+      '--state',statePath,'--plan',planCapability.path,'--checker',
+      'spec-gate-v1','--input-refs-json',refsPath],{cwd:root}),
+    /gate-input-producer/);
+    fs.writeFileSync(contractPath,contractBytes);
+    contractRef.sha256=journal.sha256(contractBytes);
     fs.writeFileSync(refsPath,journal.canonicalJson(refs));
     const published=await dispatch(['release','gate','fact-publish','--state',
       statePath,'--plan',planCapability.path,'--checker','spec-gate-v1',

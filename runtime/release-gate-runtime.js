@@ -438,6 +438,14 @@ async function authenticateInputRefs({stateCapability,checkerId,inputRefs}){
   const refs=validateCheckerInputRefs(checkerId,inputRefs);
   const project=transaction.projectCapabilityFor(stateCapability);
   const sessionId=transaction.sessionIdFromState(stateCapability),rows=[];
+  const fields=frontmatter.parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const specInputs=checkerId==='spec-gate-v1'?{
+    'spec-approval':{spec_approved_hash:fields.spec_approved_hash},
+    'spec-contract':parseStateJson(fields.spec_contract_json,
+      'gate-input-spec-contract'),
+    'spec-gate-result':parseStateJson(fields.spec_gate_result_json,
+      'gate-input-spec-gate-result')}:{};
   for(const ref of refs){
     const target=path.resolve(stateCapability.projectRoot,...ref.path.split('/'));
     if(!require('./platform.js').isPathInside(stateCapability.projectRoot,target))
@@ -449,9 +457,30 @@ async function authenticateInputRefs({stateCapability,checkerId,inputRefs}){
     if(producer.stage!=='completed-ledger'||
         !INPUT_PRODUCER_KINDS[ref.kind]?.includes(producer.kind))
       fail('gate-input-producer');
+    if(Object.hasOwn(specInputs,ref.kind)){
+      const expectedPath=`.deep-work/${sessionId}/release-inputs/${
+        ref.kind}.json`;
+      const result=producer.result;
+      if(ref.path!==expectedPath||
+          ref.producer_operation_id!==fields.spec_approval_operation_id||
+          producer.kind!=='phase-approval'||
+          !exactKeys(result,['status','statePath','stateSha256',
+            'patchSha256'])||result.status!=='completed'||
+          result.statePath!==stateCapability.path||
+          !DIGEST.test(result.stateSha256||'')||
+          !DIGEST.test(result.patchSha256||'')||
+          canonical(raw.value)!==canonical(specInputs[ref.kind]))
+        fail('gate-input-producer');
+    }
     rows.push({ref,raw,producer});
   }
   return rows;
+}
+function parseStateJson(value,code){
+  try{const parsed=typeof value==='string'?JSON.parse(value):value;
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))fail(code);
+    return parsed;}
+  catch(error){if(error.code===code)throw error;fail(code);}
 }
 function coverageFrom(value,code){
   const row=value?.contract||value;

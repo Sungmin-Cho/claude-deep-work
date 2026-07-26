@@ -140,6 +140,8 @@ function approveSpecSubphase({state,stateCapability,specApprovedHash,specContrac
   const epoch=state.active_replan_epoch_id||null;
   if(epoch&&!/^[0-9a-f]{64}$/.test(specReviewRefSha256||''))
     fail('spec-review-ref-required');
+  if(approvalOperationId!==undefined)
+    next.spec_approval_operation_id=approvalOperationId;
   if(epoch){
     const approval={schema_version:1,session_id:state.session_id,
       spec_sha256:specSha256,spec_approved_hash:specApprovedHash,
@@ -149,7 +151,6 @@ function approveSpecSubphase({state,stateCapability,specApprovedHash,specContrac
     approval.approval_sha256=sha256(canonicalJson(Object.fromEntries(
       Object.entries(approval).filter(([key])=>key!=='approval_sha256'))));
     next.spec_approval_json=canonicalJson(approval);
-    next.spec_approval_operation_id=approvalOperationId;
   }
   return next;
 }
