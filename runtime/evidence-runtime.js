@@ -285,6 +285,10 @@ function sortedRecords(records){if(!Array.isArray(records))fail('evidence-record
   Buffer.compare(Buffer.from(a.evidence_id||''),Buffer.from(b.evidence_id||'')));}
 function packagePreimage(pkg){const copy=structuredClone(pkg);delete copy.package_sha256;return copy;}
 function buildEvidencePackage(input={}){const plan=validateVerificationPlan(input.verificationPlan),records=sortedRecords(input.records||[]);
+  let methodologyPolicy=null;if(plan.methodology_policy_sha256){try{
+    methodologyPolicy=require('./policy-runtime.js').validateMethodologyAuthority(input.policySnapshot);
+  }catch{fail('evidence-policy-authority');}
+    if(methodologyPolicy.policy_sha256!==plan.methodology_policy_sha256)fail('evidence-policy-authority');}
   const ids=new Set();for(const record of records){if(ids.has(record.evidence_id))fail('evidence-record-identity');ids.add(record.evidence_id);
     const errors=validateRecord(record,plan,{artifactRoot:input.artifactRoot});if(errors.length)fail(errors[0].code);}
   const satisfied=sorted(records.map((row)=>row.gate_id)),required=plan.evidence_required_gate_ids,
@@ -304,6 +308,7 @@ function buildEvidencePackage(input={}){const plan=validateVerificationPlan(inpu
       complete:missing.length===0},reviews:structuredClone(input.reviews||{policy:plan.profile==='standard'?'single':plan.profile,
       findings:[],dispositions:[]}),unverified_areas:missing.map((gateId)=>({gate_id:gateId,reason:'missing-required-evidence'})),
     residual_risk:structuredClone(input.residualRisk||{class:missing.length?'high':'low',accepted_by:null,reason:null})};
+  if(methodologyPolicy)pkg.methodology_policy_sha256=methodologyPolicy.policy_sha256;
   if(secretHits(pkg).length)fail('evidence-redaction');pkg.package_sha256=sha256(canonicalJson(packagePreimage(pkg)));return pkg;}
 function validateEvidencePackage(pkg,verificationPlan,options={}){const errors=[];let plan;
   try{plan=validateVerificationPlan(verificationPlan);}catch(error){return{pass:false,errors:[{code:error.code||'evidence-verification-plan'}]};}
@@ -312,6 +317,14 @@ function validateEvidencePackage(pkg,verificationPlan,options={}){const errors=[
   for(const [key,expected] of [['verification_plan_sha256',plan.plan_sha256],['spec_id',plan.spec_id],['spec_sha256',plan.spec_sha256],
     ['spec_approved_hash',plan.spec_approved_hash],['risk_profile_sha256',plan.risk_profile_sha256]])
     if(pkg?.[key]!==expected)errors.push({code:'evidence-identity',path:key});
+  if(plan.methodology_policy_sha256){let policy=null;try{
+      policy=require('./policy-runtime.js').validateMethodologyAuthority(pkg?.policy_snapshot);
+    }catch{}
+    if(pkg?.methodology_policy_sha256!==plan.methodology_policy_sha256||
+        policy?.policy_sha256!==plan.methodology_policy_sha256)
+      errors.push({code:'evidence-policy-authority'});
+  }else if(Object.hasOwn(pkg||{},'methodology_policy_sha256'))
+    errors.push({code:'evidence-identity',path:'methodology_policy_sha256'});
   const ids=new Set();for(const record of pkg?.records||[]){if(ids.has(record.evidence_id))errors.push({code:'evidence-record-identity'});
     ids.add(record.evidence_id);errors.push(...validateRecord(record,plan,options));}
   const satisfied=sorted((pkg?.records||[]).filter((row)=>row.status==='pass').map((row)=>row.gate_id));
