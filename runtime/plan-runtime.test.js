@@ -156,6 +156,13 @@ test('first-RED Plan authority recomputes the exact VerificationSpecV2 digest an
   const forged=structuredClone(projection);
   forged.slices[0].verification_spec_sha256='8'.repeat(64);
   assert.throws(()=>compileImmutablePlanAuthorityV2(forged),/verification-spec-digest/);
+  for(const version of ['6.100.0','10.0.0']){
+    const future=structuredClone(forged);
+    future.replan_epoch=null;
+    future.contract_binding.created_by_version=version;
+    assert.throws(()=>compileImmutablePlanAuthorityV2(future),
+      /verification-spec-digest/,version);
+  }
   const stale=structuredClone(projection);
   stale.replan_epoch='9'.repeat(64);
   assert.notEqual(compileImmutablePlanAuthorityV2(stale).plan_authority_sha256,
