@@ -227,13 +227,20 @@ function enclosingNamedFunction(source,tokens,index,name){
         depth--;
         if(depth===0){
           if(index>open&&index<cursor)
-            return source.slice(tokens[start].start,token.start+1);
+            return{source:source.slice(tokens[start].start,token.start+1),
+              startIndex:start,openIndex:open,closeIndex:cursor};
           break;
         }
       }
     }
   }
   return null;
+}
+function tokenSequenceIndex(tokens,from,to,values){
+  for(let index=from;index+values.length<=to;index++)
+    if(values.every((value,offset)=>tokens[index+offset]?.value===value))
+      return index;
+  return -1;
 }
 function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   const source=bytes.toString('utf8');
@@ -292,16 +299,20 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     if(path==='runtime/release-source-scanner.js'&&
         call.value==='spawnSync'&&member==='childProcess'&&
         expression.startsWith('identity.target_path')){
-      const carrier=enclosingNamedFunction(source,tokens,index,'gitRead');
-      const launchOffset=carrier?.indexOf(invocation)??-1,
-        identityMatch=carrier?.match(
-          /const\s+identity\s*=\s*toolchain\.validateToolIdentity\(\s*gitIdentity\s*\)/),
-        postValidations=carrier?[...carrier.matchAll(
-          /toolchain\.validateToolIdentity\(\s*identity\s*\)/g)]:[];
-      if(carrier&&identityMatch?.index<launchOffset&&
-          postValidations.some((match)=>match.index>
-            launchOffset+invocation.length)&&
-          /identity\.name\s*!==\s*['"]git['"]/.test(carrier)&&
+      const carrierInfo=enclosingNamedFunction(source,tokens,index,'gitRead'),
+        carrier=carrierInfo?.source,
+        identityIndex=carrierInfo?tokenSequenceIndex(tokens,
+          carrierInfo.openIndex+1,index,
+          ['const','identity','=','toolchain','.','validateToolIdentity','(',
+            'gitIdentity',')']):-1,
+        nameCheckIndex=carrierInfo?tokenSequenceIndex(tokens,
+          carrierInfo.openIndex+1,index,
+          ['identity','.','name','!','=','=', 'git']):-1,
+        postValidationIndex=carrierInfo?tokenSequenceIndex(tokens,index+1,
+          carrierInfo.closeIndex,
+          ['toolchain','.','validateToolIdentity','(','identity',')']):-1;
+      if(carrier&&identityIndex>=0&&nameCheckIndex>=0&&
+          postValidationIndex>index&&
           /^spawnSync\(\s*identity\.target_path\s*,\s*args\s*,\s*\{[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
@@ -309,16 +320,17 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     if(path==='runtime/release-toolchain-runtime.js'&&
         call.value==='spawnSync'&&inlineRequire&&
         expression.startsWith('identity.target_path')){
-      const carrier=enclosingNamedFunction(source,tokens,index,
-        'runAuthenticatedGit');
-      const launchOffset=carrier?.indexOf(invocation)??-1,
-        identityMatch=carrier?.match(
-          /const\s+identity\s*=\s*buildToolIdentity\(\s*\{\s*name\s*:\s*['"]git['"]\s*,\s*targetPath\s*:\s*require\(\s*['"]\.\/platform\.js['"]\s*\)\.resolveGitExecutable\(\s*environment\s*,\s*fs\s*\)\s*\}\s*\)/),
-        postValidations=carrier?[...carrier.matchAll(
-          /validateToolIdentity\(\s*identity\s*\)/g)]:[];
-      if(carrier&&identityMatch?.index<launchOffset&&
-          postValidations.some((match)=>match.index>
-            launchOffset+invocation.length)&&
+      const carrierInfo=enclosingNamedFunction(source,tokens,index,
+        'runAuthenticatedGit'),carrier=carrierInfo?.source,
+        identityIndex=carrierInfo?tokenSequenceIndex(tokens,
+          carrierInfo.openIndex+1,index,
+          ['const','identity','=','buildToolIdentity','(','{','name',':','git',
+            ',','targetPath',':','require','(','./platform.js',')','.',
+            'resolveGitExecutable','(','environment',',','fs',')','}',')']):-1,
+        postValidationIndex=carrierInfo?tokenSequenceIndex(tokens,index+1,
+          carrierInfo.closeIndex,
+          ['validateToolIdentity','(','identity',')']):-1;
+      if(carrier&&identityIndex>=0&&postValidationIndex>index&&
           /^spawnSync\(\s*identity\.target_path\s*,\s*\[\s*['"]-C['"]\s*,\s*fs\.realpathSync\(\s*root\s*\)\s*,\s*\.\.\.args\s*\]\s*,\s*\{[\s\S]*cwd\s*:\s*fs\.realpathSync\(\s*root\s*\)[\s\S]*env\s*:\s*\{\s*LANG\s*:\s*['"]C['"]\s*,\s*LC_ALL\s*:\s*['"]C['"]\s*,\s*TZ\s*:\s*['"]UTC['"]\s*\}[\s\S]*shell\s*:\s*false\b[\s\S]*\}\s*\)$/.test(invocation)){
         required.add('git');continue;
       }
