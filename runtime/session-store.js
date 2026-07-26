@@ -141,7 +141,7 @@ function buildSessionState({sessionId,task,defaults={},profile={},repositoryCont
   const worktreeEnabled=repositoryMode==='worktree'||repositoryMode==='fork';
   if(worktreeEnabled&&(typeof repositoryContext.worktreePath!=='string'||!path.isAbsolute(repositoryContext.worktreePath)))
     fail('session-worktree-context');
-  return {schema_version:2,session_id:sessionId,task_description:task.trim(),created_by_version:'6.14.0',
+  return {schema_version:2,session_id:sessionId,task_description:task.trim(),created_by_version:'7.0.0',
     current_phase:'brainstorm',subphase:null,spec_policy_required:null,spec_completed_at:null,
     spec_approved_hash:null,spec_contract_json:null,spec_gate_result_json:null,
     verification_plan_json:null,verification_plan_sha256:null,plan_spec_gate_result_json:null,

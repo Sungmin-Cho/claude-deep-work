@@ -211,13 +211,9 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 6.14.0 with 6.9.0 feature docs intact', () => {
-    // 6.14.0 is a feature release (correct RED and governed completion): the
-    // three manifests track the current version, while the README "What's New" and
-    // the deep-memory CHANGELOG attributions stay pinned to the prior feature
-    // release (6.9.0), which this release does not rewrite.
-    const version = '6.14.0';        // current release — manifests
-    const featureVersion = '6.9.0';  // last feature release — README highlight + deep-memory notes
+  it('active release metadata is bumped to 7.0.0 with evergreen usage docs', () => {
+    const version = '7.0.0';
+    const featureVersion = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const claudePlugin = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin', 'plugin.json'), 'utf8'));
@@ -231,13 +227,13 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (6.14.0) — correct RED and governed completion.
+    // Current release (7.0.0) — explicit Spec and methodology authority.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.match(changelogCurrent,/Authenticated correct RED/);
-    assert.match(changelogCurrent,/Governed functional completion/);
-    assert.match(changelogKoCurrent,/인증된 correct RED/);
-    assert.match(changelogKoCurrent,/Governed functional completion/);
+    assert.match(changelogCurrent,/Explicit Spec phase and profile v4/);
+    assert.match(changelogCurrent,/Single methodology authority/);
+    assert.match(changelogKoCurrent,/정식 Spec phase와 profile v4/);
+    assert.match(changelogKoCurrent,/단일 methodology authority/);
     // The prior release (6.10.0) section stays intact with its own model-catalog
     // citation; the 6.12.0 promotion must not clobber or absorb it.
     assert.ok(releaseSection(changelog, '6.10.0').includes('runtime/model-catalog.js'),
@@ -277,13 +273,10 @@ describe('release metadata', () => {
       'CHANGELOG.ko.md 6.9.0 section must cite the detect-plugins TARGETS extension');
     assert.ok(changelogKoRelease.includes('docs/deep-memory-integration-handoff.md'),
       'CHANGELOG.ko.md 6.9.0 section must cite the consumer-integration handoff doc');
-    assert.deepEqual({
-      'README.md': readme.includes("## What's New in v6.9.0"),
-      'README.ko.md': readmeKo.includes('## v6.9.0 새 기능'),
-    }, {
-      'README.md': true,
-      'README.ko.md': true,
-    });
+    assert.doesNotMatch(readme,/^## What's New/m);
+    assert.doesNotMatch(readmeKo,/^## v\d+\.\d+\.\d+ 새 기능/m);
+    assert.match(readme,/Research → Spec → Plan/);
+    assert.match(readmeKo,/Research → Spec → Plan/);
 
     const readmeCurrentUsage = sectionBetween(readme, '## Usage', '## Output Files');
     const readmeKoCurrentUsage = sectionBetween(readmeKo, '## 사용법', '## 산출물');

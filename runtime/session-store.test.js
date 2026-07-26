@@ -43,7 +43,7 @@ function gitFixture(){const root=fs.mkdtempSync(path.join(os.tmpdir(),'dw-sessio
 test('new and migrated session state normalize the spec subphase contract', async () => {
   const state=buildSessionState({sessionId:'s-aaaaaaaa',task:'spec state',repositoryContext:{
     repositoryMode:'current-branch',branch:'main',headOid:'a'.repeat(40)}});
-  assert.equal(state.created_by_version,'6.14.0');assert.equal(state.subphase,null);
+  assert.equal(state.created_by_version,'7.0.0');assert.equal(state.subphase,null);
   assert.equal(state.spec_policy_required,null);assert.equal(state.spec_approved_hash,null);
   assert.equal(state.spec_contract_json,null);assert.equal(state.spec_gate_result_json,null);
 

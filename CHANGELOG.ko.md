@@ -7,6 +7,23 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.0.0] — 2026-07-27 (적응형 방법론 권위)
+
+### Added
+
+- **정식 Spec phase와 profile v4**: 새 세션은 실행 가능한 Spec을 정식 phase로 거치며, profile v4가 governed methodology policy를 운반하고 제한된 v3 및 legacy session 호환성을 보존합니다.
+- **인증된 review envelope**: cross-plugin review request와 receipt가 정확한 artifact, contract, evidence, reviewer identity, finding, verdict, review round를 결속합니다.
+- **Runtime context policy**: Codex는 같은 goal과 worktree에서 native compaction으로 계속하며, task 또는 fork 생성에는 명시적이고 제한된 목적이 필요합니다.
+
+### Changed
+
+- **단일 methodology authority**: risk classification이 model floor, review, verification, migration, resume, finish에 쓰이는 하나의 인증된 policy를 컴파일하며, 기존 model routing은 compatibility facade로만 유지됩니다.
+- **Governed progress reporting**: status, dashboard, report, test admission, finish admission이 evidence, residual risk, canonical finding, receipt, replan state의 동일한 digest-bound projection을 사용합니다.
+
+### Security
+
+- **Authority drift 거부**: policy, Spec, plan, evidence, review binding의 인증된 byte 또는 digest가 restart나 resume 사이에 변경되면 fail-closed합니다.
+
 ## [6.14.0] — 2026-07-27 (Correct RED와 Governed Completion)
 
 ### Added

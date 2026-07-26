@@ -7,6 +7,23 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] — 2026-07-27 (Adaptive Methodology Authority)
+
+### Added
+
+- **Explicit Spec phase and profile v4**: new sessions move through a first-class executable Spec phase, while profile v4 carries governed methodology policy and preserves bounded v3 and legacy-session compatibility.
+- **Authenticated review envelopes**: cross-plugin review requests and receipts bind exact artifacts, contracts, evidence, reviewer identity, findings, verdict, and review round.
+- **Runtime context policy**: Codex continues through native compaction in the same goal and worktree, while task or fork creation requires an explicit bounded purpose.
+
+### Changed
+
+- **Single methodology authority**: risk classification now compiles one authenticated policy for model floors, review, verification, migration, resume, and finish; legacy model routing remains a compatibility facade.
+- **Governed progress reporting**: status, dashboards, reports, test admission, and finish admission consume the same digest-bound projection of evidence, residual risk, canonical findings, receipts, and replan state.
+
+### Security
+
+- **Authority drift rejection**: policy, Spec, plan, evidence, and review bindings fail closed when their authenticated bytes or digests drift across restart or resume.
+
 ## [6.14.0] — 2026-07-27 (Correct RED and Governed Completion)
 
 ### Added

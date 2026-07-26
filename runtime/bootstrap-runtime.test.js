@@ -398,7 +398,7 @@ test('canonical RedProofV1 binds bootstrap adoption, verified result and complet
 test('completion precomputes receipt before marker and cross-links without a digest cycle',()=>{
   const completion=precomputeBootstrapCompletion({target_session_id:'s-aaaaaaaa',authorization_sha256:'1'.repeat(64),
     witness_sha256:'2'.repeat(64),execution_sha256:'3'.repeat(64),pre_runtime_version:'6.13.0',
-    post_runtime_version:'6.14.0',test_patch_sha256:'4'.repeat(64),patch_sha256:'5'.repeat(64),
+    post_runtime_version:'7.0.0',test_patch_sha256:'4'.repeat(64),patch_sha256:'5'.repeat(64),
     base_manifest_sha256:'6'.repeat(64),red_manifest_sha256:'7'.repeat(64),post_manifest_sha256:'8'.repeat(64),
     test_changed_paths:['runtime/a.test.js'],changed_paths:['runtime/a.js'],review_report_refs:[],
     first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'9'.repeat(64),

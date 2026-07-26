@@ -259,7 +259,7 @@ PR 디스크립션에 붙여넣으려면:
 
 ## Receipt Schema: Sensor Fields
 
-These fields are written by the sensor infrastructure during Phase 3 (implement) and are consumed by deep-test Quality Gates (Section 4-6/4-7) and deep-review integration.
+These fields are written by the sensor infrastructure during Phase 4 (implement) and are consumed by deep-test Quality Gates (Section 4-6/4-7) and deep-review integration.
 
 ### Per-slice sensor_results
 

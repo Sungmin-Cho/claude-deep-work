@@ -1662,7 +1662,7 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
     const preimage={target_session_id:sessionId,
       authorization_sha256:context.authorization.authorization_sha256,
       witness_sha256:witness.witness_sha256,execution_sha256:execution.execution_sha256,
-      pre_runtime_version:witness.runtime_version,post_runtime_version:'6.14.0',
+      pre_runtime_version:witness.runtime_version,post_runtime_version:'7.0.0',
       test_patch_sha256:execution.test_patch_sha256,patch_sha256:execution.patch_sha256,
       base_manifest_sha256:execution.base_manifest_sha256,
       red_manifest_sha256:execution.red_manifest_sha256,
