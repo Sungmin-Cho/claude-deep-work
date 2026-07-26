@@ -325,6 +325,27 @@ async function resumeOperation({projectCapability, operationId, sessionId, kind}
   return {status:'pending', ...journal};
 }
 
+function lookupCompletedOperation({projectCapability,operationId,sessionId,kind}={}){
+  if(!validOperationId(operationId))fail('operation-id','invalid operation ID');
+  const root=projectRootOf(projectCapability);
+  const claude=path.join(root,'.claude');
+  const names=fs.existsSync(claude)?fs.readdirSync(claude):[];
+  const ledgers=names.filter((name)=>
+    /^deep-work\.s-[0-9a-f]{8}\.completed-operations\.json$/.test(name));
+  for(const name of ledgers.sort((a,b)=>
+    Buffer.compare(Buffer.from(a),Buffer.from(b)))){
+    const receipt=readLedger(path.join(claude,name)).receipts.find((row)=>
+      row.operationId===operationId);
+    if(!receipt)continue;
+    if(sessionId&&receipt.sessionId!==sessionId||
+        kind&&receipt.kind!==kind)
+      fail('operation-identity-mismatch',
+        'completed operation has different identity');
+    return receipt;
+  }
+  return null;
+}
+
 module.exports = {
   OPERATION_KINDS,
   COMPLETED_LEDGER_LIMIT,
@@ -332,6 +353,7 @@ module.exports = {
   recordOperationStage,
   completeOperation,
   resumeOperation,
+  lookupCompletedOperation,
   canonicalJson,
   sha256,
   WORKFLOW_STAGE_RULES,

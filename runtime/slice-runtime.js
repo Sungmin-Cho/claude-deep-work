@@ -881,7 +881,9 @@ function assertBootstrapProductionAdmission({sliceId,verificationSpecSha256,plan
       marker.first_red_verification_spec_sha256!==verificationSpecSha256||
       marker.bootstrap_receipt_sha256!==authorization.bootstrap_receipt_sha256)
     fail('bootstrap-first-slice');
-  if(state?.tdd_state!=='RED_VERIFIED'||state.red_proof_state!=='complete'||
+  if(!['RED_VERIFIED','GREEN','REFACTOR_PENDING','SENSOR_RUN','SENSOR_FIX',
+      'SENSOR_CLEAN'].includes(state?.tdd_state)||
+      state.red_proof_state!=='complete'||
       !/^[0-9a-f]{64}$/.test(state.red_proof_sha256||'')||typeof state.red_proof_ref!=='string'||
       !/^op-[0-9a-f]{64}$/.test(state.bootstrap_bridge_operation_id||'')||
       !/^op-[0-9a-f]{64}$/.test(state.bootstrap_adoption_operation_id||'')||

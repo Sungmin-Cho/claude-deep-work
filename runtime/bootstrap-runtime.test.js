@@ -57,6 +57,7 @@ const {deriveScopedWriteAuthority,compileImmutablePlanAuthorityV2}=require('./pl
 const {compileVerificationPlan}=require('./verification-policy-runtime.js');
 const {updateFrontmatterText,parseFrontmatter}=require('./frontmatter.js');
 const transaction=require('./transaction-runtime.js');
+const {authenticateRedProof}=require('./functional-receipt-runtime.js');
 
 const digest=(value)=>crypto.createHash('sha256').update(value).digest('hex');
 const NODE_PATH='/opt/homebrew/Cellar/node/26.0.0/bin/node';
@@ -1758,6 +1759,16 @@ test('public first-RED, adoption, proof and production admission authenticate th
     }
     const admitted=await dispatch(productionArgv,{cwd:fixture.root});
     assert.equal(admitted.authority.write_class,'production');
+    const greenState=updateFrontmatterText(
+      fs.readFileSync(fixture.statePath,'utf8'),{tdd_state:'GREEN'});
+    fs.writeFileSync(fixture.statePath,greenState);
+    const historical=await authenticateRedProof({
+      stateCapability:platform.issueProjectStateCapability(
+        fixture.root,fixture.statePath,{role:'session-state'}),
+      plan,sliceId:'SLICE-001',
+      fields:parseFrontmatter(greenState).fields});
+    assert.equal(historical.bootstrap,true);
+    assert.equal(historical.proof.transition_kind,'bootstrap-adoption');
     assert.equal(finalized.operation_receipt.stage,'completed-ledger');
   });
 

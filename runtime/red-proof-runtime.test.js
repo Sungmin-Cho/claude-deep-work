@@ -22,6 +22,7 @@ const {recordNoRefactorDecision}=require('./refactor-decision-runtime.js');
 const {transitionOrdinaryRed,publishOrdinaryRedProof,semanticDigest}=
   require('./red-proof-runtime.js');
 const {runVerificationV2,buildSupervisorControl}=require('./verification-v2-runtime.js');
+const {loadGovernedContext}=require('./governed-context-runtime.js');
 
 test('strict verification v2 exposes the governed production runner',()=>{
   assert.equal(typeof runVerificationV2,'function');
@@ -351,6 +352,20 @@ test('ordinary RED transition and proof publication authorize the exact strict p
       plan:checkedPlan,sliceId:'SLICE-001',greenVerification:greenRef,
       refactorEvidence});
     assert.equal(replayed.adopted,true);
+    assert.equal(loadGovernedContext({
+      stateCapability:f.stateCapability}).projection.receipts.rows
+      .find((row)=>row.slice_id==='SLICE-001').status,'complete');
+    const ledgerPath=path.join(f.root,'.claude',
+      'deep-work.s-aaaaaaaa.completed-operations.json');
+    const ledgerBytes=fs.readFileSync(ledgerPath);
+    const ledger=JSON.parse(ledgerBytes);
+    ledger.receipts=ledger.receipts.filter((row)=>
+      row.operationId!==completed.operation_id);
+    fs.writeFileSync(ledgerPath,journal.canonicalJson(ledger));
+    assert.equal(loadGovernedContext({
+      stateCapability:f.stateCapability}).projection.receipts.rows
+      .find((row)=>row.slice_id==='SLICE-001').status,'unknown');
+    fs.writeFileSync(ledgerPath,ledgerBytes);
     fs.writeFileSync(receiptPath,journal.canonicalJson({
       ...storedReceipt,receipt_sha256:'0'.repeat(64)}));
     await assert.rejects(publishFunctionalSliceReceiptV2({

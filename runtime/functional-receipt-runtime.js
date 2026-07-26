@@ -180,21 +180,68 @@ async function authenticateSensorResultRefV1({stateCapability,plan,sliceId,ref,
     fail('sensor-result-ref-ledger');
   return{result,receipt,ref:checked};
 }
-function readCanonical(file,code,max=16*1024*1024){
+function readCanonical(file,code,max=16*1024*1024,allowNoLf=false){
   let stat,bytes,value;try{stat=fs.lstatSync(file);bytes=fs.readFileSync(file);
     value=JSON.parse(bytes);}catch{fail(code);}
+  const canonical=Buffer.from(canonicalJson(value));
   if(!stat.isFile()||stat.isSymbolicLink()||stat.size>max||
-      !bytes.equals(Buffer.from(canonicalJson(value))))fail(code);
+      !bytes.equals(canonical)&&
+        !(allowNoLf&&bytes.equals(Buffer.from(canonical.toString('utf8')
+          .replace(/\n$/,'')))))
+    fail(code);
   return{value,bytes};
 }
-async function authenticateOrdinaryRedProof({stateCapability,plan,sliceId,fields}){
+async function authenticateRedProof({stateCapability,plan,sliceId,fields}){
   const transaction=require('./transaction-runtime.js');
   const root=stateCapability.projectRoot,sid=transaction.sessionIdFromState(stateCapability);
   const expected=`.deep-work/${sid}/red-proofs/${fields.red_proof_sha256}.json`;
   if(fields.red_proof_ref!==expected)fail('functional-red-proof');
   const proof=readCanonical(path.join(root,...expected.split('/')),
-    'functional-red-proof').value;
+    'functional-red-proof',16*1024*1024,true).value;
   const project=transaction.projectCapabilityFor(stateCapability);
+  if(proof.transition_kind==='bootstrap-adoption'){
+    const bootstrap=require('./bootstrap-runtime.js');
+    const control=path.join(root,'.deep-work',sid,'bootstrap');
+    const readJson=(name,code)=>{
+      let value;try{value=JSON.parse(fs.readFileSync(path.join(control,name),'utf8'));}
+      catch{fail(code);}
+      return value;
+    };
+    const authorization=bootstrap.validateBootstrapAuthorization(
+      readJson('authorization.json','functional-bootstrap-authorization'));
+    const receipt=readJson('bootstrap-receipt.json',
+      'functional-bootstrap-receipt');
+    const marker=readJson('marker.json','functional-bootstrap-marker');
+    const completion=await require('./operation-journal.js').resumeOperation({
+      projectCapability:project,operationId:receipt.completion_operation_id,
+      sessionId:sid,kind:'bootstrap-finalize'});
+    bootstrap.validateBootstrapCompletionAuthority({
+      receipt,marker,operationReceipt:completion});
+    const bridgeReceipt=await require('./operation-journal.js').resumeOperation({
+      projectCapability:project,operationId:proof.bootstrap_bridge_operation_id,
+      sessionId:sid,kind:'bootstrap-first-red'});
+    const adoptionReceipt=await require('./operation-journal.js').resumeOperation({
+      projectCapability:project,operationId:proof.transition_operation_id,
+      sessionId:sid,kind:'bootstrap-red-adoption'});
+    const proofReceipt=await require('./operation-journal.js').resumeOperation({
+      projectCapability:project,operationId:proof.proof_operation_id,
+      sessionId:sid,kind:'red-proof-publication'});
+    const target=plan.slices?.find((row)=>row.id===sliceId);
+    require('./slice-runtime.js').assertBootstrapProductionAdmission({
+      sliceId,verificationSpecSha256:target?.verification_spec_sha256,
+      planAuthoritySha256:plan.plan_authority_sha256,
+      specSha256:plan.contract_binding.spec_contract.spec_sha256,
+      specApprovedHash:plan.contract_binding.spec_contract.spec_approved_hash,
+      verificationPlanSha256:fields.verification_plan_sha256,
+      authorization:{first_red_slice_id:authorization.witness.first_red_slice_id,
+        first_red_verification_spec_sha256:
+          authorization.witness.first_red_verification_spec_sha256,
+        bootstrap_receipt_sha256:receipt.receipt_sha256},
+      marker,state:fields,proof,bridgeReceipt,adoptionReceipt,proofReceipt});
+    return{proof,verificationReceipt:bridgeReceipt,
+      transitionReceipt:adoptionReceipt,proofReceipt,bootstrap:true};
+  }
+  if(proof.transition_kind!=='ordinary')fail('functional-red-proof');
   const verificationReceipt=await require('./operation-journal.js').resumeOperation({
     projectCapability:project,operationId:proof.verification_operation_id,
     sessionId:sid,kind:'verification-run-v2'});
@@ -260,7 +307,7 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
       !(fields.active_slice===sliceId||target.checked&&fields.active_slice===null)||
       !DIGEST.test(fields.verification_plan_sha256||''))
     fail('functional-completion-state');
-  const red=await authenticateOrdinaryRedProof({stateCapability,plan:current,
+  const red=await authenticateRedProof({stateCapability,plan:current,
     sliceId,fields});
   const green=await authenticateVerificationResultRefV1({stateCapability,
     planCapability,plan:current,sliceId,ref:greenVerification,
@@ -387,4 +434,4 @@ module.exports={validateVerificationResultRefV1,validateSensorResultRefV1,
   validateRefactorEvidenceV1,functionalCompletionOperationId,
   buildFunctionalSliceReceiptV2,validateFunctionalSliceReceiptV2,
   authenticateVerificationResultRefV1,authenticateSensorResultRefV1,
-  publishFunctionalSliceReceiptV2,semanticDigest};
+  authenticateRedProof,publishFunctionalSliceReceiptV2,semanticDigest};

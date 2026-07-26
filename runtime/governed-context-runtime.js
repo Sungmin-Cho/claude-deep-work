@@ -226,8 +226,12 @@ function readBoundedCanonical(file,code,max=4_194_304){
   if(!bytes.equals(Buffer.from(canonicalJson(value))))fail(code);
   return value;
 }
-function receiptProjection(workDir,plan,replanActive){
+function receiptProjection(workDir,plan,replanActive,stateCapability,fields){
   const rows=[];let unknown=false,incomplete=false;
+  const transaction=require('./transaction-runtime.js');
+  const journal=require('./operation-journal.js');
+  const project=transaction.projectCapabilityFor(stateCapability);
+  const sessionId=transaction.sessionIdFromState(stateCapability);
   for(const slice of plan.slices||[]){
     const file=path.join(workDir,'receipts',`${slice.id}.json`);
     let status='pending',receiptSha256=null;
@@ -236,12 +240,33 @@ function receiptProjection(workDir,plan,replanActive){
       catch{raw=null;}
       const value=raw?.payload||raw;
       if(!value){status='unknown';unknown=true;}
-      else if(value.schema_version===2&&DIGEST.test(value.receipt_sha256||'')){
-        const preimage=structuredClone(value);delete preimage.receipt_sha256;
-        if(crypto.createHash('sha256').update(canonicalJson(preimage)).digest('hex')!==
-            value.receipt_sha256){status='unknown';unknown=true;}
-        else{status=value.status==='complete'?'complete':'unknown';
-          receiptSha256=value.receipt_sha256;if(status==='unknown')unknown=true;}
+      else if(value.schema_version===2){
+        try{
+          const checked=require('./functional-receipt-runtime.js')
+            .validateFunctionalSliceReceiptV2(value);
+          const relative=path.relative(stateCapability.projectRoot,file)
+            .split(path.sep).join('/');
+          const producer=journal.lookupCompletedOperation({
+            projectCapability:project,
+            operationId:checked.completion_operation_id,sessionId,
+            kind:'functional-slice-complete-v2'});
+          const result=producer?.result;
+          if(checked.slice_id!==slice.id||checked.slice_kind!=='functional'||
+              checked.plan_authority_sha256!==plan.plan_authority_sha256||
+              checked.verification_plan_sha256!==
+                fields.verification_plan_sha256||
+              relative!==`.deep-work/${sessionId}/receipts/${slice.id}.json`||
+              producer?.stage!=='completed-ledger'||
+              !exactKeys(result,['session_id','slice_id','receipt_path',
+                'receipt_sha256','post_state_sha256'])||
+              result.session_id!==sessionId||result.slice_id!==slice.id||
+              result.receipt_path!==relative||
+              result.receipt_sha256!==checked.receipt_sha256||
+              !DIGEST.test(result.post_state_sha256||'')||
+              producer.resultSha256!==journal.sha256(canonicalJson(result)))
+            fail('governed-functional-receipt');
+          status='complete';receiptSha256=checked.receipt_sha256;
+        }catch{status='unknown';unknown=true;}
       }else{status='legacy-read-only';unknown=true;
         receiptSha256=DIGEST.test(value?.receipt_sha256||'')?value.receipt_sha256:null;}
     }else incomplete=true;
@@ -344,7 +369,8 @@ function loadGovernedContext({stateCapability}={}){
   const findingLoaded=awaitFindingProjection({stateCapability,plan,fields,workDir});
   const findings=findingLoaded.projection;
   warnings.push(...findingLoaded.warnings);
-  const receipts=plan?receiptProjection(workDir,plan,activeReplan):
+  const receipts=plan?receiptProjection(workDir,plan,activeReplan,
+    stateCapability,fields):
     {status:'unknown',rows:[]};
   if(receipts.status==='unknown')warnings.push('receipt-envelope-invalid');
   if(receipts.rows.some((row)=>row.status==='legacy-read-only'))
