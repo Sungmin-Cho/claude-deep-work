@@ -1598,25 +1598,95 @@ function compareRemoveOwnedTemp(capability, expectedDigest) {
 const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '0b84a5a6710ef5c97f83026606a13f87311b9f2816328abf96c0ccb45d1c292c';
 const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = 'feab51e7d72e75438490593f2dc09d860a745f9b6b1a499663c20cdd9c5d372a';
 
+function closedReleaseEnvironment(environment, fsApi = fs) {
+  if (process.platform === 'win32' || !environment ||
+      environment.LANG !== 'C' || environment.LC_ALL !== 'C' ||
+      environment.TZ !== 'UTC' || typeof environment.HOME !== 'string' ||
+      typeof environment.PATH !== 'string' ||
+      !path.isAbsolute(environment.HOME) || !path.isAbsolute(environment.PATH) ||
+      environment.PATH.includes(path.delimiter)) return null;
+  const allowedKeys = new Set(['LANG','LC_ALL','TZ','HOME','PATH']);
+  if (process.platform === 'darwin') allowedKeys.add('__CF_USER_TEXT_ENCODING');
+  if (Object.keys(environment).some((key) => !allowedKeys.has(key))) return null;
+  let homeStat;
+  let binStat;
+  try {
+    if (fsApi.realpathSync(environment.HOME) !== environment.HOME ||
+        fsApi.realpathSync(environment.PATH) !== environment.PATH) return null;
+    homeStat = fsApi.lstatSync(environment.HOME);
+    binStat = fsApi.lstatSync(environment.PATH);
+  } catch { return null; }
+  if (!homeStat.isDirectory() || homeStat.isSymbolicLink() ||
+      !binStat.isDirectory() || binStat.isSymbolicLink()) return null;
+  return {home:environment.HOME, bin:environment.PATH};
+}
+
+function validateClosedReleaseGitCarrier(executable, environment = process.env, fsApi = fs) {
+  const release = closedReleaseEnvironment(environment, fsApi);
+  if (!release) return null;
+  const expected = path.join(release.bin, 'git');
+  if (executable !== expected) {
+    fail('worktree-manifest-git-carrier', 'closed release Git must be the owned-bin entry');
+  }
+  let before;
+  let target;
+  let targetStat;
+  let after;
+  try {
+    before = fsApi.lstatSync(executable);
+    target = fsApi.realpathSync(executable);
+    targetStat = fsApi.lstatSync(target);
+    fsApi.accessSync(target, fs.constants.X_OK);
+    after = fsApi.lstatSync(executable);
+  } catch (cause) {
+    fail('worktree-manifest-git-carrier', 'closed release Git carrier is unavailable', {cause});
+  }
+  if (!before.isSymbolicLink() || !after.isSymbolicLink() ||
+      !identitiesEqual(statIdentity(before), statIdentity(after)) ||
+      !targetStat.isFile() || targetStat.isSymbolicLink()) {
+    fail('worktree-manifest-git-carrier', 'closed release Git carrier is not authenticated');
+  }
+  return {executable, target, release};
+}
+
 function resolveGitExecutable(environment = process.env, fsApi = fs) {
   const pathValue = typeof environment.PATH === 'string' ? environment.PATH : '';
+  const release = closedReleaseEnvironment(environment, fsApi);
   for (const directory of pathValue.split(path.delimiter)) {
     if (!directory || /[\0\r\n]/.test(directory)) continue;
     const candidate = path.join(directory, process.platform === 'win32' ? 'git.exe' : 'git');
     try {
       fsApi.accessSync(candidate, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
       const stat = fsApi.lstatSync(candidate);
+      if (release) {
+        if (stat.isSymbolicLink() &&
+            validateClosedReleaseGitCarrier(candidate, environment, fsApi)) return candidate;
+        continue;
+      }
       if (stat.isFile() && !stat.isSymbolicLink()) return fsApi.realpathSync(candidate);
     } catch {}
   }
   fail('worktree-manifest-git-unavailable', 'a physical Git executable was not found on PATH');
 }
 
-function safeGitEnvironment(executable) {
+function safeGitEnvironment(executable, source = process.env, fsApi = fs) {
+  const carrier = validateClosedReleaseGitCarrier(executable, source, fsApi);
+  if (carrier) {
+    return {
+      LANG:'C',
+      LC_ALL:'C',
+      TZ:'UTC',
+      HOME:carrier.release.home,
+      PATH:carrier.release.bin,
+      GIT_OPTIONAL_LOCKS:'0',
+      GIT_CONFIG_NOSYSTEM:'1',
+      GIT_CONFIG_GLOBAL:'/dev/null',
+    };
+  }
   const environment = {};
   for (const key of ['HOME','USERPROFILE','SystemRoot','SYSTEMROOT','TEMP','TMP']) {
-    if (typeof process.env[key] === 'string' && !/[\0\r\n]/.test(process.env[key])) {
-      environment[key] = process.env[key];
+    if (typeof source[key] === 'string' && !/[\0\r\n]/.test(source[key])) {
+      environment[key] = source[key];
     }
   }
   Object.assign(environment, {

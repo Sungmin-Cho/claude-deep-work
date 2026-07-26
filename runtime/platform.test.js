@@ -4212,6 +4212,58 @@ test('worktree manifest includes ignored files and records only exclusion roots'
   } finally { remove(root); }
 });
 
+test('worktree manifest accepts the authenticated Git shim in a closed release environment', {
+  skip:process.platform === 'win32' ? 'POSIX release environment only' : false,
+}, () => {
+  const root = makeRepo('dw-release-git-shim-');
+  const releaseRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-release-git-env-'));
+  try {
+    const gitTarget = process.env.PATH.split(path.delimiter)
+      .map((directory) => path.join(directory, 'git'))
+      .find((candidate) => {
+        try {
+          fs.accessSync(candidate, fs.constants.X_OK);
+          return fs.lstatSync(fs.realpathSync(candidate)).isFile();
+        } catch { return false; }
+      });
+    assert.ok(gitTarget, 'physical Git executable is required');
+    const bin = path.join(releaseRoot, 'bin');
+    const home = path.join(releaseRoot, 'home');
+    fs.mkdirSync(bin);
+    fs.mkdirSync(home);
+    const shim = path.join(bin, 'git');
+    fs.symlinkSync(fs.realpathSync(gitTarget), shim, 'file');
+    const platformPath = path.join(__dirname, 'platform.js');
+    const script = [
+      `'use strict';`,
+      `const path=require('node:path');`,
+      `const platform=require(${JSON.stringify(platformPath)});`,
+      `const root=process.argv[1];`,
+      `const project=platform.issueProjectStateCapability(root,root,{role:'project-root'});`,
+      `const git=platform.issueProjectStateCapability(root,path.join(root,'.git'),{role:'git-root'});`,
+      `const manifest=platform.captureWorktreeManifest({projectCapability:project,`,
+      `  gitCapability:git,runtimeExclusions:[]});`,
+      `process.stdout.write(manifest.sha256);`,
+    ].join('\n');
+    const run = () => spawnSync(process.execPath, ['-e', script, root], {
+      cwd:root, env:{LANG:'C', LC_ALL:'C', TZ:'UTC',
+        HOME:fs.realpathSync(home), PATH:fs.realpathSync(bin)},
+      encoding:'utf8', shell:false, windowsHide:true});
+    const result = run();
+    assert.deepEqual({status:result.status, signal:result.signal, stderr:result.stderr},
+      {status:0, signal:null, stderr:''});
+    assert.match(result.stdout, /^[0-9a-f]{64}$/);
+    fs.rmSync(shim);
+    fs.writeFileSync(shim, '#!/bin/sh\nexit 0\n', {mode:0o755});
+    const substituted = run();
+    assert.equal(substituted.status, 1);
+    assert.match(substituted.stderr, /worktree-manifest-git-unavailable/);
+  } finally {
+    remove(releaseRoot);
+    remove(root);
+  }
+});
+
 test('manifest rejects Windows-key collision and invalid physical path rather than omitting it', () => {
   if (process.platform === 'win32' || process.platform === 'darwin') return test.skip('case-only paths cannot coexist');
   const root = makeRepo();
