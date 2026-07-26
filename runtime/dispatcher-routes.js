@@ -25,6 +25,13 @@ function stateCapability(f,cwd,key='state'){const root=projectRootFor(f,cwd);con
   return platform.issueProjectStateCapability(root,target,{role:'session-state'});}
 function stateFields(capability){platform.revalidatePathCapability(capability,'dispatcher-state');return frontmatter.parseFrontmatter(boundedFile(capability.path).toString('utf8')).fields;}
 function sessionId(capability){const match=path.basename(capability.path).match(/^deep-work\.(s-[0-9a-f]{8})\.md$/);if(!match)fail('session-state-identity');return match[1];}
+function usesGovernedProjection(plan){
+  if(plan?.contract_binding?.mode!=='strict-spec')return false;
+  const match=String(plan.contract_binding.created_by_version||'').match(
+    /^(\d+)\.(\d+)\.(\d+)$/);
+  return Boolean(match&&(Number(match[1])>6||
+    Number(match[1])===6&&Number(match[2])>=14));
+}
 function finishAdmission(stateCap,enforcementPoint){
   slice.assertNoPendingScopedWrite(stateCap);
   const fields=stateFields(stateCap);let review={};
@@ -33,6 +40,14 @@ function finishAdmission(stateCap,enforcementPoint){
     riskProfile=storedObject(fields,'risk_profile_json');const root=sessionCapability(stateCap).path,planPath=path.join(root,'plan.json');
   let planProjection=null;if(fs.existsSync(planPath)){const cap=sessionFile(stateCap,planPath,{basenames:['plan.json'],role:'locked-plan'});
     try{planProjection=JSON.parse(transaction.readSessionFile(cap));}catch{fail('finish-plan-projection');}}
+  if(usesGovernedProjection(planProjection)){
+    const governed=require('./governed-context-runtime.js').loadGovernedContext({
+      stateCapability:stateCap});
+    const admission=require('./governed-context-runtime.js').selectGovernedAdmission(
+      governed.projection,enforcementPoint);
+    return{allowed:admission.allowed,blocking:{codes:admission.blocking_codes},
+      governed_admission:admission,projection_sha256:governed.sha256};
+  }
   const verificationPolicy=require('./verification-policy-runtime.js'),reviewPolicy=require('./review-policy-runtime.js');
   const compatibilityMode=verificationPolicy.deriveCompatibilityMode(compatibilityFacts(fields,planProjection,review,riskProfile));
   if(compatibilityMode==='legacy-no-spec')return reviewPolicy.finishGateAllowed(review,{compatibility_mode:compatibilityMode,
@@ -428,6 +443,16 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       verificationResult:jsonFile(resolveInput(f['verification-result-json'],cwd))});return evidence.publishAuthenticatedRecord(record,
       {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
   on('test pass',({f,cwd})=>{const bound=readPlan(f,cwd),context=loadTestPassContext(bound.state,bound.value);
+    if(usesGovernedProjection(bound.value)){
+      const governed=require('./governed-context-runtime.js').loadGovernedContext({
+        stateCapability:bound.state});
+      const admission=require('./governed-context-runtime.js').selectGovernedAdmission(
+        governed.projection,'test');
+      if(!admission.allowed)fail('test-governed-admission',
+        JSON.stringify(admission.blocking_codes));
+      context.governedAdmission=admission;context.governedProjectionSha256=governed.sha256;
+      context.governedRequired=true;
+    }
     return testRuntime.recordTestPass({stateCapability:bound.state,gateResults:jsonFile(resolveInput(f['gate-results-json'],cwd)),
       ...context,at:f.at});});
   on('test retry',({f,cwd})=>{const bound=readPlan(f,cwd);return testRuntime.recordTestRetry({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,

@@ -738,6 +738,28 @@ test('spec-governed Medium+ test pass dispatcher route fails closed without comm
   assert.doesNotMatch(fs.readFileSync(state,'utf8'),/^test_passed:\s*true$/m);
 });
 
+test('v6.14 test admission consumes the canonical projection blocker set',async()=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),
+    'dw-test-pass-governed-route-'))),session='s-aaaaaaaa';
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+  const work=path.join(root,'.deep-work',session);fs.mkdirSync(work,{recursive:true});
+  const state=path.join(root,'.claude',`deep-work.${session}.md`);
+  fs.writeFileSync(state,updateFrontmatterText('',{schema_version:2,session_id:session,
+    work_dir:`.deep-work/${session}`,current_phase:'test',
+    created_by_version:'6.14.0',review_execution_json:'{}'}));
+  const plan=writeJson(path.join(work,'plan.json'),{schema_version:1,
+    contract_binding:{mode:'strict-spec',created_by_version:'6.14.0'},
+    slices:[],quality_gates:[]});
+  const gates=writeJson(path.join(work,'gate-results.json'),
+    {complete:true,failedSlices:[]});
+  await assert.rejects(()=>dispatch(['test','pass','--state',state,'--plan',plan,
+    '--gate-results-json',gates,'--at',ROUTE_TIMESTAMP],{cwd:root}),
+  (error)=>error?.code==='test-governed-admission'&&
+    /finding-required-unknown/.test(error.message)&&
+    /residual-risk-unaccepted/.test(error.message));
+  assert.doesNotMatch(fs.readFileSync(state,'utf8'),/^test_passed:\s*true$/m);
+});
+
 test('all finish dispatcher outcomes reject fresh Medium+ legacy bypass and forged evidence summaries',async(t)=>{
   for(const outcome of ['keep','merge','publish-pr','discard']){
     await t.test(`${outcome}: missing committed verification plan`,async()=>{
