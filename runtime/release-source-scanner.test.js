@@ -71,7 +71,7 @@ test('committed source loading binds an authenticated git and rejects worktree d
       path.join(os.tmpdir(),'dw-source-git-')));
     t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
     const run=(args)=>{
-      const result=spawnSync(gitIdentity.target_path,args,{cwd:root});
+      const result=spawnSync('git',args,{cwd:root});
       assert.equal(result.status,0,result.stderr?.toString());
     };
     run(['init','-q']);run(['config','user.email','test@example.invalid']);

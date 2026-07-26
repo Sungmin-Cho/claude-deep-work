@@ -115,17 +115,96 @@ function scanPackageScripts(files,document){
   visit('test');
   return{rows,nodeTargets};
 }
-function scanLaunchSites(path,bytes){
+function jsTokens(source){
+  const tokens=[];let index=0;
+  while(index<source.length){
+    const char=source[index],next=source[index+1];
+    if(/\s/.test(char)){index++;continue;}
+    if(char==='/'&&next==='/'){index+=2;while(index<source.length&&
+        source[index]!=='\n')index++;continue;}
+    if(char==='/'&&next==='*'){index+=2;while(index<source.length&&
+        !(source[index]==='*'&&source[index+1]==='/'))index++;
+      if(index>=source.length)fail('release-source-js',String(index));index+=2;continue;}
+    if(char==='/'&&(()=>{
+      const prior=tokens.at(-1);
+      return !prior||prior.type==='punct'&&
+        ['(','[','{','=',':',',',';','!','?','&','|','+','-','*','%',
+          '^','~','>'].includes(prior.value)||
+        prior.type==='identifier'&&['return','case','throw','yield']
+          .includes(prior.value);
+    })()){
+      const start=index++;let escaped=false,inClass=false,closed=false;
+      for(;index<source.length;index++){
+        const current=source[index];
+        if(escaped){escaped=false;continue;}
+        if(current==='\\'){escaped=true;continue;}
+        if(current==='['){inClass=true;continue;}
+        if(current===']'){inClass=false;continue;}
+        if(current==='/'&&!inClass){index++;closed=true;break;}
+        if(current==='\n'||current==='\r')break;
+      }
+      if(!closed)fail('release-source-js',String(index));
+      while(index<source.length&&/[A-Za-z]/.test(source[index]))index++;
+      tokens.push({type:'regex',value:null,start});continue;
+    }
+    if(char==="'"||char==='"'){
+      const quote=char,start=index++;let value='',escaped=false;
+      for(;index<source.length;index++){
+        const current=source[index];
+        if(escaped){value+=current;escaped=false;continue;}
+        if(current==='\\'){escaped=true;continue;}
+        if(current===quote){index++;break;}
+        if(current==='\n'||current==='\r')fail('release-source-js',String(index));
+        value+=current;
+      }
+      if(source[index-1]!==quote)fail('release-source-js',String(index));
+      tokens.push({type:'string',value,start});continue;
+    }
+    if(char==='`'){
+      const start=index++;let escaped=false;
+      for(;index<source.length;index++){
+        const current=source[index];
+        if(escaped){escaped=false;continue;}
+        if(current==='\\'){escaped=true;continue;}
+        if(current==='`'){index++;break;}
+      }
+      if(source[index-1]!=='`')fail('release-source-js',String(index));
+      tokens.push({type:'template',value:null,start});continue;
+    }
+    if(/[A-Za-z_$]/.test(char)){
+      const start=index++;while(index<source.length&&
+        /[A-Za-z0-9_$]/.test(source[index]))index++;
+      tokens.push({type:'identifier',value:source.slice(start,index),start});
+      continue;
+    }
+    tokens.push({type:'punct',value:char,start:index});index++;
+  }
+  return tokens;
+}
+function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   const source=bytes.toString('utf8');
   if(!Buffer.from(source).equals(bytes))fail('release-source-utf8');
   const required=new Set(),platform=[];let activeNode=false;
-  const launch=/\b(spawn|spawnSync|execFile|execFileSync|fork)\s*\(\s*([^,\n]+)/g;
-  for(const match of source.matchAll(launch)){
-    const kind=match[1],expression=match[2].trim();
-    if(kind==='fork'||expression==='process.execPath'){activeNode=true;continue;}
-    const literal=expression.match(/^(['"])([A-Za-z0-9._/-]+)\1$/);
-    if(!literal)fail('release-launch-dynamic',`${path}:${expression}`);
-    required.add(literal[2]);
+  let tokens;try{tokens=jsTokens(source);}catch(error){
+    if(error.code==='release-source-js')
+      fail('release-source-js',`${path}:${error.message}`);throw error;}
+  const kinds=new Set(['spawn','spawnSync','execFile','execFileSync','fork']);
+  for(let index=0;index<tokens.length-2;index++){
+    const call=tokens[index],open=tokens[index+1],first=tokens[index+2];
+    if(call.type!=='identifier'||!kinds.has(call.value)||
+        open.type!=='punct'||open.value!=='(')continue;
+    if(call.value==='fork'){activeNode=true;continue;}
+    if(first.type==='identifier'&&first.value==='process'&&
+        tokens[index+3]?.value==='.'&&tokens[index+4]?.value==='execPath'){
+      activeNode=true;continue;
+    }
+    if(first.type==='identifier'&&first.value==='executable'&&
+        path==='runtime/platform.test.js'&&
+        /const executable = path\.win32\.join\(systemRoot,\s*'System32',\s*'WindowsPowerShell',\s*'v1\.0',\s*'powershell\.exe'\);/m
+          .test(source)&&platformName!=='win32')continue;
+    if(first.type!=='string'||!/^[A-Za-z0-9._/-]+$/.test(first.value))
+      fail('release-launch-dynamic',`${path}:${first.value||first.type}`);
+    required.add(first.value);
   }
   if(activeNode)platform.push(toolchain.buildActiveNodeExecutable({
     sourcePath:path,sourceSha256:toolchain.sha256(bytes)}));
@@ -195,5 +274,5 @@ function loadCommittedFiles({root,gitIdentity,
 }
 function canonicalNames(values){return JSON.stringify(values);}
 
-module.exports={shellWords,globRegex,scanLaunchSites,scanReleaseSources,
+module.exports={shellWords,globRegex,jsTokens,scanLaunchSites,scanReleaseSources,
   loadCommittedFiles};
