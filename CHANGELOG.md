@@ -7,7 +7,11 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.1.0] — 2026-07-27 (Context Diet)
+## [7.1.0] — 2026-07-27 (Plugin-Path Trust Hardening + Context Diet)
+
+### Security
+
+- **A repository under analysis can no longer hijack the plugin's own instructions.** Every path deep-work tells an agent to read or run is now resolved from the plugin's install directory and refused if it lands outside it. Previously a project being worked on could place a same-named file or Node module in its own tree and have that content read as instructions, or executed with your permissions — reachable through relative reads, plugin helper scripts, an attached JSON schema, an anchor the shell left literal, and a module path Node resolved from the workspace `node_modules`.
 
 ### Added
 
@@ -20,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Skill bodies no longer carry release history**: per-version feature sections and internal fix/review labels were removed in favour of the constraint they annotated. The CHANGELOG remains the single source for what changed when.
 
 ### Fixed
+
+- **Assumption Health showed no assumptions even when the registry had them.** `/deep-status --report`, `--assumptions`, timeline and badge read the registry from a path that never existed, and a missing file was treated as an empty registry rather than an error — so the section rendered empty and silent.
 
 - **Agent guide corrections**: the documented phase-guard denylist now matches `hooks/scripts/phase-guard-core.js` (five families; `dd`/`mkfs`/`fdisk` and bare SQL `DELETE` are documented omissions, not blocked commands), the receipt validator is described as nine checks rather than eight, and the required Node version reads 22 rather than 20.
 - **Release instructions**: the agent guide described a manual marketplace and README edit that `npm run release:bump` has replaced; only `.agents/plugins/marketplace.json` still needs a hand sync.
