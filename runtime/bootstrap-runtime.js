@@ -336,18 +336,36 @@ function validateBootstrapWitness(value){
 
 function decodeUtf8Fatal(bytes){try{return new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
   catch{fail('stdout-invalid-utf8');}}
+function locationPathApi(value){
+  return /^[A-Za-z]:[\\/]/u.test(value)?path.win32:path;
+}
+function resolvedLocationRoot(value){
+  return locationPathApi(value).resolve(value);
+}
+function locationRootUrl(root){
+  if(locationPathApi(root)===path.win32)
+    return new URL(`file:///${root.replaceAll('\\','/')}`).href.replace(/\/$/u,'');
+  return pathToFileURL(root).href.replace(/\/$/u,'');
+}
 function replaceAuthenticatedLocation(candidate,root,rootUrl){
-  if(candidate.startsWith(`${root}/`))return `<worktree>/${candidate.slice(root.length+1)}`;
-  if(candidate.startsWith(`${rootUrl}/`))return `file://<worktree>/${candidate.slice(rootUrl.length+1)}`;
+  const windows=locationPathApi(root)===path.win32;
+  const nativeCandidate=windows?candidate.replaceAll('\\','/'):candidate;
+  const nativeRoot=windows?root.replaceAll('\\','/'):root;
+  const compare=(value)=>windows?value.toLowerCase():value;
+  if(compare(nativeCandidate).startsWith(`${compare(nativeRoot)}/`))
+    return `<worktree>/${nativeCandidate.slice(nativeRoot.length+1)}`;
+  if(compare(candidate).startsWith(`${compare(rootUrl)}/`))
+    return `file://<worktree>/${candidate.slice(rootUrl.length+1)}`;
   fail('stdout-out-of-root-location');
 }
 function tokenizeLocations(text,worktreeRoot){
   if(text.includes('<worktree>/')||text.includes('file://<worktree>/'))
     fail('stdout-reserved-root-token');
-  const root=path.resolve(worktreeRoot),rootUrl=pathToFileURL(root).href.replace(/\/$/u,'');
+  const root=resolvedLocationRoot(worktreeRoot),rootUrl=locationRootUrl(root);
   const lines=text.slice(0,-1).split('\n');
-  const frame=`((?:file:\\/\\/\\/|\\/)[^\\s)\\]}'"]+:[1-9][0-9]*:[1-9][0-9]*)`;
-  const module=`((?:file:\\/\\/\\/|\\/)[^\\s)\\]}'"]+)`;
+  const absoluteLocation='(?:file:\\/\\/\\/|\\/|[A-Za-z]:[\\\\/])';
+  const frame=`(${absoluteLocation}[^\\s)\\]}'"]+:[1-9][0-9]*:[1-9][0-9]*)`;
+  const module=`(${absoluteLocation}[^\\s)\\]}'"]+)`;
   const patterns=[new RegExp(`^(test at )${frame}$`,'u'),
     new RegExp(`^([ \\t]+at )${frame}$`,'u'),
     new RegExp(`^([ \\t]+at .+ \\()${frame}(\\))$`,'u')];
@@ -381,12 +399,16 @@ function tokenizeLocations(text,worktreeRoot){
   return `${lines.join('\n')}\n`;
 }
 function detailLocationAllowed(location,testPaths,worktreeRoot){
-  const root=path.resolve(worktreeRoot),rootUrl=pathToFileURL(root).href.replace(/\/$/u,'');
+  const root=resolvedLocationRoot(worktreeRoot),rootUrl=locationRootUrl(root);
+  const pathApi=locationPathApi(root);
   return testPaths.some((testPath)=>{
     const escaped=testPath.replace(/[.*+?^${}()|[\]\\]/gu,'\\$&');
     if(new RegExp(`^${escaped}:[1-9][0-9]*:[1-9][0-9]*$`,'u')
       .test(location.replace(/^<worktree>\//u,'')))return true;
-    const suffix=pathToFileURL(path.join(root,testPath)).href.slice(rootUrl.length+1)
+    const testUrl=pathApi===path.win32?
+      new URL(`file:///${pathApi.join(root,testPath).replaceAll('\\','/')}`).href:
+      pathToFileURL(pathApi.join(root,testPath)).href;
+    const suffix=testUrl.slice(rootUrl.length+1)
       .replace(/[.*+?^${}()|[\]\\]/gu,'\\$&');
     return new RegExp(`^file://<worktree>/${suffix}:[1-9][0-9]*:[1-9][0-9]*$`,'u').test(location);
   });
@@ -399,7 +421,8 @@ function validateBootstrapArgv(argv,nodeIdentity){
 }
 function normalizeNodeTestBootstrapStdout(stdoutBytes,{worktreeRoot,nodeIdentity,reporter,argv}={}){
   const node=validateNodeIdentity(nodeIdentity);
-  if(reporter!=='spec'||typeof worktreeRoot!=='string'||!path.isAbsolute(worktreeRoot))
+  if(reporter!=='spec'||typeof worktreeRoot!=='string'||
+    !locationPathApi(worktreeRoot).isAbsolute(worktreeRoot))
     fail('bootstrap-normalizer-context');
   const testPaths=validateBootstrapArgv(argv,node);
   let text=decodeUtf8Fatal(Buffer.from(stdoutBytes));

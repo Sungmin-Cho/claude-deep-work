@@ -65,6 +65,8 @@ const NODE_PATH='/opt/homebrew/Cellar/node/26.0.0/bin/node';
 const WORKTREE=process.cwd();
 const ISOLATED_ROOT=process.platform==='win32'?'D:\\isolated-bootstrap':'/private/tmp/isolated-bootstrap';
 const OUTSIDE_ROOT=process.platform==='win32'?'D:\\outside-bootstrap-root':'/outside-bootstrap-root';
+const WINDOWS_ROOT='D:\\agent\\deep-work';
+const WINDOWS_OUTSIDE_ROOT='D:\\agent\\outside';
 const EMPTY_SHA256=digest(Buffer.alloc(0));
 const semantic=(label,value,key)=>{
   const copy=structuredClone(value);delete copy[key];
@@ -173,6 +175,19 @@ test('node spec bootstrap normalization binds the complete stream but erases onl
   assert.notEqual(first.stdout_semantic_sha256,changed.stdout_semantic_sha256);
   assert.deepEqual(first.semantic,{schema_version:1,normalized_stdout_sha256:first.semantic.normalized_stdout_sha256,
     tests:1,pass:1,fail:0,skipped:0});
+});
+
+test('node spec bootstrap normalization authenticates Windows drive locations on every host',()=>{
+  const first=normalizeNodeTestBootstrapStdout(
+    specOutput({root:WINDOWS_ROOT,duration:'1.25'}),normalizationContext(WINDOWS_ROOT));
+  const alternate=normalizeNodeTestBootstrapStdout(
+    specOutput({root:'d:\\AGENT\\deep-work',duration:'999.5'}),
+    normalizationContext(WINDOWS_ROOT));
+  assert.equal(first.stdout_semantic_sha256,alternate.stdout_semantic_sha256);
+  assert.match(first.normalized_bytes.toString(),/<worktree>\/runtime[\\/]a\.test\.js:1:2/u);
+  assert.throws(()=>normalizeNodeTestBootstrapStdout(
+    specOutput({root:WINDOWS_OUTSIDE_ROOT}),normalizationContext(WINDOWS_ROOT)),
+  /stdout-out-of-root-location/);
 });
 
 test('normalizer closes reserved roots, module contexts, timing, summaries and failure details',()=>{
