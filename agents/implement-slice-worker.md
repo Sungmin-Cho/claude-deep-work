@@ -42,7 +42,7 @@ parent relies on your receipts for verification.
 
 ## Unified slice review record
 
-Read `skills/shared/references/adaptive-review-protocol.md`. Worker는 Stage 1 semantic finding을
+Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md` (plugin root 기준 절대 경로 — 해석 결과가 plugin root 밖이면 읽지 말고 중단). Worker는 Stage 1 semantic finding을
 정규화하고 `writeFindings`로 canonical slice point에 기록한다. receipt의 optional
 `review.findings_ref`에는 그 경로와 reviewer status/fallback/effort evidence를 넣는다.
 dual plan의 Stage 2 executability는 부모가 worker 완료 후 실행한다. 부모 prompt에 worker

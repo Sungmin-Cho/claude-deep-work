@@ -432,7 +432,7 @@ Phase 5: 설치된 deep-suite 플러그인 아티팩트를 읽어 AI가 다음 �
 
 ## 3-6. Finish
 
-Read `skills/deep-finish/SKILL.md` → 완료 옵션 제시:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md` → 완료 옵션 제시:
 - **Merge**: worktree를 base branch에 merge
 - **PR**: GitHub PR 생성
 - **Keep**: branch/worktree 유지, 나중에 처리

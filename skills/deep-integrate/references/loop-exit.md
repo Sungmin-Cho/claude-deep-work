@@ -11,10 +11,12 @@
    - `current_phase`는 **`idle` 유지** (Phase 5 진입 시 설정된 값 그대로).
    - `phase5_completed_at` 기록은 **전용 helper로만** 수행 — phase-guard가 일반 Write/Edit에는 state file 쓰기를 차단한다. 호출 시 **command substitution(`$(...)`) 금지** — phase-guard가 shell metacharacter를 block하므로 helper에게 timestamp 인자를 생략하거나 이미 resolve된 literal 값을 전달한다:
      ```bash
+     # <PLUGIN_ROOT>는 realpath로 해석한 ${CLAUDE_PLUGIN_ROOT}의 literal 절대경로.
+     # 해석 결과가 plugin root 밖이면 실행하지 말고 중단한다.
      # 권장: helper가 내부에서 timestamp 생성 (phase-guard-friendly)
-     DEEP_WORK_SESSION_ID=<session-id> bash skills/deep-integrate/phase5-finalize.sh <abs-path-to-state.md>
+     DEEP_WORK_SESSION_ID=<session-id> bash <PLUGIN_ROOT>/skills/deep-integrate/phase5-finalize.sh <abs-path-to-state.md>
      # 또는 literal ISO 8601 값을 미리 생성 후 전달 (LLM이 date를 먼저 read-only Bash로 받고 값 embedding)
-     DEEP_WORK_SESSION_ID=<session-id> bash skills/deep-integrate/phase5-finalize.sh <abs-path-to-state.md> 2026-04-19T03:45:00Z
+     DEEP_WORK_SESSION_ID=<session-id> bash <PLUGIN_ROOT>/skills/deep-integrate/phase5-finalize.sh <abs-path-to-state.md> 2026-04-19T03:45:00Z
      ```
    - helper는 ISO 8601 형식 검증과 atomic write(awk frontmatter rewrite + mv)를 수행하며 그 외 state file 필드는 건드리지 않는다. `DEEP_WORK_SESSION_ID` env prefix는 `--session=<id>` 재진입 시 helper의 session 검증이 정확히 작동하도록 한다.
    - deep-finish는 "idle + phase5_completed_at 존재"를 "정상 완료"로 해석한다.

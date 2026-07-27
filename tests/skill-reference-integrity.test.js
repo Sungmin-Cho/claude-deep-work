@@ -29,6 +29,24 @@ function markdownFiles() {
   return out;
 }
 
+// Workspace-shadow guard.
+//
+// A bare `bash skills/deep-integrate/foo.sh` or `Read skills/x/SKILL.md`
+// resolves against the *target workspace*, not the plugin. A repository under
+// analysis can put a file at that path and have it read as instructions or run
+// with the caller's Bash permissions — and phase-guard.sh normalises relative
+// helper paths against PROJECT_ROOT, so the shadowed location is one it allows.
+// Every read/exec instruction must therefore be anchored at the plugin root.
+const PLUGIN_DIRS = 'skills|agents|scripts|hooks|runtime|templates|health|sensors';
+const ANCHORED = /\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>/;
+
+const SHADOWABLE = [
+  // `bash skills/…`, `node scripts/…`, `sh hooks/…`
+  new RegExp(String.raw`\b(?:bash|sh|node)\s+["'\`]?(?:${PLUGIN_DIRS})/[A-Za-z0-9._/-]+`, 'g'),
+  // `Read skills/…`, `Follow agents/…`, `읽고 skills/…`
+  new RegExp(String.raw`\b(?:Read|Follow|read|follow)\s+["'\`]?(?:${PLUGIN_DIRS})/[A-Za-z0-9._/-]+\.md`, 'g'),
+];
+
 // Indented too: fences nested in a list item or a numbered step are still fences,
 // and 24 of these files use them. A column-0-only match left two reference files
 // (loop-exit, worktree-restore) with zero of their fences checked.
@@ -42,6 +60,47 @@ test('every skill and agent markdown file has balanced code fences', () => {
   }
   assert.deepEqual(unbalanced, [],
     `unclosed code fence — a split or edit truncated a fenced block:\n  ${unbalanced.join('\n  ')}`);
+});
+
+test('no read or exec instruction can be shadowed from the target workspace', () => {
+  const unanchored = [];
+  for (const file of markdownFiles()) {
+    const body = fs.readFileSync(file, 'utf8');
+    body.split('\n').forEach((line, i) => {
+      for (const re of SHADOWABLE) {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(line))) {
+          if (!ANCHORED.test(line)) {
+            unanchored.push(`${path.relative(ROOT, file)}:${i + 1}  ${m[0].trim()}`);
+          }
+        }
+      }
+    });
+  }
+  assert.deepEqual(unanchored, [],
+    'plugin file read/executed by a workspace-relative path — anchor it at '
+    + `\${CLAUDE_PLUGIN_ROOT} (or <PLUGIN_ROOT> where the guard forbids substitution):\n  ${unanchored.join('\n  ')}`);
+});
+
+test('the workspace-shadow guard actually fires on a bare instruction', () => {
+  // Proves the matcher is live rather than vacuously passing.
+  const bare = [
+    'bash skills/deep-integrate/phase5-record-error.sh /abs/work',
+    'Read `skills/deep-finish/SKILL.md` and follow it',
+    'node scripts/validate-spec-contract.js --spec x',
+  ];
+  for (const line of bare) {
+    const hit = SHADOWABLE.some((re) => { re.lastIndex = 0; return re.test(line); });
+    assert.ok(hit && !ANCHORED.test(line), `guard must flag: ${line}`);
+  }
+  const anchored = [
+    'bash <PLUGIN_ROOT>/skills/deep-integrate/phase5-record-error.sh /abs/work',
+    'Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md` and follow it',
+  ];
+  for (const line of anchored) {
+    assert.ok(ANCHORED.test(line), `guard must accept: ${line}`);
+  }
 });
 
 test('every referenced skill path resolves', () => {

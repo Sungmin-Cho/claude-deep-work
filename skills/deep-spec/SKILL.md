@@ -48,7 +48,7 @@ Announce: "Spec 단계를 시작합니다. research.md를 실행 가능한 계�
    it.
 4. Run:
 
-   `node scripts/validate-spec-contract.js --spec "$WORK_DIR/spec.md" --risk-class "$RISK_CLASS"`
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/validate-spec-contract.js" --spec "$WORK_DIR/spec.md" --risk-class "$RISK_CLASS"`
 
    Require exit 0 and one stdout JSON object with `pass:true`. Medium+ requires
    contract requirement coverage `1`; High/Critical additionally requires a

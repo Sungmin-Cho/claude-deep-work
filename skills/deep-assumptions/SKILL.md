@@ -35,7 +35,7 @@ user-invocable: true
 
 
 > **Internal** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
-> 참조처: `skills/deep-status/SKILL.md` §9 (`Read skills/deep-assumptions/SKILL.md and follow its logic`).
+> 참조처: `skills/deep-status/SKILL.md` §9 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-assumptions/SKILL.md and follow its logic`).
 
 # Assumption Health Report
 

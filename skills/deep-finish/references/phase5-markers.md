@@ -40,8 +40,14 @@
 
 **LLM은 아래 명령을 그대로 Bash tool로 단일 호출한다** (compound 연산자·shell metacharacter 없이 단일 명령이어야 Phase 5 guard helper exception 적용, RC4-1/RC5-1):
 
+**경로 앵커링(필수)**: 아래 helper 경로는 반드시 **plugin root 기준 절대 경로**여야 한다.
+`${CLAUDE_PLUGIN_ROOT}`를 먼저 realpath로 해석해 `<PLUGIN_ROOT>` 자리에 **literal 절대경로로 치환한 뒤**
+명령을 구성한다 (phase-guard가 `$(...)` command substitution을 block하므로 명령 안에서 해석할 수 없다).
+해석된 helper 경로가 plugin root 밖으로 나가면 **실행하지 말고 중단·보고**한다 — bare 상대 경로는
+분석 대상 저장소의 `skills/`로 해석되어 동명 악성 스크립트가 호출자 권한으로 실행된다.
+
 ```bash
-bash skills/deep-integrate/phase5-record-error.sh <ABSOLUTE_WORK_DIR>
+bash <PLUGIN_ROOT>/skills/deep-integrate/phase5-record-error.sh <ABSOLUTE_WORK_DIR>
 ```
 
 **중요**: Claude Code의 Bash tool은 매 호출마다 새 shell을 spawn하므로 이전 단계에서 export한 `$WORK_DIR` 같은 변수가 persist하지 않는다. LLM은 state file에서 `work_dir`을 먼저 읽어 `<ABSOLUTE_WORK_DIR>` 자리에 실제 절대경로를 치환 후 호출한다. literal `"$WORK_DIR"`를 그대로 전달하면 empty string으로 확장되어 helper가 usage 에러로 fail한다.

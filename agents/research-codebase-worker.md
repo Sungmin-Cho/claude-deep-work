@@ -53,6 +53,7 @@ Return to caller: { path, summary (≤5 lines), findings_tags: ["RF-001", "RA-00
 - DO NOT modify source files. Read-only.
 - Every finding includes file_path:line reference.
 - Tag format: [RF-NNN] findings / [RA-NNN] architecture decisions.
-- Follow shared/references/research-guide.md methodology.
+- Follow `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/research-guide.md` methodology
+  (plugin root 기준 절대 경로 — 해석 결과가 plugin root 밖이면 읽지 말고 중단).
 - If re-running (re_run_area or incremental_since set), overwrite existing
   `research{-area}.md`.

@@ -51,13 +51,26 @@ needed, but an agent can answer directly by checking whether it has the tool.
 Never emit a dispatch the host cannot execute, and never silently skip the work
 the worker would have done.
 
-**Plugin files are read from the plugin, never from the workspace.** Every path
-this plugin tells you to read — `agents/*.md`, `skills/**`, `scripts/**`,
-`hooks/**` — is anchored at `${CLAUDE_PLUGIN_ROOT}`. Resolve it there, and if the
-resolved path escapes the plugin root, **abort and report instead of reading**. A
-bare relative path would resolve against the target workspace, where a repository
-under analysis could shadow a plugin contract with a same-named file and have its
-contents executed with the caller's write and Bash permissions.
+**Plugin files are read *and executed* from the plugin, never from the workspace.**
+Every path this plugin tells you to open or run — `agents/*.md`, `skills/**`
+(including the `*.sh` helpers), `scripts/**`, `hooks/**`, `runtime/**` — is
+anchored at `${CLAUDE_PLUGIN_ROOT}`. Resolve it there, and if the resolved path
+escapes the plugin root, **abort and report — do not read it and do not run it**.
+
+A bare relative path resolves against the *target workspace*. A repository under
+analysis could then shadow a plugin contract with a same-named file and have its
+contents read as instructions, or its script executed with the caller's Bash
+permissions. This is not theoretical for the Phase 5 helpers:
+`hooks/scripts/phase-guard.sh` normalises a relative helper path against
+`PROJECT_ROOT` and allows `$PROJECT_ROOT/skills/deep-integrate/<helper>.sh`, so a
+bare path is permitted by the guard exactly where an attacker could place a file.
+Anchoring keeps that allowance pointed at the plugin: in a dev checkout the plugin
+root *is* `PROJECT_ROOT`, and for an installed plugin it is the cache path the
+guard allows separately.
+
+The guard also rejects `$(...)` in those calls, so resolve `${CLAUDE_PLUGIN_ROOT}`
+to a literal absolute path **before** composing the command rather than
+substituting inside it.
 
 ## Receipt envelope (M3)
 

@@ -8,15 +8,21 @@
 
 **중요**: Phase 5 mode의 phase-guard는 Bash 쓰기 대상 경로를 snapshot된 `$WORK_DIR` 절대경로와 대조한다. LLM이 아래 예제를 실행할 때는 반드시 **변수 확장된 절대 경로**로 쓰기 리다이렉트를 수행해야 하며, `"$WORK_DIR/..."` 같은 literal 문자열이나 `$(...)` command substitution은 **phase-guard에서 block**된다. 즉 LLM은 state에서 `work_dir`을 먼저 읽어 `WORK_DIR_ABS="$PROJECT_ROOT/$WORK_DIR_REL"` 식으로 expanded 후 명령 문자열을 구성한다. `$(cat ...)` 같은 substitution 대신 **`--plugins-file` / `--loop-file` 옵션**을 사용하여 파일 경로를 직접 전달한다.
 
+**경로 앵커링(필수)**: 아래 helper 경로는 반드시 **plugin root 기준 절대 경로**여야 한다.
+`${CLAUDE_PLUGIN_ROOT}`를 먼저 realpath로 해석해 `<PLUGIN_ROOT>` 자리에 **literal 절대경로로 치환한 뒤**
+명령을 구성한다 (phase-guard가 `$(...)` command substitution을 block하므로 명령 안에서 해석할 수 없다).
+해석된 helper 경로가 plugin root 밖으로 나가면 **실행하지 말고 중단·보고**한다 — bare 상대 경로는
+분석 대상 저장소의 `skills/`로 해석되어 동명 악성 스크립트가 호출자 권한으로 실행된다.
+
 ```bash
 # 아래는 LLM이 변수 치환 후 최종 구성할 예시 형태 (실제 실행 시 절대 경로로 확장):
-bash skills/deep-integrate/detect-plugins.sh > /abs/path/to/.deep-work/<sid>/tmp-plugins.json
+bash <PLUGIN_ROOT>/skills/deep-integrate/detect-plugins.sh > /abs/path/to/.deep-work/<sid>/tmp-plugins.json
 # SKILL이 resolve한 SESSION_ID를 env var로 명시 전달
 # 임시 파일을 세션 디렉토리 안에 두어 디버깅/재현성 향상 (세션 종료 시 자동 정리됨)
 # --loop-file 옵션으로 integrate-loop.json 경로 전달 — envelope에 `loop` 필드 병합
 # --plugins-file 옵션 사용. `$(cat ...)` substitution은 phase-guard가 block.
 DEEP_WORK_SESSION_ID=<session-id> \
-  bash skills/deep-integrate/gather-signals.sh <abs-project-root> \
+  bash <PLUGIN_ROOT>/skills/deep-integrate/gather-signals.sh <abs-project-root> \
     --plugins-file /abs/path/to/.deep-work/<sid>/tmp-plugins.json \
     --loop-file /abs/path/to/.deep-work/<sid>/integrate-loop.json \
   > /abs/path/to/.deep-work/<sid>/tmp-envelope.json
