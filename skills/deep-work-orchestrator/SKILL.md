@@ -34,7 +34,20 @@ fi
 
 또는 동등한 JS import (orchestrator가 Node 런타임 내에서 실행 가능한 경우):
 ```javascript
-const { migrateStateFile } = require(`${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js`);
+// ${CLAUDE_PLUGIN_ROOT}를 JS 리터럴에 그대로 쓰지 않는다: 템플릿 리터럴은 동명의
+// **지역 변수**를 찾아 ReferenceError를 내고, 따옴표 문자열은 확장되지 않아 Node가
+// bare specifier로 보고 워크스페이스 node_modules를 탐색한다. env에서 읽어 검증한다.
+const nodePath = require("node:path");
+const nodeFs = require("node:fs");
+const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+const pluginRequire = (rel) => {
+  const target = nodePath.resolve(PLUGIN_ROOT, rel);
+  if (target !== PLUGIN_ROOT && !target.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+    throw new Error("plugin path escapes root: " + rel);
+  }
+  return require(target);
+};
+const { migrateStateFile } = pluginRequire("scripts/migrate-model-routing.js");
 // migrateStateFile 자체가 fs.existsSync 가드를 내부에서 처리
 const { replaced, warnings } = migrateStateFile(stateFile);
 ```

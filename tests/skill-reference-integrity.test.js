@@ -285,7 +285,14 @@ const SHELL_COMMAND = /\b(?:echo|printf|cat|node|bash|sh|zsh|jq|awk|sed|curl|exp
 // Node looking in `node_modules/${CLAUDE_PLUGIN_ROOT}/runtime/x.js` inside the
 // *workspace*. Planting that module is arbitrary code execution, which makes
 // this the most severe form of the expansion axis rather than a broken path.
-const JS_SPECIFIER = /(?:\brequire\s*\(|\bfrom\s+|\bimport\s*\()\s*(["'])((?:(?!\1).)*\$\{[^}]+\}(?:(?!\1).)*)\1/g;
+// Backticks included deliberately. A template literal interpolates a *local
+// variable* of that name, not the environment — an undefined one is a
+// ReferenceError, and a defined one is attacker-influenced. Excluding backticks
+// is how the r10 matcher missed the r8 regression at orchestrator:37.
+// `from` alone is not enough once backticks are in play: markdown inline code
+// makes "rules come from `${CLAUDE_PLUGIN_ROOT}/health/…`" look like an import.
+// So `from` must be preceded by `import` on the same line.
+const JS_SPECIFIER = /(?:\brequire\s*\(|\bimport\s*\(|\bimport\b[^;\n]*?\bfrom\s+)\s*(["'`])((?:(?!\1).)*\$\{[^}]+\}(?:(?!\1).)*)\1/g;
 
 // JSON and YAML have no interpolation at all: a `${...}` in a value is data.
 const JSON_YAML_VALUE = /"[A-Za-z_][A-Za-z0-9_]*"\s*:\s*"[^"]*\$\{CLAUDE_PLUGIN_ROOT\}[^"]*"|^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*["']?[^"'\n]*\$\{CLAUDE_PLUGIN_ROOT\}/;
@@ -309,8 +316,13 @@ function nonExpandingAnchors(line) {
   JS_SPECIFIER.lastIndex = 0;
   let m;
   while ((m = JS_SPECIFIER.exec(line))) {
-    flag(`JS ${m[1] === '"' ? 'double' : 'single'}-quoted specifier — not interpolated, `
-      + 'so Node resolves it as a bare package name under the workspace node_modules');
+    if (m[1] === "`") {
+      flag("JS template literal — interpolates a local variable of that name, not the "
+        + "environment; undefined is a ReferenceError and a defined one is attacker-influenced");
+    } else {
+      flag(`JS ${m[1] === '"' ? 'double' : 'single'}-quoted specifier — not interpolated, `
+        + 'so Node resolves it as a bare package name under the workspace node_modules');
+    }
   }
 
   // 3. JSON / YAML value — no interpolation in either format. An
@@ -543,15 +555,22 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
 
 test('an anchor the shell will not expand counts as unanchored', () => {
   // Each pair was checked against a real shell before being pinned here.
+  // [line, expected reason] — the reason is asserted per case, because the axis
+  // now spans languages and "single-quoted" is only the shell answer.
   const mustFlag = [
     // single-quoted JSON payload — the r9 finding, introduced by our own anchoring
-    `echo '{"registryPath":"\${CLAUDE_PLUGIN_ROOT}/assumptions.json"}' | node x.js`,
-    `printf '%s' '\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/utils.sh'`,
+    [`echo '{"registryPath":"\${CLAUDE_PLUGIN_ROOT}/assumptions.json"}' | node x.js`, /single-quoted shell/],
+    [`printf '%s' '\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/utils.sh'`, /single-quoted shell/],
+    // template literal — the form the r10 matcher excluded, which is how the
+    // r8 regression at orchestrator:37 survived a round
+    ['const { m } = require(\`\${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js\`);', /template literal/],
+    ['const x = require("\${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js");', /bare package name/],
+    ['import x from \'\${CLAUDE_PLUGIN_ROOT}/runtime/x.js\';', /bare package name/],
   ];
-  for (const line of mustFlag) {
+  for (const [line, reason] of mustFlag) {
     const hits = nonExpandingAnchors(line);
     assert.equal(hits.length, 1, `must flag non-expanding anchor: ${line}`);
-    assert.match(hits[0].why, /single-quoted/);
+    assert.match(hits[0].why, reason, `wrong reason for: ${line}`);
   }
 
   const mustPass = [
