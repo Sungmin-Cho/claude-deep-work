@@ -357,9 +357,9 @@ reviewer별 `role`/`channel`/`status`/`fallback_used`/`effort`/`effort_applied`,
 최종 `verdict`를 보존한다. 리뷰를 실행하지 않은 구세션·spike receipt에서는 블록을
 생략한다. 이 optional 확장은 기존 verify-receipt 8개 항목의 판정 입력이 아니다.
 
-### Step D-1: M3 Envelope Wrap (v6.5.0)
+### Step D-1: M3 Envelope Wrap
 
-legacy payload 구성 후, **`hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 (단일 writer 정책 — CLAUDE.md §v6.5.0 Writer 절).
+legacy payload 구성 후, **`hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 — 이 helper가 유일한 envelope writer이다 (`AGENTS.md` §Receipt envelope).
 
 호출 예시 (실제 CLI는 helper 상단 usage block 참조):
 
@@ -379,7 +379,7 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" \
 - `--source-artifacts-glob`는 session-receipt 단계에서 slice-receipt들을 intra-plugin chain으로 집계하기 위한 옵션 (deep-finish §7-Z 사용).
 - `--source-harnessability`는 cross-plugin source artifact를 `provenance.source_artifacts[]`에만 추가하고 `parent_run_id`는 건드리지 않는다.
 
-최종 파일은 다음 구조 (CLAUDE.md §v6.5.0 envelope spec과 동일):
+최종 파일은 다음 구조 (`AGENTS.md` §Receipt envelope과 동일):
 
 ```json
 {
