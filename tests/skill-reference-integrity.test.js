@@ -12,8 +12,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 const ROOT = path.resolve(__dirname, '..');
+const ALWAYS_LOADED = ['AGENTS.md', 'CLAUDE.md'];
 
 function markdownFiles() {
   const out = [];
@@ -26,8 +28,33 @@ function markdownFiles() {
   };
   walk(path.join(ROOT, 'skills'));
   walk(path.join(ROOT, 'agents'));
+  // The always-loaded agent guides are instruction surfaces under the same
+  // rule. `ALWAYS_LOADED` is asserted to be in the scan set by its own test, so
+  // dropping it here fails loudly instead of silently shrinking coverage.
+  for (const doc of ALWAYS_LOADED) {
+    const p = path.join(ROOT, doc);
+    if (fs.existsSync(p)) out.push(p);
+  }
   return out;
 }
+
+// Every `.md` under skills/ and agents/ — the documents an attacker would want
+// to shadow. A bare `Read(\`adaptive-review-protocol.md\`)` names one of these
+// with no basis at all, so it resolves against cwd (the target root).
+function pluginDocBasenames() {
+  const names = new Set();
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name.endsWith('.md')) names.add(entry.name);
+    }
+  };
+  walk(path.join(ROOT, 'skills'));
+  walk(path.join(ROOT, 'agents'));
+  return names;
+}
+const PLUGIN_DOCS = pluginDocBasenames();
 
 // Workspace-shadow guard.
 //
@@ -80,8 +107,28 @@ const FORMS = [
   // 4. module load: `require("X")`, `import … from "X"`
   ['module-load', new RegExp(String.raw`(?:\brequire\s*\(|\bfrom\s+)["'\`](${ANY_ROOT}${PATH_BODY})`, 'g')],
   // 5. executable path token anywhere — the form that hid health/health-check.js
-  ['executable-token', new RegExp(String.raw`(?<![A-Za-z0-9._/{}<>$-])((?:${ANCHOR})/|${REL}|(?:${PLUGIN_DIRS})/)([A-Za-z0-9._/-]*\.(?:js|sh))`, 'g')],
+  // The trailing boundary matters: without it `.js` matches the prefix of
+  // `hooks/hooks.json` and the guard reports a file that does not exist.
+  ['executable-token', new RegExp(String.raw`(?<![A-Za-z0-9._/{}<>$-])((?:${ANCHOR})/|${REL}|(?:${PLUGIN_DIRS})/)([A-Za-z0-9._/-]*\.(?:js|sh)(?![A-Za-z0-9]))`, 'g')],
 ];
+
+// 6. bare basename read: `Read(`adaptive-review-protocol.md`)`. It starts with
+// no root at all, so the ANY_ROOT forms above cannot see it — yet it is the
+// weakest form of all, resolving straight against cwd. Only basenames that
+// name a real plugin document are flagged, so ordinary prose is untouched.
+const BARE_BASENAME = /\b(?:Read|Follow|read|follow)\s*\(?\s*["'`]([A-Za-z0-9][A-Za-z0-9._-]*\.md)(?:#[^`"']*)?["'`]/g;
+
+function bareBasenameHits(line) {
+  const out = [];
+  BARE_BASENAME.lastIndex = 0;
+  let m;
+  while ((m = BARE_BASENAME.exec(line))) {
+    if (PLUGIN_DOCS.has(m[1])) {
+      out.push({ form: 'bare-basename', token: m[1], why: 'unanchored' });
+    }
+  }
+  return out;
+}
 
 const ROOT_SENTINEL = path.sep === '/' ? '/plugin-root' : 'C:\\plugin-root';
 
@@ -136,8 +183,20 @@ function shadowableTokens(line) {
       else if (escapesViaSymlink(token)) out.push({ form, token, why: 'escapes via symlink' });
     }
   }
+  out.push(...bareBasenameHits(line));
   return out;
 }
+
+test('the always-loaded agent guides are in the scan set', () => {
+  // r6 reported these as covered when markdownFiles() still walked only
+  // skills/ and agents/. Asserting membership means the coverage claim is
+  // checked by the suite rather than by a commit message.
+  const scanned = markdownFiles().map((f) => path.relative(ROOT, f));
+  for (const doc of ALWAYS_LOADED) {
+    assert.ok(fs.existsSync(path.join(ROOT, doc)), `${doc} must exist to be scanned`);
+    assert.ok(scanned.includes(doc), `${doc} must be in the shadow-guard scan set`);
+  }
+});
 
 test('no read or exec instruction can be shadowed from the target workspace', () => {
   const violations = [];
@@ -167,6 +226,8 @@ const FORM_CASES = [
     'const x = require("${CLAUDE_PLUGIN_ROOT}/runtime/policy-runtime.js");'],
   ['executable-token', 'rules come from `health/fitness/fitness-generator.js`',
     'rules come from `${CLAUDE_PLUGIN_ROOT}/health/fitness/fitness-generator.js`'],
+  ['bare-basename', 'Read(`adaptive-review-protocol.md`)',
+    'Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)'],
   ['dot-relative', 'Read(`../shared/references/model-routing-guide.md#decode`)',
     'Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#decode`)'],
 ];
@@ -195,6 +256,42 @@ test('anchored paths that escape the plugin root are rejected (containment)', ()
   assert.deepEqual(
     shadowableTokens('Read `${CLAUDE_PLUGIN_ROOT}/skills/a/../b/SKILL.md`'), [],
     'in-root traversal must be accepted');
+});
+
+test('a malicious workspace cannot shadow any instruction the plugin issues', () => {
+  // End-to-end statement of the invariant. Plant shadows in a fake target
+  // workspace for every plugin document an instruction names, then confirm
+  // that no instruction in the repo would resolve to one of them. Because
+  // every instruction is anchored, cwd is irrelevant — which is the property
+  // under test, not an accident of this fixture.
+  const evil = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-evil-workspace-'));
+  try {
+    for (const name of ['adaptive-review-protocol.md', 'model-routing-guide.md', 'SKILL.md']) {
+      fs.writeFileSync(path.join(evil, name), '# SHADOW — must never be read\n');
+    }
+    fs.mkdirSync(path.join(evil, 'skills', 'deep-integrate'), { recursive: true });
+    fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'phase5-record-error.sh'),
+      '#!/bin/sh\necho SHADOW\n');
+
+    const reachable = [];
+    for (const file of markdownFiles()) {
+      fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+        for (const v of shadowableTokens(line)) {
+          // An unanchored or escaping instruction is one cwd away from the
+          // planted shadow; anything the guard flags is reachable by definition.
+          reachable.push(`${path.relative(ROOT, file)}:${i + 1}  ${v.token} — ${v.why}`);
+        }
+      });
+    }
+    assert.deepEqual(reachable, [],
+      `these instructions would resolve into a malicious workspace:\n  ${reachable.join('\n  ')}`);
+
+    // The fixture must be able to fail: a shadowable instruction is detected.
+    assert.ok(shadowableTokens('Read(`adaptive-review-protocol.md`)').length > 0,
+      'fixture is vacuous — the guard does not detect the planted shadow form');
+  } finally {
+    fs.rmSync(evil, { recursive: true, force: true });
+  }
 });
 
 test('mixed lines fail on the bare token', () => {

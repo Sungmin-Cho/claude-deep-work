@@ -45,7 +45,7 @@ not.
   (deep-integrate §3-2, deep-plan §Contract Negotiation), perform the reasoning
   inline against the same prompt and schema.
 
-`detectRuntime()` in `scripts/detect-runtime.js` returns `claude` | `codex` |
+`detectRuntime()` in `${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js` returns `claude` | `codex` |
 `unknown` from `CLAUDECODE` / `CODEX_HOME` markers if a programmatic signal is
 needed, but an agent can answer directly by checking whether it has the tool.
 Never emit a dispatch the host cannot execute, and never silently skip the work
@@ -63,8 +63,9 @@ Two conditions, and **both** must hold:
 
 1. **Anchored** — the path states the plugin root explicitly.
 2. **Contained** — it resolves *inside* that root. An anchor alone is not
-   enough: `${CLAUDE_PLUGIN_ROOT}/../workspace/evil.js` carries the anchor and
-   still escapes, as does a path whose component is a symlink out of the root.
+   enough: an anchored path followed by a parent segment still walks out of the
+   plugin, and so does one whose component is a symlink pointing outside. Resolve
+   first, then check the result is under the root.
 
 If either fails, **abort and report — do not read it and do not run it.**
 
@@ -107,7 +108,7 @@ envelopes:
 }
 ```
 
-Sole writer: `hooks/scripts/wrap-receipt-envelope.js`, invoked from
+Sole writer: `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`, invoked from
 `agents/implement-slice-worker.md` and `skills/deep-finish/SKILL.md` §7-Z.
 
 **Identity-triplet guard.** Before unwrapping `payload`, every reader verifies
@@ -124,7 +125,7 @@ schema minor.
 
 ## Phase-guard denylist
 
-`hooks/scripts/phase-guard-core.js` blocks five catastrophic-blast-radius command
+`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard-core.js` blocks five catastrophic-blast-radius command
 families outside the Implement phase, each with its own opt-out env var:
 
 | Family | Matches | Override |
@@ -153,9 +154,9 @@ pack covers more families at the hook level.
 - **Version triple-sync** — `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`
   and `package.json` always carry the same version.
 - Receipt validation failed? The script takes three required positionals:
-  `hooks/scripts/verify-delegated-receipt.sh [--skip-items=N,M] [--only-completed]
+  `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-delegated-receipt.sh [--skip-items=N,M] [--only-completed]
   <state_file> <receipts_dir> <plan_md_path>`. It names the failing item; the checks
-  live in `hooks/scripts/verify-receipt-core.js`. `/deep-receipt validate` wraps it.
+  live in `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-receipt-core.js`. `/deep-receipt validate` wraps it.
 
 ## Release
 
