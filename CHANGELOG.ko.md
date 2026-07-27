@@ -7,6 +7,23 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.0] — 2026-07-27 (컨텍스트 다이어트)
+
+### Added
+
+- **스킬별 `references/` 분할**: 가장 큰 진입 스킬 8개가 디스패치 로직만 본문에 두고, 조건부 절차(팀 위임, 롤백, 완료 옵션, cross-plugin handoff, fork·플래그 뷰, 세션 탐지)는 해당 분기에 들어갈 때만 `references/`에서 읽습니다.
+
+### Changed
+
+- **`AGENTS.md`가 단일 에이전트 가이드**가 되어 Claude Code와 Codex가 공유하며, `CLAUDE.md`는 이를 import하고 Claude 전용 subagent 안내만 남깁니다.
+- **스킬 27개와 에이전트 4개의 description 축약** — 트리거 문구는 모두 원문 그대로 보존했습니다.
+- **스킬 본문에서 릴리스 이력 제거**: 버전별 기능 소개 절과 내부 fix/review 라벨을 걷어내고 그것이 달려 있던 제약 문장만 남겼습니다. 무엇이 언제 바뀌었는지는 CHANGELOG가 단일 출처입니다.
+
+### Fixed
+
+- **에이전트 가이드 오류 수정**: phase-guard denylist 설명이 `hooks/scripts/phase-guard-core.js`와 일치하도록 5개 계열로 정정(`dd`/`mkfs`/`fdisk`와 단독 SQL `DELETE`는 차단 대상이 아니라 의도적 제외 항목), receipt 검증기는 8개가 아니라 9개 항목, 요구 Node 버전은 20이 아니라 22.
+- **릴리스 절차**: `npm run release:bump`가 대체한 marketplace·README 수동 편집 안내를 삭제했습니다. 손으로 동기화가 필요한 파일은 `.agents/plugins/marketplace.json` 하나뿐입니다.
+
 ## [7.0.0] — 2026-07-27 (적응형 방법론 권위)
 
 ### Added

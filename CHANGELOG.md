@@ -7,6 +7,23 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] — 2026-07-27 (Context Diet)
+
+### Added
+
+- **Per-skill `references/` split**: the eight largest entry skills now keep dispatch logic inline and load conditional procedure — team dispatch, rollback, completion options, cross-plugin handoff, fork and flag views, session detection — from `references/` only when that branch is taken.
+
+### Changed
+
+- **`AGENTS.md` is the single agent guide** for both Claude Code and Codex; `CLAUDE.md` imports it and keeps only the Claude-specific note about subagents.
+- **Shorter skill and agent descriptions** across all 27 skills and 4 agents, with every trigger phrase preserved verbatim.
+- **Skill bodies no longer carry release history**: per-version feature sections and internal fix/review labels were removed in favour of the constraint they annotated. The CHANGELOG remains the single source for what changed when.
+
+### Fixed
+
+- **Agent guide corrections**: the documented phase-guard denylist now matches `hooks/scripts/phase-guard-core.js` (five families; `dd`/`mkfs`/`fdisk` and bare SQL `DELETE` are documented omissions, not blocked commands), the receipt validator is described as nine checks rather than eight, and the required Node version reads 22 rather than 20.
+- **Release instructions**: the agent guide described a manual marketplace and README edit that `npm run release:bump` has replaced; only `.agents/plugins/marketplace.json` still needs a hand sync.
+
 ## [7.0.0] — 2026-07-27 (Adaptive Methodology Authority)
 
 ### Added
