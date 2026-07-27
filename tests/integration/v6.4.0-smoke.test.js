@@ -234,6 +234,10 @@ describe('release metadata', () => {
     assert.match(changelogCurrent,/Single methodology authority/);
     assert.match(changelogKoCurrent,/정식 Spec phase와 profile v4/);
     assert.match(changelogKoCurrent,/단일 methodology authority/);
+    assert.ok(releaseSection(changelog, '6.13.1').includes('hooks/scripts/hook-runtime-portability.test.js'),
+      'CHANGELOG.md 6.13.1 section must retain the hook portability regression test');
+    assert.ok(releaseSection(changelogKo, '6.13.1').includes('hooks/scripts/hook-runtime-portability.test.js'),
+      'CHANGELOG.ko.md 6.13.1 section must retain the hook portability regression test');
     // The prior release (6.10.0) section stays intact with its own model-catalog
     // citation; the 6.12.0 promotion must not clobber or absorb it.
     assert.ok(releaseSection(changelog, '6.10.0').includes('runtime/model-catalog.js'),

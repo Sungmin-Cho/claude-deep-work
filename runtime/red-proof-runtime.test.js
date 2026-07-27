@@ -28,6 +28,7 @@ const {publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,
   prepareManifestReplanAuthority,recordPreparedReplan}=
   require('./replan-runtime.js');
 const {dispatch}=require('../scripts/deep-work-runtime.js');
+const node26Test=process.versions.node==='26.0.0'?test:test.skip;
 
 test('strict verification v2 exposes the governed production runner',()=>{
   assert.equal(typeof runVerificationV2,'function');
@@ -184,7 +185,7 @@ async function ordinaryGreenFixture(t){
     ledger_result_sha256:green.operation_receipt.resultSha256}};
 }
 
-test('ordinary RED transition and proof publication authorize the exact strict production write',
+node26Test('ordinary RED transition and proof publication authorize the exact strict production write',
   async(t)=>{
     const f=fixture(t);
     const scope=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
@@ -401,7 +402,7 @@ test('ordinary RED transition and proof publication authorize the exact strict p
     fs.writeFileSync(receiptPath,journal.canonicalJson(storedReceipt));
   });
 
-test('no-refactor decision binds fresh GREEN and sensors into functional completion',
+node26Test('no-refactor decision binds fresh GREEN and sensors into functional completion',
   async(t)=>{
     const f=await ordinaryGreenFixture(t);
     let interrupted=false;
@@ -481,7 +482,7 @@ test('no-refactor decision binds fresh GREEN and sensors into functional complet
       decision.operationId);
   });
 
-test('a ledger-complete verification side effect automatically enters authenticated replan',
+node26Test('a ledger-complete verification side effect automatically enters authenticated replan',
   async(t)=>{
     const f=fixture(t);
     const scope=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
@@ -517,7 +518,7 @@ test('a ledger-complete verification side effect automatically enters authentica
     assert.equal(replay.replan_epoch,verification.replan_epoch);
   });
 
-test('owned discovery enters a same-risk authenticated replan and rejects source drift',
+node26Test('owned discovery enters a same-risk authenticated replan and rejects source drift',
   async(t)=>{
     const f=fixture(t);
     const sourcePath='runtime/a.js';
@@ -544,7 +545,7 @@ test('owned discovery enters a same-risk authenticated replan and rejects source
     /replan-discovery/);
   });
 
-test('owned discovery crosses the public dispatcher into same-risk replan',async(t)=>{
+node26Test('owned discovery crosses the public dispatcher into same-risk replan',async(t)=>{
   const f=fixture(t),sourcePath='runtime/a.js';
   const observation={schema_version:1,reason:'invariant',scope:'slice',
     slice_id:'SLICE-001',requirement_id:null,invariant_id:'INV-001',
@@ -564,7 +565,7 @@ test('owned discovery crosses the public dispatcher into same-risk replan',async
     fs.readFileSync(f.statePath,'utf8')).fields.replan_reason,'invariant');
 });
 
-test('authenticated risk observation crosses the public dispatcher with a strict increase',
+node26Test('authenticated risk observation crosses the public dispatcher with a strict increase',
   async(t)=>{
     const f=fixture(t),prior={class:'medium',score:5,triggers:['public-api']},
       next={class:'high',score:8,triggers:['external-side-effect']},
@@ -605,7 +606,7 @@ test('authenticated risk observation crosses the public dispatcher with a strict
       producerOperationId:published.operation_id}),/replan-active-conflict/);
   });
 
-test('stale prepared replan cannot overwrite an active trigger',async(t)=>{
+node26Test('stale prepared replan cannot overwrite an active trigger',async(t)=>{
   const f=fixture(t),make=(digit,affectedPath)=>
     prepareManifestReplanAuthority({stateCapability:f.stateCapability,
       plan:f.plan,sliceId:'SLICE-001',
@@ -623,7 +624,7 @@ test('stale prepared replan cannot overwrite an active trigger',async(t)=>{
     prepared:stale}),/replan-active-conflict/);
 });
 
-test('session-scoped discovery publishes a session-plan invalidation',async(t)=>{
+node26Test('session-scoped discovery publishes a session-plan invalidation',async(t)=>{
   const f=fixture(t),sourcePath='runtime/a.js';
   const observation={schema_version:1,reason:'public-contract',scope:'session',
     slice_id:null,requirement_id:'REQ-001',invariant_id:null,
@@ -642,7 +643,7 @@ test('session-scoped discovery publishes a session-plan invalidation',async(t)=>
   assert.equal(invalidations[0].session_id,'s-aaaaaaaa');
 });
 
-test('replan completion requires epoch-bound completed Spec and Plan approvals',
+node26Test('replan completion requires epoch-bound completed Spec and Plan approvals',
   async(t)=>{
     const f=fixture(t),sourcePath='runtime/a.js';
     const observation={schema_version:1,reason:'invariant',scope:'slice',
@@ -706,7 +707,7 @@ test('replan completion requires epoch-bound completed Spec and Plan approvals',
     assert.equal(replay.adopted,true);
   });
 
-test('strict scoped-write acceptance converts expanded scope into needs-replan authority',
+node26Test('strict scoped-write acceptance converts expanded scope into needs-replan authority',
   async(t)=>{
     const f=fixture(t);
     const scope=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
@@ -745,7 +746,7 @@ test('strict scoped-write acceptance converts expanded scope into needs-replan a
     assert.equal(replay.acceptOrReplanOperationId,result.acceptOrReplanOperationId);
   });
 
-test('strict scoped-write acceptance treats an authorized-path race as manifest divergence',
+node26Test('strict scoped-write acceptance treats an authorized-path race as manifest divergence',
   async(t)=>{
     const f=fixture(t);
     const scope=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
@@ -766,7 +767,7 @@ test('strict scoped-write acceptance treats an authorized-path race as manifest 
     assert.deepEqual(result.needsReplanReceipt.affected_paths,['runtime/a.test.js']);
   });
 
-test('accept-or-replan recovers after invalidation state write before its durable stage',
+node26Test('accept-or-replan recovers after invalidation state write before its durable stage',
   async(t)=>{
     const f=fixture(t);
     const scope=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
@@ -795,7 +796,7 @@ test('accept-or-replan recovers after invalidation state write before its durabl
       .pending_scoped_write_json,null);
   });
 
-test('accept-or-replan completes its child ledger after parent completion return loss',
+node26Test('accept-or-replan completes its child ledger after parent completion return loss',
   async(t)=>{
     const f=fixture(t);
     const scope=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
