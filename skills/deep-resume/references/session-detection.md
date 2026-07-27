@@ -6,6 +6,11 @@
 
 ### 1. Detect active session & extract WORK_DIR (multi-session aware)
 
+> **게이트 순서**: 어느 분기로 세션이 결정되든 §1.5 Worktree restoration으로 **직접 점프하지 않는다**.
+> 세션 확정 후에는 진입 파일의 §1-1(`session authority validate` — v7 policy-bound 세션에서
+> 실패 시 resume 중단), §1.4(State 스키마 마이그레이션), §1.5(Worktree restoration) 순서를
+> 그대로 거친다. authority 게이트는 worktree 복원과 phase dispatch보다 **먼저** 통과해야 한다.
+
 Resolve the session to resume using the following priority:
 
 #### 1a-0. Explicit `--session=<id>`
@@ -19,7 +24,7 @@ and stop rather than silently falling through to another session.
 
 If `DEEP_WORK_SESSION_ID` environment variable is set:
 - Read `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md` directly
-- If the file exists and `current_phase` is not `idle`: proceed to Step 1.5 with this session
+- If the file exists and `current_phase` is not `idle`: §1c(state 추출)로 계속한 뒤, **진입 파일의 §1-1 → §1.4 → §1.5 순서로 복귀**한다
 - If the file doesn't exist or phase is `idle`: fall through to 1b
 
 #### 1a-2. Pointer file
@@ -40,7 +45,7 @@ Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where 
     ```
     ℹ️ 레거시 세션을 감지했습니다. 이 세션을 재개합니다.
     ```
-    Proceed to Step 1.5.
+    §1c(state 추출)로 계속한 뒤, **진입 파일의 §1-1 → §1.4 → §1.5 순서로 복귀**한다.
   - Otherwise:
     ```
     ℹ️ 활성 세션이 없습니다.
@@ -53,7 +58,7 @@ Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where 
 - Auto-select this session
 - Update the pointer file: `write_session_pointer SESSION_ID`
 - Read `.claude/deep-work.${SESSION_ID}.md`
-- Proceed to Step 1.5
+- §1c(state 추출)로 계속한 뒤, **진입 파일의 §1-1 → §1.4 → §1.5 순서로 복귀**한다
 
 **If 2+ active sessions in registry:**
 - Present selection UI using AskUserQuestion:
@@ -69,7 +74,7 @@ Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where 
 - After user selects a session:
   - Update the pointer file: `write_session_pointer SELECTED_SESSION_ID`
   - Read `.claude/deep-work.${SELECTED_SESSION_ID}.md`
-  - Proceed to Step 1.5
+  - §1c(state 추출)로 계속한 뒤, **진입 파일의 §1-1 → §1.4 → §1.5 순서로 복귀**한다
 
 #### 1c. Extract state
 

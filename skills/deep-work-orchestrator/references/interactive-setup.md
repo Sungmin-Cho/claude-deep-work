@@ -56,9 +56,6 @@ const input = sanitizeInput({
   ask_items: filterAskItems(PROFILE_DATA.interactive_each_session)  // model_routing은 영구 제거 (구프로필 포함)
 });
 
-호스트에 `Agent` 도구가 없으면(Codex) 이 호출 대신 `agents/session-recommender.md`의
-프롬프트·출력 스키마를 그대로 사용해 인라인으로 추천을 산출한다 (`AGENTS.md` §Host differences).
-
 let result;
 try {
   result = await Agent({
@@ -85,6 +82,20 @@ const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.
 ````
 
 `parsed.ok=false` 또는 30초 timeout → recommender skip + `(자동 추천 실패 — 직접 선택)` 라벨로 ask 진입.
+
+**호스트에 `Agent` 도구가 없을 때 (Codex)**: 위 `Agent({...})` 호출은 존재하지 않으므로
+실행하지 말고, `${CLAUDE_PLUGIN_ROOT}/agents/session-recommender.md`의 프롬프트와 출력
+스키마를 그대로 사용해 **인라인으로 추천을 산출**한 뒤, 같은 `parseRecommendation(result.text, ...)`
+에 먹일 수 있도록 `result`를 직접 구성한다:
+
+- `result.text`는 `json` 코드 펜스를 **정확히 하나만** 포함해야 한다 (0개면 `no-json-fence`,
+  2개 이상이면 `multiple-fences`로 fallback 처리된다).
+  그 펜스 안에 `team_mode` / `start_phase` / `tdd_mode` / `git` / `task_difficulty` 5개 키를
+  각각 `{ value, reason }` 형태로 담는다.
+- 인라인 산출이 실패하거나 스키마를 만족시키지 못하면 `parsed.ok=false`와 동일하게 취급하여
+  recommender를 skip하고 `(자동 추천 실패 — 직접 선택)` 라벨로 ask에 진입한다.
+
+규칙 정본은 `AGENTS.md` §Host differences.
 
 ### §1-4-3. interactive_each_session 항목별 AskUserQuestion (in-memory only)
 

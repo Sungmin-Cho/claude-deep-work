@@ -433,8 +433,10 @@ Cross-plugin handoff emit(§7-Z-A)은 다음 **두 경로 중 하나라도** 성
 를 읽고 그대로 실행한다. 두 트리거 중 어느 쪽인지 판정하고 `HANDOFF_TO`를 정하는 것은
 reference가 담당한다.
 
-건너뛰고 §8로 진행하는 경우는 두 가지뿐이다: `--no-handoff`가 있거나(merge/pr이어도 스킵),
-`outcome`이 `keep`/`discard`이면서 `--handoff-to`도 없을 때.
+건너뛰고 §8로 진행하는 경우는 두 가지뿐이다: `--handoff-to`가 **없고** `--no-handoff`가 있을 때
+(대화형 제안만 스킵), 또는 `outcome`이 `keep`/`discard`이면서 `--handoff-to`도 없을 때.
+`--handoff-to`는 명시 지시이므로 `--no-handoff`와 함께 주어져도 수행한다 — `--no-handoff`는
+대화형 경로에만 걸린다.
 
 ### 8. Finalize state
 

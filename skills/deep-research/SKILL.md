@@ -155,7 +155,7 @@ timeout 처리)은
 를 읽고 그대로 수행한다.
 
 **산출물 소유권은 경로마다 다르다** — 아래 계약은 worker 에이전트 정의
-(`agents/research-{codebase,zerobase}-worker.md`)가 정본이다:
+(`${CLAUDE_PLUGIN_ROOT}/agents/research-{codebase,zerobase}-worker.md`)가 정본이다:
 
 | 경로 | worker가 쓰는 파일 | 부모의 역할 |
 |---|---|---|

@@ -147,7 +147,7 @@ Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙�
 `execution_mode == "delegate"` AND `team_mode == "solo"` 인 경우.
 
 > **호스트 조건부**: `Agent` 도구가 없는 호스트(Codex)에서는 §2.1/§2.2의 Agent 위임 대신
-> `agents/implement-slice-worker.md`의 TDD + Sensor + Slice Review 프로토콜을 호출 스킬 안에서
+> `${CLAUDE_PLUGIN_ROOT}/agents/implement-slice-worker.md`의 TDD + Sensor + Slice Review 프로토콜을 호출 스킬 안에서
 > 인라인 실행한다. receipt 생성 의무와 §2.3 verify는 그대로 적용된다.
 > 규칙 정본은 `AGENTS.md` §Host differences.
 

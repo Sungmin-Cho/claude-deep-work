@@ -46,13 +46,21 @@ options = [
 
 #### "재위임" 선택 시
 
-hash는 **state YAML에 기록된** `delegation_snapshot`에서 읽는다:
+hash는 **state YAML에 기록된** `delegation_snapshot`에서 읽고, 롤백은 **guarded route로만**
+수행한다. raw `git reset --hard` + 와일드카드 receipt 삭제는 사용하지 않는다 — 그 경로는
+스냅샷 검증·divergence 체크·receipt digest 바인딩·lock·journal·retry를 모두 우회한다:
 
 ```bash
 snapshot_hash=$(awk '/^delegation_snapshot:/ {gsub(/["'\'']/, "", $2); print $2; exit}' "$state_file")
-git reset --hard "$snapshot_hash"
-rm -f "${WORK_DIR}/receipts"/SLICE-*.json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" git delegated rollback \
+  --state "$state_file" \
+  --receipts-dir "${WORK_DIR}/receipts" \
+  --snapshot "$snapshot_hash"
 ```
+
+route는 state의 `delegation_snapshot`이 `--snapshot`과 일치하지 않으면
+`delegated-rollback-snapshot`으로 fail-closed하므로, 잘못된 스냅샷으로의 되감기가 차단된다.
+worktree 되감기와 receipt 정리는 route 내부에서 lock + journal 하에 함께 처리된다.
 
 그 후 Section 2.1 또는 2.2 경로로 재진입. (새 delegation은 새로 capture한 snapshot을 다시 state에 기록하므로 idempotent.)
 
