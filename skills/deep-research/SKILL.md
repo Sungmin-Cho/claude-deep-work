@@ -152,7 +152,19 @@ First Action의 디렉토리 매핑 직후, Agent 위임 전에 부모 세션이
 solo / team 판정과 각 경로의 Agent 호출 계약(prompt 필수 필드, area 분할, parallel partial
 timeout 처리)은
 `${CLAUDE_PLUGIN_ROOT}/skills/deep-research/references/research-modes.md`
-를 읽고 그대로 수행한다. 어느 경로든 Agent가 `$WORK_DIR/research.md`를 직접 작성한다.
+를 읽고 그대로 수행한다.
+
+**산출물 소유권은 경로마다 다르다** — 아래 계약은 worker 에이전트 정의
+(`agents/research-{codebase,zerobase}-worker.md`)가 정본이다:
+
+| 경로 | worker가 쓰는 파일 | 부모의 역할 |
+|---|---|---|
+| solo (`area=full`, 단일 Agent) | `$WORK_DIR/research.md` — 최종 산출물 | 쓰지 않는다. Document Refinement Protocol도 수행하지 않는다. |
+| team (3개 area 병렬) | `$WORK_DIR/research-{area}.md` — **부분 산출물** | 3개 partial을 Document Refinement Protocol로 병합하여 `$WORK_DIR/research.md`를 작성한다. |
+
+team 경로에서 부모가 병합을 건너뛰면 `research.md`가 생성되지 않아 Phase 2가 입력을 잃는다.
+어느 경로에서도 두 주체가 같은 파일을 동시에 쓰지 않는다 — solo는 worker만, team은 부모만
+`research.md`를 쓴다.
 
 # Section 3: 완료
 

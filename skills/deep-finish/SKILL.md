@@ -33,7 +33,7 @@ user-invocable: true
 **Runtime dependencies (cross-platform invokers must provide)**:
 - `CLAUDE_PLUGIN_ROOT` env var — absolute path to the deep-work plugin root (used by §7-Z `wrap-receipt-envelope.js` and §7-Z-A `emit-handoff.js`).
 - `PROJECT_ROOT` env var — absolute path to the repository root (used by §1, §7-Z, §7-Z-A). Standalone invokers can derive via `git rev-parse --show-toplevel`.
-- Node 20+ on PATH (the two hook scripts above are zero-dep Node CLIs).
+- Node 22+ on PATH (the two hook scripts above are zero-dep Node CLIs; `package.json` declares `engines.node: ">=22"`).
 - Sibling skill helper at `skills/deep-integrate/phase5-record-error.sh` (used by §1c when `--skip-integrate` is taken with a stalled Phase 5).
 
 > **Internal** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
@@ -422,9 +422,19 @@ The helper:
   (`outcome`) and the **verification signal** (`x-test-verified`) separately —
   downstream consumers judge trustworthiness from the pair.
 
-Cross-plugin handoff emit(§7-Z-A)은 `--handoff-to=<plugin>`가 주어졌을 때에만 수행한다.
-절차는 `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/references/handoff-emit.md`
-를 읽고 그대로 실행한다. `--no-handoff`이거나 플래그가 없으면 건너뛰고 §8로 진행한다.
+Cross-plugin handoff emit(§7-Z-A)은 다음 **두 경로 중 하나라도** 성립하면 수행한다:
+
+- `$ARGUMENTS`에 `--handoff-to=<plugin>`가 있다 (명시 경로 — 사용자 확인 없이 자동 실행).
+- `outcome`이 `merge` 또는 `pr`이고 `$ARGUMENTS`에 `--no-handoff`가 **없다**
+  (대화형 경로 — reference가 AskUserQuestion으로 인계 여부를 묻는다).
+
+둘 중 하나라도 성립하면
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/references/handoff-emit.md`
+를 읽고 그대로 실행한다. 두 트리거 중 어느 쪽인지 판정하고 `HANDOFF_TO`를 정하는 것은
+reference가 담당한다.
+
+건너뛰고 §8로 진행하는 경우는 두 가지뿐이다: `--no-handoff`가 있거나(merge/pr이어도 스킵),
+`outcome`이 `keep`/`discard`이면서 `--handoff-to`도 없을 때.
 
 ### 8. Finalize state
 

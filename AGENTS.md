@@ -22,6 +22,27 @@ node -e "JSON.parse(require('fs').readFileSync('.codex-plugin/plugin.json','utf8
 npm test
 ```
 
+## Host differences — subagent dispatch
+
+`agents/*.md` are Claude Code subagents. `.claude-plugin/plugin.json` exposes them;
+`.codex-plugin/plugin.json` declares only `skills` and `hooks` and has **no `agents`
+key**, so on Codex there is no `Agent(subagent_type=…)` tool to call.
+
+**Rule for every dispatch site.** Where a skill says to dispatch a worker —
+`deep-research` §모드 분기 and `deep-implement` §2.1/§2.2 — first decide the host:
+
+- The `Agent` tool is available (Claude Code) → dispatch as written.
+- It is not (Codex, and any host whose manifest omits `agents`) → **run the worker's
+  own protocol inline in the calling skill**, reading `agents/<worker>.md` for the
+  contract it would have received. Keep the same inputs, the same output paths and
+  the same receipt obligations; only the execution site changes.
+
+The programmatic signal is `detectRuntime()` in `scripts/detect-runtime.js`, which
+returns `claude` | `codex` | `unknown` from `CLAUDECODE` / `CODEX_HOME` markers —
+but an agent can answer the question directly by checking whether it has the tool.
+Never emit a dispatch a host cannot execute, and never silently skip the work the
+worker would have done.
+
 ## Receipt envelope (M3)
 
 `session-receipt.json` and `receipts/SLICE-*.json` are emitted as M3 cross-plugin
