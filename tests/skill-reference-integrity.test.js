@@ -198,10 +198,30 @@ function* scopedTokens(line) {
   }
 }
 
-function denyByDefaultHits(line, sourceFile) {
+// `pluginRequire("runtime/x.js")` is anchored *programmatically*: the helper
+// resolves against a realpath'd process.env.CLAUDE_PLUGIN_ROOT and throws if the
+// result leaves the root, which is stronger than a text anchor because it cannot
+// be defeated by a quoting context. It is only accepted where the file actually
+// defines that helper with its containment check — otherwise the name would
+// become a magic word that turns the guard off.
+const PLUGIN_REQUIRE_CALL = /\bpluginRequire\s*\(\s*["'`]([^"'`]+)["'`]/g;
+function definesPluginRequire(body) {
+  return /const\s+pluginRequire\s*=/.test(body)
+    && /realpathSync\s*\(\s*process\.env\.CLAUDE_PLUGIN_ROOT/.test(body)
+    && /escapes root/.test(body);
+}
+
+function denyByDefaultHits(line, sourceFile, body) {
+  const programmatic = new Set();
+  if (body && definesPluginRequire(body)) {
+    PLUGIN_REQUIRE_CALL.lastIndex = 0;
+    let pm;
+    while ((pm = PLUGIN_REQUIRE_CALL.exec(line))) programmatic.add(pm[1]);
+  }
   const out = [];
   for (const token of scopedTokens(line)) {
     if (ANCHORED_TOKEN.test(token)) continue;          // clause B checks these
+    if (programmatic.has(token)) continue;             // anchored by the helper
     if (resolvesInPlugin(token, sourceFile)) {
       out.push({ form: 'resolves-in-plugin', token, why: 'unanchored' });
     }
@@ -259,19 +279,49 @@ function expansionState(line, index) {
 // apostrophe is not a shell word.
 const SHELL_COMMAND = /\b(?:echo|printf|cat|node|bash|sh|zsh|jq|awk|sed|curl|export)\b/;
 
+// `${...}` only interpolates in a JS *template literal*. In a quoted string it
+// is inert, and a specifier that does not start with ./ ../ or / is a bare
+// package specifier — so `require("${CLAUDE_PLUGIN_ROOT}/runtime/x.js")` sends
+// Node looking in `node_modules/${CLAUDE_PLUGIN_ROOT}/runtime/x.js` inside the
+// *workspace*. Planting that module is arbitrary code execution, which makes
+// this the most severe form of the expansion axis rather than a broken path.
+const JS_SPECIFIER = /(?:\brequire\s*\(|\bfrom\s+|\bimport\s*\()\s*(["'])((?:(?!\1).)*\$\{[^}]+\}(?:(?!\1).)*)\1/g;
+
+// JSON and YAML have no interpolation at all: a `${...}` in a value is data.
+const JSON_YAML_VALUE = /"[A-Za-z_][A-Za-z0-9_]*"\s*:\s*"[^"]*\$\{CLAUDE_PLUGIN_ROOT\}[^"]*"|^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*["']?[^"'\n]*\$\{CLAUDE_PLUGIN_ROOT\}/;
+
+// The expansion axis, generalised by language. Each context answers one
+// question: given where this anchor sits, does anything expand it?
 function nonExpandingAnchors(line) {
   const out = [];
+  const flag = (why) => out.push({ form: 'non-expanding-anchor', token: '${CLAUDE_PLUGIN_ROOT}', why });
+
+  // 1. shell — single quotes and quoted heredocs leave it literal
   let i = line.indexOf('${CLAUDE_PLUGIN_ROOT}');
   while (i !== -1) {
     if (SHELL_COMMAND.test(line) && expansionState(line, i) === 'single') {
-      out.push({
-        form: 'non-expanding-anchor',
-        token: '${CLAUDE_PLUGIN_ROOT}',
-        why: 'single-quoted — the shell leaves it literal, so the path resolves against the workspace',
-      });
+      flag('single-quoted shell — literal, so the path resolves against the workspace');
     }
     i = line.indexOf('${CLAUDE_PLUGIN_ROOT}', i + 1);
   }
+
+  // 2. JS/TS quoted string used as a module specifier — bare specifier → node_modules
+  JS_SPECIFIER.lastIndex = 0;
+  let m;
+  while ((m = JS_SPECIFIER.exec(line))) {
+    flag(`JS ${m[1] === '"' ? 'double' : 'single'}-quoted specifier — not interpolated, `
+      + 'so Node resolves it as a bare package name under the workspace node_modules');
+  }
+
+  // 3. JSON / YAML value — no interpolation in either format. An
+  // angle-bracketed value is this repo's convention for "described, not
+  // literal" (`"<from ${CLAUDE_PLUGIN_ROOT}/…>"` documents where a field comes
+  // from), so it is a schema annotation rather than a path anyone resolves.
+  const angleDescribed = /<[^<>]*\$\{CLAUDE_PLUGIN_ROOT\}[^<>]*>/.test(line);
+  if (JSON_YAML_VALUE.test(line) && !SHELL_COMMAND.test(line) && !angleDescribed) {
+    flag('JSON/YAML value — neither format interpolates, so the anchor is stored literally');
+  }
+
   return out;
 }
 
@@ -316,20 +366,27 @@ test('every skill and agent markdown file has balanced code fences', () => {
 });
 
 // Returns violations on a line: {form, token, why}. Empty when the line is clean.
-function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md')) {
+function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body = '') {
   const out = [];
+  const programmaticAll = new Set();
+  if (body && definesPluginRequire(body)) {
+    PLUGIN_REQUIRE_CALL.lastIndex = 0;
+    let pm;
+    while ((pm = PLUGIN_REQUIRE_CALL.exec(line))) programmaticAll.add(pm[1]);
+  }
   for (const [form, re] of FORMS) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(line))) {
       const token = m[2] === undefined ? m[1] : m[1] + m[2];
+      if (programmaticAll.has(token)) continue;
       if (!ANCHORED_TOKEN.test(token)) out.push({ form, token, why: 'unanchored' });
       else if (escapesRoot(token)) out.push({ form, token, why: 'escapes plugin root' });
       else if (escapesViaSymlink(token)) out.push({ form, token, why: 'escapes via symlink' });
     }
   }
   out.push(...bareBasenameHits(line));
-  out.push(...denyByDefaultHits(line, sourceFile));
+  out.push(...denyByDefaultHits(line, sourceFile, body));
   out.push(...nonExpandingAnchors(line));
   return out;
 }
@@ -348,8 +405,9 @@ test('the always-loaded agent guides are in the scan set', () => {
 test('no read or exec instruction can be shadowed from the target workspace', () => {
   const violations = [];
   for (const file of markdownFiles()) {
-    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
-      for (const v of shadowableTokens(line, file)) {
+    const body = fs.readFileSync(file, 'utf8');
+    body.split('\n').forEach((line, i) => {
+      for (const v of shadowableTokens(line, file, body)) {
         violations.push(`${path.relative(ROOT, file)}:${i + 1}  [${v.form}] ${v.token} — ${v.why}`);
       }
     });
@@ -369,8 +427,11 @@ const FORM_CASES = [
     'Read `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md` and follow it'],
   ['direct-exec', 'source hooks/scripts/utils.sh',
     'source ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/utils.sh'],
+  // The "safe" side is NOT require("${CLAUDE_PLUGIN_ROOT}/…") — that is the r10
+  // vulnerability, since JS does not interpolate a quoted string and Node then
+  // resolves it as a bare package under the workspace node_modules.
   ['module-load', 'const x = require("runtime/policy-runtime.js");',
-    'const x = require("${CLAUDE_PLUGIN_ROOT}/runtime/policy-runtime.js");'],
+    'const x = pluginRequire("runtime/policy-runtime.js");'],
   ['executable-token', 'rules come from `health/fitness/fitness-generator.js`',
     'rules come from `${CLAUDE_PLUGIN_ROOT}/health/fitness/fitness-generator.js`'],
   ['bare-basename', 'Read(`adaptive-review-protocol.md`)',
@@ -379,11 +440,29 @@ const FORM_CASES = [
     'Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#decode`)'],
 ];
 
+// A body that defines the helper with its containment check. pluginRequire is
+// only trusted where this definition is present — the name alone must not
+// disable the guard, so the negative side is asserted without it.
+const HELPER_BODY = [
+  'const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");',
+  'const pluginRequire = (rel) => { throw new Error("plugin path escapes root: " + rel); };',
+].join(String.fromCharCode(10));
+
 test('every enumerated instruction form is enforced (positive + negative)', () => {
   for (const [form, bad, good] of FORM_CASES) {
-    assert.ok(shadowableTokens(bad).length > 0, `${form}: guard must flag — ${bad}`);
-    assert.deepEqual(shadowableTokens(good), [], `${form}: guard must accept — ${good}`);
+    assert.ok(shadowableTokens(bad, undefined, HELPER_BODY).length > 0,
+      `${form}: guard must flag — ${bad}`);
+    assert.deepEqual(shadowableTokens(good, undefined, HELPER_BODY), [],
+      `${form}: guard must accept — ${good}`);
   }
+});
+
+test('pluginRequire is not a magic word — it only counts where the helper is defined', () => {
+  const call = 'const x = pluginRequire("runtime/policy-runtime.js");';
+  assert.deepEqual(shadowableTokens(call, undefined, HELPER_BODY), [],
+    'accepted when the containment helper is defined in the same document');
+  assert.ok(shadowableTokens(call, undefined, '// no helper here').length > 0,
+    'rejected when the document never defines the helper');
 });
 
 test('anchored paths that escape the plugin root are rejected (containment)', () => {
@@ -572,6 +651,68 @@ test('the plugin obeys the rules it states', () => {
   }
   assert.deepEqual(violations, [],
     `the plugin violates a rule it states:\n  ${violations.join('\n  ')}`);
+});
+
+test('a planted node_modules shadow cannot hijack a plugin require', () => {
+  // The r10 exploit, executed rather than argued. `require("${VAR}/x.js")` is a
+  // *bare* specifier — not absolute — so Node walks node_modules from cwd.
+  const evil = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-nm-evil-'));
+  const realRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-nm-plugin-'));
+  const { spawnSync } = require('node:child_process');
+  try {
+    const shadowDir = path.join(evil, 'node_modules', '${CLAUDE_PLUGIN_ROOT}', 'runtime');
+    fs.mkdirSync(shadowDir, { recursive: true });
+    fs.writeFileSync(path.join(shadowDir, 'model-catalog.js'),
+      'module.exports = { marker: "ATTACKER" };\n');
+    fs.mkdirSync(path.join(realRoot, 'runtime'), { recursive: true });
+    fs.writeFileSync(path.join(realRoot, 'runtime', 'model-catalog.js'),
+      'module.exports = { marker: "CANONICAL" };\n');
+
+    const run = (src) => spawnSync(process.execPath, ['-e', src],
+      { cwd: evil, env: { ...process.env, CLAUDE_PLUGIN_ROOT: realRoot }, encoding: 'utf8' });
+
+    // Non-vacuity: the planted module really is reachable via the broken form.
+    const vulnerable = run('console.log(require("${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js").marker)');
+    assert.equal(vulnerable.status, 0, vulnerable.stderr);
+    assert.equal(vulnerable.stdout.trim(), 'ATTACKER',
+      'fixture is vacuous — the planted shadow must be reachable via the unsafe form');
+
+    // The documented pattern resolves from env, with containment.
+    const safe = run(`
+      const nodePath = require("node:path"), nodeFs = require("node:fs");
+      const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+      const pluginRequire = (rel) => {
+        const t = nodePath.resolve(PLUGIN_ROOT, rel);
+        if (t !== PLUGIN_ROOT && !t.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+          throw new Error("plugin path escapes root: " + rel);
+        }
+        return require(t);
+      };
+      console.log(pluginRequire("runtime/model-catalog.js").marker);
+    `);
+    assert.equal(safe.status, 0, safe.stderr);
+    assert.equal(safe.stdout.trim(), 'CANONICAL',
+      'the documented pattern must load the plugin module, never the planted one');
+
+    // Containment: a traversing relative path is refused, not resolved.
+    const escaping = run(`
+      const nodePath = require("node:path"), nodeFs = require("node:fs");
+      const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+      const pluginRequire = (rel) => {
+        const t = nodePath.resolve(PLUGIN_ROOT, rel);
+        if (t !== PLUGIN_ROOT && !t.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+          throw new Error("plugin path escapes root: " + rel);
+        }
+        return require(t);
+      };
+      pluginRequire("../evil.js");
+    `);
+    assert.notEqual(escaping.status, 0, 'an escaping path must throw');
+    assert.match(escaping.stderr, /escapes root/);
+  } finally {
+    fs.rmSync(evil, { recursive: true, force: true });
+    fs.rmSync(realRoot, { recursive: true, force: true });
+  }
 });
 
 test('mixed lines fail on the bare token', () => {

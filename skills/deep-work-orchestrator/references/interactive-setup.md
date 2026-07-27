@@ -43,9 +43,23 @@ CAP=$(node -e '
 호출 (`deep-work:session-recommender` → 2단계 fallback):
 
 ````javascript
-const { sanitizeInput } = require("${CLAUDE_PLUGIN_ROOT}/scripts/recommender-input.js");
-const { parseRecommendation } = require("${CLAUDE_PLUGIN_ROOT}/scripts/recommender-parser.js");
-const { filterAskItems } = require("${CLAUDE_PLUGIN_ROOT}/runtime/recommender-runtime.js");
+// plugin root는 JS 문자열에서 확장되지 않는다. ${CLAUDE_PLUGIN_ROOT}를 그대로
+// require에 넘기면 Node가 절대경로가 아닌 **bare specifier**로 보고
+// node_modules/${CLAUDE_PLUGIN_ROOT}/... 를 탐색한다 — 악성 워크스페이스가 그 자리에
+// 모듈을 심으면 호출자 권한으로 실행된다. 반드시 env에서 읽어 해석하고 containment를 검증한다.
+const nodePath = require("node:path");
+const nodeFs = require("node:fs");
+const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+const pluginRequire = (rel) => {
+  const target = nodePath.resolve(PLUGIN_ROOT, rel);
+  if (target !== PLUGIN_ROOT && !target.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+    throw new Error("plugin path escapes root: " + rel);
+  }
+  return require(target);
+};
+const { sanitizeInput } = pluginRequire("scripts/recommender-input.js");
+const { parseRecommendation } = pluginRequire("scripts/recommender-parser.js");
+const { filterAskItems } = pluginRequire("runtime/recommender-runtime.js");
 
 const input = sanitizeInput({
   task_description: TASK_TEXT,
@@ -106,7 +120,21 @@ const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.
 각 ask 항목별로 옵션 라벨 빌드:
 
 ````javascript
-const { formatOptions, capabilityToDisabled } = require("${CLAUDE_PLUGIN_ROOT}/scripts/format-ask-options.js");
+// plugin root는 JS 문자열에서 확장되지 않는다. ${CLAUDE_PLUGIN_ROOT}를 그대로
+// require에 넘기면 Node가 절대경로가 아닌 **bare specifier**로 보고
+// node_modules/${CLAUDE_PLUGIN_ROOT}/... 를 탐색한다 — 악성 워크스페이스가 그 자리에
+// 모듈을 심으면 호출자 권한으로 실행된다. 반드시 env에서 읽어 해석하고 containment를 검증한다.
+const nodePath = require("node:path");
+const nodeFs = require("node:fs");
+const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+const pluginRequire = (rel) => {
+  const target = nodePath.resolve(PLUGIN_ROOT, rel);
+  if (target !== PLUGIN_ROOT && !target.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+    throw new Error("plugin path escapes root: " + rel);
+  }
+  return require(target);
+};
+const { formatOptions, capabilityToDisabled } = pluginRequire("scripts/format-ask-options.js");
 const disabled = capabilityToDisabled(CAP, item);
 const opts = formatOptions({
   item,

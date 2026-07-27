@@ -120,8 +120,22 @@ TDD를 건너뛰거나 slice scope를 넓히고 싶은 합리화가 떠오르면
   > **fail-safe 선행 체크**: decoded meta의 implement tier가 `main`이거나 error가 true이면 per-slice 해석을 하지 않고 **현재 세션 모델로 inline 실행**한다(error → main). 아래 per-slice 규칙은 tier가 light/standard/deep일 때만 적용.
 
 ```javascript
-const { sliceModelTierWithRisk } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-routing-runtime.js");
-const { resolveTier } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js");
+// plugin root는 JS 문자열에서 확장되지 않는다. ${CLAUDE_PLUGIN_ROOT}를 그대로
+// require에 넘기면 Node가 절대경로가 아닌 **bare specifier**로 보고
+// node_modules/${CLAUDE_PLUGIN_ROOT}/... 를 탐색한다 — 악성 워크스페이스가 그 자리에
+// 모듈을 심으면 호출자 권한으로 실행된다. 반드시 env에서 읽어 해석하고 containment를 검증한다.
+const nodePath = require("node:path");
+const nodeFs = require("node:fs");
+const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+const pluginRequire = (rel) => {
+  const target = nodePath.resolve(PLUGIN_ROOT, rel);
+  if (target !== PLUGIN_ROOT && !target.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+    throw new Error("plugin path escapes root: " + rel);
+  }
+  return require(target);
+};
+const { sliceModelTierWithRisk } = pluginRequire("runtime/model-routing-runtime.js");
+const { resolveTier } = pluginRequire("runtime/model-catalog.js");
 // tiers.implement가 light/standard/deep일 때만 — main/error는 위에서 inline 처리됨
 const sliceRiskClass = decodedSliceRisk[slice.id]?.class;
 const tier = sliceModelTierWithRisk(decodedRoutingMeta.tiers.implement, slice.size, sliceRiskClass);
