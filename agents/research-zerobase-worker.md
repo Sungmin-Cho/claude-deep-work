@@ -1,19 +1,13 @@
 ---
 name: research-zerobase-worker
 description: |
-  Delegated research worker for deep-work's Research phase on NEW projects
-  (project_type=zero-base). Takes an area parameter and researches technology
-  choices, conventions, and data models — with explicit authority to search
-  the web for up-to-date framework/library information.
+  Delegated research worker for deep-work's Research phase on new projects
+  (project_type=zero-base). Researches technology choices, conventions and
+  data models, with explicit authority to search the web. Dispatched by the
+  deep-research skill, never by the user.
 
   <example>
-  Context: zero-base project, solo mode, full research
-  prompt: "area=full; work_dir=/.../deep-work; task=Build a CLI for X"
-  </example>
-
-  <example>
-  Context: zero-base, team mode parallel, tech-stack area
-  prompt: "area=tech-stack; work_dir=...; task=..."
+  prompt: "area=tech-stack; work_dir=/.../deep-work; task=Build a CLI for X"
   </example>
 model: inherit
 color: cyan

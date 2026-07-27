@@ -1,6 +1,6 @@
 ---
 name: deep-work-orchestrator
-description: "This skill should be used when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), asks to start a new deep-work session, or requests evidence-driven workflow auto-flow across Brainstorm → Research → Plan → Implement → Test phases. Handles session initialization (profile v3 load, capability detection, session-recommender sub-agent, AskUserQuestion 4-key ask, flag parsing) and dispatches the 5-phase pipeline with Exit Gates between each phase."
+description: "Session initialization plus the Brainstorm → Research → Plan → Implement → Test auto-flow, with an Exit Gate between phases. Triggers on /deep-work \"task\", Skill({ skill: \"deep-work:deep-work-orchestrator\", args: \"task\" }), or a request to start a new deep-work session."
 user-invocable: true
 ---
 

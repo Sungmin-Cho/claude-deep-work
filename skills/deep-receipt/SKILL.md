@@ -1,6 +1,6 @@
 ---
 name: deep-receipt
-description: "Use when the user wants to view, dashboard, or export deep-work slice receipts (`receipts/SLICE-*.json`). Triggers on `/deep-receipt`, `/deep-status --receipts`, \"receipt dashboard\", \"slice receipt\", \"리시트 보기\", \"리시트 대시보드\", \"에비던스 리시트\". Default subcommand is `dashboard` (ASCII visual of all slice receipts). Also: `view SLICE-NNN`, `export`, `validate`. Sub-page of the deep-status hub."
+description: "View, dashboard, or export deep-work slice receipts (`receipts/SLICE-*.json`). Triggers on `/deep-receipt`, `/deep-status --receipts`, \"receipt dashboard\", \"slice receipt\", \"리시트 보기\", \"리시트 대시보드\", \"에비던스 리시트\". Sub-page of the deep-status hub."
 user-invocable: true
 ---
 

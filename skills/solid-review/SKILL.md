@@ -1,6 +1,6 @@
 ---
 name: solid-review
-description: "Use when the user wants SOLID design-principles code review — evaluating SRP / OCP / LSP / ISP / DIP compliance on a target file/directory/glob. Triggers on `/solid-review`, \"SOLID review\", \"design review\", \"design principles\", \"SOLID 검증\", \"디자인 리뷰\", \"원칙 검증\", or auto-invocation by `/deep-test` as the Advisory Quality Gate (does not block). Review-only — does NOT modify code. Saves results to `$WORK_DIR/solid-review.md` when in workflow mode."
+description: "SOLID design-principles review (SRP / OCP / LSP / ISP / DIP) on a file/directory/glob. Review-only. Triggers on `/solid-review`, \"SOLID review\", \"design review\", \"design principles\", \"SOLID 검증\", \"디자인 리뷰\", \"원칙 검증\", or `/deep-test` running it as the Advisory Gate."
 user-invocable: true
 ---
 

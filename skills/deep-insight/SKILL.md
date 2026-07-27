@@ -1,6 +1,6 @@
 ---
 name: deep-insight
-description: "Use when the user wants a code-metrics + complexity + dependency analysis report on a target file/directory/glob. Triggers on `/deep-insight`, \"code insight\", \"complexity report\", \"code metrics\", \"메트릭 분석\", \"복잡도 리포트\", \"의존성 분석\", or auto-invocation by `/deep-test` as the Insight Tier of the 3-tier Quality Gate (never blocks). Analysis-only — does NOT modify code. Saves results to `$WORK_DIR/insight-report.md` when run inside a deep-work session, prints inline otherwise."
+description: "Code-metrics, complexity and dependency report for a file/directory/glob — analysis only, never modifies code. Triggers on `/deep-insight`, \"code insight\", \"complexity report\", \"code metrics\", \"메트릭 분석\", \"복잡도 리포트\", \"의존성 분석\", or `/deep-test` running it as the Insight Tier (never blocks)."
 user-invocable: true
 ---
 

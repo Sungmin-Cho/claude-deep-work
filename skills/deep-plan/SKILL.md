@@ -1,6 +1,6 @@
 ---
 name: deep-plan
-description: "This skill should be used at Phase 2 of deep-work, after research.md approval, to design a detailed implementation plan with TDD slices. Decomposes work into SLICE-NNN units with `depends_on` DAG, acceptance contracts (`failing_test`, `acceptance_threshold`), and optional `cluster_id` hint for parallel-safe grouping. Emits plan.md with the inline slice DAG (Implement Phase's deep-implement skill parses it for worker fan-out — no external slices.md/slice-graph.json is emitted). Triggered by 'create implementation plan', '계획 수립', /deep-plan slash, cross-platform Skill({ skill: \"deep-work:deep-plan\", args: \"...\" }), or orchestrator dispatch after research approval."
+description: "Phase 2 — decompose approved research into SLICE-NNN units with a `depends_on` DAG and acceptance contracts, emitted as the inline slice DAG in plan.md. Triggered by 'create implementation plan', '계획 수립', /deep-plan slash, Skill({ skill: \"deep-work:deep-plan\", args: \"...\" }), or orchestrator dispatch after research approval."
 user-invocable: true
 ---
 

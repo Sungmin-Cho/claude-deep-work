@@ -1,6 +1,6 @@
 ---
 name: deep-resume
-description: "Use when the user wants to resume an active deep-work session — restoring context from previous artifacts and continuing from the current phase. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or when interrupted mid-phase. Detects active session via env var → pointer file → legacy fallback, restores worktree context, migrates state if version-bumped, clears phase cache, and dispatches to the per-phase resume skill. Supports `--session=<id>`, `--resume-from=<phase>`, `--worktree=<path>`."
+description: "Resume an active deep-work session from its current phase, restoring artifacts and worktree context. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or an interruption mid-phase. Supports `--session=<id>`, `--resume-from=<phase>`, `--worktree=<path>`."
 user-invocable: true
 ---
 

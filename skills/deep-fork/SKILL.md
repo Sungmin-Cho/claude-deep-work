@@ -1,6 +1,6 @@
 ---
 name: deep-fork
-description: "Use when the user explicitly wants an isolated deep-work branch for a parallel slice, alternative experiment, independent review, recovery, or security isolation. Same-goal context continuation is not a fork reason: Codex uses native compaction and Claude continues in the current host session."
+description: "Create an isolated deep-work branch for a parallel slice, alternative experiment, independent review, recovery, or security isolation. Same-goal context continuation is not a fork reason."
 user-invocable: true
 ---
 

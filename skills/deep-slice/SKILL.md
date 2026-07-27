@@ -1,6 +1,6 @@
 ---
 name: deep-slice
-description: "Use when the user wants slice-level management inside a deep-work Phase 3 (Implement) session — status dashboard, manual activation, spike mode entry, reset, or per-slice model override. Triggers on `/deep-slice`, \"slice status\", \"spike mode\", \"slice reset\", \"슬라이스 상태\", \"스파이크 모드\". Primary escape hatch for TDD-blocked scenarios (phase-guard surfaces `/deep-slice spike|reset` in block messages). Subcommands: `activate SLICE-NNN`, `spike SLICE-NNN`, `reset SLICE-NNN`, `model SLICE-NNN [model]`."
+description: "Slice-level management inside Phase 3 — status, activate, spike, reset, per-slice model override; the escape hatch phase-guard points at when TDD blocks. Triggers on `/deep-slice`, \"slice status\", \"spike mode\", \"slice reset\", \"슬라이스 상태\", \"스파이크 모드\"."
 user-invocable: true
 ---
 

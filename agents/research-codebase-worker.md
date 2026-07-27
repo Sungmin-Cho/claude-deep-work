@@ -1,19 +1,13 @@
 ---
 name: research-codebase-worker
 description: |
-  Delegated research worker for deep-work's Research phase on existing codebases.
-  Invoked by the deep-research skill (not by the user directly). Takes an area
-  parameter and analyzes the corresponding codebase areas, writing findings to
-  $WORK_DIR/research{-area}.md.
+  Delegated research worker for deep-work's Research phase on existing
+  codebases. Analyzes the requested area and writes findings to
+  $WORK_DIR/research{-area}.md. Dispatched by the deep-research skill,
+  never by the user.
 
   <example>
-  Context: parent skill runs Research in solo mode
-  prompt (parent → agent): "area=full; work_dir=/.../deep-work; task=..."
-  </example>
-
-  <example>
-  Context: parent skill runs Research in team mode, arch area
-  prompt (parent → agent): "area=architecture; work_dir=...; task=..."
+  prompt: "area=architecture; work_dir=/.../deep-work; task=..."
   </example>
 model: inherit
 color: blue

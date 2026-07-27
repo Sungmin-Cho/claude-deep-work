@@ -1,6 +1,6 @@
 ---
 name: deep-report
-description: "Use when the user wants to generate or view the comprehensive deep-work session report — session lifecycle, slice summary, evidence trail, TDD compliance, sensor pass-rate, model usage, evaluation outcomes. Triggers on `/deep-report`, `/deep-status --report`, \"session report\", \"deep-work report\", \"세션 리포트\", \"세션 보고서\", \"리포트 생성\". Writes to `$WORK_DIR/report.md` and prints inline summary. Sub-page of the deep-status hub."
+description: "Generate or view the deep-work session report — lifecycle, slice summary, evidence trail, TDD compliance, model usage. Triggers on `/deep-report`, `/deep-status --report`, \"session report\", \"deep-work report\", \"세션 리포트\", \"세션 보고서\", \"리포트 생성\". Sub-page of the deep-status hub."
 user-invocable: true
 ---
 

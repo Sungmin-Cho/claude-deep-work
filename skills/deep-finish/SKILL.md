@@ -1,6 +1,6 @@
 ---
 name: deep-finish
-description: "Use when the user finishes a deep-work session — merging, opening a PR, keeping the branch as-is, or discarding. Triggers on `/deep-finish`, \"finish session\", \"wrap up session\", \"세션 마무리\", \"세션 종료\", \"PR 만들어줘\", or orchestrator auto-call after Phase 5 (Integrate) completes. Emits an M3-envelope-wrapped `session-receipt.json` (and optionally a cross-plugin `handoff.json`). Supports `--skip-integrate` (Phase 5 bypass), `--handoff-to=<plugin>` / `--no-handoff` (post-finish handoff control)."
+description: "Finish a deep-work session — merge, open a PR, keep the branch, or discard — and emit the M3-envelope-wrapped `session-receipt.json`. Triggers on `/deep-finish`, \"finish session\", \"wrap up session\", \"세션 마무리\", \"세션 종료\", \"PR 만들어줘\", or orchestrator auto-call after Integrate. Flags: `--skip-integrate`, `--handoff-to=<plugin>`, `--no-handoff`."
 user-invocable: true
 ---
 

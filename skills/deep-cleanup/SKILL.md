@@ -1,6 +1,6 @@
 ---
 name: deep-cleanup
-description: "Use when the user wants to scan and clean up stale deep-work git worktrees (`dw/*` branches) plus fork worktrees. Triggers on `/deep-cleanup`, \"clean worktrees\", \"stale worktree\", \"worktree 정리\", \"fork 정리\", \"deep-work 정리\". Scans `git worktree list`, classifies stale/active, offers per-worktree or batch deletion via AskUserQuestion, handles dirty trees with extra confirmation, and prunes `.claude/deep-work-sessions.json` registry for idle fork sessions."
+description: "Scan and clean up stale deep-work git worktrees (`dw/*` branches) plus fork worktrees, and prune idle fork sessions from the registry. Triggers on `/deep-cleanup`, \"clean worktrees\", \"stale worktree\", \"worktree 정리\", \"fork 정리\", \"deep-work 정리\"."
 user-invocable: true
 ---
 

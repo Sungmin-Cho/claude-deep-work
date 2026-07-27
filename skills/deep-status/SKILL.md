@@ -1,6 +1,6 @@
 ---
 name: deep-status
-description: "Use when the user wants to see the current deep-work session status and progress — dashboard, badge, tree, or routing to sub-pages (receipts / history / report / assumptions). Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Hub command that dispatches to deep-receipt (§6), deep-history (§7), deep-report (§8), deep-assumptions (§9) sub-skills via inline body Read. Supports `--compare` (fork comparison), `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`, `--risk`."
+description: "Current deep-work session status — dashboard, badge, tree, or routing to the receipts / history / report / assumptions sub-pages. Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Flags: `--compare`, `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`, `--risk`."
 user-invocable: true
 ---
 

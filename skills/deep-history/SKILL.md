@@ -1,6 +1,6 @@
 ---
 name: deep-history
-description: "Use when the user wants to view cross-session deep-work history — completed session list, TDD compliance rates, model usage (haiku/sonnet/opus/main), evaluator model usage, and aggregate trends. Triggers on `/deep-history`, `/deep-status --history`, \"session history\", \"deep-work history\", \"세션 이력\", \"이전 세션\", \"TDD 준수율 트렌드\". Scans `.deep-work/*/session-receipt.json` envelopes recursively, aggregates per-session stats, and displays trend indicators (recent-3 vs prior-3). Sub-page of the deep-status hub."
+description: "Cross-session deep-work history — completed sessions, TDD compliance rates, model usage, aggregate trend indicators. Triggers on `/deep-history`, `/deep-status --history`, \"session history\", \"deep-work history\", \"세션 이력\", \"이전 세션\", \"TDD 준수율 트렌드\". Sub-page of the deep-status hub."
 user-invocable: true
 ---
 

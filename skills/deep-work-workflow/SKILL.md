@@ -1,6 +1,6 @@
 ---
 name: deep-work-workflow
-description: "This skill provides a high-level overview of the deep-work workflow (Brainstorm → Research → Spec → Plan → Implement → Test → Integrate, with M3 envelope receipt emit and Exit Gates between phases). Use when the user asks how deep-work works, requests a workflow overview, asks 'which phase should I start from', or needs to understand the phase-to-phase contracts. For executing an actual phase, prefer the phase-specific skills (deep-brainstorm, deep-research, deep-spec, deep-plan, deep-implement, deep-test, deep-integrate). Triggers: 'deep-work overview', 'workflow 개요', 'how does deep-work work', 'phase 구조 설명'."
+description: "High-level overview of the deep-work workflow (Brainstorm → Research → Spec → Plan → Implement → Test → Integrate). Use for how deep-work works, 'which phase should I start from', and the phase-to-phase contracts; prefer the phase-specific skills to execute a phase. Triggers: 'deep-work overview', 'workflow 개요', 'how does deep-work work', 'phase 구조 설명'."
 ---
 
 # Deep Work Workflow: Brainstorm → Research → Spec → Plan → Implement → Test → Integrate
@@ -96,7 +96,7 @@ This is not a suggestion — it's a hard gate. The AI literally cannot modify co
 
 ```
 /deep-work "Add user authentication with JWT tokens"
-# v6.3.1 Phase Exit Gates — 각 phase 완료 시 사용자 확인 (진행/재실행/일시정지)
+# Phase Exit Gates — 각 phase 완료 시 사용자 확인 (진행/재실행/일시정지)
 # → Brainstorm → [Exit Gate] → Research → [review+approval + Exit Gate]
 # → Plan → [review+approval + Exit Gate] → Implement → [Exit Gate]
 # → Test → [Exit Gate: Integrate 또는 Finish] → Finish

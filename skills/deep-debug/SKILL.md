@@ -1,6 +1,6 @@
 ---
 name: deep-debug
-description: "Use when the user enters debug sub-mode during deep-work Phase 3 (Implement) to investigate root causes before applying fixes. Triggers on `/deep-debug`, \"systematic debug\", \"root cause investigation\", \"디버그 모드\", \"근본 원인 분석\", `verification_cmd` 실패 시 자동 진입, or \"fix this\" once iron-rule blocks guessing. Four phases: Investigate → Analyze → Hypothesize → Implement. Iron rule: NO fixes without root cause investigation first. Escalates to user after 3 invalidated hypotheses."
+description: "Debug sub-mode for Phase 3 — Investigate → Analyze → Hypothesize → Implement, with the iron rule that no fix ships before root-cause investigation. Triggers on `/deep-debug`, \"systematic debug\", \"root cause investigation\", \"디버그 모드\", \"근본 원인 분석\", `verification_cmd` 실패 시 자동 진입, or \"fix this\"."
 user-invocable: true
 ---
 

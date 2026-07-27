@@ -1,6 +1,6 @@
 ---
 name: deep-phase-review
-description: "Use when the user manually requests a deep-work phase document review. Parses --phase, --structural, and --adversarial compatibility arguments, then enters the canonical adaptive review protocol."
+description: "Manual deep-work phase document review. Parses --phase, --structural and --adversarial, then enters the canonical adaptive review protocol."
 user-invocable: true
 ---
 

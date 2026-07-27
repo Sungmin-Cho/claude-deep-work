@@ -1,6 +1,6 @@
 ---
 name: drift-check
-description: "Use when the user wants plan-alignment verification — comparing the approved plan against actual implementation to detect unimplemented items, out-of-scope changes, and design drift. Triggers on `/drift-check`, \"plan drift\", \"drift detection\", \"plan alignment\", \"플랜 드리프트\", \"계획 정합성\", \"드리프트 검증\", or auto-invocation by `/deep-test` as the Required Gate (blocks on drift). Read-only — does NOT modify code. Saves results to `$WORK_DIR/drift-report.md` when in workflow mode."
+description: "Plan-alignment verification — approved plan vs actual implementation, reporting unimplemented items, out-of-scope changes and design drift. Read-only. Triggers on `/drift-check`, \"plan drift\", \"drift detection\", \"plan alignment\", \"플랜 드리프트\", \"계획 정합성\", \"드리프트 검증\", or `/deep-test` running it as the Required Gate."
 user-invocable: true
 ---
 

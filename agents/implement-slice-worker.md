@@ -1,18 +1,12 @@
 ---
 name: implement-slice-worker
 description: |
-  Delegated implementation worker for deep-work's Implement phase.
-  Receives a list of slice IDs to execute and runs the full TDD + Sensor +
-  Slice Review protocol for each. Invoked by the deep-implement skill.
+  Delegated implementation worker for deep-work's Implement phase. Runs the
+  full TDD + Sensor + Slice Review protocol for each assigned slice ID.
+  Dispatched by the deep-implement skill, never by the user.
 
   <example>
-  Context: solo implement — parent delegates all slices to one worker
-  prompt: "cluster_ids=[SLICE-001,SLICE-002,SLICE-003]; sequential; tdd_mode=strict"
-  </example>
-
-  <example>
-  Context: team implement with multiple subagents — each worker handles one cluster
-  prompt: "cluster_ids=[SLICE-004]; tdd_mode=strict; evaluator_model=opus"
+  prompt: "cluster_ids=[SLICE-001,SLICE-002]; sequential; tdd_mode=strict"
   </example>
 model: inherit
 color: magenta

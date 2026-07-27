@@ -1,6 +1,6 @@
 ---
 name: deep-assumptions
-description: "Use when the user wants to inspect deep-work's assumption health report — Wilson Score-based per-assumption confidence, verdict (justified / loosen / drop), model-aware split, and decay history. Triggers on `/deep-assumptions`, `/deep-status --assumptions`, \"assumption health\", \"rule justification\", \"loosen enforcement\", \"어썸션 헬스\", \"규칙 정당화\", \"가정 검증\". Reads session evidence to decide whether deep-work's hook denylist + receipt validation rules are still justified. Sub-page of the deep-status hub."
+description: "Assumption health report — per-assumption Wilson Score confidence, verdict (justified / loosen / drop), model-aware split, decay history. Triggers on `/deep-assumptions`, `/deep-status --assumptions`, \"assumption health\", \"rule justification\", \"loosen enforcement\", \"어썸션 헬스\", \"규칙 정당화\", \"가정 검증\". Sub-page of the deep-status hub."
 user-invocable: true
 ---
 

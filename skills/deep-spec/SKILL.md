@@ -1,6 +1,6 @@
 ---
 name: deep-spec
-description: "Author the executable spec contract for deep-work research sessions. Invoked through /deep-spec, $deep-work:deep-spec, or orchestrator dispatch."
+description: "Author the executable spec contract for a deep-work session. Invoked through /deep-spec, $deep-work:deep-spec, or orchestrator dispatch."
 user-invocable: true
 ---
 

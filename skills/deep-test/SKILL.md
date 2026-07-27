@@ -1,6 +1,6 @@
 ---
 name: deep-test
-description: "This skill should be used at Phase 4 of deep-work, after all slices in plan.md are marked [x], to run 9 verification gates: receipt completeness, plan-alignment drift, cross-slice spec/quality review, sensor clean, mutation, fitness delta, and health required/advisory. On failure, triggers the implement-test retry loop (cleanup implement_completed_at + receipt invalidation). Sets test_passed: true marker that gates deep-finish's session-receipt M3 envelope emit (with parent_run_id chain to consumed evolve-insights run). Triggered by /deep-test slash, cross-platform Skill({ skill: \"deep-work:deep-test\", args: \"...\" }), or orchestrator dispatch after implement approval."
+description: "Phase 4 — run the verification gates once every plan slice is marked [x], and set the `test_passed` marker that gates deep-finish's session-receipt envelope emit; failure drives the implement-test retry loop. Triggered by /deep-test slash, Skill({ skill: \"deep-work:deep-test\", args: \"...\" }), or orchestrator dispatch after implement approval."
 user-invocable: true
 ---
 
