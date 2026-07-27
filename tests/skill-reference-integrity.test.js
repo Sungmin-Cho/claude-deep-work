@@ -29,10 +29,15 @@ function markdownFiles() {
   return out;
 }
 
+// Indented too: fences nested in a list item or a numbered step are still fences,
+// and 24 of these files use them. A column-0-only match left two reference files
+// (loop-exit, worktree-restore) with zero of their fences checked.
+const FENCE = /^[ \t]*```/gm;
+
 test('every skill and agent markdown file has balanced code fences', () => {
   const unbalanced = [];
   for (const file of markdownFiles()) {
-    const fences = (fs.readFileSync(file, 'utf8').match(/^```/gm) || []).length;
+    const fences = (fs.readFileSync(file, 'utf8').match(FENCE) || []).length;
     if (fences % 2 !== 0) unbalanced.push(`${path.relative(ROOT, file)} (${fences})`);
   }
   assert.deepEqual(unbalanced, [],
@@ -44,6 +49,9 @@ test('every referenced skill path resolves', () => {
     [/\$\{CLAUDE_PLUGIN_ROOT\}\/([A-Za-z0-9._/-]+\.(?:md|js|sh))/g, false],
     [/`(\.\.\/[A-Za-z0-9._/-]+\.md)(?:#[a-z0-9-]+)?`/g, true],
     [/\]\((\.\.?\/[A-Za-z0-9._/-]+\.md)\)/g, true],
+    // Read("../shared/references/foo.md") — the double-quoted call form, used in
+    // five phase skills. It resolves today but was outside the backtick pattern.
+    [/Read\("(\.\.\/[A-Za-z0-9._/-]+\.md)(?:#[a-z0-9-]+)?"\)/g, true],
   ];
   const broken = [];
   let resolved = 0;

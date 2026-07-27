@@ -20,8 +20,6 @@ parse_rc=$?
 - `PARSE_OUT` (JSON) → `TASK_TEXT`, `FLAGS` 객체 추출.
 - `TASK_TEXT` 비어 있으면 AskUserQuestion("작업 내용을 입력해 주세요.").
 
-> `scripts/parse-deep-work-flags.js`는 Task 4에서 구현. 본 task는 호출 step만 박제.
-
 ### §1-3-2. 프로필 v2→v3 마이그레이션
 
 파서 결과로 `DEEP_WORK_INITIAL_PRESET`(= `FLAGS.profile` 또는 null)이 채워진 후 migration 호출:
@@ -64,8 +62,6 @@ profile_rc=$?
 
 - `profile_rc` 비-zero → `/tmp/dw-profile-err.txt` 내용 표시 + AskUserQuestion (재시도 / 종료).
 - `PROFILE_OUT` (JSON stdout) → `PROFILE_DATA` (presets, default_preset, interactive_each_session, defaults) 추출.
-
-> `scripts/load-v3-profile.js`는 Task 3.5에서 구현. 본 task는 호출 step만 박제.
 
 ### §1-3-4. 플래그 우선순위 적용
 

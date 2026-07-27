@@ -107,7 +107,7 @@ When all tasks are done:
    - `implement_completed_at`: current ISO timestamp
    - `phase_review.implement`: `{reviewed, reviewers, self_issues, external_issues, resolved}`
    - `review_state: completed`
-   - **DO NOT set `current_phase: test`.** v6.3.1 F1: Orchestrator가 Exit Gate "진행" 선택 시에만 `current_phase`를 전환한다. Phase skill은 완료-marker만 기록하고 제어를 반환한다.
+   - **DO NOT set `current_phase: test`.** Orchestrator가 Exit Gate "진행" 선택 시에만 `current_phase`를 전환한다. Phase skill은 완료-marker만 기록하고 제어를 반환한다.
 2. Present a summary showing:
    - Tasks completed vs total
    - Files modified/created
