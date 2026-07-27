@@ -734,6 +734,80 @@ test('a planted node_modules shadow cannot hijack a plugin require', () => {
   }
 });
 
+test('markdown link destinations are never environment variables', () => {
+  // The mirror image of the anchor rule. Markdown does not interpolate, so an
+  // anchored link destination is a literal broken URL. r8 declared link targets
+  // an exception class in the guard; this asserts the exception is actually
+  // honoured in the documents, which it was not for seven links.
+  const broken = [];
+  for (const file of markdownFiles()) {
+    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      const re = /\]\((\$\{[^)]*|<PLUGIN_ROOT>[^)]*)\)/g;
+      let m;
+      while ((m = re.exec(line))) {
+        broken.push(`${path.relative(ROOT, file)}:${i + 1}  ](${m[1]})`);
+      }
+    });
+  }
+  assert.deepEqual(broken, [],
+    'markdown link destination uses a variable that nothing expands — use a '
+    + `source-relative path instead:\n  ${broken.join('\n  ')}`);
+});
+
+test('pluginRequire refuses a symlink that leaves the plugin root', () => {
+  // path.resolve is lexical, so a symlink inside the root pointing outside
+  // passes a prefix check and require then follows it. The helper documented in
+  // the skills realpaths the target; this pins that it must.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-symlink-plugin-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-symlink-outside-'));
+  const { spawnSync } = require('node:child_process');
+  try {
+    fs.mkdirSync(path.join(root, 'runtime'), { recursive: true });
+    fs.writeFileSync(path.join(outside, 'evil.js'), 'module.exports={marker:"OUTSIDE"};\n');
+    fs.writeFileSync(path.join(root, 'runtime', 'ok.js'), 'module.exports={marker:"INSIDE"};\n');
+    fs.symlinkSync(path.join(outside, 'evil.js'), path.join(root, 'runtime', 'evil.js'));
+
+    const helper = `
+      const nodePath = require("node:path"), nodeFs = require("node:fs");
+      const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
+      const pluginRequire = (rel) => {
+        const target = nodeFs.realpathSync(nodePath.resolve(PLUGIN_ROOT, rel));
+        if (target !== PLUGIN_ROOT && !target.startsWith(PLUGIN_ROOT + nodePath.sep)) {
+          throw new Error("plugin path escapes root: " + rel);
+        }
+        return require(target);
+      };`;
+    const run = (src) => spawnSync(process.execPath, ['-e', helper + src],
+      { env: { ...process.env, CLAUDE_PLUGIN_ROOT: root }, encoding: 'utf8' });
+
+    const escaped = run('console.log(pluginRequire("runtime/evil.js").marker);');
+    assert.notEqual(escaped.status, 0, 'a symlink out of the root must be refused');
+    assert.match(escaped.stderr, /escapes root/);
+
+    const inside = run('console.log(pluginRequire("runtime/ok.js").marker);');
+    assert.equal(inside.status, 0, inside.stderr);
+    assert.equal(inside.stdout.trim(), 'INSIDE', 'an in-root module must still load');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('the documented pluginRequire helpers realpath their target', () => {
+  // The runtime behaviour above is only protective if the skills document it.
+  const missing = [];
+  for (const file of markdownFiles()) {
+    const body = fs.readFileSync(file, 'utf8');
+    if (!/const\s+pluginRequire\s*=/.test(body)) continue;
+    if (!/realpathSync\s*\(\s*nodePath\.resolve\s*\(\s*PLUGIN_ROOT/.test(body)) {
+      missing.push(path.relative(ROOT, file));
+    }
+  }
+  assert.deepEqual(missing, [],
+    `pluginRequire resolves lexically without realpath — a symlink out of the `
+    + `root would be followed:\n  ${missing.join('\n  ')}`);
+});
+
 test('mixed lines fail on the bare token', () => {
   // A line-level anchor check passes this; the token-level check must not.
   const line = 'Read `${CLAUDE_PLUGIN_ROOT}/skills/a/SKILL.md` then Read `../shared/references/b.md`';

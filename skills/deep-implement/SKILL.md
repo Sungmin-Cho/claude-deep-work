@@ -128,7 +128,10 @@ const nodePath = require("node:path");
 const nodeFs = require("node:fs");
 const PLUGIN_ROOT = nodeFs.realpathSync(process.env.CLAUDE_PLUGIN_ROOT || "");
 const pluginRequire = (rel) => {
-  const target = nodePath.resolve(PLUGIN_ROOT, rel);
+  // realpath the *target*, not just the root: path.resolve is lexical, so a
+  // symlink inside the root pointing outside would pass a prefix check and then
+  // require would follow it. A missing file throws here, which is fail-closed.
+  const target = nodeFs.realpathSync(nodePath.resolve(PLUGIN_ROOT, rel));
   if (target !== PLUGIN_ROOT && !target.startsWith(PLUGIN_ROOT + nodePath.sep)) {
     throw new Error("plugin path escapes root: " + rel);
   }

@@ -42,7 +42,7 @@
 - **Cross-Model Review**: codex/gemini가 research.md를 독립 평가 (plan과 동일 패턴)
 - **종합 판단**: Claude가 모든 리뷰 결과를 분석, 사용자 일괄 확인 후 수정
 
-For detailed guidance, see [Research Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/research-guide.md) or [Zero-Base Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/zero-base-guide.md).
+For detailed guidance, see [Research Guide](../../shared/references/research-guide.md) or [Zero-Base Guide](../../shared/references/zero-base-guide.md).
 
 ### Phase 2: Spec (`/deep-spec`)
 
@@ -89,7 +89,7 @@ contract before implementation planning.
 
 **Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
 
-For detailed guidance, see [Planning Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/planning-guide.md).
+For detailed guidance, see [Planning Guide](../../shared/references/planning-guide.md).
 
 ### Phase 4: Implement (`/deep-implement`)
 
@@ -118,7 +118,7 @@ For detailed guidance, see [Planning Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/
 - **TDD state 업데이트 필수화**: B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
 - **Slice Review**: Per-slice 2-stage independent review (spec compliance → code quality) after sensors pass. Solo mode only; delegation mode uses self-review recorded as `slice_review.mode: "self"`
 
-For detailed guidance, see [Implementation Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/implementation-guide.md).
+For detailed guidance, see [Implementation Guide](../../shared/references/implementation-guide.md).
 
 ### Phase 5: Test (`/deep-test`)
 
@@ -143,7 +143,7 @@ For detailed guidance, see [Implementation Guide](${CLAUDE_PLUGIN_ROOT}/skills/s
 - **Cumulative results**: All attempts recorded in `$WORK_DIR/test-results.md`
 - **Git integration**: Suggests commit after all tests pass
 
-For detailed guidance, see [Testing Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/testing-guide.md).
+For detailed guidance, see [Testing Guide](../../shared/references/testing-guide.md).
 
 ### Phase 6: Integrate (skippable)
 
