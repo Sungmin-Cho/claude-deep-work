@@ -9,7 +9,7 @@ const DIGEST=/^[0-9a-f]{64}$/;
 const POINTS=['finish-finalize','finish-pre-action','test'];
 const WARNINGS=new Set(['legacy-proof-unavailable','finding-ref-invalid',
   'receipt-envelope-invalid','evidence-pointer-stale','invalidation-active',
-  'projection-input-missing']);
+  'projection-input-missing','authority-drift']);
 const BLOCKERS=new Set(['evidence-missing','evidence-invalidated','redaction-failed',
   'residual-risk-unaccepted','replan-active','authority-invalidated',
   'finding-required-unknown','receipt-invalid','gate-missing','human-ack-missing',
@@ -123,7 +123,10 @@ function blockersFor(point,context){
   if(context.noPlan)return['compatibility-context-missing','gate-missing'];
   if(context.planIdentity.status==='invalidated'||
       context.replan.status==='active'||context.replan.status==='completing')
-    return sorted(['authority-invalidated','replan-active',
+    return sorted([...(context.planIdentity.status==='invalidated'?
+      ['authority-invalidated']:[]),
+      ...(['active','completing'].includes(context.replan.status)?
+        ['replan-active']:[]),
       ...(context.evidence.status==='invalidated'?['evidence-invalidated']:[])]);
   if(context.planMissingVerification)return['evidence-missing','gate-missing'];
   const out=[];
@@ -348,6 +351,32 @@ function loadGovernedContext({stateCapability}={}){
       verificationPlan=candidate;
     else{planIdentity.verification_plan_sha256=null;warnings.push('projection-input-missing');}
   }
+  const created=String(plan?.contract_binding?.created_by_version||'');
+  const major=Number((created.match(/^(\d+)\./)||[])[1]||0);
+  if(plan&&planIdentity.status==='current'&&major>=7){
+    let authorityCurrent=false;
+    try{
+      const methodology=require('./policy-runtime.js').validateMethodologyAuthority(
+        parseStored(fields.methodology_policy_json,null,'governed-methodology-policy'));
+      const specPath=path.join(workDir,'spec.md');
+      const stat=fs.lstatSync(specPath),bytes=fs.readFileSync(specPath);
+      if(!stat.isFile()||stat.isSymbolicLink()||stat.size>4_194_304)
+        fail('governed-spec');
+      const contractRuntime=require('./contract-runtime.js');
+      const spec=contractRuntime.parseSpecMarkdown(bytes.toString('utf8'),
+        {path:specPath});
+      authorityCurrent=verificationPlan&&
+        verificationPlan.methodology_policy_sha256===methodology.policy_sha256&&
+        verificationPlan.spec_approved_hash===
+          crypto.createHash('sha256').update(bytes).digest('hex')&&
+        verificationPlan.spec_sha256===contractRuntime.specContractDigest(spec);
+    }catch{authorityCurrent=false;}
+    if(!authorityCurrent){
+      planIdentity={status:'invalidated',plan_authority_sha256:null,
+        verification_plan_sha256:null};
+      verificationPlan=null;warnings.push('authority-drift');
+    }
+  }
   const replan=activeReplan?{status:'active',
     epoch:DIGEST.test(fields.active_replan_epoch_id||'')?fields.active_replan_epoch_id:null,
     reason:typeof fields.replan_reason==='string'?fields.replan_reason:null,
@@ -434,6 +463,26 @@ function awaitFindingProjection(input){
 function journalDigest(value){
   return require('./operation-journal.js').sha256(canonicalJson(value));
 }
+function validateSessionAuthority({stateCapability}={}){
+  const loaded=loadGovernedContext({stateCapability});
+  const fields=require('./frontmatter.js').parseFrontmatter(
+    fs.readFileSync(stateCapability.path,'utf8')).fields;
+  const created=String(loaded.plan?.contract_binding?.created_by_version||
+    fields.created_by_version||'');
+  const major=Number((created.match(/^(\d+)\./)||[])[1]||0);
+  if(major<7)return{governed:false,status:'legacy',
+    projection_sha256:loaded.sha256};
+  const replanActive=loaded.projection.replan.status==='active'||
+    loaded.projection.replan.status==='completing';
+  if(loaded.projection.warnings.includes('authority-drift')||
+      !replanActive&&loaded.projection.plan_identity.status!=='current')
+    fail('session-authority-invalidated');
+  return{governed:true,status:replanActive?'replan-active':'current',
+    projection_sha256:loaded.sha256,
+    plan_authority_sha256:loaded.projection.plan_identity.plan_authority_sha256,
+    verification_plan_sha256:
+      loaded.projection.plan_identity.verification_plan_sha256};
+}
 
 module.exports={buildProgressProjectionV1,validateProgressProjectionV1,
-  selectGovernedAdmission,loadGovernedContext};
+  selectGovernedAdmission,loadGovernedContext,validateSessionAuthority};

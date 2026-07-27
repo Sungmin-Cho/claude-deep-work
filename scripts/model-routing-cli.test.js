@@ -91,3 +91,16 @@ test('잘못된 floor-baseline과 risk-class는 경고 후 fail-open한다', () 
   assert.ok(r.warnings.some((warning) => /floor-baseline/.test(warning)));
   assert.ok(!Object.hasOwn(r.meta, 'policy'));
 });
+
+test('methodology policy authority drives the production CLI facade',()=>{
+  const {compileMethodologyAuthority}=require('../runtime/policy-runtime.js');
+  const policy=compileMethodologyAuthority({riskProfile:{class:'critical'},
+    difficulty:'high',mode:'adaptive'});
+  const r=run(['--root',path.join(__dirname,'..'),'--runtime','codex',
+    '--risk-class','low','--methodology-policy',JSON.stringify(policy)]);
+  assert.equal(r.meta.authority,'methodology-policy-v1');
+  assert.equal(r.meta.compatibility_mode,'policy-facade');
+  assert.equal(r.meta.policy.risk_class,'critical');
+  assert.equal(r.meta.tiers.implement,'deep');
+  assert.ok(!/opus|sonnet|haiku/i.test(JSON.stringify(r.model_routing)));
+});

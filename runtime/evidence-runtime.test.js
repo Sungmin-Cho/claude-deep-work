@@ -12,6 +12,7 @@ const {canonicalJson}=require('./operation-journal.js');
 const {parseSpecMarkdown}=require('./contract-runtime.js');
 const {compilePlanProjectionV1}=require('./plan-runtime.js');
 const {compileVerificationPlan}=require('./verification-policy-runtime.js');
+const {compileMethodologyAuthority}=require('./policy-runtime.js');
 const {compileReviewPlan}=require('./review-policy-runtime.js');
 const {updateFrontmatterText,parseFrontmatter}=require('./frontmatter.js');
 const platform=require('./platform.js');
@@ -33,6 +34,14 @@ function authority(){const specContract=parseSpecMarkdown(fs.readFileSync(path.j
     specApprovedHash:'a'.repeat(64),planProjection,capabilities:{},
     compatibilityFacts:{created_by_version:'6.13.0',spec_policy_required:true}});
   return{specContract,planProjection,verificationPlan};}
+function methodologyAuthority(){const base=authority(),policySnapshot=compileMethodologyAuthority({
+    riskProfile:{class:'medium',score:6,triggers:['strict-admission']}});
+  const verificationPlan=compileVerificationPlan({riskProfile:{class:'medium',score:6,triggers:['strict-admission']},
+    riskProfileSha256:'b'.repeat(64),policySnapshot,specContract:base.specContract,
+    specSha256:base.planProjection.contract_binding.spec_contract.spec_sha256,specApprovedHash:'a'.repeat(64),
+    planProjection:base.planProjection,capabilities:{},
+    compatibilityFacts:{created_by_version:'6.13.0',spec_policy_required:true}});
+  return{...base,policySnapshot,verificationPlan};}
 function tempRoot(){return fs.mkdtempSync(path.join(os.tmpdir(),'dw-evidence-v613-'));}
 async function realRequiredRecords(root,exactSecret=sentinel){const {specContract,planProjection,verificationPlan}=authority(),records=[];
   const reviewPlan=compileReviewPlan({artifactKind:'session-final',phase:'test',riskClass:'medium',runtime:'claude',
@@ -86,6 +95,16 @@ test('actual per-kind producers satisfy the complete Medium evidence catalog',as
     records:built.records,artifactRoot:root});const result=runtime.validateEvidencePackage(pkg,built.verificationPlan,{artifactRoot:root});
   assert.equal(result.pass,true,JSON.stringify(result.errors));assert.equal(pkg.completeness.complete,true);
   assert.equal(pkg.coverage.requirements.ratio,1);assert.equal(pkg.coverage.failure_matrix.ratio,null);});
+
+test('policy-bound evidence packages authenticate the exact methodology authority',()=>{
+  const built=methodologyAuthority(),pkg=runtime.buildEvidencePackage({scope:{kind:'session',id:'s-aaaaaaaa'},
+    verificationPlan:built.verificationPlan,records:[],policySnapshot:built.policySnapshot});
+  assert.equal(pkg.methodology_policy_sha256,built.policySnapshot.policy_sha256);
+  assert.equal(runtime.validateEvidencePackage(pkg,built.verificationPlan).pass,true);
+  const forged=structuredClone(built.policySnapshot);forged.profile='lean';
+  assert.throws(()=>runtime.buildEvidencePackage({scope:{kind:'session',id:'s-aaaaaaaa'},
+    verificationPlan:built.verificationPlan,records:[],policySnapshot:forged}),/evidence-policy-authority/);
+});
 
 test('removing every required real producer record independently blocks completeness',async()=>{const root=tempRoot(),built=await realRequiredRecords(root);
   for(const record of built.records){const pkg=runtime.buildEvidencePackage({scope:{kind:'session',id:'s-aaaaaaaa'},

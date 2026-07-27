@@ -6,7 +6,8 @@ const path=require('node:path');
 const {buildDispatcherHandlers,enforceDispatcherPhase}=require('../runtime/dispatcher-routes.js');
 const {ROUTE_CONTRACTS}=require('./deep-work-route-contracts.js');
 
-const PHASES=['brainstorm','research','plan','implement','test','idle'];
+const ACTIVE_PHASES=['brainstorm','research','spec','plan','implement','test'];
+const PHASES=[...ACTIVE_PHASES,'idle'];
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;error.validation=true;throw error;}
 function words(value){return value.split(' ');}
@@ -21,6 +22,7 @@ function grammar(id,required=[],optional=[],enums={}){
 
 const rows=[
   grammar('session context',[],['session']),
+  grammar('session authority validate',['state']),
   grammar('git capability'),
   grammar('git changed',['base'],['paths-json']),
   grammar('temp create',['state','session','purpose'],[],{purpose:['artifact-input','review-prompt','verification-spec','phase-result','gate-results','receipt-payload','pr-title','pr-body','handoff-payload','reason','notes','selection']}),
@@ -32,7 +34,10 @@ const rows=[
   grammar('session registry phase',['state','session','phase','at'],[],{phase:PHASES}),
   grammar('session pointer select',['session']),
   grammar('session repository prepare',['session','mode','task-file','defaults-json'],['profile-json','base-ref'],{mode:['worktree','new-branch','current-branch']}),
-  grammar('session fork',['parent','from-phase'],['dirty-resolution'],{'from-phase':PHASES.slice(0,5),'dirty-resolution':['commit','stash-apply','abort']}),
+  grammar('session fork',['parent','from-phase','reason'],['dirty-resolution'],{
+    'from-phase':ACTIVE_PHASES,'dirty-resolution':['commit','stash-apply','abort'],
+    reason:['alternative-experiment','independent-review','parallel-slice',
+      'recovery','security-isolation']}),
   grammar('session finish merge',['state','session','receipt-payload'],['dirty-resolution'],{'dirty-resolution':['commit','abort']}),
   grammar('session finish publish-pr',['state','session','receipt-payload','title-file','body-file']),
   grammar('session finish keep',['state','session','receipt-payload']),
@@ -46,13 +51,13 @@ const rows=[
   grammar('session state migrate-model-routing',['state','session']),
   grammar('session recovery worktree',['state','session']),
   grammar('session finalize',['state','session','finished-at']),
-  grammar('phase begin',['state','phase','at'],[],{phase:PHASES.slice(0,5)}),
-  grammar('phase complete',['state','phase','result-json','at'],[],{phase:PHASES.slice(0,4)}),
+  grammar('phase begin',['state','phase','at'],[],{phase:ACTIVE_PHASES}),
+  grammar('phase complete',['state','phase','result-json','at'],[],{phase:ACTIVE_PHASES.slice(0,-1)}),
   grammar('phase approve',['state','phase','artifact','at'],[],{phase:['research','plan']}),
   grammar('phase spec enter',['state','at']),
   grammar('phase spec approve',['state','artifact','at'],['spec-review-ref-sha256']),
-  grammar('phase advance',['state','from','to','at'],[],{from:PHASES.slice(0,4),to:['research','plan','implement','test']}),
-  grammar('phase rerun',['state','phase'],['affected-slices-json'],{phase:PHASES.slice(0,5)}),
+  grammar('phase advance',['state','from','to','at'],[],{from:ACTIVE_PHASES.slice(0,-1),to:['research','spec','plan','implement','test']}),
+  grammar('phase rerun',['state','phase'],['affected-slices-json'],{phase:ACTIVE_PHASES}),
   grammar('phase invalidate-replan',['state','reason','from-risk','to-risk','affected-slices-json','risk-profile-sha256','at'],[],{
     reason:['risk-class-increase','scope-expansion','public-contract','invariant','failure-state','external-side-effect','unplanned-mock','repeated-root-cause','persistent-state-transition','spike-promotion'],
     'from-risk':['low','medium','high'],'to-risk':['medium','high','critical']}),
@@ -131,6 +136,7 @@ const rows=[
   grammar('git stash drop',['session','operation-id']),
   grammar('review run',['engine','prompt-file','timeout-ms','mode'],['effort','model'],{
     engine:['codex','gemini'],mode:['read-only'],effort:['medium','high','xhigh','max']}),
+  grammar('review envelope validate',['request-json','receipt-json']),
   grammar('review finding-publish',['state','point','round','finding','artifact',
     'artifact-kind']),
   grammar('sensor detect',['project-root']),grammar('sensor run',['kind','process-spec-json','parser','budget-ms'],['state','session','plan','slice','after-write-operation-id'],{kind:['lint','typecheck','coverage','mutation'],parser:['eslint','tsc','ruff','stryker','clang-tidy','generic-json','generic-line','generic','mutation']}),

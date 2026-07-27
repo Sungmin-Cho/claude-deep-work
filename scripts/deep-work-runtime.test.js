@@ -393,6 +393,7 @@ async function semanticArgv(entry, fx) {
     'source-kind':'debug-root','source-operation-id':`op-${'d'.repeat(64)}`,
     checker:'spec-gate-v1',command:'pack','input-refs-json':fx.files.changed,
     'fact-operation-id':`op-${'c'.repeat(64)}`,
+    'request-json':fx.files.structural,'receipt-json':fx.files.result,
     'functional-receipts-json':fx.files.changed,
     plan:fx.plan,'assignment-json':fx.files.assignment,snapshot:'a'.repeat(40),slice:'SLICE-001',
     class:'failing-test','scope-sha256':'a'.repeat(64),'delegation-operation-id':`op-${'2'.repeat(64)}`,
@@ -431,6 +432,7 @@ async function semanticArgv(entry, fx) {
   if (entry.id === 'verification run') delete values['gate-id'];
   if (entry.id === 'sensor run') values.kind = 'lint';
   if (entry.id === 'phase invalidate-replan') values.reason = 'risk-class-increase';
+  if (entry.id === 'session fork') values.reason = 'alternative-experiment';
   if (entry.id === 'implement refactor no-change') values.reason = 'no-duplication';
   if (entry.id === 'session execution set') values.mode = 'inline';
   if (entry.id === 'review run') values.mode = 'read-only';
@@ -465,12 +467,14 @@ test('dispatcher grammar is single-source typed metadata', () => {
   assert.deepEqual(PHASE5_DISPATCHER_COMMANDS,
     DISPATCHER_GRAMMAR.filter((entry) => entry.phase5Allowed));
   assert.deepEqual(PHASE5_DISPATCHER_COMMANDS.map((entry) => entry.id),
-    ['session context','git capability','git changed','temp create','temp write','temp remove']);
+    ['session context','session authority validate','git capability','git changed',
+      'temp create','temp write','temp remove']);
 });
 
 test('all route lock ranks match the global repository to target hierarchy',()=>{
   const expected=new Map([
-    ['session context',[]],['git capability',[]],['git changed',[5]],
+    ['session context',[]],['session authority validate',[50]],['git capability',[]],
+    ['git changed',[5]],
     ['temp create',[10,20,50,70]],['temp write',[10,20,50,70]],['temp remove',[10,20,50,70]],
     ['session registry read',[]],['session registry own',[10,20,30,40,50]],
     ['session registry touch',[10,20,30,40,50]],['session registry phase',[10,20,30,40,50]],
@@ -520,7 +524,8 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['git report commit',[5,10,20,50]],['slice activate',[50]],['slice spike',[50]],
     ['slice reset',[5,10,20,50,70]],['slice model',[50]],['git delegated rollback',[5,10,20,50,70]],
     ['git stash publish',[5,10,20]],['git stash apply',[5,10,20]],['git stash drop',[5,10,20]],
-    ['review run',[10,20,50,70]],['review finding-publish',[10,20,50,70]],
+    ['review run',[10,20,50,70]],['review envelope validate',[]],
+    ['review finding-publish',[10,20,50,70]],
     ['sensor detect',[]],['sensor run',[10,20,50,70]],
     ['sensor review-check',[10,20,50,70]],['topology detect',[]],['health fitness-proposal',[]],
     ['health check',[70]],['health research-state',[50]],['capability detect',[]],
@@ -818,7 +823,7 @@ test('fresh pure-LOW v6.13 production flow compiles minimal authority and reache
     last_activity:ROUTE_TIMESTAMP}}});fs.writeFileSync(path.join(root,'.claude','deep-work-current-session'),`${session}\n`);
   await dispatch(['phase','spec','enter','--state',state,'--at',ROUTE_TIMESTAMP],{cwd:root});
   await dispatch(['phase','spec','approve','--state',state,'--artifact',specPath,'--at',ROUTE_TIMESTAMP],{cwd:root});
-  await dispatch(['phase','advance','--state',state,'--from','research','--to','plan','--at',ROUTE_TIMESTAMP],{cwd:root});
+  await dispatch(['phase','advance','--state',state,'--from','spec','--to','plan','--at',ROUTE_TIMESTAMP],{cwd:root});
   await dispatch(['phase','approve','--state',state,'--phase','plan','--artifact',planPath,'--at',ROUTE_TIMESTAMP],{cwd:root});
   let fields=parseFrontmatter(fs.readFileSync(state,'utf8')).fields;assert.match(fields.verification_plan_sha256,/^[0-9a-f]{64}$/);
   const verificationPlan=JSON.parse(fields.verification_plan_json),plan=JSON.parse(fs.readFileSync(path.join(work,'plan.json'),'utf8'));
@@ -878,8 +883,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 116 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 116);
+test('all 118 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 118);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -903,7 +908,7 @@ test('all 116 grammar rows cross the parser and invoke their typed route semanti
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 116);
+  assert.equal(outcomes.length, 118);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

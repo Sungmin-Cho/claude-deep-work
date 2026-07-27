@@ -1662,7 +1662,7 @@ async function finalizeBootstrap({stateCapability,authorizationPath,executionPat
     const preimage={target_session_id:sessionId,
       authorization_sha256:context.authorization.authorization_sha256,
       witness_sha256:witness.witness_sha256,execution_sha256:execution.execution_sha256,
-      pre_runtime_version:witness.runtime_version,post_runtime_version:'6.14.0',
+      pre_runtime_version:witness.runtime_version,post_runtime_version:'7.0.0',
       test_patch_sha256:execution.test_patch_sha256,patch_sha256:execution.patch_sha256,
       base_manifest_sha256:execution.base_manifest_sha256,
       red_manifest_sha256:execution.red_manifest_sha256,
@@ -2111,7 +2111,9 @@ function acceptedWriteAuthority({stateCapability,plan,sliceId,writeReceiptPath})
   const receipt=raw.value;
   const active=fields.current_phase==='implement'&&fields.active_slice===sliceId&&
     fields.tdd_state==='PENDING';
-  const sideEffectReplan=fields.current_phase==='research'&&fields.subphase==='spec'&&
+  const inSpecPhase=(fields.current_phase==='spec'&&fields.subphase==null)||
+    (fields.current_phase==='research'&&fields.subphase==='spec');
+  const sideEffectReplan=inSpecPhase&&
     fields.replan_required===true&&fields.replan_reason==='external-side-effect'&&
     fields.active_slice===sliceId&&fields.tdd_state==='PENDING';
   if(!OPERATION.test(receipt?.operationId||'')||
@@ -2139,7 +2141,9 @@ function assertBootstrapSideEffectReplanState({stateCapability,sliceId,riskProfi
   const matching=Array.isArray(invalidations)&&invalidations.some((row)=>
     row?.slice_id===sliceId&&row.reason==='external-side-effect'&&
     row.invalidated_by_risk_profile_sha256===riskProfileSha256&&row.at===at);
-  if(fields.current_phase!=='research'||fields.subphase!=='spec'||
+  const inSpecPhase=(fields.current_phase==='spec'&&fields.subphase==null)||
+    (fields.current_phase==='research'&&fields.subphase==='spec');
+  if(!inSpecPhase||
     fields.replan_required!==true||fields.replan_reason!=='external-side-effect'||
     fields.risk_profile_sha256!==riskProfileSha256||
     canonicalText(transition)!==canonicalText({

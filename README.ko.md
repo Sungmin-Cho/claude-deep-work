@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/github/license/Sungmin-Cho/claude-deep-work)](./LICENSE)
 [![part of deep-suite](https://img.shields.io/badge/part%20of-deep--suite-5b8def)](https://github.com/Sungmin-Cho/claude-deep-suite)
 
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code)와 Codex를 위한 **Evidence-Driven Development Protocol**. 단일 커맨드가 Brainstorm → Research → Plan → Implement → Test → Integrate 전체 워크플로우를 구동하며, TDD 강제, receipt 기반 증거 수집, 계획과 코딩의 엄격한 분리를 제공합니다.
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code)와 Codex를 위한 **Evidence-Driven Development Protocol**. 단일 커맨드가 Brainstorm → Research → Spec → Plan → Implement → Test → Integrate 전체 워크플로우를 구동하며, TDD 강제, receipt 기반 증거 수집, 계획과 코딩의 엄격한 분리를 제공합니다.
 
 deep-work는 복잡한 작업에서 AI 코딩이 흔히 빠지는 실패 모드를 차단합니다: 기존 아키텍처를 무시한 새 패턴 도입, 이미 존재하는 유틸리티 재구현, 코드베이스를 이해하기 전에 구현 시작, 요청하지 않은 "개선"으로 인한 버그, 검증 없이 완료 처리.
 
@@ -46,7 +46,7 @@ deep-work는 Claude Code와 Codex 플러그인 런타임 모두에서 동작합�
 전체 워크플로우가 skill 호출 하나로 실행되며, plan 승인이 유일한 필수 인터랙션입니다.
 
 ```bash
-# 전체 auto-flow 실행: Brainstorm → Research → Plan → [승인] → Implement → Test → Integrate → Report
+# 전체 auto-flow 실행: Brainstorm → Research → Spec → Plan → [승인] → Implement → Test → Integrate → Report
 $deep-work:deep-work "JWT 기반 사용자 인증 구현"
 
 # 통합 상태 조회 — 플래그는 standalone skill과 동일한 구현으로 라우팅됨
@@ -61,22 +61,19 @@ $deep-work:deep-status --compare    # 두 세션 비교
 
 Claude Code에서는 동일한 표면을 슬래시 커맨드로도 사용할 수 있으며, Codex 등 다른 호스트에서는 `$deep-work:<verb>` skill 형태를 사용합니다.
 
-## v6.9.0 새 기능
-
-deep-work v6.9.0은 새 `deep-memory` 플러그인에 Phase 1 recall과 Phase 5 harvest 추천을 read-only opt-in consumer로 연결합니다. 전체 릴리스 히스토리는 [CHANGELOG](CHANGELOG.ko.md)를 참조하세요.
-
 ## Skills
 
-deep-work는 24개 command-equivalent skill을 노출합니다. 가장 많이 쓰는 것:
+deep-work는 27개 command-equivalent skill을 노출합니다. 가장 많이 쓰는 것:
 
 | Skill | 설명 |
 |---|---|
 | `$deep-work:deep-work <task>` | Auto-flow 오케스트레이션 — 전체 파이프라인 실행; plan 승인이 유일한 필수 인터랙션 |
 | `$deep-work:deep-research` | Phase 1 (Research) — 코드베이스 심층 분석 |
-| `$deep-work:deep-plan` | Phase 2 (Plan) — slice 기반 구현 계획 |
-| `$deep-work:deep-implement` | Phase 3 (Implement) — TDD 강제 slice 실행 |
-| `$deep-work:deep-test` | Phase 4 (Test) — receipt + spec + quality gate; drift-check·SOLID·insight 자동 실행 |
-| `$deep-work:deep-integrate` | Phase 5 (Integrate) — 크로스 플러그인 다음 단계 추천 루프 |
+| `$deep-work:deep-spec` | Phase 2 (Spec) — 실행 가능한 requirement, failure mode, evidence gate |
+| `$deep-work:deep-plan` | Phase 3 (Plan) — slice 기반 구현 계획 |
+| `$deep-work:deep-implement` | Phase 4 (Implement) — TDD 강제 slice 실행 |
+| `$deep-work:deep-test` | Phase 5 (Test) — receipt + spec + quality gate; drift-check·SOLID·insight 자동 실행 |
+| `$deep-work:deep-integrate` | Phase 6 (Integrate) — 크로스 플러그인 다음 단계 추천 루프 |
 | `$deep-work:deep-status` | 통합 뷰 (`--report` / `--receipts` / `--history` / `--assumptions` / `--all` / `--compare`) |
 | `$deep-work:deep-finish` | 세션 종료 — worktree merge / PR / keep / discard |
 | `$deep-work:deep-debug` | 체계적 디버깅: investigate → analyze → hypothesize → fix |
@@ -89,12 +86,13 @@ deep-work는 24개 command-equivalent skill을 노출합니다. 가장 많이 �
 |---|---|
 | **0 — Brainstorm** | 선택적 디자인 탐색, "왜 만드는가" (`--skip-brainstorm`으로 생략) |
 | **1 — Research** | 아키텍처·패턴·데이터·API·인프라·리스크 전반의 코드베이스 분석; `research.md` 산출 |
-| **2 — Plan** | per-slice TDD 필드를 갖춘 slice 기반 계획, 사용자 승인 필요; `plan.md` 산출 |
-| **3 — Implement** | TDD 강제 slice 실행: failing test → production code → receipt |
-| **4 — Test** | receipt 완전성·spec compliance·code quality·검증 증거, 최대 3회 implement→test 재시도 |
-| **5 — Integrate** | deep-suite 플러그인 아티팩트를 읽어 최대 3개 다음 단계 제안하는 skippable 루프 (`--skip-integrate`로 생략) |
+| **2 — Spec** | 실행 가능한 requirement, invariant, failure mode, compatibility, evidence gate; `spec.md` 산출 |
+| **3 — Plan** | per-slice TDD 필드를 갖춘 slice 기반 계획, 사용자 승인 필요; `plan.md` 산출 |
+| **4 — Implement** | TDD 강제 slice 실행: failing test → production code → receipt |
+| **5 — Test** | receipt 완전성·spec compliance·code quality·검증 증거, 최대 3회 implement→test 재시도 |
+| **6 — Integrate** | deep-suite 플러그인 아티팩트를 읽어 최대 3개 다음 단계 제안하는 skippable 루프 (`--skip-integrate`로 생략) |
 
-5개 주요 phase는 각각 명시적 Exit Gate(진행 / 수정 / 일시정지)로 끝납니다. Brainstorm·Research·Plan·Test에서는 코드 파일 편집이 물리적으로 차단되며(`echo >`, `sed -i`, `cp` 같은 파일 쓰기 Bash 명령 포함), Implement에서는 파일 변경과 receipt 데이터가 자동 수집됩니다.
+Integrate 이전 각 phase는 명시적 Exit Gate(진행 / 수정 / 일시정지)로 끝납니다. Brainstorm·Research·Spec·Plan·Test에서는 코드 파일 편집이 물리적으로 차단되며(`echo >`, `sed -i`, `cp` 같은 파일 쓰기 Bash 명령 포함), Implement에서는 파일 변경과 receipt 데이터가 자동 수집됩니다.
 
 ## 산출물
 
@@ -103,7 +101,8 @@ deep-work는 24개 command-equivalent skill을 노출합니다. 가장 많이 �
 | 파일 | 생성 시점 | 설명 |
 |---|---|---|
 | `research.md` | Phase 1 | 코드베이스 분석 (Executive Summary 먼저) |
-| `plan.md` | Phase 2 | 구현 계획 (per-slice contract + acceptance 필드) |
+| `spec.md` | Phase 2 | 실행 가능한 requirement, failure mode, evidence-gate contract |
+| `plan.md` | Phase 3 | 구현 계획 (per-slice contract + acceptance 필드) |
 | `plan.v{N}.md` / `plan-diff.md` | Plan 재작성 | 이전 plan 백업 / 구조적 변경 비교 |
 | `brainstorm.md` | Phase 0 | 문제 정의, 접근법 비교, 성공 기준 |
 | `receipts/SLICE-NNN.json` | Phase 3 | Per-slice 증거: TDD 출력, git diff, spec check, 리뷰, 모델 |

@@ -25,6 +25,14 @@ const verificationPlan = state.verification_plan_json || null;
 if (verificationPlan && verificationPlan.plan_sha256 !== state.verification_plan_sha256) {
   throw new Error('persisted verification plan digest does not match state');
 }
+if (verificationPlan?.methodology_policy_sha256) {
+  const platform = require(path.join(scriptDir, '../../runtime/platform.js'));
+  const governed = require(path.join(scriptDir,
+    '../../runtime/governed-context-runtime.js'));
+  const stateCapability = platform.issueProjectStateCapability(projectRoot,
+    path.resolve(stateFile), {role:'session-state'});
+  governed.validateSessionAuthority({stateCapability});
+}
 const committedEvidence = state.review_execution_json?.evidence || null;
 
 let receipts = fs.readdirSync(receiptsDir)

@@ -325,9 +325,11 @@ Git repository인 경우:
 **1단계 — provisional risk-only:**
 
 ```bash
+POLICY_MODE="${FLAGS.policy:-adaptive}"
 RISK_IN=$(mktemp)
-node -e 'process.stdout.write(JSON.stringify({task_text:process.argv[1],difficulty:process.argv[2]||null}))' \
-  "$TASK_TEXT" "${REC_TASK_DIFFICULTY:-}" > "$RISK_IN"
+node -e 'process.stdout.write(JSON.stringify({task_text:process.argv[1],
+  difficulty:process.argv[2]||null,policy_mode:process.argv[3]}))' \
+  "$TASK_TEXT" "${REC_TASK_DIFFICULTY:-}" "$POLICY_MODE" > "$RISK_IN"
 RISK_ONLY_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/risk-profile-cli.js" \
   --stage provisional --risk-only --root "$PROJECT_ROOT" --work-dir "$WORK_DIR" \
   --input-file "$RISK_IN")
@@ -335,20 +337,26 @@ RISK_CLASS=$(printf '%s' "$RISK_ONLY_OUT" | node -e \
   'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.risk_profile?.class||"")')
 RISK_INPUT_REF=$(printf '%s' "$RISK_ONLY_OUT" | node -e \
   'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.input_ref?.path||"")')
+METHODOLOGY_AUTHORITY=$(printf '%s' "$RISK_ONLY_OUT" | node -e \
+  'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));
+   process.stdout.write(JSON.stringify(r.methodology_authority??{}))')
 ```
 
 `FLAGS.risk`가 있으면 해당 class를 `RISK_CLASS`에 적용한다. 자동/기존 class보다 낮은
 override는 확인을 받은 뒤에만 적용하고 `review_execution_json.risk_acceptances`에
 `{from,to,reason,at,scope:"session"}`를 append한다. 상향은 즉시 적용한다.
+override로 effective class가 바뀌면 `runtime/policy-runtime.js`의
+`compileMethodologyAuthority`를 그 승인된 class와 `POLICY_MODE`에 다시 적용해
+`METHODOLOGY_AUTHORITY`를 교체한다. 이 재컴파일 없이 legacy `--risk-class`로
+router를 직접 우회하는 것은 금지한다.
 
-**2단계 — risk-aware routing:**
+**2단계 — methodology-authority routing facade:**
 
 ```bash
-POLICY_MODE="${FLAGS.policy:-adaptive}"
 MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
   --root "$PROJECT_ROOT" --task "$TASK_TEXT" \
   --difficulty "${REC_TASK_DIFFICULTY:-}" --pinned "${FLAGS.model_routing:-}" \
-  --risk-class "$RISK_CLASS" --policy-mode "$POLICY_MODE")
+  --methodology-policy "$METHODOLOGY_AUTHORITY")
 ```
 
 프로필의 per-phase concrete pin은 `--pinned`에 병합하되 CLI pin이 우선한다. `MR_OUT.meta.policy.floor_overridden_by_pin`에 true가 있고 risk class가
@@ -377,10 +385,11 @@ rm -f "$RISK_IN"
   fail-open하며 세션을 중단하지 않는다.
 - `RISK_OUT.policy_snapshot`은 `policy_shadow_json.provisional`로 기존 관찰 연속성을
   유지한다.
-- `MR_OUT.meta.policy`와 `MR_OUT.meta.efforts`로 실제 적용 정책인
-  `methodology_policy_json`을 구성한다. `mode`, `risk_class`, `profile`, `based_on`,
-  `floors_applied`, `floors_effective`, `floor_overridden_by_pin`, `efforts`, `decided_at`을
-  기록하고 `FLAGS.review`을 `review_mode_override`로 기록한다.
+- `methodology_policy_json`에는 검증된 `METHODOLOGY_AUTHORITY`를 그대로 기록한다.
+  `policy_sha256`가 policy preimage와 일치하지 않으면 session 생성을 중단한다.
+  실제 provider routing, pin override와 `floors_applied`는
+  `model_routing_meta_json`에 실행 결과로 분리하고 `FLAGS.review`은
+  `review_execution_json.review_mode_override`로 기록한다.
 
 ## 1-9. State 파일 + Registry 생성 (atomic + 권한 600)
 
@@ -390,7 +399,10 @@ rm -f "$RISK_IN"
 - **`model_routing_json`**: `JSON.stringify(MR_OUT.model_routing)`로 만든 한 줄 JSON-string 스칼라
 - **`model_routing_meta_json`**: `JSON.stringify(MR_OUT.meta)`로 만든 한 줄 JSON-string 스칼라
 - **`risk_profile_json`, `policy_shadow_json`, `slice_risk_shadow_json`** (옵셔널, v6.11.0 — frontmatter JSON-string 스칼라, shadow 관찰 전용. phase-guard/gate enforcement에 영향 없음)
-- **`methodology_policy_json`, `review_execution_json`** (옵셔널, v6.12.0). `--policy`/`--risk`/`--review` 결정과 하향 승인 `risk_acceptances`를 위 §1-8.5/8.6 shape로 기록한다.
+- **`methodology_policy_json`, `review_execution_json`**. v7은 digest-bound
+  `methodology-policy-v1` authority를 전자에 기록한다. legacy v6.12 shape는
+  reader fallback으로만 허용한다. `--policy`, `--risk`, `--review` 결정과 하향 승인
+  `risk_acceptances`는 후자에 기록한다.
 - 각 phase timestamp, test_retry_count, max_test_retries 등
 - **`recommendations: { ... }`** (v6.4.2 신규) — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
 - `execution_override: {FLAGS.exec_mode | null}` — v6.4.0 호환, deep-implement Section 1.5에서 read
@@ -487,7 +499,8 @@ AskUserQuestion:
 
 `skipped_phases`에 "research" 포함 시 Exit Gate 생략하고 `current_phase: plan`으로 직접 전환 → 3-3.
 
-**Spec resume 우선 분기 (v6.13)**: `current_phase: research + subphase: spec`이면
+**Spec resume 우선 분기 (v7; legacy v6.13 호환)**: `current_phase: spec` 또는
+legacy `current_phase: research + subphase: spec`이면
 `deep-research`를 재실행하지 않는다. 현재 `$WORK_DIR/spec.md` bytes와
 `spec_approved_hash`를 재대조하고, 불일치/미승인이면
 `Skill("deep-spec", args=ARGS)`로 spec gate에서 복구한다. 일치하고
@@ -537,16 +550,18 @@ Gate 전에 반드시 runtime `phase spec enter`를 호출하고
 `Skill("deep-spec", args=ARGS)`를 dispatch한다. Low는 명시적 opt-in일 때만
 같은 경로를 사용한다.
 
-- `current_phase`는 `research`로 유지하고 runtime만 `subphase: spec`을 기록한다.
+- runtime은 정식 `current_phase: spec`을 기록한다. legacy
+  `research + subphase: spec`은 resume reader에서만 허용한다.
 - `deep-spec` 반환 후 현재 `spec.md` bytes, validator `pass:true`, document
   review 승인, `spec_approved_hash`, `spec_contract_json`,
   `spec_gate_result_json`을 runtime `phase spec approve`로 결박한다.
 - unresolved marker, blocking question, validator/runtime 오류, stale whole-file
   hash가 하나라도 있으면 Medium+는 fail-closed하며 Research Exit Gate를
   표시하지 않는다.
-- 성공한 `research + spec` resume은 research를 재실행하지 않는다. 유효한
-  runtime `phase advance --from research --to plan`만 `subphase`를 null로
-  clear한다.
+- 성공한 Spec resume은 research를 재실행하지 않는다. canonical session은
+  runtime `phase advance --from spec --to plan`을 사용한다. legacy session은
+  `phase advance --from research --to plan` compatibility route가 `subphase`를
+  null로 clear한다.
 
 → 아래 Exit Gate 실행.
 
@@ -561,7 +576,7 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → runtime `phase advance --from research --to plan`으로 fresh spec
+- option 1 → runtime `phase advance --from spec --to plan`으로 fresh spec
   admission을 재검증한 뒤 **§3-3 Plan으로 dispatch**한다. state 직접 전환은
   금지한다.
 - option 2 → **재실행 전 approval state clear (NC2 규칙 + NW5)**: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.

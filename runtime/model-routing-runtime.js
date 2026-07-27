@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { TIERS, MAIN, resolveTier, mergeCatalog, concreteModelsFor, CATALOG_VERSION } = require('./model-catalog.js');
-const { PROFILE_BY_CLASS, EFFORT_CATALOG, TIER_CATALOG } = require('./policy-runtime.js');
+const { PROFILE_BY_CLASS, EFFORT_CATALOG, TIER_CATALOG,
+  validateMethodologyAuthority } = require('./policy-runtime.js');
 
 const SCALE_SMALL_MAX = 200;
 const SCALE_MEDIUM_MAX = 2000;
@@ -163,22 +164,31 @@ function sliceModelTierWithRisk(sessionImplementTier, size, sliceRiskClass) {
 
 function decideModelRouting({ signals = {}, taskText = '', difficulty = null, runtime = 'unknown',
   catalogOverride = null, pinned = {}, riskClass = null, policyMode = 'adaptive', floorBaseline = null,
-  now = null } = {}) {
+  methodologyPolicy=null,now = null } = {}) {
   const warnings = [];
+  const authority=methodologyPolicy===null?null:
+    validateMethodologyAuthority(methodologyPolicy);
+  if(authority&&riskClass!==null&&riskClass!==authority.risk_class)
+    warnings.push(`legacy riskClass '${riskClass}' ignored; methodology policy authority is '${authority.risk_class}'`);
+  if(authority&&floorBaseline!==null)
+    warnings.push('legacy floorBaseline ignored; methodology policy authority supplies floors');
+  const authoritativeRisk=authority?.risk_class??riskClass;
+  const authoritativeMode=authority?.mode??policyMode;
+  const authoritativeFloors=authority?.floors_effective??floorBaseline;
   const catalog = mergeCatalog(catalogOverride);
   const base = baselineTiers(signals, taskText);
   const tiers = applyDifficulty(base.tiers, DIFFICULTY.includes(difficulty) ? difficulty : null);
   const beforeFloors = { ...tiers };
-  const validRiskClass = Object.hasOwn(PROFILE_BY_CLASS, riskClass) ? riskClass : null;
+  const validRiskClass = Object.hasOwn(PROFILE_BY_CLASS, authoritativeRisk) ? authoritativeRisk : null;
   const validFloorBaseline = {};
-  if (floorBaseline && typeof floorBaseline === 'object' && !Array.isArray(floorBaseline)) {
+  if (authoritativeFloors && typeof authoritativeFloors === 'object' && !Array.isArray(authoritativeFloors)) {
     for (const phase of ['research', 'implement', 'test']) {
-      if (TIERS.includes(floorBaseline[phase])) validFloorBaseline[phase] = floorBaseline[phase];
+      if (TIERS.includes(authoritativeFloors[phase])) validFloorBaseline[phase] = authoritativeFloors[phase];
     }
   }
   const hasPolicyInput = validRiskClass !== null || Object.keys(validFloorBaseline).length > 0;
   const effectiveFloors = {};
-  if (policyMode !== 'shadow') {
+  if (authoritativeMode !== 'shadow') {
     if (validRiskClass !== null) {
       const policyTiers = TIER_CATALOG[PROFILE_BY_CLASS[validRiskClass]];
       for (const phase of ['research', 'implement', 'test']) {
@@ -227,15 +237,18 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
       if (warning) warnings.push(warning);
     }
   }
+  if(authority){tiers.spec=MAIN;routing.spec=MAIN;}
   const meta = { tiers, scale: base.scale, signals_summary: { tracked_files: signals.tracked_files ?? null,
       loc_estimate: signals.loc_estimate ?? null, languages: signals.languages ?? null },
     difficulty: DIFFICULTY.includes(difficulty) ? difficulty : null, reasons: base.reasons,
     runtime, catalog_version: CATALOG_VERSION, pinned: appliedPinned,
     decided_at: now === null ? new Date().toISOString() : (now instanceof Date ? now.toISOString() : new Date(now).toISOString()) };
+  if(authority){meta.authority=authority.authority;meta.compatibility_mode='policy-facade';
+    meta.methodology_policy_sha256=authority.policy_sha256;}
   if (hasPolicyInput) {
     const effectiveRiskClass = validRiskClass || 'medium';
     const profile = PROFILE_BY_CLASS[effectiveRiskClass];
-    meta.policy = { risk_class: validRiskClass, profile, mode: policyMode === 'shadow' ? 'shadow' : 'adaptive',
+    meta.policy = { risk_class: validRiskClass, profile, mode: authoritativeMode === 'shadow' ? 'shadow' : 'adaptive',
       floors_applied: floorsApplied, floors_effective: effectiveFloors,
       floor_overridden_by_pin: floorOverriddenByPin };
     meta.efforts = {

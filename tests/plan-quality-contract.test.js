@@ -82,8 +82,8 @@ test('deep-spec owns the canonical executable spec template', () => {
   assert.match(deepSpec, /^name: deep-spec$/m);
   assert.match(deepSpec, /^user-invocable: true$/m);
   assert.match(deepSpec, /medium\|high\|critical.*mandatory/i);
-  assert.match(deepSpec, /current_phase.*research/);
-  assert.match(deepSpec, /subphase.*spec/);
+  assert.match(deepSpec, /current_phase.*spec/);
+  assert.match(deepSpec, /legacy[\s\S]*current_phase: research/);
   assert.match(deepSpec, /validate-spec-contract\.js/);
   assert.match(deepSpec, /document review/i);
   assert.match(deepSpec, /spec_approved_hash/);
@@ -95,9 +95,10 @@ test('deep-spec owns the canonical executable spec template', () => {
 
 test('PR4 strict-spec wiring and fixtures remain discoverable', () => {
   const orchestrator=readRepoFile('skills/deep-work-orchestrator/SKILL.md');
-  assert.match(orchestrator,/current_phase: research \+ subphase: spec/);
+  assert.match(orchestrator,/current_phase: spec/);
+  assert.match(orchestrator,/legacy `current_phase: research \+ subphase: spec`/);
   assert.match(orchestrator,/Skill\("deep-spec", args=ARGS\)/);
-  assert.match(orchestrator,/phase advance --from research --to plan/);
+  assert.match(orchestrator,/phase advance --from spec --to plan/);
   for(const file of ['low-legacy/spec.md','medium-valid/spec.md','medium-valid/plan.md','high-valid/spec.md',
     'high-valid/plan.md','invalid-matrix/spec.md','invalid-binding/plan.md']){
     assert.doesNotThrow(()=>readRepoFile(`tests/fixtures/v6.13-spec/${file}`));

@@ -19,8 +19,9 @@ may opt in.
    `.claude/deep-work-sessions.json`.
 2. Read `.claude/deep-work.{SESSION_ID}.md` and resolve `$WORK_DIR` from its
    `work_dir` field (default `deep-work`). Read `$WORK_DIR/research.md`.
-3. Require `current_phase: research`. The runtime records `subphase: spec`;
-   `spec` is not a new phase in the phase graph.
+3. Require canonical `current_phase: spec`, or accept the legacy
+   `current_phase: research` plus `subphase: spec` representation. New
+   transitions always persist the canonical explicit phase.
 4. Decode the authoritative scalar `risk_profile_json` and
    `methodology_policy_json`. `medium|high|critical` is mandatory and any
    missing/corrupt admission input fails closed. A `low` session may opt out.
@@ -67,12 +68,12 @@ After validator PASS and document review approval:
    capability, `spec_approved_hash`, validated contract, and Spec Gate result.
    The skill does not directly mutate state.
 3. If the current spec.md bytes differ from the reviewed bytes, reject the stale
-   approval, keep `current_phase: research` and `subphase: spec`, then repeat
+   approval, keep `current_phase: spec`, then repeat
    validation and document review. Fail closed for Medium+.
 4. Return control to the orchestrator only after the runtime persists
    `spec_completed_at`, `spec_approved_hash`, `spec_contract_json`, and
-   `spec_gate_result_json`. The Research Exit Gate clears `subphase` when it
-   advances to plan.
+   `spec_gate_result_json`. The Spec Exit Gate advances the explicit phase to
+   Plan. A legacy session clears `subphase` during its compatibility transition.
 
 On resume, a byte-identical approved artifact may re-display the gate result.
 Any edit invalidates approval. Plan-bound validation later rechecks the same

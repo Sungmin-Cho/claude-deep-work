@@ -505,8 +505,8 @@ node26Test('a ledger-complete verification side effect automatically enters auth
     assert.match(verification.replan_trigger_id,/^[0-9a-f]{64}$/);
     assert.match(verification.replan_epoch,/^[0-9a-f]{64}$/);
     const fields=frontmatter.parseFrontmatter(fs.readFileSync(f.statePath,'utf8')).fields;
-    assert.equal(fields.current_phase,'research');
-    assert.equal(fields.subphase,'spec');
+    assert.equal(fields.current_phase,'spec');
+    assert.equal(fields.subphase,null);
     assert.equal(fields.replan_required,true);
     assert.equal(fields.replan_reason,'test-side-effect');
     assert.equal(fields.tdd_state,'PENDING');

@@ -695,6 +695,10 @@ JSON
       PHASE_LABEL="리서치(Research)"
       NEXT_STEP="리서치가 완료되면 /deep-plan을 실행하세요."
       ;;
+    spec)
+      PHASE_LABEL="명세(Spec)"
+      NEXT_STEP="명세를 검증하고 승인한 뒤 Plan 단계로 진행하세요."
+      ;;
     plan)
       PHASE_LABEL="기획(Plan)"
       NEXT_STEP="계획을 승인하면 자동으로 구현이 시작됩니다."

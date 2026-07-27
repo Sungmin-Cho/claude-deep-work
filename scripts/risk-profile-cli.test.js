@@ -141,6 +141,9 @@ test('--risk-only — non-slice stage에서도 policy 컴파일을 생략하고 
     '--work-dir', workDir], { task_text: 'adaptive routing' });
   assert.ok(out.risk_profile);
   assert.strictEqual(out.policy_snapshot, undefined);
+  assert.equal(out.methodology_authority.authority,'methodology-policy-v1');
+  assert.equal(out.methodology_authority.risk_class,out.risk_profile.class);
+  assert.match(out.methodology_authority.policy_sha256,/^[0-9a-f]{64}$/);
   const artifact = JSON.parse(fs.readFileSync(out.input_ref.path, 'utf8'));
   const { input_digest: embeddedDigest, ...preimage } = artifact;
   assert.strictEqual(embeddedDigest, canonicalDigest(preimage));

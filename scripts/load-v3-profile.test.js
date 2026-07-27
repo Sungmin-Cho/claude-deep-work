@@ -92,11 +92,11 @@ presets:
   assert.strictEqual(result.defaults.start_phase, 'research');
 });
 
-test('v3 형식이 아닌 경우 명시적 에러', () => {
+test('v3/v4 형식이 아닌 경우 명시적 에러', () => {
   const v2 = `version: 2\ndefault_preset: x\n`;
   const file = tmpProfile(v2);
   const result = loadV3Profile(file);
-  assert.strictEqual(result.error, 'not-v3');
+  assert.strictEqual(result.error, 'not-v3-or-v4');
 });
 
 // C1: regex injection 차단

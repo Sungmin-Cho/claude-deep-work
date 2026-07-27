@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/github/license/Sungmin-Cho/claude-deep-work)](./LICENSE)
 [![part of deep-suite](https://img.shields.io/badge/part%20of-deep--suite-5b8def)](https://github.com/Sungmin-Cho/claude-deep-suite)
 
-An **Evidence-Driven Development Protocol** for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and Codex. A single command drives a full Brainstorm → Research → Plan → Implement → Test → Integrate workflow with TDD enforcement, receipt-based evidence collection, and a hard separation between planning and coding.
+An **Evidence-Driven Development Protocol** for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and Codex. A single command drives a full Brainstorm → Research → Spec → Plan → Implement → Test → Integrate workflow with TDD enforcement, receipt-based evidence collection, and a hard separation between planning and coding.
 
 deep-work fights the common failure modes of AI coding on complex tasks: introducing new patterns that ignore the existing architecture, reimplementing utilities that already exist, jumping into code before understanding the codebase, adding unrequested "improvements" that cause bugs, and marking work done without verification.
 
@@ -46,7 +46,7 @@ deep-work runs in both the Claude Code and Codex plugin runtimes — each reads 
 The entire workflow runs from one skill invocation; plan approval is the only required interaction.
 
 ```bash
-# Run the full auto-flow: Brainstorm → Research → Plan → [approve] → Implement → Test → Integrate → Report
+# Run the full auto-flow: Brainstorm → Research → Spec → Plan → [approve] → Implement → Test → Integrate → Report
 $deep-work:deep-work "Implement JWT-based user authentication"
 
 # Unified status — flags route to the same implementations as the standalone skills
@@ -61,22 +61,19 @@ $deep-work:deep-status --compare    # compare two sessions
 
 In Claude Code the same surfaces are also available as slash commands (e.g. typing the command name); in Codex and other hosts use the `$deep-work:<verb>` skill form.
 
-## What's New in v6.9.0
-
-deep-work v6.9.0 wires Phase 1 recall and Phase 5 harvest recommendation into the new `deep-memory` plugin as a read-only, opt-in consumer. See the [CHANGELOG](CHANGELOG.md) for full release history.
-
 ## Skills
 
-deep-work exposes 24 command-equivalent skills. The most-used are:
+deep-work exposes 27 command-equivalent skills. The most-used are:
 
 | Skill | Description |
 |---|---|
 | `$deep-work:deep-work <task>` | Auto-flow orchestration — runs the entire pipeline; plan approval is the only required interaction |
 | `$deep-work:deep-research` | Phase 1 (Research) — deep codebase analysis |
-| `$deep-work:deep-plan` | Phase 2 (Plan) — slice-based implementation planning |
-| `$deep-work:deep-implement` | Phase 3 (Implement) — TDD-enforced slice execution |
-| `$deep-work:deep-test` | Phase 4 (Test) — receipt + spec + quality gates; auto-runs drift-check, SOLID review, insight |
-| `$deep-work:deep-integrate` | Phase 5 (Integrate) — cross-plugin next-step recommendation loop |
+| `$deep-work:deep-spec` | Phase 2 (Spec) — executable requirements, failure modes, and evidence gates |
+| `$deep-work:deep-plan` | Phase 3 (Plan) — slice-based implementation planning |
+| `$deep-work:deep-implement` | Phase 4 (Implement) — TDD-enforced slice execution |
+| `$deep-work:deep-test` | Phase 5 (Test) — receipt + spec + quality gates; auto-runs drift-check, SOLID review, insight |
+| `$deep-work:deep-integrate` | Phase 6 (Integrate) — cross-plugin next-step recommendation loop |
 | `$deep-work:deep-status` | Unified view (`--report` / `--receipts` / `--history` / `--assumptions` / `--all` / `--compare`) |
 | `$deep-work:deep-finish` | Close a session — merge, PR, keep, or discard the worktree |
 | `$deep-work:deep-debug` | Systematic debugging: investigate → analyze → hypothesize → fix |
@@ -89,12 +86,13 @@ Other skills cover quality gates (`drift-check`, `solid-review`, `deep-insight`)
 |---|---|
 | **0 — Brainstorm** | Optional design exploration, "why before how" (skip with `--skip-brainstorm`) |
 | **1 — Research** | Deep codebase analysis across architecture, patterns, data, API, infra, and risks; output `research.md` |
-| **2 — Plan** | Slice-based plan with per-slice TDD fields, requiring user approval; output `plan.md` |
-| **3 — Implement** | TDD-enforced slice execution: failing test → production code → receipt |
-| **4 — Test** | Receipt completeness, spec compliance, code quality, and verification evidence, with up to 3 implement→test retries |
-| **5 — Integrate** | Skippable loop that reads deep-suite plugin artifacts and proposes up to 3 next steps (skip with `--skip-integrate`) |
+| **2 — Spec** | Executable requirements, invariants, failure modes, compatibility, and evidence gates; output `spec.md` |
+| **3 — Plan** | Slice-based plan with per-slice TDD fields, requiring user approval; output `plan.md` |
+| **4 — Implement** | TDD-enforced slice execution: failing test → production code → receipt |
+| **5 — Test** | Receipt completeness, spec compliance, code quality, and verification evidence, with up to 3 implement→test retries |
+| **6 — Integrate** | Skippable loop that reads deep-suite plugin artifacts and proposes up to 3 next steps (skip with `--skip-integrate`) |
 
-Each of the five main phases ends with an explicit Exit Gate (proceed / revise / pause). Code-file edits are physically blocked during Brainstorm, Research, Plan, and Test (including file-writing Bash commands like `echo >`, `sed -i`, `cp`); file changes and receipt data are collected automatically during Implement.
+Each pre-integration phase ends with an explicit Exit Gate (proceed / revise / pause). Code-file edits are physically blocked during Brainstorm, Research, Spec, Plan, and Test (including file-writing Bash commands like `echo >`, `sed -i`, `cp`); file changes and receipt data are collected automatically during Implement.
 
 ## Output Files
 
@@ -103,7 +101,8 @@ All session artifacts live in `.deep-work/<task-folder>/`:
 | File | Created | Description |
 |---|---|---|
 | `research.md` | Phase 1 | Codebase analysis (Executive Summary first) |
-| `plan.md` | Phase 2 | Implementation plan (per-slice contract + acceptance fields) |
+| `spec.md` | Phase 2 | Executable requirements, failure modes, and evidence-gate contract |
+| `plan.md` | Phase 3 | Implementation plan (per-slice contract + acceptance fields) |
 | `plan.v{N}.md` / `plan-diff.md` | Plan rewrite | Previous plan backup / structural change comparison |
 | `brainstorm.md` | Phase 0 | Problem definition, approach comparison, success criteria |
 | `receipts/SLICE-NNN.json` | Phase 3 | Per-slice evidence: TDD output, git diff, spec check, review, model |

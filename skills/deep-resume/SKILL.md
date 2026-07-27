@@ -19,7 +19,7 @@ user-invocable: true
 |---|---|
 | (없음) | Auto-detect active session + 현재 phase resume |
 | `--session=<id>` | 명시 세션 ID resume |
-| `--resume-from=<phase>` | `brainstorm|research|plan|implement|test` 강제 |
+| `--resume-from=<phase>` | `brainstorm|research|spec|plan|implement|test` 강제 |
 | `--worktree=<path>` | worktree 경로 명시 |
 
 빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
@@ -104,12 +104,19 @@ From the resolved state file, extract `current_phase`, `work_dir`, `task_descrip
 
 #### 신규 state 필드 복원 (v6.12)
 
+- phase dispatch 전에 다음 production route를 실행한다:
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" session authority validate --state "<STATE_FILE>"`.
+  v7 policy-bound session에서 이 route가 실패하면 resume을 중단하고 Spec/Plan 재승인을
+  안내한다. `methodology_policy_json`, exact `spec.md`, `plan.json`,
+  `verification_plan_json`, committed evidence package 중 하나라도 승인 digest에서
+  drift한 상태로 phase skill을 호출해서는 안 된다. legacy session은 route의
+  `governed: false` 결과로 계속 읽을 수 있다.
 - Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
   `decodedRouting`/`decodedRoutingMeta`를 복원한다.
 - `methodology_policy_json`과 `review_execution_json`을 각각 `JSON.parse`해 policy mode,
   risk class, review mode override, floor baseline, channels, human ack,
-  external change lock, risk acceptances를 복원한다. 부재/손상은 `{}`로 fail-open하고
-  기존 세션 기본값을 유지한다.
+  external change lock, risk acceptances를 복원한다. legacy session의 부재는 `{}`로
+  호환 복원하지만, v7 policy-bound session의 손상은 위 authority route에서 fail-closed한다.
 - `risk_profile_json`, `policy_shadow_json`, `slice_risk_shadow_json`도 같은 JSON-string
   규칙으로 복원한다. resume 인자가 state의 명시 값을 변경하지 않는 한 원래 값을 보존한다.
 

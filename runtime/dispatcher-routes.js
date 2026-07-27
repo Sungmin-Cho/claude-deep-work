@@ -218,6 +218,11 @@ async function enforceDispatcherPhase({entry,f,cwd}={}){
 
 function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{if(handlers.has(id))fail('handler-duplicate',id);handlers.set(id,fn);};
   on('session context',({f,cwd})=>session.resolveSessionContext({cwd,sessionId:f.session}));
+  on('session authority validate',({f,cwd})=>{const state=stateCapability(f,cwd);
+    return transaction.withRankedLocks([{rank:transaction.RANKS.state,
+      capability:transaction.stateLock(state)}],()=>
+      require('./governed-context-runtime.js').validateSessionAuthority({
+        stateCapability:state}));});
   on('git capability',({f,cwd})=>{const project=projectCapability(f,cwd);return{kind:'git-capability',projectRoot:project.path,shell:false};});
   on('git changed',async({f,cwd})=>{const project=projectCapability(f,cwd);return transaction.withRankedLocks([
     routeLock(project,'repository',transaction.RANKS.repository)],async()=>{const cap=git.gitCapability(project);const args=['diff','--name-only',f.base,'--'];
@@ -245,7 +250,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     profile:f['profile-json']?jsonFile(resolveInput(f['profile-json'],cwd)):{},baseRef:f['base-ref']||'HEAD'}));
   on('session fork',async({f,cwd})=>{const parent=stateCapability({state:session.resolveSessionContext({cwd,sessionId:f.parent}).stateCapability.path},cwd);
     const child=session.generateSessionId();return session.forkSession({projectCapability:projectCapability(f,cwd),parentStateCapability:parent,
-      parentSessionId:f.parent,childSessionId:child,fromPhase:f['from-phase'],dirtyResolution:f['dirty-resolution']});});
+      parentSessionId:f.parent,childSessionId:child,fromPhase:f['from-phase'],
+      reason:f.reason,dirtyResolution:f['dirty-resolution']});});
   for(const outcome of ['merge','publish-pr','keep','discard'])on(`session finish ${outcome}`,async({f,cwd})=>{
     const state=stateCapability(f,cwd);if(sessionId(state)!==f.session)fail('session-state-identity');
     return session.withFinishTransaction({sessionId:f.session,stateCapability:state,outcome},async({projectCapability:project,caps,finishContext})=>{
@@ -348,7 +354,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       specApprovedHash:hash(bytes),specContract,specGateResult,
       specReviewRefSha256:f['spec-review-ref-sha256'],at:f.at});});
   on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);let specCurrentSha256;
-    if(f.from==='research'){const candidate=path.join(sessionCapability(state).path,'spec.md');
+    if(['research','spec'].includes(f.from)){const candidate=path.join(sessionCapability(state).path,'spec.md');
       if(fs.existsSync(candidate))specCurrentSha256=hash(boundedFile(candidate));}
     return phase.advancePhase({stateCapability:state,from:f.from,to:f.to,at:f.at,specCurrentSha256});});
   on('phase rerun',({f,cwd})=>phase.rerunPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
@@ -572,6 +578,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     const resolved=await reviewerProcess(f.engine,f.model);const result=await executeReviewProcess({engine:f.engine,resolved,
       prompt:prompt.bytes,timeoutMs:Number(f['timeout-ms']),cwd:source.state.projectRoot,env:{...process.env},effort:f.effort,model:f.model});
     return{engine:f.engine,...result,promptSha256:prompt.sha256,consumerOperationId};});
+  on('review envelope validate',({f,cwd})=>{
+    const request=jsonFile(resolveInput(f['request-json'],cwd));
+    return require('./review-envelope-runtime.js').validateReviewReceiptEnvelope(
+      jsonFile(resolveInput(f['receipt-json'],cwd)),request);});
   on('review finding-publish',({f,cwd})=>findingRef.publishFindingRef({
     stateCapability:stateCapability(f,cwd),point:f.point,round:Number(f.round),
     findingPath:resolveInput(f.finding,cwd),artifactPath:resolveInput(f.artifact,cwd),

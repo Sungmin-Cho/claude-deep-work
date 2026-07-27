@@ -69,7 +69,7 @@
 ## Spec Contract Binding
 
 ```json
-{"schema_version":1,"mode":"strict-spec","created_by_version":"6.14.0","spec_contract":{"schema_version":1,"spec_id":"SPEC-EXAMPLE","spec_sha256":"[64-hex]","spec_approved_hash":"[64-hex]"},"risk_profile_sha256":"[64-hex]"}
+{"schema_version":1,"mode":"strict-spec","created_by_version":"7.0.0","spec_contract":{"schema_version":1,"spec_id":"SPEC-EXAMPLE","spec_sha256":"[64-hex]","spec_approved_hash":"[64-hex]"},"risk_profile_sha256":"[64-hex]"}
 ```
 
 replan_epoch: null

@@ -150,6 +150,7 @@ fi
 PHASE_KO=""
 case "$CURRENT_PHASE" in
   research)  PHASE_KO="리서치(Research)" ;;
+  spec)      PHASE_KO="명세(Spec)" ;;
   plan)      PHASE_KO="기획(Plan)" ;;
   implement) PHASE_KO="구현(Implement)" ;;
   test)      PHASE_KO="테스트(Test)" ;;

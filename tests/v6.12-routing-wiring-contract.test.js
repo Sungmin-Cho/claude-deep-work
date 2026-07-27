@@ -8,17 +8,19 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
-test('orchestrator init wires risk-only -> risk-aware routing -> reused provisional policy', () => {
+test('orchestrator init wires risk-only -> methodology authority -> routing facade', () => {
   const skill = read('skills/deep-work-orchestrator/SKILL.md');
   const riskOnly = skill.indexOf('--risk-only');
-  const routing = skill.indexOf('--risk-class', riskOnly + 1);
+  const authority = skill.indexOf('methodology_authority', riskOnly + 1);
+  const routing = skill.indexOf('--methodology-policy', authority + 1);
   const reusedPolicy = skill.indexOf('--reuse-input', routing + 1);
 
   assert.ok(riskOnly >= 0, 'provisional risk-only CLI argv must be documented');
-  assert.ok(routing > riskOnly, 'model routing must consume provisional risk class');
+  assert.ok(authority > riskOnly, 'policy authority must be compiled after risk');
+  assert.ok(routing > authority, 'model routing must consume methodology authority');
   assert.ok(reusedPolicy > routing, 'policy snapshot must reuse the risk-only input last');
   assert.match(skill.slice(0, routing + 400), /risk-profile-cli\.js[\s\S]*--stage provisional[\s\S]*--risk-only/);
-  assert.match(skill.slice(riskOnly, reusedPolicy), /model-routing-cli\.js[\s\S]*--risk-class/);
+  assert.match(skill.slice(riskOnly, reusedPolicy), /model-routing-cli\.js[\s\S]*--methodology-policy/);
   assert.match(skill.slice(routing), /risk-profile-cli\.js[\s\S]*--stage provisional[\s\S]*--reuse-input/);
 });
 
@@ -35,8 +37,8 @@ test('orchestrator persists canonical routing carriers and adaptive flag decisio
 test('deep-research uses state-file extraction and authoritative floor-aware rerouting', () => {
   const skill = read('skills/deep-research/SKILL.md');
   assert.match(skill, /risk-profile-cli\.js[\s\S]*--stage authoritative[\s\S]*--state-file "\$STATE_FILE"/);
-  assert.match(skill, /model-routing-cli\.js[\s\S]*--risk-class[\s\S]*--floor-baseline/);
-  assert.match(skill, /methodology_policy_json[\s\S]*floors_effective/);
+  assert.match(skill, /methodology_authority[\s\S]*model-routing-cli\.js[\s\S]*--methodology-policy/);
+  assert.match(skill, /methodology_policy_json[\s\S]*policy_sha256/);
   assert.match(skill, /risk_profile_json\.errors/);
   assert.match(skill, /유일한 state writer/);
   assert.doesNotMatch(skill, /스킬\(LLM\)이 직접 읽|미확정 후보 필드명|LLM 추출 절차/);

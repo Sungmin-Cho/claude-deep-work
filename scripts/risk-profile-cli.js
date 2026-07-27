@@ -156,7 +156,8 @@ function main() {
     const fs = require('node:fs');
     const path = require('node:path');
     const { decideRiskProfile, canonicalDigest, STAGES } = require('../runtime/risk-runtime.js');
-    const { compilePolicySnapshot } = require('../runtime/policy-runtime.js');
+    const { compilePolicySnapshot,compileMethodologyAuthority } =
+      require('../runtime/policy-runtime.js');
     const { collectCodebaseSignals } = require('../runtime/model-routing-runtime.js');
     if (process.env.DEEP_WORK_RISK_CLI_TEST_THROW === '1') throw new Error('test-throw');
 
@@ -213,7 +214,11 @@ function main() {
     }
     if (args.stage === 'slice') {
       out.slice_id = received.slice_id; // risk-only (스펙 §4.6)
-    } else if (!args.riskOnly) {
+    } else {
+      out.methodology_authority=compileMethodologyAuthority({riskProfile:profile,
+        difficulty:received.difficulty??null,mode:received.policy_mode??'adaptive',
+        floorBaseline:received.floor_baseline??{}});
+      if (!args.riskOnly) {
       const routingFields = ['model_routing', 'tiers', 'pinned'];
       const missing = routingFields.filter((key) => !isPlainObject(received[key]));
       if (missing.length) errors.push({ stage: args.stage, code: 'routing-input-missing', missing,
@@ -225,6 +230,7 @@ function main() {
       snapshot.compiled_at = profile.decided_at;
       snapshot.based_on = args.stage;
       out.policy_snapshot = snapshot;
+      }
     }
     process.stdout.write(JSON.stringify(out));
     alreadyEmitted = true;

@@ -283,7 +283,8 @@ contract/invariant/failure state/external side effect, unplanned mock, 한 slice
 verification plan/consumption, test result, evidence summary를 원자적으로
 invalidate하고 `receipt_invalidations_json`을 기록한다. Receipt 파일 자체를
 수정하거나 skill이 state 필드를 piecemeal patch해서는 안 된다. 이후
-`current_phase: research + subphase: spec`에서 재개한다.
+canonical `current_phase: spec`에서 재개한다. legacy
+`current_phase: research + subphase: spec`도 읽을 수 있다.
 
 ### Step C: Spec/Contract 검증
 

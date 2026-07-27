@@ -5,10 +5,12 @@ const {
   readVersion,
   v2TextToV3Text,
   createV3Profile,
+  createV4Profile,
   isStaleLock,
 } = require('../runtime/profile-runtime.js');
 
-module.exports = { migrateProfile, readVersion, v2TextToV3Text, createV3Profile, isStaleLock };
+module.exports = { migrateProfile, readVersion, v2TextToV3Text, createV3Profile,
+  createV4Profile, isStaleLock };
 
 if (require.main === module) {
   const profilePath = process.argv[2];
@@ -20,8 +22,9 @@ if (require.main === module) {
       let result = migrateProfile(profilePath);
       if (result.migrated === false && result.reason === 'not-found') {
         const initialPreset = process.env.DEEP_WORK_INITIAL_PRESET || 'solo-strict';
-        createV3Profile(profilePath, initialPreset);
-        result = {migrated:false, reason:'not-found-created-v3', default_preset:initialPreset};
+        createV4Profile(profilePath, initialPreset);
+        result = {migrated:false, reason:'not-found-created-v4',
+          default_preset:initialPreset};
       }
       process.stdout.write(`${JSON.stringify(result)}\n`);
     } catch (error) {

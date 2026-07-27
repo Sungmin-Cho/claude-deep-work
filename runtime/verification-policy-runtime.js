@@ -31,8 +31,15 @@ function compatibilityProof(facts={}){if(!facts||typeof facts!=='object'||Array.
 function deriveCompatibilityMode(facts={}){return compatibilityProof(facts).mode;}
 
 function compileVerificationPlan(input={}){const risk=input.riskProfile?.class||input.riskProfile?.risk_class;
-  const profile=input.policySnapshot?.profile;if(PROFILE_BY_CLASS[risk]!==profile||input.policySnapshot?.risk_class!==risk||
-      input.policySnapshot?.verification_policy?.recommended!==VERIFICATION_POLICY[profile])fail('policy-snapshot-inconsistent');
+  let policy=input.policySnapshot,methodologyPolicySha256=null;
+  if(policy?.authority==='methodology-policy-v1'){
+    policy=require('./policy-runtime.js').validateMethodologyAuthority(policy);
+    methodologyPolicySha256=policy.policy_sha256;
+  }
+  const profile=policy?.profile,verificationLabel=policy?.authority==='methodology-policy-v1'
+    ?policy.verification_policy:policy?.verification_policy?.recommended;
+  if(PROFILE_BY_CLASS[risk]!==profile||policy?.risk_class!==risk||
+      verificationLabel!==VERIFICATION_POLICY[profile])fail('policy-snapshot-inconsistent');
   for(const value of [input.specSha256,input.specApprovedHash,input.riskProfileSha256])if(!isDigest(value))
     fail('verification-plan-input');const spec=input.specContract||{};
   if(!/^SPEC-[A-Z0-9][A-Z0-9-]{2,63}$/.test(spec.spec_id||''))fail('verification-plan-input');
@@ -77,6 +84,7 @@ function compileVerificationPlan(input={}){const risk=input.riskProfile?.class||
     compatibility_proof_sha256:compatibility.proof_sha256,plan_projection_sha256:projectionSha256,
     source_plan_sha256:binding.source_plan_sha256,capability_facts,gates,
     required_gate_ids:checked.required,evidence_required_gate_ids:checked.evidenceRequired};
+  if(methodologyPolicySha256)plan.methodology_policy_sha256=methodologyPolicySha256;
   const typedSlices=(projection.slices||[]).filter((row)=>row.slice_kind!==undefined);
   if(typedSlices.length){
     if(typedSlices.length!==(projection.slices||[]).length||!/^[0-9a-f]{64}$/.test(projection.plan_authority_sha256||''))
@@ -104,16 +112,23 @@ const PLAN_KEYS=['schema_version','spec_id','spec_sha256','spec_approved_hash','
   'capability_facts','gates','required_gate_ids','evidence_required_gate_ids','plan_sha256'];
 const PLAN_V2_KEYS=[...PLAN_KEYS.slice(0,-1),'plan_authority_sha256','slice_verification_specs',
   'slice_verification_specs_sha256','plan_sha256'];
+const PLAN_POLICY_KEYS=[...PLAN_KEYS.slice(0,-1),'methodology_policy_sha256','plan_sha256'];
+const PLAN_V2_POLICY_KEYS=[...PLAN_V2_KEYS.slice(0,-1),'methodology_policy_sha256',
+  'plan_sha256'];
 function exactKeys(value,keys){return value&&typeof value==='object'&&!Array.isArray(value)&&
   canonicalJson(Object.keys(value).sort())===canonicalJson([...keys].sort());}
 function validateVerificationPlan(plan){try{const typed=Object.hasOwn(plan||{},'slice_verification_specs');
-    if(!exactKeys(plan,typed?PLAN_V2_KEYS:PLAN_KEYS)||plan.schema_version!==1||
+    const policyBound=Object.hasOwn(plan||{},'methodology_policy_sha256');
+    const keys=typed?(policyBound?PLAN_V2_POLICY_KEYS:PLAN_V2_KEYS):
+      (policyBound?PLAN_POLICY_KEYS:PLAN_KEYS);
+    if(!exactKeys(plan,keys)||plan.schema_version!==1||
       !/^SPEC-[A-Z0-9][A-Z0-9-]{2,63}$/.test(plan.spec_id||'')||!['low','medium','high','critical'].includes(plan.risk_class)||
       PROFILE_BY_CLASS[plan.risk_class]!==plan.profile||plan.source_policy_label!==VERIFICATION_POLICY[plan.profile]||
       !['strict-spec','legacy-no-spec'].includes(plan.compatibility_mode)||
       [plan.spec_sha256,plan.spec_approved_hash,plan.risk_profile_sha256,plan.compatibility_proof_sha256,
         plan.plan_projection_sha256,plan.source_plan_sha256,plan.plan_sha256,
-        ...(typed?[plan.plan_authority_sha256,plan.slice_verification_specs_sha256]:[])].some((value)=>!isDigest(value)))
+        ...(typed?[plan.plan_authority_sha256,plan.slice_verification_specs_sha256]:[]),
+        ...(policyBound?[plan.methodology_policy_sha256]:[])].some((value)=>!isDigest(value)))
       fail('verification-plan-schema');
     const preimage=structuredClone(plan);delete preimage.plan_sha256;if(digest(preimage)!==plan.plan_sha256)
       fail('verification-plan-digest');

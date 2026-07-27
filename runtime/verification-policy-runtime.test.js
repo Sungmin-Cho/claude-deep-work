@@ -42,6 +42,22 @@ test('compiler embeds durable compatibility proof and evidence accepts the exact
   assert.doesNotThrow(()=>require('./evidence-runtime.js').validateVerificationPlan(plan));
 });
 
+test('v7 verification plan binds the exact methodology authority digest',()=>{
+  const value=input('high','strict');
+  value.planProjection.contract_binding.created_by_version='7.0.0';
+  value.compatibilityFacts.created_by_version='7.0.0';
+  value.policySnapshot=require('./policy-runtime.js').compileMethodologyAuthority({
+    riskProfile:{class:'high'},difficulty:'high',mode:'adaptive'});
+  const plan=compileVerificationPlan(value);
+  assert.equal(plan.methodology_policy_sha256,value.policySnapshot.policy_sha256);
+  assert.equal(validateVerificationPlan(plan).pass,true);
+
+  const forged=structuredClone(value.policySnapshot);
+  forged.risk_class='low';
+  assert.throws(()=>compileVerificationPlan({...value,policySnapshot:forged}),
+    /methodology-policy|policy-snapshot/);
+});
+
 test('v6.14 reviewed capability facts require backward compatibility and migration gates',()=>{
   const value=input('critical','critical');
   value.planProjection.contract_binding.created_by_version='6.14.0';

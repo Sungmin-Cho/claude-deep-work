@@ -385,3 +385,22 @@ test('effort meta는 provider-neutral effort 어휘만 포함한다', () => {
     }
   }
 });
+
+test('v7 model router is a facade that cannot weaken methodology authority',()=>{
+  const {compileMethodologyAuthority}=require('./policy-runtime.js');
+  const methodologyPolicy=compileMethodologyAuthority({
+    riskProfile:{class:'high'},difficulty:'medium',mode:'adaptive'});
+  const r=decideModelRouting({signals:{tracked_files:50},runtime:'claude',
+    methodologyPolicy,riskClass:'low'});
+  assert.equal(r.meta.authority,'methodology-policy-v1');
+  assert.equal(r.meta.compatibility_mode,'policy-facade');
+  assert.equal(r.meta.tiers.research,'deep');
+  assert.equal(r.meta.tiers.implement,'deep');
+  assert.equal(r.meta.tiers.test,'standard');
+  assert.ok(r.warnings.some((warning)=>/legacy riskClass.*ignored/i.test(warning)));
+
+  const forged=structuredClone(methodologyPolicy);
+  forged.role_routing.tiers.implement='opus';
+  assert.throws(()=>decideModelRouting({signals:{tracked_files:50},
+    runtime:'codex',methodologyPolicy:forged}),/methodology-policy/);
+});

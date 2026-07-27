@@ -2,7 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { compilePolicySnapshot, PROFILE_BY_CLASS, TIER_CATALOG, EFFORT_CATALOG,
-  REVIEW_POLICY, VERIFICATION_POLICY, DIFF_PHASES } = require('./policy-runtime.js');
+  REVIEW_POLICY, VERIFICATION_POLICY, DIFF_PHASES,
+  compileMethodologyAuthority } = require('./policy-runtime.js');
 const { CLASS_ORDER } = require('./risk-runtime.js');
 
 test('A.1 매핑 고정', () => {
@@ -125,4 +126,22 @@ test('routing_diff recommended_effort 값 고정 (§5.1 예시 대조)', () => {
   const strict = compilePolicySnapshot({ riskProfile: { class: 'high' }, difficulty: null,
     runtime: 'claude', actualRouting: {}, actualTiers: tiers, actualPinned: {} });
   assert.strictEqual(strict.routing_diff.find((d) => d.phase === 'implement').recommended_effort, 'high');
+});
+
+test('v7 methodology authority is provider-neutral and binds policy floors',()=>{
+  const authority=compileMethodologyAuthority({riskProfile:{class:'high'},
+    difficulty:'medium',mode:'adaptive',floorBaseline:{implement:'standard'}});
+  assert.equal(authority.schema_version,1);
+  assert.equal(authority.authority,'methodology-policy-v1');
+  assert.equal(authority.risk_class,'high');
+  assert.equal(authority.profile,'strict');
+  assert.deepStrictEqual(authority.role_routing.tiers,{
+    brainstorm:'main',research:'deep',spec:'main',plan:'main',
+    implement:'deep',test:'standard',
+  });
+  assert.equal(authority.role_routing.efforts.semantic_reviewer,'xhigh');
+  assert.deepStrictEqual(authority.floors_effective,{
+    research:'deep',implement:'deep',test:'standard',
+  });
+  assert.doesNotMatch(JSON.stringify(authority),/opus|sonnet|haiku|gpt-/i);
 });
