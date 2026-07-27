@@ -34,7 +34,7 @@ user-invocable: true
 
 
 > **Internal** — `/deep-status --receipts`가 이 파일의 display logic을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
-> 참조처: `skills/deep-status/SKILL.md` §6 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-receipt/SKILL.md and follow its display logic inline`).
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md` §6 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-receipt/SKILL.md and follow its display logic inline`).
 
 # Receipt Management
 

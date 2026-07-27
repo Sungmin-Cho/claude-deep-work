@@ -1,6 +1,6 @@
 # Seven-phase contracts
 
-> Reference for `skills/deep-work-workflow/SKILL.md`. Per-phase inputs, outputs, gates and entry commands. Read when the user asks what a specific phase does, what it produces, or which phase to start from.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-workflow/SKILL.md`. Per-phase inputs, outputs, gates and entry commands. Read when the user asks what a specific phase does, what it produces, or which phase to start from.
 
 ---
 

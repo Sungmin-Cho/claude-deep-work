@@ -68,7 +68,7 @@ const { replaced, warnings } = migrateStateFile(stateFile);
 | `--recommender=MODEL` | 신규: 추천 모델 override. allowlist `^(haiku\|sonnet\|opus)$`, 그 외 거부 + sonnet fallback + 1회 경고 |
 | `--no-recommender` | 신규: 추천 sub-agent skip (defaults 값으로 ask 진입) |
 | `--exec=<inline\|delegate>` | Implement 단계 실행 방식 override. parser → state.execution_override → deep-implement §1.5에서 read |
-| `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `skills/deep-resume/SKILL.md`가 사용. |
+| `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/SKILL.md`가 사용. |
 
 플래그 파서 호출(§1-3-1), v2→v3 프로필 마이그레이션(§1-3-2), v3 로더 호출(§1-3-3),
 플래그 우선순위(§1-3-4), 파싱 경고(§1-3-5), `--setup` 처리 절차는

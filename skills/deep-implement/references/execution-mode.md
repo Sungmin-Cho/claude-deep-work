@@ -1,6 +1,6 @@
 # Pre-routing: inline vs delegate execution mode (§1.5)
 
-> Reference for `skills/deep-implement/SKILL.md`. decide_execution_mode, the auto-inline notice, explicit `--exec` override precedence, and what §1.5 persists (`execution_mode`, `delegation_snapshot`).
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-implement/SKILL.md`. decide_execution_mode, the auto-inline notice, explicit `--exec` override precedence, and what §1.5 persists (`execution_mode`, `delegation_snapshot`).
 
 ---
 

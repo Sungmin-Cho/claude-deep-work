@@ -32,7 +32,7 @@ user-invocable: true
 
 
 > **Internal** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
-> 참조처: `skills/deep-status/SKILL.md` §8 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-report/SKILL.md and follow its logic`).
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md` §8 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-report/SKILL.md and follow its logic`).
 
 # Deep Work Session Report
 
@@ -256,10 +256,10 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 Generate assumption health data by running the assumption engine:
 
 ```bash
-echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":".deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+echo '{"action":"report","registryPath":"${CLAUDE_PLUGIN_ROOT}/assumptions.json","historyPath":".deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js
 ```
 
-Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumptions.json`).
+`${CLAUDE_PLUGIN_ROOT}`는 plugin 설치 경로다 (`assumptions.json`이 있는 디렉터리). 해석 결과가 plugin root 밖이면 실행하지 말고 중단한다.
 
 [If harness-sessions.jsonl exists and engine returns data:]
 

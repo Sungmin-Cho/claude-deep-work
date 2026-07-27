@@ -37,7 +37,7 @@ user-invocable: true
 - Sibling skill helper at `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/phase5-record-error.sh` (used by §1c when `--skip-integrate` is taken with a stalled Phase 5).
 
 > **Internal** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
-> 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md`). `${CLAUDE_PLUGIN_ROOT}/skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
 
 # Deep Work Session Completion
 

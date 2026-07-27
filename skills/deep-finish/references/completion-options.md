@@ -1,6 +1,6 @@
 # Completion options and their execution
 
-> Reference for `skills/deep-finish/SKILL.md`. Sections 6 and 7: the AskUserQuestion completion menu and the per-choice execution procedure (merge / PR / keep branch / discard). Read after the finish gate passes and gh availability is known.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md`. Sections 6 and 7: the AskUserQuestion completion menu and the per-choice execution procedure (merge / PR / keep branch / discard). Read after the finish gate passes and gh availability is known.
 
 ---
 

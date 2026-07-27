@@ -155,7 +155,7 @@ rm -f "$WORK_DIR/receipts/.SLICE-NNN.payload.json"
 
 The helper:
 - Generates an MSB-first Crockford Base32 ULID into `envelope.run_id`.
-- Reads `producer_version` from the plugin's `.claude-plugin/plugin.json`
+- Reads `producer_version` from the plugin's `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
   (resolved relative to the helper's module path — handoff §4
   literal-cwd-resolve).
 - Detects `git.head` / `git.branch` / `git.dirty` from the current worktree.

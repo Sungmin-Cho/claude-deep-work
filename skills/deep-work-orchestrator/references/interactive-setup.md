@@ -1,6 +1,6 @@
 # Interactive session setup (§1-4)
 
-> Reference for `skills/deep-work-orchestrator/SKILL.md`. Assumption auto-adjust integration, the session-recommender sub-agent call, the per-item AskUserQuestion loop, result accumulation, and pause/re-entry. Read when §1-4 runs — that is, unless `--no-ask` skipped it.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md`. Assumption auto-adjust integration, the session-recommender sub-agent call, the per-item AskUserQuestion loop, result accumulation, and pause/re-entry. Read when §1-4 runs — that is, unless `--no-ask` skipped it.
 
 ---
 

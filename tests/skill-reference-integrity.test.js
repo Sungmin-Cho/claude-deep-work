@@ -112,10 +112,107 @@ const FORMS = [
   ['executable-token', new RegExp(String.raw`(?<![A-Za-z0-9._/{}<>$-])((?:${ANCHOR})/|${REL}|(?:${PLUGIN_DIRS})/)([A-Za-z0-9._/-]*\.(?:js|sh)(?![A-Za-z0-9]))`, 'g')],
 ];
 
-// 6. bare basename read: `Read(`adaptive-review-protocol.md`)`. It starts with
-// no root at all, so the ANY_ROOT forms above cannot see it — yet it is the
-// weakest form of all, resolving straight against cwd. Only basenames that
-// name a real plugin document are flagged, so ordinary prose is untouched.
+// DENY BY DEFAULT.
+//
+// Rounds 4-8 each added a syntax or extension to an allowlist and each time the
+// next round found a form outside it: execution paths, parent-relative reads,
+// traversal, unscanned root files, bare basenames, a JSON attachment. Enumerating
+// what to recognise is the losing half of the problem.
+//
+// So the question is no longer "is this a known instruction syntax?" but "does
+// this token resolve to a real file in the plugin?". Anything that does must be
+// anchored, whatever the verb, extension or sentence around it — which covers
+// .json, .yaml, extensionless scripts and assets that do not exist yet, without
+// another form list. Anything that does not resolve is prose and passes.
+const PLUGIN_FILES = (() => {
+  const rel = new Set();
+  const skip = new Set(['node_modules', '.git', '.claude', '.deep-work', 'docs',
+    'tests', '.deep-suite-cache', '.bootstrap-prep']);
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (skip.has(e.name)) continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else rel.add(path.relative(ROOT, p));
+    }
+  };
+  walk(ROOT);
+  return rel;
+})();
+
+// The only permitted exceptions, each with the reason it is safe.
+const ALLOWLIST = new Map([
+  ['./solid-review.md', 'session output written into the workspace, not a plugin file'],
+  ['./drift-report.md', 'session output written into the workspace, not a plugin file'],
+  ['./insight-report.md', 'session output written into the workspace, not a plugin file'],
+]);
+// The canonical-review banner is pinned verbatim by the BANNER regex in
+// tests/v6.12-review-wiring-contract.test.js across four files. Anchoring the
+// two filenames inside it would break that contract, and the line names the
+// authority rather than instructing a load, so it is exempt by line shape.
+const PINNED_BANNER = /^>\s*v6\.12: 실행 계약은 adaptive-review-protocol\.md \+ review-policy-runtime\.js가 정본/;
+// Single-segment root metadata named descriptively ("package.json declares
+// engines"), never handed to a file tool. Multi-segment paths get no such pass.
+const ROOT_METADATA = new Set(['package.json', 'plugin.json', 'assumptions.json',
+  'AGENTS.md', 'CLAUDE.md', 'README.md', 'CHANGELOG.md', 'SKILL.md', 'hooks.json']);
+
+// Path-shaped tokens: multi-segment paths, plus dotted single segments.
+const PATH_TOKEN = /[A-Za-z0-9_.@${}<>-]+(?:\/[A-Za-z0-9_.@{}|*-]+)+|[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,6}\b/g;
+
+function resolvesInPlugin(token, sourceFile) {
+  const clean = token.replace(/^\.\//, '');
+  if (PLUGIN_FILES.has(clean)) return true;
+  try {
+    const fromSource = path.relative(ROOT, path.resolve(path.dirname(sourceFile), token));
+    if (PLUGIN_FILES.has(fromSource)) return true;
+  } catch { /* unresolvable token — prose */ }
+  return false;
+}
+
+// Scope, defined once. Yields the path tokens on a line that the invariant
+// governs, with the documented exemptions applied. Both the classifier and the
+// malicious-workspace fixture consume this, so they cannot test different rules.
+function* scopedTokens(line) {
+  if (PINNED_BANNER.test(line.trim())) return;
+  PATH_TOKEN.lastIndex = 0;
+  let m;
+  while ((m = PATH_TOKEN.exec(line))) {
+    // `<` and `>` are in the character class only to admit `<PLUGIN_ROOT>`.
+    // Without trimming them, `<skills/…/llm-output.json 첨부>` extracts with a
+    // leading `<`, fails to resolve, and the token silently escapes the guard —
+    // which is exactly how the r8 finding stayed invisible.
+    const token = m[0].startsWith('<') && !m[0].startsWith('<PLUGIN_ROOT>')
+      ? m[0].slice(1)
+      : m[0];
+    if (ALLOWLIST.has(token)) continue;
+    if (!token.includes('/') && ROOT_METADATA.has(token)) continue;
+    const before = line.slice(Math.max(0, m.index - 30), m.index);
+    // Already inside an anchored path. The trailing form covers shell splicing
+    // — require("'"${CLAUDE_PLUGIN_ROOT}"'/scripts/x.js") is anchored, just
+    // quoted for a heredoc.
+    if (/(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)["'\s]*\/?$/.test(before)) continue;
+    // Markdown link target `](x.md)` — rendered navigation between docs, not an
+    // instruction handed to a file tool. Runtime reads use the Read forms above.
+    if (/\]\($/.test(before)) continue;
+    yield token;
+  }
+}
+
+function denyByDefaultHits(line, sourceFile) {
+  const out = [];
+  for (const token of scopedTokens(line)) {
+    if (ANCHORED_TOKEN.test(token)) continue;          // clause B checks these
+    if (resolvesInPlugin(token, sourceFile)) {
+      out.push({ form: 'resolves-in-plugin', token, why: 'unanchored' });
+    }
+  }
+  return out;
+}
+
+// bare basename read: `Read(`adaptive-review-protocol.md`)`. It resolves to no
+// repo-relative path, so the rule above cannot see it — yet it is the weakest
+// form of all, resolving straight against cwd. Only basenames that name a real
+// plugin document are flagged, so ordinary prose is untouched.
 const BARE_BASENAME = /\b(?:Read|Follow|read|follow)\s*\(?\s*["'`]([A-Za-z0-9][A-Za-z0-9._-]*\.md)(?:#[^`"']*)?["'`]/g;
 
 function bareBasenameHits(line) {
@@ -171,7 +268,7 @@ test('every skill and agent markdown file has balanced code fences', () => {
 });
 
 // Returns violations on a line: {form, token, why}. Empty when the line is clean.
-function shadowableTokens(line) {
+function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md')) {
   const out = [];
   for (const [form, re] of FORMS) {
     re.lastIndex = 0;
@@ -184,6 +281,7 @@ function shadowableTokens(line) {
     }
   }
   out.push(...bareBasenameHits(line));
+  out.push(...denyByDefaultHits(line, sourceFile));
   return out;
 }
 
@@ -202,7 +300,7 @@ test('no read or exec instruction can be shadowed from the target workspace', ()
   const violations = [];
   for (const file of markdownFiles()) {
     fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
-      for (const v of shadowableTokens(line)) {
+      for (const v of shadowableTokens(line, file)) {
         violations.push(`${path.relative(ROOT, file)}:${i + 1}  [${v.form}] ${v.token} — ${v.why}`);
       }
     });
@@ -269,26 +367,47 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
     for (const name of ['adaptive-review-protocol.md', 'model-routing-guide.md', 'SKILL.md']) {
       fs.writeFileSync(path.join(evil, name), '# SHADOW — must never be read\n');
     }
-    fs.mkdirSync(path.join(evil, 'skills', 'deep-integrate'), { recursive: true });
+    fs.mkdirSync(path.join(evil, 'skills', 'deep-integrate', 'schema'), { recursive: true });
     fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'phase5-record-error.sh'),
       '#!/bin/sh\necho SHADOW\n');
+    // The r8 finding: a schema attached to the Phase 5 recommendation prompt.
+    // Neither a `.md` read nor a `.js`/`.sh` token, so every earlier form list
+    // missed it — which is why the rule is now resolution, not syntax.
+    fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'schema', 'llm-output.json'),
+      '{"SHADOW":"must never be attached"}\n');
 
-    const reachable = [];
+    // Resolve for real, from the evil cwd, exactly as a runtime agent would.
+    // Re-running the classifier here would only restate what it already
+    // believes; this instead performs the resolution and asks which file the
+    // instruction actually lands on.
+    const resolveAsAgentWould = (token) => {
+      if (/^(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)\//.test(token)) {
+        const body = token.replace(/^(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)\//, '');
+        return path.resolve(ROOT, body);      // anchored → resolves in the plugin
+      }
+      return path.resolve(evil, token.replace(/^\.\//, '')); // unanchored → cwd
+    };
+
+    const landed = [];
     for (const file of markdownFiles()) {
       fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
-        for (const v of shadowableTokens(line)) {
-          // An unanchored or escaping instruction is one cwd away from the
-          // planted shadow; anything the guard flags is reachable by definition.
-          reachable.push(`${path.relative(ROOT, file)}:${i + 1}  ${v.token} — ${v.why}`);
+        for (const token of scopedTokens(line)) {
+          const target = resolveAsAgentWould(token);
+          if (target.startsWith(evil + path.sep) && fs.existsSync(target)) {
+            landed.push(`${path.relative(ROOT, file)}:${i + 1}  ${token} → ${target}`);
+          }
         }
       });
     }
-    assert.deepEqual(reachable, [],
-      `these instructions would resolve into a malicious workspace:\n  ${reachable.join('\n  ')}`);
+    assert.deepEqual(landed, [],
+      `these instructions resolve onto a planted shadow file:\n  ${landed.join('\n  ')}`);
 
-    // The fixture must be able to fail: a shadowable instruction is detected.
-    assert.ok(shadowableTokens('Read(`adaptive-review-protocol.md`)').length > 0,
-      'fixture is vacuous — the guard does not detect the planted shadow form');
+    // Non-vacuity: the same resolution, given an unanchored token, does land on
+    // the shadow — so an empty result above is a property of the docs, not of a
+    // resolver that never finds anything.
+    const control = resolveAsAgentWould('adaptive-review-protocol.md');
+    assert.ok(control.startsWith(evil + path.sep) && fs.existsSync(control),
+      'fixture is vacuous — an unanchored token must land on the planted shadow');
   } finally {
     fs.rmSync(evil, { recursive: true, force: true });
   }
@@ -304,7 +423,9 @@ test('mixed lines fail on the bare token', () => {
 
 test('every referenced skill path resolves', () => {
   const patterns = [
-    [/\$\{CLAUDE_PLUGIN_ROOT\}\/([A-Za-z0-9._/-]+\.(?:md|js|sh))/g, false],
+    // Trailing boundary, same reason as the guard: without it `.js` matches the
+    // prefix of `.json` and the resolver reports files that never existed.
+    [/\$\{CLAUDE_PLUGIN_ROOT\}\/([A-Za-z0-9._/-]+\.(?:md|js|sh|json|yaml)(?![A-Za-z0-9]))/g, false],
     [/`(\.\.\/[A-Za-z0-9._/-]+\.md)(?:#[a-z0-9-]+)?`/g, true],
     [/\]\((\.\.?\/[A-Za-z0-9._/-]+\.md)\)/g, true],
     // Read("../shared/references/foo.md") — the double-quoted call form, used in

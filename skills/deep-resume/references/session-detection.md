@@ -1,6 +1,6 @@
 # Active-session detection and WORK_DIR extraction
 
-> Reference for `skills/deep-resume/SKILL.md`. The `--session=` → env var → pointer file → registry → legacy fallback chain, multi-session selection, and how WORK_DIR is resolved from the chosen state file.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/SKILL.md`. The `--session=` → env var → pointer file → registry → legacy fallback chain, multi-session selection, and how WORK_DIR is resolved from the chosen state file.
 
 ---
 

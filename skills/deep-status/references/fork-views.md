@@ -1,6 +1,6 @@
 # Fork relationship display and `--tree`
 
-> Reference for `skills/deep-status/SKILL.md`. The fork-relationship block inside the default status display, and the `--tree` relationship visualization.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md`. The fork-relationship block inside the default status display, and the `--tree` relationship visualization.
 
 ---
 

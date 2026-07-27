@@ -35,7 +35,7 @@ user-invocable: true
 
 
 > **Internal** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
-> 참조처: `skills/deep-status/SKILL.md` §9 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-assumptions/SKILL.md and follow its logic`).
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md` §9 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-assumptions/SKILL.md and follow its logic`).
 
 # Assumption Health Report
 
@@ -69,7 +69,8 @@ Read `$STATE_FILE` and extract `work_dir`. If the state file doesn't exist, defa
 
 Set paths:
 ```
-PLUGIN_DIR = <directory containing this command file>/../hooks/scripts
+PLUGIN_SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/hooks/scripts
+(plugin root 기준 절대 경로. 이 파일 위치에서 상대 유도하지 말 것 — 해석 기준이 target workspace로 넘어간다.)
 REGISTRY_PATH = <directory containing this command file>/../assumptions.json
 WORK_DIR = $PROJECT_ROOT/<work_dir from state or "deep-work">
 HISTORY_PATH = $WORK_DIR/harness-history/harness-sessions.jsonl
@@ -93,7 +94,7 @@ Regenerate `harness-sessions.jsonl` from receipt files. This repairs corrupted o
 
 Run via Bash:
 ```bash
-echo '{"action":"rebuild","workDir":"<WORK_DIR>"}' | node "<PLUGIN_DIR>/assumption-engine.js"
+echo '{"action":"rebuild","workDir":"<WORK_DIR>"}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js"
 ```
 
 Parse the JSON result. If `sessions` array is non-empty, write each session as a line to `$HISTORY_PATH` (creating `harness-history/` directory first with `mkdir -p`).
@@ -116,7 +117,7 @@ Read `model_primary` from state file (or `"unknown"`).
 
 Run via Bash:
 ```bash
-echo '{"action":"detect-model","historyPath":"<HISTORY_PATH>","model":"<model_primary>"}' | node "<PLUGIN_DIR>/assumption-engine.js"
+echo '{"action":"detect-model","historyPath":"<HISTORY_PATH>","model":"<model_primary>"}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js"
 ```
 
 Parse JSON result. If `isNew` is true and `totalSessions` > 0:
@@ -142,7 +143,7 @@ Determine options based on arguments:
 
 Run via Bash:
 ```bash
-echo '{"action":"report","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>","options":{"splitByModel":true}}' | node "<PLUGIN_DIR>/assumption-engine.js"
+echo '{"action":"report","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>","options":{"splitByModel":true}}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js"
 ```
 
 Parse JSON result containing `text`, `data`, and `warnings`.
@@ -243,7 +244,7 @@ Stop here.
 
 Run via Bash:
 ```bash
-echo '{"action":"timeline","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>","options":{"windowSize":3,"width":40,"height":10}}' | node "<PLUGIN_DIR>/assumption-engine.js"
+echo '{"action":"timeline","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>","options":{"windowSize":3,"width":40,"height":10}}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js"
 ```
 
 Parse JSON result containing `timelines` object (keyed by assumption ID).
@@ -292,7 +293,7 @@ Each column = window of 3 sessions
 
 Run via Bash:
 ```bash
-echo '{"action":"badge","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>"}' | node "<PLUGIN_DIR>/assumption-engine.js"
+echo '{"action":"badge","registryPath":"<REGISTRY_PATH>","historyPath":"<HISTORY_PATH>"}' | node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js"
 ```
 
 ### Step 2: Display and save

@@ -1,6 +1,6 @@
 # Session discovery and session-ID assignment
 
-> Reference for `skills/deep-work-orchestrator/SKILL.md`. Update check, legacy single-session migration, stale-session detection, active-session listing, session-ID generation. Read at §1-1/§1-2 of session init.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md`. Update check, legacy single-session migration, stale-session detection, active-session listing, session-ID generation. Read at §1-1/§1-2 of session init.
 
 ---
 

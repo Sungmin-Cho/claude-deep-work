@@ -1,6 +1,6 @@
 # Out-of-band edit recovery (approval hash mismatch)
 
-> Reference for `skills/deep-work-orchestrator/SKILL.md`. The data-preservation + in-place-review procedure that runs when an approved research.md or plan.md was edited outside the workflow and its sha256 no longer matches the recorded approval hash.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md`. The data-preservation + in-place-review procedure that runs when an approved research.md or plan.md was edited outside the workflow and its sha256 no longer matches the recorded approval hash.
 
 ---
 

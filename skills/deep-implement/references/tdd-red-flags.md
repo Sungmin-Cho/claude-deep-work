@@ -1,6 +1,6 @@
 # TDD red flags — rationalizations that must stop the loop
 
-> Reference for `skills/deep-implement/SKILL.md`. The rationalization → reality table. Read when tempted to skip RED, defer tests, guess at a fix, or widen the slice scope.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-implement/SKILL.md`. The rationalization → reality table. Read when tempted to skip RED, defer tests, guess at a fix, or widen the slice scope.
 
 ---
 

@@ -1,6 +1,6 @@
 # Solo and team research dispatch
 
-> Reference for `skills/deep-research/SKILL.md`. Mode selection by delegation, the solo single-agent path, the three-way parallel team path, parallel partial-timeout handling, and why the TeamCreate/env-var path was removed.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-research/SKILL.md`. Mode selection by delegation, the solo single-agent path, the three-way parallel team path, parallel partial-timeout handling, and why the TeamCreate/env-var path was removed.
 
 ---
 

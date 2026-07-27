@@ -92,7 +92,7 @@ Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_ty
   installation_suggestions에 동일 신호로 1건 추가 가능.
 
 출력 스키마:
-<skills/deep-integrate/schema/llm-output.json 첨부>
+<${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/schema/llm-output.json 첨부>
 
 반드시 위 스키마를 준수하는 JSON만 반환. 설명 문장·마크다운 코드블록 감싸기 금지.
 ```

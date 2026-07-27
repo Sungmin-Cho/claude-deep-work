@@ -4,7 +4,7 @@ Evidence-Driven Development Protocol. `$deep-work:deep-work "task"` drives the
 Brainstorm → Research → Spec → Plan → Implement → Test → Integrate workflow.
 Claude Code and Codex share this file — it is the single source for both.
 
-Read the version, never hardcode it: `jq -r .version .claude-plugin/plugin.json`.
+Read the version, never hardcode it: `jq -r .version ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`.
 Release history lives in `CHANGELOG.md` / `CHANGELOG.ko.md`; README owns what the
 plugin is and how to use it.
 
@@ -12,13 +12,13 @@ plugin is and how to use it.
 
 ## Runtime surfaces
 
-Manifests `.claude-plugin/plugin.json` + `.codex-plugin/plugin.json` · skills
+Manifests `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` + `${CLAUDE_PLUGIN_ROOT}/.codex-plugin/plugin.json` · skills
 `skills/*/SKILL.md` with cross-skill guides under `skills/shared/references/` ·
-hooks `hooks/hooks.json` + `hooks/scripts/` · agents `agents/*.md`. Node ≥ 22
+hooks `${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json` + `hooks/scripts/` · agents `agents/*.md`. Node ≥ 22
 (`package.json` `engines`). Verify a change with:
 
 ```bash
-node -e "JSON.parse(require('fs').readFileSync('.codex-plugin/plugin.json','utf8'))"
+node -e "JSON.parse(require('fs').readFileSync('${CLAUDE_PLUGIN_ROOT}/.codex-plugin/plugin.json','utf8'))"
 npm test
 ```
 
@@ -94,7 +94,7 @@ envelopes:
   "schema_version": "1.0",
   "envelope": {
     "producer": "deep-work",
-    "producer_version": "<from .claude-plugin/plugin.json>",
+    "producer_version": "<from ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json>",
     "artifact_kind": "session-receipt | slice-receipt",
     "run_id": "<ULID>",
     "session_id": "<dw-session-id>",
@@ -109,7 +109,7 @@ envelopes:
 ```
 
 Sole writer: `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`, invoked from
-`agents/implement-slice-worker.md` and `skills/deep-finish/SKILL.md` §7-Z.
+`${CLAUDE_PLUGIN_ROOT}/agents/implement-slice-worker.md` and `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md` §7-Z.
 
 **Identity-triplet guard.** Before unwrapping `payload`, every reader verifies
 `producer` equals the expected producer, `artifact_kind` equals the expected kind,
@@ -151,7 +151,7 @@ pack covers more families at the hook level.
   `Co-Authored-By` trailer.
 - **Never edit install caches** — `~/.claude/plugins/`, `~/.codex/plugins/cache/`.
   Push to this repo, then run `/plugin marketplace update`.
-- **Version triple-sync** — `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`
+- **Version triple-sync** — `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`, `${CLAUDE_PLUGIN_ROOT}/.codex-plugin/plugin.json`
   and `package.json` always carry the same version.
 - Receipt validation failed? The script takes three required positionals:
   `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-delegated-receipt.sh [--skip-items=N,M] [--only-completed]

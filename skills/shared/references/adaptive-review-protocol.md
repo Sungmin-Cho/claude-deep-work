@@ -99,7 +99,7 @@ failure scenario, verification, confidence 자격을 만족해야 하며 미달�
 ## 7. Artifact별 연결
 
 - `document`: structural은 항상 required. structural 점수와 auto-fix snapshot은
-  `review-gate.md`의 잔존 계약을 사용한다.
+  `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-gate.md`의 잔존 계약을 사용한다.
 - `slice-diff`: Stage 1은 semantic, Stage 2는 executability role이다. High/Critical의
   Stage 2 blocker는 차단한다.
 - `cross-slice`: deep-test의 4-1 required/4-2 advisory 지위는 유지하되 reviewer와

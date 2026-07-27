@@ -1,6 +1,6 @@
 # Phase 5 signal collection (§3-1)
 
-> Reference for `skills/deep-integrate/SKILL.md`. The detect-plugins + gather-signals invocation, the absolute-path expansion rule that phase-guard enforces, and the `--plugins-file` / `--loop-file` options that replace `$(cat ...)` substitution.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/SKILL.md`. The detect-plugins + gather-signals invocation, the absolute-path expansion rule that phase-guard enforces, and the `--plugins-file` / `--loop-file` options that replace `$(cat ...)` substitution.
 
 ---
 

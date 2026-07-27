@@ -1,6 +1,6 @@
 # Optional cross-plugin handoff emit (§7-Z-A)
 
-> Reference for `skills/deep-finish/SKILL.md`. Both handoff paths: the explicit `--handoff-to=<plugin>` route and the interactive proposal on outcome merge/pr. Covers when to emit `.deep-work/handoffs/*.json`, the emit-handoff.js invocation, and the `--no-handoff` opt-out (which suppresses only the interactive proposal).
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md`. Both handoff paths: the explicit `--handoff-to=<plugin>` route and the interactive proposal on outcome merge/pr. Covers when to emit `.deep-work/handoffs/*.json`, the emit-handoff.js invocation, and the `--no-handoff` opt-out (which suppresses only the interactive proposal).
 
 ---
 

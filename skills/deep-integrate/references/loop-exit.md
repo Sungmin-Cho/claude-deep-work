@@ -1,6 +1,6 @@
 # Loop exit, edge cases and recursion block
 
-> Reference for `skills/deep-integrate/SKILL.md`. Sections 4-6: terminating the loop and returning to the orchestrator, the edge-case table, and the rule that /deep-integrate must not re-enter itself.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/SKILL.md`. Sections 4-6: terminating the loop and returning to the orchestrator, the edge-case table, and the rule that /deep-integrate must not re-enter itself.
 
 ---
 

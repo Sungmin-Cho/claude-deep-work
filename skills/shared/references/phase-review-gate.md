@@ -6,7 +6,7 @@ Phase 종료 시 이 문서는 다음 진입만 제공한다.
 
 1. state의 risk/policy/review override와 artifact kind를 조립한다.
 2. Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)의 순서로 unified review를 실행한다.
-3. document artifact는 `review-gate.md`의 structural 차원과 auto-fix snapshot을 함께 쓴다.
+3. document artifact는 `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-gate.md`의 structural 차원과 auto-fix snapshot을 함께 쓴다.
 4. 실행/판정 결과를 `review_execution_json`에 기록하고, 호환을 위해
    `phase_review.{phase}`, `review_results.{phase}`, `review_state`를 dual-write한다.
 

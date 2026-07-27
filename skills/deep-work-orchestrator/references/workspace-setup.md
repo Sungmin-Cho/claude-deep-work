@@ -1,6 +1,6 @@
 # Workspace, capability and profile-save steps
 
-> Reference for `skills/deep-work-orchestrator/SKILL.md`. §1-5 work-dir creation, §1-6 cross-model tool detection, §1-7 assumption health check, §1-8 git branch/worktree, and §1-10/§1-11 profile save plus the session confirmation display.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md`. §1-5 work-dir creation, §1-6 cross-model tool detection, §1-7 assumption health check, §1-8 git branch/worktree, and §1-10/§1-11 profile save plus the session confirmation display.
 
 ---
 

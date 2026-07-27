@@ -1,6 +1,6 @@
 # Worktree context restoration
 
-> Reference for `skills/deep-resume/SKILL.md`. Restoring the worktree recorded in the session state, and what to do when that path no longer exists.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/SKILL.md`. Restoring the worktree recorded in the session state, and what to do when that path no longer exists.
 
 ---
 

@@ -1,6 +1,6 @@
 # Flag parser, profile migration and precedence
 
-> Reference for `skills/deep-work-orchestrator/SKILL.md`. §1-3-1 through §1-3-5 plus `--setup`: how to invoke the flag parser, migrate a v2 profile to v3, call the v3 loader, apply flag precedence, and surface parse warnings. Read after the flag table, before §1-4.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md`. §1-3-1 through §1-3-5 plus `--setup`: how to invoke the flag parser, migrate a v2 profile to v3, call the v3 loader, apply flag precedence, and surface parse warnings. Read after the flag table, before §1-4.
 
 ---
 

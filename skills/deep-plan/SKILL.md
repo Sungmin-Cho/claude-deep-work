@@ -137,7 +137,7 @@ The plan approval runtime is the sole producer of the derived `plan.json`.
 `depends_on`과 `cluster_id`는 deep-implement skill이 worker fan-out 시 읽는 contract이다.
 
 - **`depends_on: [SLICE-MMM, ...]`** — slice 간 DAG edge 정의. 빈 배열이면 root slice (다른 slice 의존 없이 즉시 시작 가능). DAG는 plan.md 단일 파일에 인라인으로 표현되며, **별도 `slices.md` 또는 `slice-graph.json` 산출물은 emit하지 않는다.** Implement Phase의 deep-implement skill (§Section 1)이 plan.md를 파싱해 DAG를 in-memory로 재구성한다.
-- **`cluster_id`** — parallel-safe grouping의 hint. deep-plan은 선택적으로 명시할 수 있으나, **권한적 cluster 결정은 deep-implement이 수행한다** (project size, team_mode, slice 의존성 위상에 따라 동적 grouping; `agents/implement-slice-worker.md`가 worker invocation 시 `cluster_id` + `cluster_ids` prompt 인자를 받음).
+- **`cluster_id`** — parallel-safe grouping의 hint. deep-plan은 선택적으로 명시할 수 있으나, **권한적 cluster 결정은 deep-implement이 수행한다** (project size, team_mode, slice 의존성 위상에 따라 동적 grouping; `${CLAUDE_PLUGIN_ROOT}/agents/implement-slice-worker.md`가 worker invocation 시 `cluster_id` + `cluster_ids` prompt 인자를 받음).
 - **Circular dependency 금지** — A → B → A 형태의 사이클은 plan 실패로 처리한다 (Completeness Policy 차단 대상). 같은 cluster 내 slice는 동일 cluster_id를 공유해야 한다.
 - **외부 산출물 없음 정책** — deep-plan은 plan.md만 emit한다. slice 목록이 별도 파일로 필요한 경우 deep-implement이 plan.md 파싱 결과를 in-memory로 보유하거나 receipt provenance에 기록한다.
 

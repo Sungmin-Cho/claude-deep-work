@@ -1,6 +1,6 @@
 # `--all`, `--badge` and `--risk` views
 
-> Reference for `skills/deep-status/SKILL.md`. The all-sessions dashboard, the shields.io quality badge, and the governed risk/policy view.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md`. The all-sessions dashboard, the shields.io quality badge, and the governed risk/policy view.
 
 ---
 

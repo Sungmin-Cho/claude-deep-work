@@ -1,6 +1,6 @@
 # Session quality score computation
 
-> Reference for `skills/deep-finish/SKILL.md`. Section 2-1: the 5-component score (test pass rate, rework cycles, plan fidelity, sensor clean rate, mutation score) and how not_applicable components are excluded proportionally.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md`. Section 2-1: the 5-component score (test pass rate, rework cycles, plan fidelity, sensor clean rate, mutation score) and how not_applicable components are excluded proportionally.
 
 ---
 

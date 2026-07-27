@@ -1,6 +1,6 @@
 # Delegate team path (§2.2)
 
-> Reference for `skills/deep-implement/SKILL.md`. The env-var check plus AskUserQuestion, Branch A (Agent Team), Branch B (multiple subagents by cluster), and partial-failure handling. Read only when execution_mode=delegate and team_mode=team.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-implement/SKILL.md`. The env-var check plus AskUserQuestion, Branch A (Agent Team), Branch B (multiple subagents by cluster), and partial-failure handling. Read only when execution_mode=delegate and team_mode=team.
 
 ---
 
@@ -46,7 +46,7 @@ AskUserQuestion({
 ### Branch A: Agent Team (env var 활성 + 사용자 선택)
 
 기존 v6.3.x의 TeamCreate 분기를 그대로 유지. 현재
-`skills/deep-implement/SKILL.md:195-201`의 로직:
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-implement/SKILL.md:195-201`의 로직:
 
 ```
 1. Cluster: file 소유권 기반 slice 그룹화 (겹침 → sequential, 독립 → parallel)

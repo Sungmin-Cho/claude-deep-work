@@ -305,7 +305,7 @@ reviewer별 `role`/`channel`/`status`/`fallback_used`/`effort`/`effort_applied`,
 
 ### Step D-1: M3 Envelope Wrap
 
-legacy payload 구성 후, **`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 — 이 helper가 유일한 envelope writer이다 (`AGENTS.md` §Receipt envelope).
+legacy payload 구성 후, **`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `${CLAUDE_PLUGIN_ROOT}/agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 — 이 helper가 유일한 envelope writer이다 (`AGENTS.md` §Receipt envelope).
 
 호출 예시 (실제 CLI는 helper 상단 usage block 참조):
 
@@ -332,7 +332,7 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" \
   "schema_version": "1.0",
   "envelope": {
     "producer": "deep-work",
-    "producer_version": "<read from .claude-plugin/plugin.json by helper>",
+    "producer_version": "<read from ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json by helper>",
     "artifact_kind": "slice-receipt",
     "run_id": "<ULID — Crockford base32, I/L/O/U 금지>",
     "session_id": "<dw-session-id>",

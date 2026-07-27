@@ -1,6 +1,6 @@
 # verify-receipt and the rollback protocol (§2.3)
 
-> Reference for `skills/deep-implement/SKILL.md`. Running verify-delegated-receipt.sh, the pass path, the fail path (Rollback Protocol AskUserQuestion), partial verify on the inline path, and resume/takeover when delegation_snapshot is non-null.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-implement/SKILL.md`. Running verify-delegated-receipt.sh, the pass path, the fail path (Rollback Protocol AskUserQuestion), partial verify on the inline path, and resume/takeover when delegation_snapshot is non-null.
 
 ---
 

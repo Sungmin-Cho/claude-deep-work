@@ -1,6 +1,6 @@
 # Compare mode (`--compare`)
 
-> Reference for `skills/deep-status/SKILL.md`. Two-session comparison, including fork-relationship auto-detection. Read only when `--compare` is present.
+> Reference for `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md`. Two-session comparison, including fork-relationship auto-detection. Read only when `--compare` is present.
 
 ---
 
