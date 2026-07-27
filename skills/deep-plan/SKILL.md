@@ -157,7 +157,7 @@ The plan approval runtime is the sole producer of the derived `plan.json`.
 
 ## Contract Negotiation
 
-모든 S/M/L slice의 contract 필드를 Agent(contract-validator)로 검증:
+모든 S/M/L slice의 contract 필드를 Agent(contract-validator)로 검증 (`Agent` 도구가 없는 호스트에서는 동일 기준으로 인라인 검증 — `AGENTS.md` §Host differences):
 - 모호성, 테스트 불가, 누락된 엣지 케이스 검출
 - Auto-fix + 재검증 (최대 2회)
 

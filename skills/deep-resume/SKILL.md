@@ -1,6 +1,6 @@
 ---
 name: deep-resume
-description: "Resume an active deep-work session from its current phase, restoring artifacts and worktree context. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or an interruption mid-phase. Supports `--session=<id>`, `--resume-from=<phase>`, `--worktree=<path>`."
+description: "Resume an active deep-work session from its current phase, restoring artifacts and worktree context. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or an interruption mid-phase. Supports `--session=<id>` and `--resume-from=<phase>`."
 user-invocable: true
 ---
 
@@ -20,7 +20,7 @@ user-invocable: true
 | (없음) | Auto-detect active session + 현재 phase resume |
 | `--session=<id>` | 명시 세션 ID resume |
 | `--resume-from=<phase>` | `brainstorm|research|spec|plan|implement|test` 강제 |
-| `--worktree=<path>` | worktree 경로 명시 |
+| `--worktree=<path>` | 파서가 받아 검증하지만 **resume 경로에서 소비하는 곳이 없다** — worktree는 state의 `worktree_path`에서만 복원된다 |
 
 빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
 
@@ -95,7 +95,7 @@ If a legacy `review_results` field exists:
 
 ### 1.5. Worktree restoration
 
-세션이 worktree를 사용했거나 `--worktree=<path>`가 주어진 경우에만 수행한다. 절차는
+state의 `worktree_enabled`가 true일 때에만 수행한다. 절차는
 `${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/references/worktree-restore.md`
 를 읽는다.
 

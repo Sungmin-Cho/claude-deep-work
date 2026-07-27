@@ -56,6 +56,9 @@ const input = sanitizeInput({
   ask_items: filterAskItems(PROFILE_DATA.interactive_each_session)  // model_routing은 영구 제거 (구프로필 포함)
 });
 
+호스트에 `Agent` 도구가 없으면(Codex) 이 호출 대신 `agents/session-recommender.md`의
+프롬프트·출력 스키마를 그대로 사용해 인라인으로 추천을 산출한다 (`AGENTS.md` §Host differences).
+
 let result;
 try {
   result = await Agent({

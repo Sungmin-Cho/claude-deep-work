@@ -24,24 +24,31 @@ npm test
 
 ## Host differences — subagent dispatch
 
-`agents/*.md` are Claude Code subagents. `.claude-plugin/plugin.json` exposes them;
-`.codex-plugin/plugin.json` declares only `skills` and `hooks` and has **no `agents`
-key**, so on Codex there is no `Agent(subagent_type=…)` tool to call.
+`agents/*.md` are Claude Code subagents, discovered from the `agents/` directory by
+convention — **neither** `plugin.json` declares an `agents` key, so manifest contents
+do not tell the two hosts apart. Claude Code provides the `Agent` tool; Codex does
+not.
 
-**Rule for every dispatch site.** Where a skill says to dispatch a worker —
-`deep-research` §모드 분기 and `deep-implement` §2.1/§2.2 — first decide the host:
+**Decide on tool availability, not on the manifest.** This rule applies to *every*
+`Agent(...)` dispatch in this plugin, currently five sites: `deep-research`
+§모드 분기 (research workers) · `deep-implement` §2.1/§2.2 (slice workers) ·
+`deep-work-orchestrator` §1-4-2 (session-recommender) · `deep-integrate` §3-2
+(general-purpose recommendation call) · `deep-plan` §Contract Negotiation
+(contract validation).
 
-- The `Agent` tool is available (Claude Code) → dispatch as written.
-- It is not (Codex, and any host whose manifest omits `agents`) → **run the worker's
-  own protocol inline in the calling skill**, reading `agents/<worker>.md` for the
-  contract it would have received. Keep the same inputs, the same output paths and
-  the same receipt obligations; only the execution site changes.
+- The `Agent` tool is available → dispatch as written.
+- It is not → **run that worker's own protocol inline in the calling skill**,
+  reading `agents/<worker>.md` for the contract it would have received. Keep the
+  same inputs, output paths and receipt obligations; only the execution site
+  changes. Where the dispatch is a plain reasoning call with no `agents/` file
+  (deep-integrate §3-2, deep-plan §Contract Negotiation), perform the reasoning
+  inline against the same prompt and schema.
 
-The programmatic signal is `detectRuntime()` in `scripts/detect-runtime.js`, which
-returns `claude` | `codex` | `unknown` from `CLAUDECODE` / `CODEX_HOME` markers —
-but an agent can answer the question directly by checking whether it has the tool.
-Never emit a dispatch a host cannot execute, and never silently skip the work the
-worker would have done.
+`detectRuntime()` in `scripts/detect-runtime.js` returns `claude` | `codex` |
+`unknown` from `CLAUDECODE` / `CODEX_HOME` markers if a programmatic signal is
+needed, but an agent can answer directly by checking whether it has the tool.
+Never emit a dispatch the host cannot execute, and never silently skip the work
+the worker would have done.
 
 ## Receipt envelope (M3)
 
@@ -95,11 +102,13 @@ families outside the Implement phase, each with its own opt-out env var:
 | `sql-destructive` | `DROP TABLE`, `TRUNCATE [TABLE] <name>` | `CLAUDE_ALLOW_SQL_DESTRUCTIVE` |
 | `curl-pipe-shell` | `curl` / `wget` piped into `sh` / `bash` | `CLAUDE_ALLOW_CURL_PIPE_SHELL` |
 
-Never disable the guard globally — set the one matching family override. The
-scope omissions (`DELETE FROM` without `WHERE`, `DROP DATABASE`, `curl | zsh`,
-`yarn publish`, `dd` / `mkfs` / `fdisk`) are deliberate and are pinned at the
-`DANGEROUS_NON_IMPLEMENT_PATTERNS` definition; widening the list is a design pass,
-not a bug fix. Deeper coverage ships as the suite's strict-mode example pack.
+Never disable the guard globally — set the one matching family override.
+
+These families are **not** matched by the denylist: `DELETE FROM` without `WHERE`,
+`DROP DATABASE`, `curl | zsh` and process substitution, `yarn`/`pnpm`/`lerna`
+publish, and `dd` / `mkfs` / `fdisk`. `DANGEROUS_NON_IMPLEMENT_PATTERNS` records
+each omission with the reason it was left out. The suite's strict-mode example
+pack covers more families at the hook level.
 
 ## Conventions
 
@@ -110,8 +119,10 @@ not a bug fix. Deeper coverage ships as the suite's strict-mode example pack.
   Push to this repo, then run `/plugin marketplace update`.
 - **Version triple-sync** — `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`
   and `package.json` always carry the same version.
-- Receipt validation failed? `hooks/scripts/verify-delegated-receipt.sh <path>`
-  names the failing item; the checks live in `hooks/scripts/verify-receipt-core.js`.
+- Receipt validation failed? The script takes three required positionals:
+  `hooks/scripts/verify-delegated-receipt.sh [--skip-items=N,M] [--only-completed]
+  <state_file> <receipts_dir> <plan_md_path>`. It names the failing item; the checks
+  live in `hooks/scripts/verify-receipt-core.js`. `/deep-receipt validate` wraps it.
 
 ## Release
 

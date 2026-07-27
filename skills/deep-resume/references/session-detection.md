@@ -1,6 +1,6 @@
 # Active-session detection and WORK_DIR extraction
 
-> Reference for `skills/deep-resume/SKILL.md`. The env var → pointer file → registry → legacy fallback chain, multi-session selection, and how WORK_DIR is resolved from the chosen state file.
+> Reference for `skills/deep-resume/SKILL.md`. The `--session=` → env var → pointer file → registry → legacy fallback chain, multi-session selection, and how WORK_DIR is resolved from the chosen state file.
 
 ---
 
@@ -8,12 +8,27 @@
 
 Resolve the session to resume using the following priority:
 
+#### 1a-0. Explicit `--session=<id>`
+
+`scripts/parse-deep-work-flags.js` parses `--session=<id>` and rejects anything outside
+`[A-Za-z0-9.-]` with a warning. When a valid value is present it wins over every source
+below — read `.claude/deep-work.<id>.md` directly. If that file does not exist, report it
+and stop rather than silently falling through to another session.
+
 #### 1a. Direct session ID (env var)
 
 If `DEEP_WORK_SESSION_ID` environment variable is set:
 - Read `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md` directly
 - If the file exists and `current_phase` is not `idle`: proceed to Step 1.5 with this session
 - If the file doesn't exist or phase is `idle`: fall through to 1b
+
+#### 1a-2. Pointer file
+
+If neither of the above resolved, read `.claude/deep-work-current-session` — a single
+line holding the session ID. This is the same pointer the hooks fall back to
+(`hooks/scripts/utils.sh`, `phase-guard.sh`, `session-end.sh`), so honouring it here
+keeps the skill and the hooks pointed at one session. If it names a session whose
+state file is missing or `idle`, fall through to 1b.
 
 #### 1b. Registry-based session discovery
 

@@ -67,7 +67,7 @@ block하므로, 반드시 변수 확장된 절대 경로로 구성해야 한다.
 
 ### 3-2. LLM 추천 요청
 
-Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_type: general-purpose`로 호출 — signal envelope를 LLM 프롬프트로 전달하고 JSON 응답을 받는 단순 추론용이므로 특화 에이전트 불필요):
+Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_type: general-purpose`로 호출 — signal envelope를 LLM 프롬프트로 전달하고 JSON 응답을 받는 단순 추론용이므로 특화 에이전트 불필요). `Agent` 도구가 없는 호스트에서는 동일한 프롬프트·스키마로 인라인 추론한다 (`AGENTS.md` §Host differences):
 
 ```
 당신은 deep-suite 플러그인 워크플로우의 "다음 단계 추천자"다.

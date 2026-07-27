@@ -8,8 +8,7 @@
 
 Research 단계는 **항상 subagent에 위임**한다. 메인 세션은 오케스트레이터 역할만 수행.
 
-> **호스트 조건부**: `Agent` 도구가 없는 호스트(Codex — `.codex-plugin/plugin.json`이
-> `agents`를 노출하지 않음)에서는 아래 Agent 호출 대신 `agents/research-{codebase|zerobase}-worker.md`의
+> **호스트 조건부**: `Agent` 도구가 없는 호스트(Codex)에서는 아래 Agent 호출 대신 `agents/research-{codebase|zerobase}-worker.md`의
 > 프로토콜을 **호출 스킬 안에서 인라인 실행**한다. 입력·산출 경로·산출물 소유권 계약은 동일하다.
 > 규칙 정본은 `AGENTS.md` §Host differences.
 

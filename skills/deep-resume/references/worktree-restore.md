@@ -1,6 +1,6 @@
 # Worktree context restoration
 
-> Reference for `skills/deep-resume/SKILL.md`. Restoring the session's worktree, handling a missing or moved worktree path, and the `--worktree=<path>` override.
+> Reference for `skills/deep-resume/SKILL.md`. Restoring the worktree recorded in the session state, and what to do when that path no longer exists.
 
 ---
 
