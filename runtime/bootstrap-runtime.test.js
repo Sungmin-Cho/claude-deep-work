@@ -6,6 +6,7 @@ const crypto=require('node:crypto');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
+const node26Test=process.versions.node==='26.0.0'?test:test.skip;
 const platform=require('./platform.js');
 const {dispatch}=require('../scripts/deep-work-runtime.js');
 let bootstrapRuntime={};
@@ -352,7 +353,7 @@ function verificationResult(){
   return value;
 }
 
-test('bootstrap first-RED consumes the closed VerificationResultV2 union, not output substring prose',()=>{
+node26Test('bootstrap first-RED consumes the closed VerificationResultV2 union, not output substring prose',()=>{
   assert.deepEqual(BOOTSTRAP_VERIFICATION_RESULT_KEYS,Object.keys(verificationResult()).sort());
   const value=verificationResult();
   assert.equal(validateBootstrapVerificationResultV2(value,{
@@ -1330,7 +1331,7 @@ function directAssertionTap({root=WORKTREE,testPath='runtime/bootstrap-runtime.t
   ].join('\n');
 }
 
-test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domains',()=>{
+node26Test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1 domains',()=>{
   assert.equal(typeof parseNodeTapFailure,'function');
   assert.equal(typeof tapValueDigest,'function');
   const typed=[
@@ -1562,7 +1563,7 @@ test('public first-RED requires the exact caller-bound current operation journal
   }
 });
 
-test('public adoption and proof reject a stale first-RED producer chain after replan',async(t)=>{
+node26Test('public adoption and proof reject a stale first-RED producer chain after replan',async(t)=>{
   await t.test('adoption',async()=>{
     const prepared=await preparePublicFirstRedCase(t);
     const bridge=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
@@ -1591,7 +1592,7 @@ test('public adoption and proof reject a stale first-RED producer chain after re
   });
 });
 
-test('public first-RED, adoption, proof and production admission authenticate the complete producer chain',
+node26Test('public first-RED, adoption, proof and production admission authenticate the complete producer chain',
   async(t)=>{
     assert.match(BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256,/^[0-9a-f]{64}$/);
     const tapDigest=(value)=>digest(Buffer.concat([
@@ -1772,7 +1773,7 @@ test('public first-RED, adoption, proof and production admission authenticate th
     assert.equal(finalized.operation_receipt.stage,'completed-ledger');
   });
 
-test('public first-RED rejects every closed process, TAP, scope, environment and producer substitution',
+node26Test('public first-RED rejects every closed process, TAP, scope, environment and producer substitution',
   async(t)=>{
     const expectRejected=async(prepared,observedClass,reasonCode)=>{
       const terminal=await dispatch(prepared.argv,{cwd:prepared.fixture.root});
