@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const REVIEW_POINTS = Object.freeze(['research', 'plan', 'slice-SLICE-NNN', 'cross-slice', 'final']);
+const REVIEW_POINTS = Object.freeze(['research', 'spec', 'plan', 'slice-SLICE-NNN', 'cross-slice', 'final']);
 const SEVERITIES = new Set(['blocker', 'major', 'minor', 'info']);
 const REVIEW_ROLES = new Set(['structural', 'semantic', 'executability']);
 const CHANNELS = new Set(['subagent', 'codex-cli', 'gemini-cli', 'deep-review']);
@@ -23,7 +23,7 @@ function isPlainObject(value) {
 }
 
 function isReviewPoint(point) {
-  return point === 'research' || point === 'plan' || point === 'cross-slice' || point === 'final'
+  return point === 'research' || point === 'spec' || point === 'plan' || point === 'cross-slice' || point === 'final'
     || /^slice-SLICE-\d{3}$/.test(point);
 }
 

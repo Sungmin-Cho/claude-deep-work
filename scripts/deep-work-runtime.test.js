@@ -36,6 +36,9 @@ const { parseSpecMarkdown, specContractDigest } = require('../runtime/contract-r
 const { compilePlanProjectionV1 } = require('../runtime/plan-runtime.js');
 const { compileVerificationPlan, requiredGateIds } = require('../runtime/verification-policy-runtime.js');
 const evidenceRuntime = require('../runtime/evidence-runtime.js');
+const bootstrapRuntime = require('../runtime/bootstrap-runtime.js');
+const redProofRuntime = require('../runtime/red-proof-runtime.js');
+const verificationV2Runtime = require('../runtime/verification-v2-runtime.js');
 const { compileReviewPlan } = require('../runtime/review-policy-runtime.js');
 const { DISPATCHER_GRAMMAR, PHASE5_DISPATCHER_COMMANDS, DISPATCHER_HANDLERS,
   DISPATCHER_METADATA, validateGrammarContract, parseDispatcher, dispatch } =
@@ -44,6 +47,130 @@ const { executeReviewProcess } = require('../runtime/dispatcher-routes.js');
 const { ROUTE_CONTRACTS } = require('./deep-work-route-contracts.js');
 
 const ROUTE_TIMESTAMP = '2026-07-13T00:00:00Z';
+
+test('bootstrap routes expose closed dispatcher grammar and route-contract metadata',()=>{
+  const rows=[
+    ['bootstrap failure-publish',['--state','/tmp/state','--authorization','/tmp/authorization.json',
+      '--failure','/tmp/failure.json']],
+    ['bootstrap abort',['--state','/tmp/state','--authorization','/tmp/authorization.json',
+      '--failure','/tmp/failure.json']],
+    ['bootstrap finalize',['--state','/tmp/state','--authorization','/tmp/authorization.json',
+      '--execution','/tmp/execution.json']],
+    ['bootstrap first-red',['--state','/tmp/state','--plan','/tmp/plan.json','--authorization',
+      '/tmp/authorization.json','--receipt','/tmp/bootstrap-receipt.json','--marker','/tmp/marker.json',
+      '--spec-json','/tmp/spec.json','--slice','SLICE-001','--write-receipt','/tmp/write.json']],
+    ['bootstrap red-adopt',['--state','/tmp/state','--plan','/tmp/plan.json','--authorization',
+      '/tmp/authorization.json','--receipt','/tmp/bootstrap-receipt.json','--marker','/tmp/marker.json',
+      '--slice','SLICE-001','--bridge-operation-id',`op-${'1'.repeat(64)}`]],
+    ['bootstrap proof-publish',['--state','/tmp/state','--plan','/tmp/plan.json','--slice','SLICE-001',
+      '--transition-operation-id',`op-${'2'.repeat(64)}`]],
+  ];
+  for(const [id,args] of rows){
+    const parsed=parseDispatcher([...id.split(' '),...args]);
+    assert.equal(parsed.entry.id,id);
+    assert.equal(DISPATCHER_GRAMMAR.some((entry)=>entry.id===id),true,`${id}:primary-grammar`);
+    assert.doesNotThrow(()=>validateGrammarContract(parsed.entry));
+    assert.equal(DISPATCHER_HANDLERS.has(id),true,id);
+    assert.equal(ROUTE_CONTRACTS.has(id),true,id);
+  }
+  assert.throws(()=>parseDispatcher(['bootstrap','finalize','--state','/tmp/state',
+    '--authorization','/tmp/authorization.json','--execution','/tmp/execution.json',
+    '--widen-scope','runtime']),/unknown-flag/);
+});
+
+test('all six bootstrap commands cross the public dispatcher with exact typed arguments',async(t)=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-bootstrap-dispatch-')));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+  const session='s-aaaaaaaa',work=path.join(root,'.deep-work',session);
+  fs.mkdirSync(path.join(work,'bootstrap'),{recursive:true});
+  const state=path.join(root,'.claude',`deep-work.${session}.md`);
+  fs.writeFileSync(state,updateFrontmatterText('',{schema_version:2,session_id:session,
+    work_dir:`.deep-work/${session}`,current_phase:'implement',active_slice:'SLICE-001',
+    tdd_state:'PENDING'}));
+  const plan=writeJson(path.join(work,'plan.json'),{schema_version:2,
+    plan_authority_sha256:'a'.repeat(64),
+    slices:[{id:'SLICE-001',slice_kind:'functional'}]});
+  const files=Object.fromEntries(['authorization','failure','execution','receipt','marker','spec','write']
+    .map((name)=>[name,writeJson(path.join(work,'bootstrap',`${name}.json`),{name})]));
+  const calls=[];
+  const originals={publishBootstrapFailure:bootstrapRuntime.publishBootstrapFailure,
+    abortBootstrap:bootstrapRuntime.abortBootstrap,finalizeBootstrap:bootstrapRuntime.finalizeBootstrap,
+    runBootstrapFirstRed:bootstrapRuntime.runBootstrapFirstRed,
+    adoptBootstrapRed:bootstrapRuntime.adoptBootstrapRed,
+    publishBootstrapRedProof:bootstrapRuntime.publishBootstrapRedProof};
+  t.after(()=>Object.assign(bootstrapRuntime,originals));
+  for(const name of Object.keys(originals))bootstrapRuntime[name]=async(args)=>{
+    calls.push({name,args});return {route:name};};
+  const bridge=`op-${'1'.repeat(64)}`,transition=`op-${'2'.repeat(64)}`;
+  const routes=[
+    ['publishBootstrapFailure',['bootstrap','failure-publish','--state',state,'--authorization',
+      files.authorization,'--failure',files.failure]],
+    ['abortBootstrap',['bootstrap','abort','--state',state,'--authorization',files.authorization,
+      '--failure',files.failure]],
+    ['finalizeBootstrap',['bootstrap','finalize','--state',state,'--authorization',files.authorization,
+      '--execution',files.execution]],
+    ['runBootstrapFirstRed',['bootstrap','first-red','--state',state,'--plan',plan,'--authorization',
+      files.authorization,'--receipt',files.receipt,'--marker',files.marker,'--spec-json',files.spec,
+      '--slice','SLICE-001','--write-receipt',files.write]],
+    ['adoptBootstrapRed',['bootstrap','red-adopt','--state',state,'--plan',plan,'--authorization',
+      files.authorization,'--receipt',files.receipt,'--marker',files.marker,'--slice','SLICE-001',
+      '--bridge-operation-id',bridge]],
+    ['publishBootstrapRedProof',['bootstrap','proof-publish','--state',state,'--plan',plan,
+      '--slice','SLICE-001','--transition-operation-id',transition]],
+  ];
+  for(const [name,argv] of routes){
+    const out=await dispatch(argv,{cwd:root});
+    assert.equal(out.route,name);
+  }
+  assert.deepEqual(calls.map((row)=>row.name),routes.map((row)=>row[0]));
+  for(const row of calls){
+    assert.equal(row.args.stateCapability.projectRoot,root,row.name);
+    if(['runBootstrapFirstRed','adoptBootstrapRed','publishBootstrapRedProof'].includes(row.name))
+      assert.equal(row.args.sliceId,'SLICE-001',row.name);
+  }
+});
+
+test('strict RED producer commands cross the public dispatcher with exact authority inputs',
+  async(t)=>{
+    const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-red-dispatch-')));
+    t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+    const session='s-aaaaaaaa',work=path.join(root,'.deep-work',session);
+    fs.mkdirSync(work,{recursive:true});
+    const state=path.join(root,'.claude',`deep-work.${session}.md`);
+    fs.writeFileSync(state,updateFrontmatterText('',{session_id:session,
+      work_dir:`.deep-work/${session}`,current_phase:'implement'}));
+    const plan=writeJson(path.join(work,'plan.json'),{schema_version:2,
+      plan_authority_sha256:'a'.repeat(64),slices:[]});
+    const verificationOperationId=`op-${'1'.repeat(64)}`;
+    const transitionOperationId=`op-${'2'.repeat(64)}`;
+    const calls=[];
+    const originals={runVerificationV2:verificationV2Runtime.runVerificationV2,
+      transitionOrdinaryRed:redProofRuntime.transitionOrdinaryRed,
+      publishOrdinaryRedProof:redProofRuntime.publishOrdinaryRedProof};
+    t.after(()=>{Object.assign(verificationV2Runtime,{
+      runVerificationV2:originals.runVerificationV2});
+    Object.assign(redProofRuntime,{transitionOrdinaryRed:originals.transitionOrdinaryRed,
+      publishOrdinaryRedProof:originals.publishOrdinaryRedProof});});
+    verificationV2Runtime.runVerificationV2=async(args)=>{
+      calls.push({name:'run',args});return{name:'run'};};
+    redProofRuntime.transitionOrdinaryRed=async(args)=>{
+      calls.push({name:'transition',args});return{name:'transition'};};
+    redProofRuntime.publishOrdinaryRedProof=async(args)=>{
+      calls.push({name:'proof',args});return{name:'proof'};};
+    assert.equal((await dispatch(['verification','run-v2','--state',state,'--plan',plan,
+      '--slice','SLICE-001'],{cwd:root})).name,'run');
+    assert.equal((await dispatch(['verification','red-transition','--state',state,'--plan',
+      plan,'--slice','SLICE-001','--verification-operation-id',verificationOperationId,
+      '--verification-result-sha256','3'.repeat(64)],{cwd:root})).name,'transition');
+    assert.equal((await dispatch(['verification','proof-publish','--state',state,'--plan',
+      plan,'--slice','SLICE-001','--transition-operation-id',transitionOperationId],
+    {cwd:root})).name,'proof');
+    assert.deepEqual(calls.map((row)=>row.name),['run','transition','proof']);
+    assert.equal(calls[1].args.verificationOperationId,verificationOperationId);
+    assert.equal(calls[2].args.transitionOperationId,transitionOperationId);
+  });
 
 function writeJson(file, value) { fs.writeFileSync(file, `${JSON.stringify(value)}\n`); return file; }
 
@@ -192,6 +319,13 @@ async function semanticFixture(entry, index) {
     arguments:path.join(workDir,'arguments.json'), profile:path.join(workDir,'profile.yaml'),
     cluster:path.join(workDir,'cluster.txt'), note:path.join(workDir,'root-cause.md'),
     specContract:path.join(workDir,'spec-contract.json'),specGate:path.join(workDir,'spec-gate.json'),
+    bootstrapAuthorization:path.join(workDir,'bootstrap-authorization.json'),
+    bootstrapFailure:path.join(workDir,'bootstrap-failure.json'),
+    bootstrapExecution:path.join(workDir,'bootstrap-execution.json'),
+    bootstrapReceipt:path.join(workDir,'bootstrap-receipt.json'),
+    bootstrapMarker:path.join(workDir,'bootstrap-marker.json'),
+    bootstrapWriteReceipt:path.join(workDir,'bootstrap-write-receipt.json'),
+    finding:path.join(workDir,'reviews','research-round1-findings.json'),
   };
   fs.writeFileSync(files.task, 'semantic route');
   writeJson(files.defaults, {}); writeJson(files.profileJson, {}); writeJson(files.flags, {});
@@ -220,6 +354,10 @@ async function semanticFixture(entry, index) {
   fs.writeFileSync(files.profile, 'version: 3\ndefault_preset: solo-strict\npresets:\n  solo-strict:\n    interactive_each_session:\n      - team_mode\n    defaults:\n      team_mode: solo\n');
   fs.writeFileSync(files.cluster, 'C1\n'); fs.writeFileSync(files.note, '# Root cause\n');
   writeJson(files.specContract,{});writeJson(files.specGate,{});
+  for(const file of [files.bootstrapAuthorization,files.bootstrapFailure,files.bootstrapExecution,
+    files.bootstrapReceipt,files.bootstrapMarker,files.bootstrapWriteReceipt])writeJson(file,{fixture:true});
+  fs.mkdirSync(path.dirname(files.finding),{recursive:true});
+  writeJson(files.finding,{schema_version:1,point:'research',round:1,findings:[]});
 
   const stateCapability = platform.issueProjectStateCapability(root, state, {role:'session-state'});
   const sessionCapability = platform.issueProjectStateCapability(root, workDir,
@@ -243,15 +381,25 @@ async function semanticArgv(entry, fx) {
     'expected-sha256':'a'.repeat(64),'project-root':fx.root,path:'src/a.js',at:ROUTE_TIMESTAMP,
     phase,mode:'current-branch','task-file':fx.files.task,'defaults-json':fx.files.defaults,
     'profile-json':fx.files.profileJson,'base-ref':'HEAD','from-phase':'plan','dirty-resolution':'abort',
-    reason:'risk-class-increase','from-risk':'medium','to-risk':'high','risk-profile-sha256':'9'.repeat(64),
+    reason:'risk-class-increase','from-risk':'medium','to-risk':'high',
+    'risk-profile-sha256':'9'.repeat(64),
     worktree:path.join(fx.root, '..', `${path.basename(fx.root)}-wt-${fx.session.slice(2)}`),
     'flags-json':fx.files.flags,'finished-at':ROUTE_TIMESTAMP,'result-json':fx.files.result,
     artifact:fx.files.structuralMd,'contract-json':fx.files.specContract,'gate-json':fx.files.specGate,
     from:'brainstorm',to:'research','affected-slices-json':fx.files.affected,
+    'observation-json':fx.files.structural,
+    'producer-operation-id':`op-${'b'.repeat(64)}`,
+    'next-risk-profile-json':fx.files.structural,
+    'source-kind':'debug-root','source-operation-id':`op-${'d'.repeat(64)}`,
+    checker:'spec-gate-v1',command:'pack','input-refs-json':fx.files.changed,
+    'fact-operation-id':`op-${'c'.repeat(64)}`,
+    'functional-receipts-json':fx.files.changed,
     plan:fx.plan,'assignment-json':fx.files.assignment,snapshot:'a'.repeat(40),slice:'SLICE-001',
     class:'failing-test','scope-sha256':'a'.repeat(64),'delegation-operation-id':`op-${'2'.repeat(64)}`,
     cluster:'C1','operation-id':`op-${'3'.repeat(64)}`,'pre-manifest-sha256':'a'.repeat(64),
     'verification-result':fx.files.verification,'verification-sha256':'a'.repeat(64),
+    'green-ref-json':fx.files.verification,
+    'refactor-evidence-json':fx.files.verification,
     'verification-operation-id':`op-${'4'.repeat(64)}`,'sensor-operation-ids':JSON.stringify([`op-${'5'.repeat(64)}`]),
     'sensor-results-sha256':'a'.repeat(64),'after-write-operation-id':`op-${'6'.repeat(64)}`,
     'receipts-dir':fx.receipts,
@@ -270,11 +418,20 @@ async function semanticArgv(entry, fx) {
     'report-json':fx.files.health,'input-json':entry.id==='ask options'?fx.files.ask:fx.files.recommender,
     'result-file':fx.files.recommendation,'capability-json':fx.files.capability,'profile-file':fx.files.profile,
     'initial-preset':'solo-strict',reason:'setup',preset:'solo-strict','arguments-json':fx.files.arguments,
+    authorization:fx.files.bootstrapAuthorization,failure:fx.files.bootstrapFailure,
+    execution:fx.files.bootstrapExecution,receipt:fx.files.bootstrapReceipt,
+    marker:fx.files.bootstrapMarker,'write-receipt':fx.files.bootstrapWriteReceipt,
+    point:'research',finding:fx.files.finding,'artifact-kind':'research-document',
+    'bridge-operation-id':`op-${'7'.repeat(64)}`,
+    'transition-operation-id':`op-${'8'.repeat(64)}`,
+    'verification-operation-id':`op-${'9'.repeat(64)}`,
+    'verification-result-sha256':'a'.repeat(64),
   };
   if (entry.id === 'implement tdd transition') values.to = 'PENDING';
   if (entry.id === 'verification run') delete values['gate-id'];
   if (entry.id === 'sensor run') values.kind = 'lint';
   if (entry.id === 'phase invalidate-replan') values.reason = 'risk-class-increase';
+  if (entry.id === 'implement refactor no-change') values.reason = 'no-duplication';
   if (entry.id === 'session execution set') values.mode = 'inline';
   if (entry.id === 'review run') values.mode = 'read-only';
   const tempValues = {
@@ -327,12 +484,31 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['session finalize',[10,20,30,40,50]],['phase begin',[10,20,50]],['phase complete',[10,20,50]],
     ['phase approve',[10,20,50,70]],['phase spec enter',[10,20,50]],['phase spec approve',[10,20,50]],
     ['phase advance',[10,20,50]],['phase rerun',[10,20,50]],['phase invalidate-replan',[10,20,50]],
+    ['replan discovery publish',[10,20,50,70]],['replan discovery dispatch',[10,20,50,70]],
+    ['replan risk publish',[10,20,50,70]],['replan risk dispatch',[10,20,50,70]],
+    ['replan root-cause record',[10,20,50,70]],
+    ['replan root-cause derive',[10,20,50,70]],
+    ['replan root-cause dispatch',[10,20,50,70]],
+    ['replan complete',[10,20,50,70]],
+    ['release gate fact-publish',[10,20,50,70]],
+    ['release gate result-publish',[10,20,50,70]],
+    ['release gate command-run',[10,20,50,70]],
+    ['release gate integrity-run',[10,20,50,70]],
+    ['release verification complete',[10,20,50,70]],
     ['implement delegation set',[10,20,50,70]],['implement delegation clear',[50]],
     ['implement write begin',[10,20,50,70]],['implement write accept',[10,20,50,70]],
     ['implement tdd transition',[10,20,50]],['implement slice complete',[10,20,50,70]],
+    ['implement slice complete-v2',[10,20,50,70]],
+    ['implement refactor no-change',[10,20,50]],
     ['implement override set',[10,20,50,70]],['implement override clear',[50]],
     ['implement takeover set',[50,70]],['implement takeover clear',[50,70]],
     ['verification migrate-spec',[10,20,50,70]],['verification run',[10,20,50,70]],
+    ['verification run-v2',[10,20,50,70]],
+    ['verification red-transition',[10,20,50,70]],
+    ['verification proof-publish',[10,20,50,70]],
+    ['bootstrap failure-publish',[10,20,50,70]],['bootstrap abort',[10,20,50,70]],
+    ['bootstrap finalize',[10,20,50,70]],['bootstrap first-red',[10,20,50,70]],
+    ['bootstrap red-adopt',[10,20,50,70]],['bootstrap proof-publish',[10,20,50,70]],
     ['evidence record contract',[10,20,50,70]],['evidence record review',[10,20,50,70]],
     ['evidence record receipt',[10,20,50,70]],
     ['test pass',[10,20,50,70]],['test retry',[10,20,50,70]],['test exhaust',[10,20,50,70]],
@@ -344,7 +520,8 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['git report commit',[5,10,20,50]],['slice activate',[50]],['slice spike',[50]],
     ['slice reset',[5,10,20,50,70]],['slice model',[50]],['git delegated rollback',[5,10,20,50,70]],
     ['git stash publish',[5,10,20]],['git stash apply',[5,10,20]],['git stash drop',[5,10,20]],
-    ['review run',[10,20,50,70]],['sensor detect',[]],['sensor run',[10,20,50,70]],
+    ['review run',[10,20,50,70]],['review finding-publish',[10,20,50,70]],
+    ['sensor detect',[]],['sensor run',[10,20,50,70]],
     ['sensor review-check',[10,20,50,70]],['topology detect',[]],['health fitness-proposal',[]],
     ['health check',[70]],['health research-state',[50]],['capability detect',[]],
     ['recommender input',[]],['recommender validate',[]],['ask options',[]],['profile migrate',[70]],
@@ -585,6 +762,28 @@ test('spec-governed Medium+ test pass dispatcher route fails closed without comm
   assert.doesNotMatch(fs.readFileSync(state,'utf8'),/^test_passed:\s*true$/m);
 });
 
+test('v6.14 test admission consumes the canonical projection blocker set',async()=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),
+    'dw-test-pass-governed-route-'))),session='s-aaaaaaaa';
+  fs.mkdirSync(path.join(root,'.git'));fs.mkdirSync(path.join(root,'.claude'));
+  const work=path.join(root,'.deep-work',session);fs.mkdirSync(work,{recursive:true});
+  const state=path.join(root,'.claude',`deep-work.${session}.md`);
+  fs.writeFileSync(state,updateFrontmatterText('',{schema_version:2,session_id:session,
+    work_dir:`.deep-work/${session}`,current_phase:'test',
+    created_by_version:'6.14.0',review_execution_json:'{}'}));
+  const plan=writeJson(path.join(work,'plan.json'),{schema_version:1,
+    contract_binding:{mode:'strict-spec',created_by_version:'6.14.0'},
+    slices:[],quality_gates:[]});
+  const gates=writeJson(path.join(work,'gate-results.json'),
+    {complete:true,failedSlices:[]});
+  await assert.rejects(()=>dispatch(['test','pass','--state',state,'--plan',plan,
+    '--gate-results-json',gates,'--at',ROUTE_TIMESTAMP],{cwd:root}),
+  (error)=>error?.code==='test-governed-admission'&&
+    /finding-required-unknown/.test(error.message)&&
+    /residual-risk-unaccepted/.test(error.message));
+  assert.doesNotMatch(fs.readFileSync(state,'utf8'),/^test_passed:\s*true$/m);
+});
+
 test('all finish dispatcher outcomes reject fresh Medium+ legacy bypass and forged evidence summaries',async(t)=>{
   for(const outcome of ['keep','merge','publish-pr','discard']){
     await t.test(`${outcome}: missing committed verification plan`,async()=>{
@@ -679,8 +878,8 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 91 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 91);
+test('all 116 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 116);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
@@ -704,7 +903,7 @@ test('all 91 grammar rows cross the parser and invoke their typed route semantic
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 91);
+  assert.equal(outcomes.length, 116);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {

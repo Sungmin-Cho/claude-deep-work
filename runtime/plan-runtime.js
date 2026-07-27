@@ -56,14 +56,26 @@ function compilePlanProjectionV1({planMarkdown, specContract, sliceRiskState} = 
     if (!projected || canonicalJson({class:projected.class,score:projected.score,triggers:projected.triggers}) !==
         canonicalJson(contract.risk)) fail('plan-slice-risk', contract.id);
     const files = validatePaths(contract.files, `${contract.id}.files`);
+    if(contract.slice_kind==='release-verification'){
+      return {id:contract.id,slice_kind:contract.slice_kind,checked:false,scope_schema_version:1,files:[],
+        write_scope:{failing_test:[],production:[],refactor:[]},
+        verification_scope:byteSort(contract.verification_scope),
+        release_gate_ids:byteSort(contract.release_gate_ids),verification_spec:null,
+        verification_spec_sha256:null,contract};
+    }
     const failing = files.filter(isTestPath);
     const production = files.filter((file)=>!isTestPath(file));
     if (!failing.length || !production.length) fail('plan-scope-empty-class', contract.id);
-    return {id:contract.id,checked:false,scope_schema_version:1,files,
-      write_scope:{failing_test:failing,production,refactor:[]},contract};
+    const verificationSpec=contract.verification_spec;
+    return {id:contract.id,...(contract.slice_kind?{slice_kind:contract.slice_kind}:{}),checked:false,
+      scope_schema_version:1,files,write_scope:{failing_test:failing,production,refactor:[]},
+      ...(verificationSpec?{verification_spec:verificationSpec,
+        verification_spec_sha256:sha256(Buffer.from(canonicalJson(verificationSpec)))}:{}),contract};
   });
   const binding = {...parsed.binding,source_plan_sha256:sha256(Buffer.from(planMarkdown))};
-  return validatePlanScopeV1({schema_version:1,contract_binding:binding,slices});
+  const projection=validatePlanScopeV1({schema_version:parsed.capability_facts?2:1,contract_binding:binding,
+    ...(parsed.capability_facts?{replan_epoch:parsed.replan_epoch,capability_facts:parsed.capability_facts}:{}),slices});
+  return parsed.capability_facts?{...projection,...compileImmutablePlanAuthorityV2(projection)}:projection;
 }
 
 function publishPlanProjectionV1({planCapability, projection} = {}) {
@@ -103,7 +115,7 @@ function validatePaths(values, label) {
 }
 
 function validatePlanScopeV1(input) {
-  if (!input || input.schema_version !== 1 || !Array.isArray(input.slices) || !input.slices.length) {
+  if (!input || ![1,2].includes(input.schema_version) || !Array.isArray(input.slices) || !input.slices.length) {
     fail('plan-scope-schema', 'plan scope must contain version-1 slices');
   }
   const sliceIds = new Set();
@@ -116,7 +128,14 @@ function validatePlanScopeV1(input) {
     const failing = validatePaths(slice.write_scope.failing_test, 'failing_test');
     const production = validatePaths(slice.write_scope.production, 'production');
     const refactor = validatePaths(slice.write_scope.refactor || [], 'refactor');
-    if (!failing.length || !production.length) fail('plan-scope-empty-class');
+    if(slice.slice_kind==='release-verification'){
+      if(files.length||failing.length||production.length||refactor.length)
+        fail('release-slice-write-scope');
+      if(slice.verification_spec!==null||slice.verification_spec_sha256!==null||
+          !Array.isArray(slice.verification_scope)||!slice.verification_scope.length||
+          !Array.isArray(slice.release_gate_ids)||!slice.release_gate_ids.length)
+        fail('release-slice-verification');
+    }else if (!failing.length || !production.length) fail('plan-scope-empty-class');
     const fileSet = new Set(files);
     if ([...failing,...production,...refactor].some((entry) => !fileSet.has(entry))) {
       fail('plan-scope-membership');
@@ -130,6 +149,42 @@ function validatePlanScopeV1(input) {
     return {...slice, files, write_scope:{failing_test:failing,production,refactor}};
   });
   return {...input,slices};
+}
+
+function compileImmutablePlanAuthorityV2(input) {
+  if(!input||input.schema_version!==2||!Array.isArray(input.slices)||!input.slices.length)
+    fail('plan-authority-v2');
+  const sliceIds=new Set(input.slices.map((row)=>row.id));
+  const capabilityFacts=require('./contract-runtime.js').validateCapabilityFactsV1(input.capability_facts,{sliceIds});
+  if(input.replan_epoch!==null&&input.replan_epoch!==undefined&&!/^[0-9a-f]{64}$/.test(input.replan_epoch))
+    fail('plan-replan-epoch');
+  const slices=[...input.slices].sort((a,b)=>Buffer.compare(Buffer.from(a.id),Buffer.from(b.id))).map((slice)=>{
+    const writeScope=structuredClone(slice.write_scope);
+    if(slice.slice_kind==='release-verification'){
+      if(Object.values(writeScope||{}).some((rows)=>!Array.isArray(rows)||rows.length))
+        fail('release-slice-write-scope');
+      if(slice.verification_spec!==null)fail('release-slice-verification-spec');
+      return {id:slice.id,slice_kind:slice.slice_kind,scope_schema_version:slice.scope_schema_version,
+        files:[],write_scope:writeScope,verification_scope:byteSort(slice.verification_scope||[]),
+        release_gate_ids:byteSort(slice.release_gate_ids||[]),verification_spec:null,verification_spec_sha256:null,
+        ...(slice.contract?{contract:structuredClone(slice.contract)}:{})};
+    }
+    if(slice.slice_kind!=='functional')fail('functional-slice-kind');
+    const verificationSpec=require('./contract-runtime.js').validateVerificationSpecV2(slice.verification_spec);
+    const verificationSpecSha256=sha256(Buffer.from(canonicalJson(verificationSpec)));
+    const authoritativeCarrier=input.replan_epoch!==null&&input.replan_epoch!==undefined||
+      require('./verification-policy-runtime.js').isAtLeast614(
+        input.contract_binding?.created_by_version);
+    if(authoritativeCarrier&&slice.verification_spec_sha256!==verificationSpecSha256)
+      fail('verification-spec-digest');
+    return {id:slice.id,slice_kind:slice.slice_kind,scope_schema_version:slice.scope_schema_version,
+      files:validatePaths(slice.files,`${slice.id}.files`),write_scope:writeScope,
+      verification_spec:verificationSpec,verification_spec_sha256:verificationSpecSha256,
+      ...(slice.contract?{contract:structuredClone(slice.contract)}:{})};
+  });
+  const authority={schema_version:2,contract_binding:structuredClone(input.contract_binding),
+    replan_epoch:input.replan_epoch??null,capability_facts:capabilityFacts,slices};
+  return {...authority,plan_authority_sha256:sha256(Buffer.from(canonicalJson(authority))),authority};
 }
 
 function canonicalizePlanScopeV1(input) {
@@ -233,5 +288,6 @@ module.exports = {
   publishDelegationScope,
   deriveScopedWriteAuthority,
   compilePlanProjectionV1,
+  compileImmutablePlanAuthorityV2,
   publishPlanProjectionV1,
 };

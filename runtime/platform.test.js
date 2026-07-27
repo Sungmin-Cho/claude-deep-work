@@ -56,6 +56,7 @@ const {
   consumeOwnedTemp,
   consumeFinalizedReceiptPayload,
   withDirectoryLock,
+  inspectOwnedDirectoryClaim,
   mutateFileWithPendingOperations,
   appendJsonLineLocked,
   drainPendingOperations,
@@ -4211,6 +4212,58 @@ test('worktree manifest includes ignored files and records only exclusion roots'
   } finally { remove(root); }
 });
 
+test('worktree manifest accepts the authenticated Git shim in a closed release environment', {
+  skip:process.platform === 'win32' ? 'POSIX release environment only' : false,
+}, () => {
+  const root = makeRepo('dw-release-git-shim-');
+  const releaseRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-release-git-env-'));
+  try {
+    const gitTarget = process.env.PATH.split(path.delimiter)
+      .map((directory) => path.join(directory, 'git'))
+      .find((candidate) => {
+        try {
+          fs.accessSync(candidate, fs.constants.X_OK);
+          return fs.lstatSync(fs.realpathSync(candidate)).isFile();
+        } catch { return false; }
+      });
+    assert.ok(gitTarget, 'physical Git executable is required');
+    const bin = path.join(releaseRoot, 'bin');
+    const home = path.join(releaseRoot, 'home');
+    fs.mkdirSync(bin);
+    fs.mkdirSync(home);
+    const shim = path.join(bin, 'git');
+    fs.symlinkSync(fs.realpathSync(gitTarget), shim, 'file');
+    const platformPath = path.join(__dirname, 'platform.js');
+    const script = [
+      `'use strict';`,
+      `const path=require('node:path');`,
+      `const platform=require(${JSON.stringify(platformPath)});`,
+      `const root=process.argv[1];`,
+      `const project=platform.issueProjectStateCapability(root,root,{role:'project-root'});`,
+      `const git=platform.issueProjectStateCapability(root,path.join(root,'.git'),{role:'git-root'});`,
+      `const manifest=platform.captureWorktreeManifest({projectCapability:project,`,
+      `  gitCapability:git,runtimeExclusions:[]});`,
+      `process.stdout.write(manifest.sha256);`,
+    ].join('\n');
+    const run = () => spawnSync(process.execPath, ['-e', script, root], {
+      cwd:root, env:{LANG:'C', LC_ALL:'C', TZ:'UTC',
+        HOME:fs.realpathSync(home), PATH:fs.realpathSync(bin)},
+      encoding:'utf8', shell:false, windowsHide:true});
+    const result = run();
+    assert.deepEqual({status:result.status, signal:result.signal, stderr:result.stderr},
+      {status:0, signal:null, stderr:''});
+    assert.match(result.stdout, /^[0-9a-f]{64}$/);
+    fs.rmSync(shim);
+    fs.writeFileSync(shim, '#!/bin/sh\nexit 0\n', {mode:0o755});
+    const substituted = run();
+    assert.equal(substituted.status, 1);
+    assert.match(substituted.stderr, /worktree-manifest-git-unavailable/);
+  } finally {
+    remove(releaseRoot);
+    remove(root);
+  }
+});
+
 test('manifest rejects Windows-key collision and invalid physical path rather than omitting it', () => {
   if (process.platform === 'win32' || process.platform === 'darwin') return test.skip('case-only paths cannot coexist');
   const root = makeRepo();
@@ -4507,6 +4560,74 @@ test('directory lock publishes and releases an authenticated claim without owned
     assert.deepEqual(fs.existsSync(claims) ? fs.readdirSync(claims) : [], []);
   } finally { remove(root); }
 });
+
+test('owned directory lock inspector authenticates the exact claim child set',async()=>{
+  const root=makeRepo('dw-lock-inspect-');
+  try{
+    const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
+      {role:'lock',allowMissingLeaf:true});
+    const processIdentity='a'.repeat(32);
+    await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,inspectable:true,
+      processIdentity},async(claim)=>{
+      const projection=inspectOwnedDirectoryClaim(lock,claim);
+      assert.equal(projection.pid,process.pid);
+      assert.equal(projection.process_identity,processIdentity);
+      assert.match(projection.claim_sha256,/^[0-9a-f]{64}$/);
+      fs.writeFileSync(path.join(lock.path,'foreign-child'),'foreign\n');
+      assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),/lock-inspect-children/);
+      fs.unlinkSync(path.join(lock.path,'foreign-child'));
+      fs.writeFileSync(path.join(`${lock.path}.claims`,'foreign-ticket'),'foreign\n');
+      assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),/lock-inspect-children/);
+      fs.unlinkSync(path.join(`${lock.path}.claims`,'foreign-ticket'));
+    });
+  }finally{remove(root);}
+});
+
+test('owned directory lock inspector accepts a completed authenticated heartbeat before inspection',
+  async()=>{
+    const root=makeRepo('dw-lock-inspect-heartbeat-');
+    try{
+      const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
+        {role:'lock',allowMissingLeaf:true});
+      await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,inspectable:true,
+        processIdentity:'b'.repeat(32)},async(claim)=>{
+        const before=fs.statSync(path.join(lock.path,'heartbeat.json')).ino;
+        await new Promise((resolve)=>setTimeout(resolve,80));
+        const after=fs.statSync(path.join(lock.path,'heartbeat.json')).ino;
+        assert.notEqual(after,before);
+        const projection=inspectOwnedDirectoryClaim(lock,claim);
+        assert.equal(projection.process_identity,'b'.repeat(32));
+        assert.match(projection.claim_sha256,/^[0-9a-f]{64}$/);
+      });
+    }finally{remove(root);}
+  });
+
+test('owned directory lock inspector rejects same-byte child replacement and transient claims',
+  async()=>{
+    for(const kind of ['same-byte-replacement','transient-ticket']){
+      const root=makeRepo(`dw-lock-inspect-${kind}-`);
+      try{
+        const lock=issueProjectStateCapability(root,path.join(root,'.claude','inspect.lock'),
+          {role:'lock',allowMissingLeaf:true});
+        await withDirectoryLock(lock,{timeoutMs:1_000,staleMs:300,heartbeatMs:25,inspectable:true,
+          processIdentity:'c'.repeat(32)},async(claim)=>{
+          const claims=`${lock.path}.claims`;
+          if(kind==='same-byte-replacement'){
+            const ticket=path.join(claims,fs.readdirSync(claims)[0]);
+            const replacement=`${ticket}.replacement`;
+            fs.writeFileSync(replacement,fs.readFileSync(ticket));
+            fs.renameSync(replacement,ticket);
+          }else{
+            const transient=path.join(claims,'transient-ticket');
+            fs.writeFileSync(transient,'foreign\n');
+            fs.unlinkSync(transient);
+          }
+          assert.throws(()=>inspectOwnedDirectoryClaim(lock,claim),
+            /lock-inspect-(?:claim|children|unstable)/);
+        });
+      }finally{remove(root);}
+    }
+  });
 
 test('directory lock retries when a canonical claim disappears during authenticated read', () => {
   const root = makeRepo('dw-lock-release-race-');

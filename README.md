@@ -14,12 +14,12 @@ deep-work fights the common failure modes of AI coding on complex tasks: introdu
 
 deep-work is the **core harness engine** of the [claude-deep-suite](https://github.com/Sungmin-Cho/claude-deep-suite), implementing the [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) framework (Böckeler/Fowler, 2026). Across the Guide/Sensor × Computational/Inferential matrix it provides:
 
-- **Computational Guides** — Phase Guard hook (physically blocks edits), Worktree Guard (P0, hard-blocks writes outside the worktree), the TDD RED→GREEN state machine, and topology templates.
+- **Computational Guides** — Phase Guard hook (physically blocks edits), Worktree Guard (P0, hard-blocks writes outside the worktree), authenticated correct-RED → GREEN → REFACTOR authority with automatic stop-and-replan, and topology templates.
 - **Computational Sensors** — linter/typecheck/coverage/mutation pipeline, drift sensors, fitness rules, the review-check sensor, and the Phase Transition Injector (P1).
 - **Inferential Guides** — research / plan / brainstorm documents and the Sprint Contract.
 - **Self-Correction Loop** — SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN with a per-sensor 3-round limit.
 
-It emits receipts and health reports that [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard) consume.
+It emits producer-authenticated functional receipts, governed progress projections, and health reports that [deep-review](https://github.com/Sungmin-Cho/claude-deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/claude-deep-dashboard) consume.
 
 ## Install
 

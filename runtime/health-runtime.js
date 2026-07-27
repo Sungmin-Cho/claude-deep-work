@@ -45,10 +45,40 @@ function parseNpmAudit(stdout){let data;try{data=JSON.parse(stdout);}catch{retur
   const vulnerabilities=[];let high=0,critical=0;for(const [name,info] of Object.entries(data.vulnerabilities||{})){
     if(info.severity==='high'){high+=1;vulnerabilities.push({name,severity:'high'});}else if(info.severity==='critical'){
       critical+=1;vulnerabilities.push({name,severity:'critical'});}}return{vulnerabilities,high,critical};}
-function validateNativeSpec(spec){if(!spec||spec.kind!=='native-executable'||typeof spec.executable!=='string'||!path.isAbsolute(spec.executable)||
-    !Array.isArray(spec.args)||spec.args.some((arg)=>typeof arg!=='string'||/[\0\r\n]/.test(arg))||/\.(cmd|bat)$/i.test(spec.executable))fail('health-process-spec');return spec;}
-function runStructuredSync(spec,{cwd,timeout=60000}={}){const checked=validateNativeSpec(spec);const result=spawnSync(checked.executable,checked.args,
-  {cwd,encoding:'utf8',timeout,shell:false,maxBuffer:1048576,windowsHide:true});return{stdout:result.stdout||'',stderr:result.stderr||'',
+function releaseEnvironmentShape(environment){return environment&&
+  environment.LANG==='C'&&environment.LC_ALL==='C'&&environment.TZ==='UTC'&&
+  typeof environment.HOME==='string'&&path.isAbsolute(environment.HOME)&&
+  typeof environment.PATH==='string'&&path.isAbsolute(environment.PATH)&&
+  !environment.PATH.includes(path.delimiter);}
+function validateReleaseCarrier(executable,environment=process.env){
+  if(!releaseEnvironmentShape(environment))return null;
+  let bin,binStat,target,targetStat,names;try{
+    bin=fs.realpathSync(environment.PATH);binStat=fs.lstatSync(bin);
+    target=fs.realpathSync(executable);targetStat=fs.lstatSync(target);
+    names=fs.readdirSync(bin).sort((a,b)=>Buffer.compare(Buffer.from(a),
+      Buffer.from(b)));
+  }catch{fail('health-release-carrier');}
+  if(!binStat.isDirectory()||binStat.isSymbolicLink()||!targetStat.isFile()||
+      targetStat.isSymbolicLink()||(targetStat.mode&0o111)===0)
+    fail('health-release-carrier');
+  let matched=false;
+  for(const name of names){
+    const shim=path.join(bin,name);let stat,physical;
+    try{stat=fs.lstatSync(shim);physical=fs.realpathSync(shim);}
+    catch{fail('health-release-carrier');}
+    if(!stat.isSymbolicLink())fail('health-release-carrier');
+    if(physical===target)matched=true;
+  }
+  if(!matched)fail('health-release-carrier');
+  return{bin,target,names};
+}
+function validateNativeSpec(spec,{environment=process.env}={}){if(!spec||spec.kind!=='native-executable'||typeof spec.executable!=='string'||!path.isAbsolute(spec.executable)||
+    !Array.isArray(spec.args)||spec.args.some((arg)=>typeof arg!=='string'||/[\0\r\n]/.test(arg))||/\.(cmd|bat)$/i.test(spec.executable))fail('health-process-spec');
+  validateReleaseCarrier(spec.executable,environment);return spec;}
+function runStructuredSync(spec,{cwd,timeout=60000,environment=process.env}={}){const checked=validateNativeSpec(spec,{environment}),carrier=
+  validateReleaseCarrier(checked.executable,environment);const result=spawnSync(checked.executable,checked.args,
+  {cwd,encoding:'utf8',timeout,shell:false,maxBuffer:1048576,windowsHide:true,env:environment});
+  if(carrier)validateReleaseCarrier(checked.executable,environment);return{stdout:result.stdout||'',stderr:result.stderr||'',
     exitCode:result.status,killed:Boolean(result.error?.code==='ETIMEDOUT'),error:result.error||null};}
 async function scanDependencyVuln(ecosystems,timeout=60000,options={}){const results={};for(const [name,config] of Object.entries(ecosystems||{})){
   if(!config.audit){results[name]={status:'not_applicable'};continue;}if(config.audit.cmd)fail('health-command-string');
@@ -111,4 +141,5 @@ function parseCliArgs(args,cwd=process.cwd()){const options={skipAudit:args.incl
 module.exports={BASELINE_FILE,MAX_AGE_MS,DEFAULT_TIMEOUTS,loadRegistry,loadCustomTopologies,mergeTopologies,matchTopology,detectTopology,
   generateFitnessProposal,withTimeout,safeRun,normalizeDeadExports,normalizeStaleConfig,normalizeDepVuln,normalizeCoverageTrend,normalizeFitness,
   parseNpmAudit,scanDependencyVuln,checkDependency,isDepCruiserAvailable,runHealthCheck,loadFitnessFile,parseCliArgs,writeResearchHealthState,
-  readBaseline,writeBaseline,isBaselineValid,gitIsAncestor,runStructuredSync,validateNativeSpec};
+  readBaseline,writeBaseline,isBaselineValid,gitIsAncestor,runStructuredSync,validateNativeSpec,
+  validateReleaseCarrier};

@@ -5,12 +5,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const {execFileSync}=require('node:child_process');
 const { activateSlice, enterSliceSpike, setSliceModel, setExecutionOverride,
   setDelegationSnapshot, clearDelegationSnapshot, setClusterTakeover,
   clearClusterTakeover,beginScopedWrite,acceptScopedWrite,resetSlice,migrateModelRouting,mutateState } =
   require('./slice-runtime.js');
-const {assertProductionCompletionMode}=require('./slice-runtime.js');
+const {assertProductionCompletionMode,assertBootstrapProductionAdmission,
+  assertProductionRedProofAdmission}=require('./slice-runtime.js');
 const { issueProjectStateCapability } = require('./platform.js');
 const { parseFrontmatter } = require('./frontmatter.js');
 const transaction=require('./transaction-runtime.js');
@@ -55,6 +57,169 @@ function setup() {
   return {root,state,stateCapability,workDir,receiptsDir,receiptsDirCapability,
     sessionCapability,planCapability,plan};
 }
+
+test('temporary first-slice admission requires completed bridge, adoption and canonical proof publisher',()=>{
+  const authority={first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'1'.repeat(64),
+    bootstrap_receipt_sha256:'2'.repeat(64)};
+  const common={sliceId:'SLICE-001',verificationSpecSha256:'1'.repeat(64),
+    planAuthoritySha256:'3'.repeat(64),specSha256:'4'.repeat(64),
+    specApprovedHash:'5'.repeat(64),verificationPlanSha256:'6'.repeat(64),authorization:authority,
+    marker:{first_red_slice_id:'SLICE-001',first_red_verification_spec_sha256:'1'.repeat(64),
+      bootstrap_receipt_sha256:'2'.repeat(64)},state:{tdd_state:'RED_VERIFIED',red_proof_state:'proof-pending'}};
+  assert.throws(()=>assertBootstrapProductionAdmission(common),/bootstrap-proof-required/);
+  const bridgeOperationId=`op-${'7'.repeat(64)}`;
+  const writeOperationId=`op-${'a'.repeat(64)}`;
+  const verificationOperationId=bridgeOperationId;
+  const bridgeResultSha256='c'.repeat(64),adoptionResultSha256='d'.repeat(64);
+  const canonicalJson=require('./operation-journal.js').canonicalJson;
+  const operationId=(domain,preimage)=>`op-${crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from(`${domain}\0`),Buffer.from(canonicalJson(preimage))])).digest('hex')}`;
+  const adoptionOperationId=operationId('bootstrap-red-adoption-v1',{
+    session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:common.planAuthoritySha256,
+    bootstrap_bridge_operation_id:bridgeOperationId,
+    bootstrap_bridge_ledger_result_sha256:bridgeResultSha256,
+    verification_result_sha256:'f'.repeat(64),write_receipt_sha256:'e'.repeat(64)});
+  const proofOperationId=operationId('red-proof-publication-v1',{
+    session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:common.planAuthoritySha256,transition_kind:'bootstrap-adoption',
+    transition_operation_id:adoptionOperationId,
+    transition_ledger_result_sha256:adoptionResultSha256,
+    bootstrap_bridge_operation_id:bridgeOperationId});
+  const proof={schema_version:1,session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+    plan_authority_sha256:common.planAuthoritySha256,spec_sha256:common.specSha256,
+    spec_approved_hash:common.specApprovedHash,
+    verification_plan_sha256:common.verificationPlanSha256,write_operation_id:writeOperationId,
+    write_receipt_sha256:'e'.repeat(64),verification_operation_id:verificationOperationId,
+    verification_result_sha256:'f'.repeat(64),verification_ledger_result_sha256:'0'.repeat(64),
+    transition_kind:'bootstrap-adoption',transition_operation_id:adoptionOperationId,
+    transition_ledger_result_sha256:adoptionResultSha256,
+    bootstrap_bridge_operation_id:bridgeOperationId,proof_operation_id:proofOperationId,
+    classification_digest:'1'.repeat(64),proof_sha256:null};
+  const proofPreimage=structuredClone(proof);delete proofPreimage.proof_sha256;
+  proof.proof_sha256=crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('red-proof-v1\0'),Buffer.from(canonicalJson(proofPreimage))]))
+    .digest('hex');
+  const accepted={...common,state:{...common.state,red_proof_state:'complete',
+    red_proof_ref:`.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`,
+    red_proof_sha256:proof.proof_sha256,bootstrap_bridge_operation_id:bridgeOperationId,
+    bootstrap_adoption_operation_id:adoptionOperationId,red_proof_operation_id:proofOperationId},
+    proof,bridgeReceipt:{operationId:bridgeOperationId,kind:'bootstrap-first-red',
+      stage:'completed-ledger',resultSha256:bridgeResultSha256,
+      result:{session_id:'s-aaaaaaaa',slice_id:'SLICE-001',
+        result_path:`.claude/deep-work.s-aaaaaaaa.verification.${bridgeOperationId}.json`,
+        result_sha256:proof.verification_result_sha256,disposition:'accepted',
+        observed_class:'expected-failure',scope_disposition:'clean'}},
+    adoptionReceipt:{operationId:adoptionOperationId,kind:'bootstrap-red-adoption',
+      stage:'completed-ledger',resultSha256:adoptionResultSha256,
+      result:{slice_id:'SLICE-001',post_state_sha256:'2'.repeat(64),
+        verification_result_sha256:proof.verification_result_sha256,
+        write_receipt_sha256:proof.write_receipt_sha256,
+        bootstrap_bridge_operation_id:bridgeOperationId}},
+    proofReceipt:{stage:'completed-ledger',result:{post_state_sha256:'3'.repeat(64),
+      proof_sha256:proof.proof_sha256,
+      red_proof_ref:`.deep-work/s-aaaaaaaa/red-proofs/${proof.proof_sha256}.json`},
+      operationId:proofOperationId,kind:'red-proof-publication'}};
+  assert.equal(assertBootstrapProductionAdmission(accepted),true);
+  assert.throws(()=>assertBootstrapProductionAdmission({...accepted,sliceId:'SLICE-002'}),
+    /bootstrap-first-slice/);
+  const negatives=[
+    ['pending',{bridgeReceipt:{...accepted.bridgeReceipt,stage:'result-published'}}],
+    ['swapped',{adoptionReceipt:{...accepted.adoptionReceipt,
+      operationId:`op-${'2'.repeat(64)}`}}],
+    ['mismatched',{proof:{...proof,verification_plan_sha256:'3'.repeat(64)}}],
+    ['under-bound',{proof:Object.fromEntries(Object.entries(proof)
+      .filter(([key])=>key!=='verification_ledger_result_sha256'))}],
+    ['missing',{proofReceipt:null}],
+  ];
+  for(const [name,change] of negatives)
+    assert.throws(()=>assertBootstrapProductionAdmission({...accepted,...change}),
+      /bootstrap-(?:proof|bridge|adoption|authority)/,name);
+});
+
+test('ordinary strict production admission requires an immutable completed RedProof producer chain',()=>{
+  const canonicalJson=require('./operation-journal.js').canonicalJson;
+  const digest=(domain,value)=>crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from(`${domain}\0`),Buffer.from(canonicalJson(value))])).digest('hex');
+  const operationId=(domain,value)=>`op-${digest(domain,value)}`;
+  const common={sessionId:'s-aaaaaaaa',sliceId:'SLICE-001',
+    planAuthoritySha256:'2'.repeat(64),specSha256:'3'.repeat(64),
+    specApprovedHash:'4'.repeat(64),verificationPlanSha256:'5'.repeat(64)};
+  assert.throws(()=>assertProductionRedProofAdmission({...common,state:{
+    tdd_state:'RED_VERIFIED'}}),/red-proof-required/);
+  const verificationOperationId=`op-${'6'.repeat(64)}`;
+  const writeOperationId=`op-${'7'.repeat(64)}`;
+  const verificationResult={session_id:common.sessionId,slice_id:common.sliceId,
+    result_path:`.claude/deep-work.${common.sessionId}.verification.${verificationOperationId}.json`,
+    result_sha256:'8'.repeat(64),disposition:'accepted',
+    observed_class:'expected-failure',scope_disposition:'clean'};
+  const verificationReceipt={operationId:verificationOperationId,kind:'verification-run-v2',
+    stage:'completed-ledger',result:verificationResult,
+    resultSha256:digest('operation-result-v1',verificationResult)};
+  const transitionPreimage={session_id:common.sessionId,slice_id:common.sliceId,
+    plan_authority_sha256:common.planAuthoritySha256,
+    verification_operation_id:verificationOperationId,
+    verification_result_sha256:verificationResult.result_sha256,
+    write_operation_id:writeOperationId,write_receipt_sha256:'9'.repeat(64)};
+  const transitionOperationId=operationId('red-transition-v1',transitionPreimage);
+  const transitionResult={slice_id:common.sliceId,post_state_sha256:'a'.repeat(64),
+    verification_result_sha256:transitionPreimage.verification_result_sha256,
+    write_receipt_sha256:transitionPreimage.write_receipt_sha256};
+  const transitionReceipt={operationId:transitionOperationId,kind:'red-transition',
+    stage:'completed-ledger',result:transitionResult,
+    resultSha256:digest('operation-result-v1',transitionResult)};
+  const proofPreimage={session_id:common.sessionId,slice_id:common.sliceId,
+    plan_authority_sha256:common.planAuthoritySha256,transition_kind:'ordinary',
+    transition_operation_id:transitionOperationId,
+    transition_ledger_result_sha256:transitionReceipt.resultSha256,
+    bootstrap_bridge_operation_id:null};
+  const proofOperationId=operationId('red-proof-publication-v1',proofPreimage);
+  const proof={schema_version:1,session_id:common.sessionId,slice_id:common.sliceId,
+    plan_authority_sha256:common.planAuthoritySha256,spec_sha256:common.specSha256,
+    spec_approved_hash:common.specApprovedHash,
+    verification_plan_sha256:common.verificationPlanSha256,
+    write_operation_id:writeOperationId,
+    write_receipt_sha256:transitionPreimage.write_receipt_sha256,
+    verification_operation_id:verificationOperationId,
+    verification_result_sha256:transitionPreimage.verification_result_sha256,
+    verification_ledger_result_sha256:verificationReceipt.resultSha256,transition_kind:'ordinary',
+    transition_operation_id:transitionOperationId,
+    transition_ledger_result_sha256:transitionReceipt.resultSha256,
+    bootstrap_bridge_operation_id:null,proof_operation_id:proofOperationId,
+    classification_digest:'c'.repeat(64),proof_sha256:null};
+  proof.proof_sha256=digest('red-proof-v1',
+    Object.fromEntries(Object.entries(proof).filter(([key])=>key!=='proof_sha256')));
+  const proofReceipt={operationId:proofOperationId,kind:'red-proof-publication',
+    stage:'completed-ledger',result:{proof_sha256:proof.proof_sha256,
+      red_proof_ref:`.deep-work/${common.sessionId}/red-proofs/${proof.proof_sha256}.json`,
+      post_state_sha256:'d'.repeat(64)}};
+  const state={tdd_state:'RED_VERIFIED',red_proof_state:'complete',
+    red_transition_operation_id:transitionOperationId,
+    red_proof_operation_id:proofOperationId,red_proof_sha256:proof.proof_sha256,
+    red_proof_ref:proofReceipt.result.red_proof_ref};
+  assert.equal(assertProductionRedProofAdmission({...common,state,proof,
+    verificationReceipt,transitionReceipt,proofReceipt}),true);
+  assert.throws(()=>assertProductionRedProofAdmission({...common,state,proof:{
+    ...proof,verification_result_sha256:'e'.repeat(64)},verificationReceipt,
+  transitionReceipt,proofReceipt}),
+  /red-proof-authority/);
+});
+
+test('strict production write begin fails closed when ordinary RED proof is absent',async()=>{
+  const f=setup();
+  f.plan.contract_binding={mode:'strict-spec',spec_contract:{
+    spec_sha256:'1'.repeat(64),spec_approved_hash:'2'.repeat(64)}};
+  f.plan.plan_authority_sha256='3'.repeat(64);
+  fs.writeFileSync(f.planCapability.path,JSON.stringify(f.plan));
+  fs.writeFileSync(f.state,fs.readFileSync(f.state,'utf8')
+    .replace('tdd_state: PENDING','tdd_state: RED_VERIFIED')
+    .replace('active_slice: null','active_slice: SLICE-001'));
+  const authority=deriveScopedWriteAuthority({plan:f.plan,sliceId:'SLICE-001',
+    writeClass:'production'});
+  await assert.rejects(()=>beginScopedWrite({stateCapability:f.stateCapability,
+    planCapability:f.planCapability,plan:f.plan,sliceId:'SLICE-001',
+    writeClass:'production',expectedScopeSha256:authority.sha256}),/red-proof-required/);
+});
 
 test('slice reducers mutate only their declared fields', async () => {
   const f = setup();

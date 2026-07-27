@@ -24,6 +24,17 @@ const OPERATION_KINDS = new Set([
   'handoff-publish', 'integrate-loop-update',
   'evidence-capture', 'evidence-publish',
   'evidence-adapter-run',
+  'bootstrap-abort', 'bootstrap-failure-publish', 'bootstrap-finalize',
+    'bootstrap-first-red', 'bootstrap-red-adoption', 'verification-run-v2',
+    'red-transition', 'red-proof-publication', 'replan-trigger-record',
+    'replan-epoch-publication', 'replan-discovery-publish',
+    'risk-observation-publish', 'root-cause-record',
+    'repeated-root-cause-derive', 'replan-complete',
+    'accept-or-replan', 'finding-publish', 'release-input-publish',
+    'gate-fact-publish',
+    'release-source-graph-publish',
+    'release-gate-result', 'release-verification-complete',
+    'functional-slice-complete-v2', 'refactor-no-change-decision',
 ]);
 
 const COMPLETED_LEDGER_LIMIT = 512;
@@ -79,7 +90,54 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'evidence-publish':['artifact-written','package-written','state-written','pointer-committed'],
   'evidence-adapter-run':['validated','prepared','acted','observed','recovered','asserted','failed-pending-cleanup',
     'cleanup-run','cleanup-failed','complete'],
+  'bootstrap-abort':['prepared','authorization-authenticated','failure-authenticated','observed-manifest-authenticated',
+    'production-reverted','test-reverted','base-restored','abort-receipt-published','recovery-required-published'],
+  'bootstrap-failure-publish':['prepared','failure-published','claim-committed'],
+  'bootstrap-finalize':['prepared','authorization-authenticated','execution-authenticated','receipt-precomputed',
+    'marker-committed','receipt-published'],
+  'bootstrap-first-red':['prepared','containment-authenticated','pre-manifest-published',
+    'process-completed','post-manifest-published','result-published'],
+  'bootstrap-red-adoption':['prepared','bridge-authenticated','red-authority-adopted'],
+  'verification-run-v2':['containment-authenticated','pre-manifest-published',
+    'process-completed','post-manifest-published','result-published'],
+  'red-transition':['red-authenticated','red-state-written'],
+  'red-proof-publication':['prepared','proof-published','proof-ref-committed'],
+  'replan-trigger-record':['trigger-authenticated','invalidation-applied','trigger-recorded'],
+  'replan-epoch-publication':['trigger-receipt-authenticated','epoch-published',
+    'active-epoch-committed'],
+  'replan-discovery-publish':['authority-authenticated','observation-published'],
+  'risk-observation-publish':['authority-authenticated','observation-published'],
+  'root-cause-record':['source-authenticated','observation-published',
+    'ledger-committed'],
+  'repeated-root-cause-derive':['qualification-authenticated',
+    'producers-authenticated','observation-published','ledger-committed'],
+  'replan-complete':['epoch-authenticated','approvals-authenticated','state-written'],
+  'gate-fact-publish':['authority-authenticated','facts-computed','fact-published'],
+  'release-input-publish':['input-published'],
+  'release-source-graph-publish':['graph-published'],
+  'release-gate-result':['inputs-authenticated','checker-completed','result-published'],
+  'release-verification-complete':['aggregate-authenticated','receipt-published',
+    'progress-committed'],
+  'accept-or-replan':['observation-stable','needs-replan-receipt-published',
+    'invalidation-applied','parent-resolved'],
+  'finding-publish':['authority-authenticated','findings-published',
+    'ref-artifact-published','ref-committed'],
+  'functional-slice-complete-v2':['evidence-authenticated','receipt-published',
+    'progress-committed'],
+  'refactor-no-change-decision':['green-authenticated','decision-published',
+    'decision-committed'],
 });
+const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publish',
+  'bootstrap-finalize','bootstrap-first-red','bootstrap-red-adoption','verification-run-v2',
+  'red-transition','red-proof-publication','replan-trigger-record',
+  'replan-epoch-publication','replan-discovery-publish',
+  'risk-observation-publish','root-cause-record',
+  'repeated-root-cause-derive','replan-complete',
+  'accept-or-replan','finding-publish','release-input-publish',
+  'gate-fact-publish',
+  'release-source-graph-publish','release-gate-result',
+  'release-verification-complete',
+  'functional-slice-complete-v2','refactor-no-change-decision']);
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
 
@@ -224,6 +282,14 @@ async function recordOperationStage(handle, stage, details = {}) {
       }
       return journal;
     }
+    if(ORDERED_WORKFLOW_KINDS.has(handle.kind)){
+      const stages=WORKFLOW_STAGE_RULES[handle.kind];
+      const current=journal.stages.at(-1)?.stage;
+      const expected=stages[stages.indexOf(current)+1];
+      const recoveryBranch=handle.kind==='bootstrap-abort'&&current==='observed-manifest-authenticated'&&
+        stage==='recovery-required-published';
+      if(stage!==expected&&!recoveryBranch)fail('operation-stage-order',`${current}->${stage}`);
+    }
     journal.stage = stage;
     journal.owned = details.owned === undefined ? journal.owned : details.owned;
     journal.stages.push({stage, at:new Date().toISOString(), details});
@@ -284,6 +350,53 @@ async function resumeOperation({projectCapability, operationId, sessionId, kind}
   return {status:'pending', ...journal};
 }
 
+function lookupCompletedOperation({projectCapability,operationId,sessionId,kind}={}){
+  if(!validOperationId(operationId))fail('operation-id','invalid operation ID');
+  const root=projectRootOf(projectCapability);
+  const claude=path.join(root,'.claude');
+  const names=fs.existsSync(claude)?fs.readdirSync(claude):[];
+  const ledgers=names.filter((name)=>
+    /^deep-work\.s-[0-9a-f]{8}\.completed-operations\.json$/.test(name));
+  for(const name of ledgers.sort((a,b)=>
+    Buffer.compare(Buffer.from(a),Buffer.from(b)))){
+    const receipt=readLedger(path.join(claude,name)).receipts.find((row)=>
+      row.operationId===operationId);
+    if(!receipt)continue;
+    if(sessionId&&receipt.sessionId!==sessionId||
+        kind&&receipt.kind!==kind)
+      fail('operation-identity-mismatch',
+        'completed operation has different identity');
+    return receipt;
+  }
+  return null;
+}
+
+const EXTERNAL_EFFECT_KINDS=new Set(['remote-push','pull-request-create',
+  'finish-publish-pr']);
+function inspectExternalEffectOperationIds({projectCapability,sessionId}={}){
+  if(!validSessionId(sessionId))fail('operation-session');
+  const root=projectRootOf(projectCapability),claude=path.join(root,'.claude');
+  const names=fs.existsSync(claude)?fs.readdirSync(claude):[],ids=new Set();
+  const ledgerPath=path.join(claude,
+    `deep-work.${sessionId}.completed-operations.json`);
+  if(fs.existsSync(ledgerPath)){
+    for(const receipt of readLedger(ledgerPath).receipts)
+      if(EXTERNAL_EFFECT_KINDS.has(receipt.kind))ids.add(receipt.operationId);
+  }
+  const prefix=`deep-work.${sessionId}.op.`;
+  for(const name of names.filter((value)=>value.startsWith(prefix)&&
+    value.endsWith('.json')).sort((a,b)=>
+      Buffer.compare(Buffer.from(a),Buffer.from(b)))){
+    const pending=validateJournal(readJson(path.join(claude,name)));
+    if(!EXTERNAL_EFFECT_KINDS.has(pending.kind))continue;
+    const reachedCall=(pending.stages||[]).some((row)=>
+      /^(?:before-external-call|external-call-(?:started|completed)|before-call(?:-\d+)?|remote-pushed|pull-request-created)$/
+        .test(row.stage));
+    if(reachedCall)ids.add(pending.operationId);
+  }
+  return[...ids].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+}
+
 module.exports = {
   OPERATION_KINDS,
   COMPLETED_LEDGER_LIMIT,
@@ -291,6 +404,8 @@ module.exports = {
   recordOperationStage,
   completeOperation,
   resumeOperation,
+  lookupCompletedOperation,
+  inspectExternalEffectOperationIds,
   canonicalJson,
   sha256,
   WORKFLOW_STAGE_RULES,

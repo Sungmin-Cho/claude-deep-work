@@ -5,6 +5,15 @@ const platform=require('./platform.js');const frontmatter=require('./frontmatter
 const session=require('./session-store.js');const git=require('./git-runtime.js');const journal=require('./operation-journal.js');
 const planRuntime=require('./plan-runtime.js');const slice=require('./slice-runtime.js');const phase=require('./phase-runtime.js');
 const testRuntime=require('./test-runtime.js');const verification=require('./verification-runtime.js');
+const bootstrap=require('./bootstrap-runtime.js');
+const redProof=require('./red-proof-runtime.js');
+const verificationV2=require('./verification-v2-runtime.js');
+const findingRef=require('./finding-ref-runtime.js');
+const functionalReceipt=require('./functional-receipt-runtime.js');
+const refactorDecision=require('./refactor-decision-runtime.js');
+const replan=require('./replan-runtime.js');
+const rootCause=require('./root-cause-runtime.js');
+const releaseGate=require('./release-gate-runtime.js');
 const artifact=require('./artifact-runtime.js');const report=require('./report-runtime.js');const sensor=require('./sensor-runtime.js');
 const health=require('./health-runtime.js');const recommender=require('./recommender-runtime.js');
 const profile=require('./profile-runtime.js');const flagsRuntime=require('./flags-runtime.js');const transaction=require('./transaction-runtime.js');
@@ -21,12 +30,27 @@ function stateCapability(f,cwd,key='state'){const root=projectRootFor(f,cwd);con
   return platform.issueProjectStateCapability(root,target,{role:'session-state'});}
 function stateFields(capability){platform.revalidatePathCapability(capability,'dispatcher-state');return frontmatter.parseFrontmatter(boundedFile(capability.path).toString('utf8')).fields;}
 function sessionId(capability){const match=path.basename(capability.path).match(/^deep-work\.(s-[0-9a-f]{8})\.md$/);if(!match)fail('session-state-identity');return match[1];}
-function finishAdmission(stateCap,enforcementPoint){const fields=stateFields(stateCap);let review={};
+function usesGovernedProjection(plan){
+  return plan?.contract_binding?.mode==='strict-spec'&&
+    require('./verification-policy-runtime.js').isAtLeast614(
+      plan.contract_binding.created_by_version);
+}
+function finishAdmission(stateCap,enforcementPoint){
+  slice.assertNoPendingScopedWrite(stateCap);
+  const fields=stateFields(stateCap);let review={};
   try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('finish-review-state');}
   let riskProfile={};if(fields.risk_profile_json!==undefined&&fields.risk_profile_json!==null&&fields.risk_profile_json!=='')
     riskProfile=storedObject(fields,'risk_profile_json');const root=sessionCapability(stateCap).path,planPath=path.join(root,'plan.json');
   let planProjection=null;if(fs.existsSync(planPath)){const cap=sessionFile(stateCap,planPath,{basenames:['plan.json'],role:'locked-plan'});
     try{planProjection=JSON.parse(transaction.readSessionFile(cap));}catch{fail('finish-plan-projection');}}
+  if(usesGovernedProjection(planProjection)){
+    const governed=require('./governed-context-runtime.js').loadGovernedContext({
+      stateCapability:stateCap});
+    const admission=require('./governed-context-runtime.js').selectGovernedAdmission(
+      governed.projection,enforcementPoint);
+    return{allowed:admission.allowed,blocking:{codes:admission.blocking_codes},
+      governed_admission:admission,projection_sha256:governed.sha256};
+  }
   const verificationPolicy=require('./verification-policy-runtime.js'),reviewPolicy=require('./review-policy-runtime.js');
   const compatibilityMode=verificationPolicy.deriveCompatibilityMode(compatibilityFacts(fields,planProjection,review,riskProfile));
   if(compatibilityMode==='legacy-no-spec')return reviewPolicy.finishGateAllowed(review,{compatibility_mode:compatibilityMode,
@@ -321,16 +345,72 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
         spec_id:specContract.spec_id,spec_sha256:contractRuntime.specContractDigest(specContract),risk_class:specContract.risk_class,
         errors:validation.errors,warnings:validation.warnings,requirement_coverage:validation.requirementCoverage,
         failure_matrix_coverage:validation.failureMatrixCoverage};return phase.approveSpecSubphase({stateCapability:state,
-      specApprovedHash:hash(bytes),specContract,specGateResult,at:f.at});});
+      specApprovedHash:hash(bytes),specContract,specGateResult,
+      specReviewRefSha256:f['spec-review-ref-sha256'],at:f.at});});
   on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);let specCurrentSha256;
     if(f.from==='research'){const candidate=path.join(sessionCapability(state).path,'spec.md');
       if(fs.existsSync(candidate))specCurrentSha256=hash(boundedFile(candidate));}
     return phase.advancePhase({stateCapability:state,from:f.from,to:f.to,at:f.at,specCurrentSha256});});
   on('phase rerun',({f,cwd})=>phase.rerunPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
     affectedSlices:f['affected-slices-json']?jsonFile(resolveInput(f['affected-slices-json'],cwd)):[]}));
-  on('phase invalidate-replan',({f,cwd})=>phase.invalidateForReplan({stateCapability:stateCapability(f,cwd),
-    reason:f.reason,fromRisk:f['from-risk'],toRisk:f['to-risk'],
-    affectedSliceIds:jsonFile(resolveInput(f['affected-slices-json'],cwd)),riskProfileSha256:f['risk-profile-sha256'],at:f.at}));
+  on('phase invalidate-replan',({f,cwd})=>{const state=stateCapability(f,cwd);
+    const fields=stateFields(state),version=String(fields.created_by_version||'');
+    if(require('./verification-policy-runtime.js').isAtLeast614(version))
+      fail('authenticated-replan-required');
+    return phase.invalidateForReplan({stateCapability:state,
+      reason:f.reason,fromRisk:f['from-risk'],toRisk:f['to-risk'],
+      affectedSliceIds:jsonFile(resolveInput(f['affected-slices-json'],cwd)),
+      riskProfileSha256:f['risk-profile-sha256'],at:f.at});});
+  on('replan discovery publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.publishOwnedDiscovery({stateCapability:bound.state,
+      plan:bound.value,observation:jsonFile(resolveInput(f['observation-json'],cwd))});});
+  on('replan discovery dispatch',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.dispatchOwnedDiscoveryReplan({stateCapability:bound.state,
+      plan:bound.value,sliceId:f.slice||null,
+      producerOperationId:f['producer-operation-id']});});
+  on('replan risk publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.publishRiskObservation({stateCapability:bound.state,
+      plan:bound.value,nextRiskProfile:jsonFile(resolveInput(
+        f['next-risk-profile-json'],cwd))});});
+  on('replan risk dispatch',({f,cwd})=>{const bound=readPlan(f,cwd);
+    if(f.scope==='slice'&&!f.slice||f.scope==='session'&&f.slice)
+      fail('replan-risk-scope');
+    return replan.dispatchRiskIncreaseReplan({stateCapability:bound.state,
+      plan:bound.value,sliceId:f.scope==='slice'?f.slice:null,
+      producerOperationId:f['producer-operation-id']});});
+  on('replan root-cause record',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return rootCause.recordRootCause({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sourceKind:f['source-kind'],
+      sourceOperationId:f['source-operation-id']});});
+  on('replan root-cause derive',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return rootCause.deriveRepeatedRootCause({stateCapability:bound.state,
+      plan:bound.value,operationId:f['operation-id']});});
+  on('replan root-cause dispatch',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.dispatchRepeatedRootCauseReplan({
+      stateCapability:bound.state,plan:bound.value,
+      producerOperationId:f['operation-id']});});
+  on('replan complete',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return replan.completeReplan({stateCapability:bound.state,plan:bound.value});});
+  on('release gate fact-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishGateFact({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,checkerId:f.checker,
+      inputRefs:jsonFile(resolveInput(f['input-refs-json'],cwd))});});
+  on('release gate result-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishDeterministicGateResult({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,
+      factOperationId:f['fact-operation-id']});});
+  on('release gate command-run',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishCommandGateResult({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,commandId:f.command});});
+  on('release gate integrity-run',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishReleaseIntegrityGateResult({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value});});
+  on('release verification complete',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return releaseGate.publishReleaseVerificationReceipt({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
+      sliceId:f.slice,gateResults:jsonFile(resolveInput(
+        f['gate-results-json'],cwd)),functionalReceipts:jsonFile(resolveInput(
+        f['functional-receipts-json'],cwd))});});
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));
@@ -347,6 +427,17 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('implement slice complete',({f,cwd})=>{const bound=readPlan(f,cwd);const input=identifyOwnedInput(bound.state,f['receipt-payload'],'receipt-payload');
     return slice.completeSlice({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,receiptsDirCapability:receiptsCapability(bound.state,f['receipts-dir']),
       sliceId:f.slice,receiptTemp:{sourceOperationId:input.operationId,purpose:'receipt-payload',sessionCapability:input.sessionCapability}});});
+  on('implement slice complete-v2',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return functionalReceipt.publishFunctionalSliceReceiptV2({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
+      sliceId:f.slice,greenVerification:jsonFile(resolveInput(
+        f['green-ref-json'],cwd)),refactorEvidence:jsonFile(resolveInput(
+        f['refactor-evidence-json'],cwd))});});
+  on('implement refactor no-change',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return refactorDecision.recordNoRefactorDecision({
+      stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
+      sliceId:f.slice,greenVerification:jsonFile(resolveInput(
+        f['green-ref-json'],cwd)),reasonCode:f.reason});});
   on('implement override set',async({f,cwd})=>{const state=stateCapability(f,cwd);const source=identifyOwnedInput(state,f['reason-file'],'reason');
     const consumed=await ownedInput(state,f['reason-file'],'reason',derivedOperationId('implement-override-set',{
       session:sessionId(state),slice:f.slice,sourceOperationId:source.operationId}));return phase.setTddOverride({stateCapability:state,
@@ -370,6 +461,39 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('verification run',({f,cwd})=>{const bound=readPlan(f,cwd);if(bound.value.contract_binding?.mode==='strict-spec')
     fail('strict-spec-capture-required');return verification.runVerification({stateCapability:bound.state,planCapability:bound.cap,
     plan:bound.value,sliceId:f.slice,gateId:f['gate-id'],spec:jsonFile(resolveInput(f['spec-json'],cwd)),expectedOutcome:f.expected,cwd:bound.state.projectRoot});});
+  on('verification run-v2',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return verificationV2.runVerificationV2({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+      expectedOutcome:f.expected||'must-fail'});});
+  on('verification red-transition',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return redProof.transitionOrdinaryRed({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+      verificationOperationId:f['verification-operation-id'],
+      verificationResultSha256:f['verification-result-sha256']});});
+  on('verification proof-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
+    return redProof.publishOrdinaryRedProof({stateCapability:bound.state,
+      planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+      transitionOperationId:f['transition-operation-id']});});
+  on('bootstrap failure-publish',({f,cwd})=>bootstrap.publishBootstrapFailure({
+    stateCapability:stateCapability(f,cwd),authorizationPath:resolveInput(f.authorization,cwd),
+    failurePath:resolveInput(f.failure,cwd)}));
+  on('bootstrap abort',({f,cwd})=>bootstrap.abortBootstrap({
+    stateCapability:stateCapability(f,cwd),authorizationPath:resolveInput(f.authorization,cwd),
+    failurePath:resolveInput(f.failure,cwd)}));
+  on('bootstrap finalize',({f,cwd})=>bootstrap.finalizeBootstrap({stateCapability:stateCapability(f,cwd),
+    authorizationPath:resolveInput(f.authorization,cwd),executionPath:resolveInput(f.execution,cwd)}));
+  on('bootstrap first-red',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.runBootstrapFirstRed({
+    stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+    authorizationPath:resolveInput(f.authorization,cwd),receiptPath:resolveInput(f.receipt,cwd),
+    markerPath:resolveInput(f.marker,cwd),specPath:resolveInput(f['spec-json'],cwd),
+    writeReceiptPath:resolveInput(f['write-receipt'],cwd)});});
+  on('bootstrap red-adopt',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.adoptBootstrapRed({
+    stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+    authorizationPath:resolveInput(f.authorization,cwd),receiptPath:resolveInput(f.receipt,cwd),
+    markerPath:resolveInput(f.marker,cwd),bridgeOperationId:f['bridge-operation-id']});});
+  on('bootstrap proof-publish',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.publishBootstrapRedProof({
+    stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
+    transitionOperationId:f['transition-operation-id']});});
   on('evidence record contract',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
     try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
     const contractRuntime=require('./contract-runtime.js');const specContract=contractRuntime.parseSpecMarkdown(
@@ -390,6 +514,16 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       verificationResult:jsonFile(resolveInput(f['verification-result-json'],cwd))});return evidence.publishAuthenticatedRecord(record,
       {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
   on('test pass',({f,cwd})=>{const bound=readPlan(f,cwd),context=loadTestPassContext(bound.state,bound.value);
+    if(usesGovernedProjection(bound.value)){
+      const governed=require('./governed-context-runtime.js').loadGovernedContext({
+        stateCapability:bound.state});
+      const admission=require('./governed-context-runtime.js').selectGovernedAdmission(
+        governed.projection,'test');
+      if(!admission.allowed)fail('test-governed-admission',
+        JSON.stringify(admission.blocking_codes));
+      context.governedAdmission=admission;context.governedProjectionSha256=governed.sha256;
+      context.governedRequired=true;
+    }
     return testRuntime.recordTestPass({stateCapability:bound.state,gateResults:jsonFile(resolveInput(f['gate-results-json'],cwd)),
       ...context,at:f.at});});
   on('test retry',({f,cwd})=>{const bound=readPlan(f,cwd);return testRuntime.recordTestRetry({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
@@ -413,8 +547,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       kind:f.kind,inputCapability:input.capability,sliceId:f.slice,area:f.area,iteration:f.iteration?Number(f.iteration):undefined});});
   on('analysis drift record',({f,cwd})=>slice.mutateState(stateCapability(f,cwd),()=>({fidelity_score:Number(boundedFile(resolveInput(f['score-file'],cwd)).toString('utf8').trim()),
     drift_report_sha256:hash(boundedFile(resolveInput(f.report,cwd)))})));
-  on('receipt dashboard',({f,cwd})=>report.readReceiptDashboard({receiptsDir:receiptsCapability(stateCapability(f,cwd)).path}));
-  on('receipt view',({f,cwd})=>report.readReceiptDetail({receiptsDir:receiptsCapability(stateCapability(f,cwd)).path,sliceId:f.slice}));
+  on('receipt dashboard',({f,cwd})=>report.readReceiptDashboard({stateCapability:stateCapability(f,cwd)}));
+  on('receipt view',({f,cwd})=>report.readReceiptDetail({stateCapability:stateCapability(f,cwd),sliceId:f.slice}));
   on('receipt export',({f,cwd})=>report.exportReceipts({stateCapability:stateCapability(f,cwd),format:f.format}));
   on('history list',({f,cwd})=>report.readSessionHistory(resolveInput(f['project-root'],cwd)));
   on('report generate',({f,cwd})=>report.generateReport({stateCapability:stateCapability(f,cwd)}));
@@ -438,6 +572,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     const resolved=await reviewerProcess(f.engine,f.model);const result=await executeReviewProcess({engine:f.engine,resolved,
       prompt:prompt.bytes,timeoutMs:Number(f['timeout-ms']),cwd:source.state.projectRoot,env:{...process.env},effort:f.effort,model:f.model});
     return{engine:f.engine,...result,promptSha256:prompt.sha256,consumerOperationId};});
+  on('review finding-publish',({f,cwd})=>findingRef.publishFindingRef({
+    stateCapability:stateCapability(f,cwd),point:f.point,round:Number(f.round),
+    findingPath:resolveInput(f.finding,cwd),artifactPath:resolveInput(f.artifact,cwd),
+    artifactKind:f['artifact-kind']}));
   on('sensor detect',({f,cwd})=>{const project=projectCapability(f,cwd);let registry=jsonFile(path.resolve(__dirname,'..','sensors','registry.json'));if(registry.$schema==='sensor-registry-v1')registry=sensor.migrateRegistryV1(registry);return sensor.detectSensors(project,registry);});
   on('sensor run',({f,cwd})=>sensor.runSensor({kind:f.kind,processSpec:jsonFile(resolveInput(f['process-spec-json'],cwd)),parser:f.parser,budgetMs:Number(f['budget-ms']),projectRoot:cwd,
     refactorContext:f.state?{sessionId:f.session,stateCapability:stateCapability(f,cwd),planCapability:sessionFile(stateCapability(f,cwd),f.plan),sliceId:f.slice,afterWriteOperationId:f['after-write-operation-id']}:undefined}));

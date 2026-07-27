@@ -46,9 +46,9 @@ function rawFinding(overrides = {}) {
   };
 }
 
-test('point vocabulary is closed and accepts slice-SLICE-NNN only', () => {
-  assert.deepEqual(REVIEW_POINTS, ['research', 'plan', 'slice-SLICE-NNN', 'cross-slice', 'final']);
-  for (const point of ['research', 'plan', 'slice-SLICE-001', 'cross-slice', 'final']) {
+test('point vocabulary is closed and accepts spec plus slice-SLICE-NNN only', () => {
+  assert.deepEqual(REVIEW_POINTS, ['research', 'spec', 'plan', 'slice-SLICE-NNN', 'cross-slice', 'final']);
+  for (const point of ['research', 'spec', 'plan', 'slice-SLICE-001', 'cross-slice', 'final']) {
     assert.equal(isReviewPoint(point), true, point);
   }
   for (const point of ['slice-001', 'slice-SLICE-1', 'design', '../final']) {

@@ -12,6 +12,7 @@ function ids(value,key){return catalog.ordered((value?.[key]||[]).map((row)=>typ
 function semverMajorMinor(value){const match=String(value||'').match(/^(\d+)\.(\d+)\./);return match?[Number(match[1]),Number(match[2])]:null;}
 function isPre613(value){const parsed=semverMajorMinor(value);return parsed&&(parsed[0]<6||(parsed[0]===6&&parsed[1]<13));}
 function isAtLeast613(value){const parsed=semverMajorMinor(value);return parsed&&(parsed[0]>6||(parsed[0]===6&&parsed[1]>=13));}
+function isAtLeast614(value){const parsed=semverMajorMinor(value);return parsed&&(parsed[0]>6||(parsed[0]===6&&parsed[1]>=14));}
 
 function compatibilityProof(facts={}){if(!facts||typeof facts!=='object'||Array.isArray(facts))fail('compatibility-mode');
   const binding=facts.planProjection?.contract_binding||facts.plan_binding||null;const strictBinding=binding?.mode==='strict-spec';
@@ -43,10 +44,30 @@ function compileVerificationPlan(input={}){const risk=input.riskProfile?.class||
       binding.risk_profile_sha256!==input.riskProfileSha256||!isDigest(binding.source_plan_sha256))
     fail('verification-plan-plan-binding');
   const compatibility=compatibilityProof({...input.compatibilityFacts,planProjection:projection,risk_class:risk});
-  const capability_facts=catalog.normalizeCapabilityFacts(input.capabilities||{});const req=ids(spec,'requirements');
+  const capability_facts=projection.capability_facts?structuredClone(projection.capability_facts):
+    catalog.normalizeCapabilityFacts(input.capabilities||{});const req=ids(spec,'requirements');
+  if(isAtLeast614(binding.created_by_version)){
+    const sourceRequirements=capability_facts?.source_requirement_ids;
+    const sourceSlices=capability_facts?.source_slice_ids;
+    const compatibility=spec.compatibility||{};
+    const expectedRequirements=catalog.ordered((spec.requirements||[])
+      .filter((row)=>(row.evidence_gate_ids||[]).some((id)=>
+        ['GATE-backward-compat','GATE-migration-dry-run'].includes(id)))
+      .map((row)=>row.id));
+    const expectedSlices=catalog.ordered((projection.slices||[])
+      .filter((row)=>row.slice_kind==='release-verification').map((row)=>row.id));
+    if(capability_facts?.has_backward_compat!==Object.hasOwn(compatibility,'legacy_inputs')||
+      capability_facts?.has_migration!==Object.hasOwn(compatibility,'migration')||
+      canonicalJson(catalog.ordered(sourceRequirements||[]))!==canonicalJson(expectedRequirements)||
+      canonicalJson(catalog.ordered(sourceSlices||[]))!==canonicalJson(expectedSlices))
+      fail('verification-capability-facts');
+  }
+  const policyCapabilityFacts=catalog.normalizeCapabilityFacts(Object.fromEntries(
+    ['destructive','external_action','has_backward_compat','has_migration','host_dependent']
+      .map((key)=>[key,capability_facts[key]===true])));
   const fm=ids(spec,'failure_matrix').length?ids(spec,'failure_matrix'):ids(spec,'failure_modes');
-  const gates=catalog.expectedGateRows({profile,capabilityFacts:capability_facts,requirementIds:req,failureModeIds:fm});
-  const checked=catalog.validateCatalogRows({profile,capabilityFacts:capability_facts,requirementIds:req,failureModeIds:fm,
+  const gates=catalog.expectedGateRows({profile,capabilityFacts:policyCapabilityFacts,requirementIds:req,failureModeIds:fm});
+  const checked=catalog.validateCatalogRows({profile,capabilityFacts:policyCapabilityFacts,requirementIds:req,failureModeIds:fm,
     gates,requiredGateIds:gates.filter((row)=>row.disposition==='required').map((row)=>row.id),
     evidenceRequiredGateIds:gates.filter((row)=>row.disposition==='required'&&row.evidence_required&&
       !['human','evidence'].includes(row.adapter)).map((row)=>row.id)});
@@ -56,23 +77,68 @@ function compileVerificationPlan(input={}){const risk=input.riskProfile?.class||
     compatibility_proof_sha256:compatibility.proof_sha256,plan_projection_sha256:projectionSha256,
     source_plan_sha256:binding.source_plan_sha256,capability_facts,gates,
     required_gate_ids:checked.required,evidence_required_gate_ids:checked.evidenceRequired};
+  const typedSlices=(projection.slices||[]).filter((row)=>row.slice_kind!==undefined);
+  if(typedSlices.length){
+    if(typedSlices.length!==(projection.slices||[]).length||!/^[0-9a-f]{64}$/.test(projection.plan_authority_sha256||''))
+      fail('verification-plan-slice-carrier');
+    const rows={};
+    for(const slice of [...typedSlices].sort((a,b)=>Buffer.compare(Buffer.from(a.id),Buffer.from(b.id)))){
+      if(!/^SLICE-\d{3}$/.test(slice.id||'')||!['functional','release-verification'].includes(slice.slice_kind)||
+          slice.slice_kind==='functional'&&!isDigest(slice.verification_spec_sha256)||
+          slice.slice_kind==='release-verification'&&slice.verification_spec_sha256!==null)
+        fail('verification-plan-slice-carrier');
+      rows[slice.id]={slice_kind:slice.slice_kind,verification_spec_sha256:slice.verification_spec_sha256};
+    }
+    plan.plan_authority_sha256=projection.plan_authority_sha256;
+    plan.slice_verification_specs=rows;
+    plan.slice_verification_specs_sha256=digest({
+      plan_authority_sha256:plan.plan_authority_sha256,
+      capability_facts:plan.capability_facts,
+      slice_verification_specs:rows,
+    });
+  }
   plan.plan_sha256=digest(plan);return plan;}
 
 const PLAN_KEYS=['schema_version','spec_id','spec_sha256','spec_approved_hash','risk_profile_sha256','risk_class','profile',
   'source_policy_label','compatibility_mode','compatibility_proof_sha256','plan_projection_sha256','source_plan_sha256',
   'capability_facts','gates','required_gate_ids','evidence_required_gate_ids','plan_sha256'];
+const PLAN_V2_KEYS=[...PLAN_KEYS.slice(0,-1),'plan_authority_sha256','slice_verification_specs',
+  'slice_verification_specs_sha256','plan_sha256'];
 function exactKeys(value,keys){return value&&typeof value==='object'&&!Array.isArray(value)&&
   canonicalJson(Object.keys(value).sort())===canonicalJson([...keys].sort());}
-function validateVerificationPlan(plan){try{if(!exactKeys(plan,PLAN_KEYS)||plan.schema_version!==1||
+function validateVerificationPlan(plan){try{const typed=Object.hasOwn(plan||{},'slice_verification_specs');
+    if(!exactKeys(plan,typed?PLAN_V2_KEYS:PLAN_KEYS)||plan.schema_version!==1||
       !/^SPEC-[A-Z0-9][A-Z0-9-]{2,63}$/.test(plan.spec_id||'')||!['low','medium','high','critical'].includes(plan.risk_class)||
       PROFILE_BY_CLASS[plan.risk_class]!==plan.profile||plan.source_policy_label!==VERIFICATION_POLICY[plan.profile]||
       !['strict-spec','legacy-no-spec'].includes(plan.compatibility_mode)||
       [plan.spec_sha256,plan.spec_approved_hash,plan.risk_profile_sha256,plan.compatibility_proof_sha256,
-        plan.plan_projection_sha256,plan.source_plan_sha256,plan.plan_sha256].some((value)=>!isDigest(value)))fail('verification-plan-schema');
+        plan.plan_projection_sha256,plan.source_plan_sha256,plan.plan_sha256,
+        ...(typed?[plan.plan_authority_sha256,plan.slice_verification_specs_sha256]:[])].some((value)=>!isDigest(value)))
+      fail('verification-plan-schema');
     const preimage=structuredClone(plan);delete preimage.plan_sha256;if(digest(preimage)!==plan.plan_sha256)
-      fail('verification-plan-digest');const requirements=ids({requirements:plan.gates.flatMap((row)=>row.requirement_ids||[])},'requirements');
+      fail('verification-plan-digest');
+    if(typed){
+      if(!plan.slice_verification_specs||typeof plan.slice_verification_specs!=='object'||
+          Array.isArray(plan.slice_verification_specs)||digest({
+            plan_authority_sha256:plan.plan_authority_sha256,
+            capability_facts:plan.capability_facts,
+            slice_verification_specs:plan.slice_verification_specs,
+          })!==plan.slice_verification_specs_sha256)
+        fail('verification-plan-slice-carrier');
+      const sliceIds=Object.keys(plan.slice_verification_specs);
+      if(canonicalJson(sliceIds)!==canonicalJson([...sliceIds].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b))))||
+          sliceIds.some((id)=>{const row=plan.slice_verification_specs[id];return !/^SLICE-\d{3}$/.test(id)||
+            !exactKeys(row,['slice_kind','verification_spec_sha256'])||
+            row.slice_kind==='functional'?!isDigest(row.verification_spec_sha256):
+              row.slice_kind==='release-verification'?row.verification_spec_sha256!==null:true;}))
+        fail('verification-plan-slice-carrier');
+    }
+    const policyCapabilityFacts=catalog.normalizeCapabilityFacts(Object.fromEntries(
+      ['destructive','external_action','has_backward_compat','has_migration','host_dependent']
+        .map((key)=>[key,plan.capability_facts[key]===true])));
+    const requirements=ids({requirements:plan.gates.flatMap((row)=>row.requirement_ids||[])},'requirements');
     const failures=ids({failure_modes:plan.gates.flatMap((row)=>row.failure_mode_ids||[])},'failure_modes');
-    const checked=catalog.validateCatalogRows({profile:plan.profile,capabilityFacts:plan.capability_facts,
+    const checked=catalog.validateCatalogRows({profile:plan.profile,capabilityFacts:policyCapabilityFacts,
       requirementIds:requirements,failureModeIds:failures,gates:plan.gates,requiredGateIds:plan.required_gate_ids,
       evidenceRequiredGateIds:plan.evidence_required_gate_ids});if(!checked.pass){const error=checked.errors[0];fail(error.code);}
     return{pass:true,errors:[]};}catch(error){return{pass:false,errors:[{code:error.code||'verification-plan'}]};}}
@@ -106,4 +172,5 @@ function computeResidualRisk({initialRisk,finalRisk,evidenceSummary,unverifiedAr
     (reasons.length===0||valid.length>0)&&invalid.length===0,invalid_acceptance_ids:catalog.ordered(invalid)};}
 
 module.exports={CATALOG:catalog.CATALOG,compileVerificationPlan,validateVerificationPlan,requiredGateIds,
-  evidenceRequiredGateIds,gateRequirementFor:catalog.gateRequirementFor,deriveCompatibilityMode,computeResidualRisk};
+  evidenceRequiredGateIds,gateRequirementFor:catalog.gateRequirementFor,
+  deriveCompatibilityMode,computeResidualRisk,isAtLeast614};

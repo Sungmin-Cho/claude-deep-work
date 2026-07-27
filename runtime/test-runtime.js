@@ -37,13 +37,26 @@ function pureRecordTestPass({state,gateResults,verificationPlan,evidencePackage,
   if(!Number.isFinite(Date.parse(at)))fail('test-time');return {...clone(state),test_passed:true,test_completed_at:at,
     gate_results_sha256:sha256(canonicalJson(gateResults))};}
 function recordTestPass({state,stateCapability,gateResults,verificationPlan,evidencePackage,evidenceSummary,
-  compatibilityMode,receiptInvalidations,artifactRoot,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,
+  compatibilityMode,receiptInvalidations,artifactRoot,governedAdmission,
+  governedProjectionSha256,governedRequired=false,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,
     verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot,at});
+  require('./slice-runtime.js').assertNoPendingScopedWrite(stateCapability);
+  if(governedRequired&&
+      (governedAdmission?.enforcement_point!=='test'||governedAdmission.allowed!==true||
+        !Array.isArray(governedAdmission.blocking_codes)||
+        governedAdmission.blocking_codes.length!==0||
+        !/^[0-9a-f]{64}$/.test(governedProjectionSha256||'')))
+    fail('test-governed-admission');
   validateGateResults(gateResults,{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot});
   return transaction.journaledStateMutation({stateCapability,kind:'test-pass',
     preconditions:{at,gateResultsSha256:sha256(canonicalJson(gateResults)),
       verificationPlanSha256:verificationPlan?.plan_sha256||null,packageSha256:evidencePackage?.package_sha256||null,
-      compatibilityMode:compatibilityMode||null,receiptInvalidationsSha256:sha256(canonicalJson(receiptInvalidations||[]))},seam,
+      compatibilityMode:compatibilityMode||null,
+      governedProjectionSha256:governedProjectionSha256||null,
+      governedRequired:Boolean(governedRequired),
+      governedAdmissionSha256:governedAdmission?
+        sha256(canonicalJson(governedAdmission)):null,
+      receiptInvalidationsSha256:sha256(canonicalJson(receiptInvalidations||[]))},seam,
     reducer:(fields)=>{if(verificationPlan){let review;try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('gate-results-state');}
         if(fields.verification_plan_sha256!==verificationPlan.plan_sha256||review.evidence?.package_sha256!==evidencePackage?.package_sha256||
           canonicalJson(JSON.parse(fields.receipt_invalidations_json||'[]'))!==canonicalJson(receiptInvalidations||[]))fail('gate-results-state');}
@@ -68,6 +81,7 @@ function failureTransition({state,plan,receipts,failedSlices,exhausted}){
 function receiptCapability(directory,id){return transaction.issueSessionFileCapability({sessionCapability:directory.sessionCapability,
   candidate:path.join(directory.path,`${id}.json`),allowedBasenames:[`${id}.json`],role:'slice-receipt'});}
 async function journaledFailure({stateCapability,planCapability,plan,receiptsDirCapability,failedSlices,at,exhausted,seam}){
+  require('./slice-runtime.js').assertNoPendingScopedWrite(stateCapability);
   if(!Number.isFinite(Date.parse(at)))fail('test-time');if(!Array.isArray(failedSlices)||!failedSlices.length||
       new Set(failedSlices).size!==failedSlices.length||failedSlices.some((id)=>!/^SLICE-\d{3}$/.test(id)))fail('failed-slices');
   const ids=[...failedSlices].sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));const sessionId=

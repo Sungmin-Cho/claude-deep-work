@@ -1598,25 +1598,102 @@ function compareRemoveOwnedTemp(capability, expectedDigest) {
 const WINDOWS_STREAM_INVENTORY_HELPER_SHA256 = '0b84a5a6710ef5c97f83026606a13f87311b9f2816328abf96c0ccb45d1c292c';
 const WINDOWS_STREAM_INVENTORY_PINVOKE_SHA256 = 'feab51e7d72e75438490593f2dc09d860a745f9b6b1a499663c20cdd9c5d372a';
 
+function closedReleaseEnvironment(environment, fsApi = fs) {
+  if (process.platform === 'win32' || !environment ||
+      environment.LANG !== 'C' || environment.LC_ALL !== 'C' ||
+      environment.TZ !== 'UTC' || typeof environment.HOME !== 'string' ||
+      typeof environment.PATH !== 'string' ||
+      !path.isAbsolute(environment.HOME)) return null;
+  const pathEntries = environment.PATH.split(path.delimiter);
+  if (pathEntries.length === 0 || pathEntries.some((entry) => !path.isAbsolute(entry))) return null;
+  const bin = pathEntries.at(-1);
+  const lifecycleEntries = pathEntries.slice(0, -1);
+  if (lifecycleEntries.some((entry) => {
+    const base = path.basename(entry);
+    const npmNodeGyp = entry.split(path.sep).join('/').endsWith(
+      '/node_modules/@npmcli/run-script/lib/node-gyp-bin');
+    return !(base === '.bin' && path.basename(path.dirname(entry)) === 'node_modules') &&
+      !npmNodeGyp;
+  })) return null;
+  let homeStat;
+  let binStat;
+  try {
+    if (fsApi.realpathSync(environment.HOME) !== environment.HOME ||
+        fsApi.realpathSync(bin) !== bin) return null;
+    homeStat = fsApi.lstatSync(environment.HOME);
+    binStat = fsApi.lstatSync(bin);
+  } catch { return null; }
+  if (!homeStat.isDirectory() || homeStat.isSymbolicLink() ||
+      !binStat.isDirectory() || binStat.isSymbolicLink()) return null;
+  return {home:environment.HOME, bin};
+}
+
+function validateClosedReleaseGitCarrier(executable, environment = process.env, fsApi = fs) {
+  const release = closedReleaseEnvironment(environment, fsApi);
+  if (!release) return null;
+  const expected = path.join(release.bin, 'git');
+  if (executable !== expected) {
+    fail('worktree-manifest-git-carrier', 'closed release Git must be the owned-bin entry');
+  }
+  let before;
+  let target;
+  let targetStat;
+  let after;
+  try {
+    before = fsApi.lstatSync(executable);
+    target = fsApi.realpathSync(executable);
+    targetStat = fsApi.lstatSync(target);
+    fsApi.accessSync(target, fs.constants.X_OK);
+    after = fsApi.lstatSync(executable);
+  } catch (cause) {
+    fail('worktree-manifest-git-carrier', 'closed release Git carrier is unavailable', {cause});
+  }
+  if (!before.isSymbolicLink() || !after.isSymbolicLink() ||
+      !identitiesEqual(statIdentity(before), statIdentity(after)) ||
+      !targetStat.isFile() || targetStat.isSymbolicLink()) {
+    fail('worktree-manifest-git-carrier', 'closed release Git carrier is not authenticated');
+  }
+  return {executable, target, release};
+}
+
 function resolveGitExecutable(environment = process.env, fsApi = fs) {
   const pathValue = typeof environment.PATH === 'string' ? environment.PATH : '';
+  const release = closedReleaseEnvironment(environment, fsApi);
   for (const directory of pathValue.split(path.delimiter)) {
     if (!directory || /[\0\r\n]/.test(directory)) continue;
     const candidate = path.join(directory, process.platform === 'win32' ? 'git.exe' : 'git');
     try {
       fsApi.accessSync(candidate, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
       const stat = fsApi.lstatSync(candidate);
+      if (release) {
+        if (stat.isSymbolicLink() &&
+            validateClosedReleaseGitCarrier(candidate, environment, fsApi)) return candidate;
+        continue;
+      }
       if (stat.isFile() && !stat.isSymbolicLink()) return fsApi.realpathSync(candidate);
     } catch {}
   }
   fail('worktree-manifest-git-unavailable', 'a physical Git executable was not found on PATH');
 }
 
-function safeGitEnvironment(executable) {
+function safeGitEnvironment(executable, source = process.env, fsApi = fs) {
+  const carrier = validateClosedReleaseGitCarrier(executable, source, fsApi);
+  if (carrier) {
+    return {
+      LANG:'C',
+      LC_ALL:'C',
+      TZ:'UTC',
+      HOME:carrier.release.home,
+      PATH:carrier.release.bin,
+      GIT_OPTIONAL_LOCKS:'0',
+      GIT_CONFIG_NOSYSTEM:'1',
+      GIT_CONFIG_GLOBAL:'/dev/null',
+    };
+  }
   const environment = {};
   for (const key of ['HOME','USERPROFILE','SystemRoot','SYSTEMROOT','TEMP','TMP']) {
-    if (typeof process.env[key] === 'string' && !/[\0\r\n]/.test(process.env[key])) {
-      environment[key] = process.env[key];
+    if (typeof source[key] === 'string' && !/[\0\r\n]/.test(source[key])) {
+      environment[key] = source[key];
     }
   }
   Object.assign(environment, {
@@ -2172,13 +2249,20 @@ function nativeExecutable(executable, platformValue, environment, fsApi) {
     fail('process-native-executable', 'shell interpreters are not portable process targets');
   }
   let real;
+  let releaseCarrier = null;
   try {
     const stat = fsApi.lstatSync(executable);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('not a physical file');
-    if (platformValue !== 'win32') fsApi.accessSync(executable, fs.constants.X_OK);
-    real = fsApi.realpathSync(executable);
+    if (stat.isSymbolicLink()) {
+      releaseCarrier = validateClosedReleaseGitCarrier(executable, environment, fsApi);
+      if (!releaseCarrier) throw new Error('not an authenticated release carrier');
+      real = releaseCarrier.target;
+    } else {
+      if (!stat.isFile()) throw new Error('not a physical file');
+      if (platformValue !== 'win32') fsApi.accessSync(executable, fs.constants.X_OK);
+      real = fsApi.realpathSync(executable);
+    }
   } catch (cause) { fail('process-native-executable', 'native executable is unavailable', {cause}); }
-  if (real !== fsApi.realpathSync(process.execPath)) {
+  if (!releaseCarrier && real !== fsApi.realpathSync(process.execPath)) {
     const delimiter = platformValue === 'win32' ? ';' : path.delimiter;
     const pathValue = environmentValue(environment, 'PATH', platformValue) || '';
     const allowed = pathValue.split(delimiter).filter(Boolean).some((directory) => {
@@ -2890,7 +2974,9 @@ function acquireDirectoryClaim(lockCapability, options, runtime) {
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 0 ||
       !Number.isSafeInteger(options.staleMs) || options.staleMs <= 0 ||
       !Number.isSafeInteger(options.heartbeatMs) || options.heartbeatMs <= 0 ||
-      options.heartbeatMs >= options.staleMs || !/^[0-9a-f]{32}$/.test(options.processIdentity || '')) {
+      options.heartbeatMs >= options.staleMs ||
+      (options.inspectable!==undefined&&typeof options.inspectable!=='boolean') ||
+      !/^[0-9a-f]{32}$/.test(options.processIdentity || '')) {
     fail('lock-options-invalid', 'lock timing or process identity is invalid');
   }
   validateRecordedComponents(meta, runtime.fsApi);
@@ -3053,6 +3139,97 @@ function releaseDirectoryClaim(lockCapability, claim, runtime) {
   }
 }
 
+const ownedDirectoryClaimTokens = new WeakMap();
+
+function mutationSensitiveIdentity(stat) {
+  const nanos=(value,millis)=>value===undefined?
+    String(Math.trunc(Number(millis)*1_000_000)):String(value);
+  return {dev:String(stat.dev),ino:String(stat.ino),mode:String(stat.mode),
+    type:stat.isDirectory()?'directory':stat.isFile()?'file':
+      stat.isSymbolicLink()?'link':'other',size:String(stat.size),
+    mtime_ns:nanos(stat.mtimeNs,stat.mtimeMs),ctime_ns:nanos(stat.ctimeNs,stat.ctimeMs)};
+}
+
+function stableDirectorySnapshot(directory, expectedNames, fsApi, code) {
+  let stat,names;
+  try {
+    stat=fsApi.lstatSync(directory,{bigint:true});
+    names=fsApi.readdirSync(directory)
+      .sort((left,right)=>Buffer.compare(Buffer.from(left),Buffer.from(right)));
+  } catch (cause) {
+    fail(code, `cannot inspect owned lock directory: ${directory}`, {cause});
+  }
+  if(!stat.isDirectory()||stat.isSymbolicLink()||
+      names.join('\0')!==expectedNames.join('\0')) {
+    fail(code, `owned lock directory has foreign children: ${directory}`);
+  }
+  const children=names.map((name)=>{
+    const child=fsApi.lstatSync(path.join(directory,name),{bigint:true});
+    if(!child.isFile()||child.isSymbolicLink())
+      fail(code, `owned lock child is not a regular file: ${path.join(directory,name)}`);
+    return {name,identity:mutationSensitiveIdentity(child)};
+  });
+  return {identity:mutationSensitiveIdentity(stat),children};
+}
+
+function immutableOwnedLockSnapshot(claimsSnapshot,lockSnapshot) {
+  const owner=lockSnapshot.children.find((child)=>child.name==='owner.json');
+  if(!owner)fail('lock-inspect-children','owned lock directory is missing owner.json');
+  const {dev,ino,mode,type}=lockSnapshot.identity;
+  return {claims:claimsSnapshot,lock:{identity:{dev,ino,mode,type},owner}};
+}
+
+function inspectOwnedDirectoryClaimRuntime(lockCapability, claimToken, runtime) {
+  const meta=assertCapability(lockCapability,['project-state']);
+  if(lockCapability.role!=='lock')fail('lock-inspect-capability','lock inspector requires lock role');
+  validateRecordedComponents(meta,runtime.fsApi);
+  const active=ownedDirectoryClaimTokens.get(claimToken);
+  if(!active||active.runtime!==runtime||active.inspectable!==true||!active.identitySnapshot)
+    fail('lock-inspect-claim','lock inspector requires the active callback claim');
+  const claim=active.claim,targetIdentity=lockTargetIdentity(lockCapability);
+  if(claim.core.targetIdentity!==targetIdentity||claim.core.pid!==process.pid)
+    fail('lock-inspect-claim','active lock claim identity does not match');
+  validateClaimsDirectory(claim.claimsDir,claim.claimsIdentity,runtime.fsApi);
+  const ticketName=path.basename(claim.ticketPath);
+  const claimsBefore=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+    'lock-inspect-children');
+  const lockBefore=stableDirectorySnapshot(lockCapability.path,
+    ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+  if(canonicalJson(immutableOwnedLockSnapshot(claimsBefore,lockBefore))!==
+    canonicalJson(active.identitySnapshot))
+    fail('lock-inspect-claim','owned lock child identity changed before inspection');
+  const chain=readCanonicalClaim(lockCapability.path,claim.claimsDir,targetIdentity,runtime.fsApi);
+  if(chain.core.nonce!==claim.core.nonce||chain.core.pid!==claim.core.pid||
+      chain.core.processIdentity!==claim.core.processIdentity||
+      !sameBytes(chain.ticketBytes,claim.ticketBytes)||
+      !sameBytes(chain.ownerBytes,claim.ownerBytes))
+    fail('lock-inspect-claim','canonical lock chain is not the active callback claim');
+  const claimsAfter=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+    'lock-inspect-children');
+  const lockAfter=stableDirectorySnapshot(lockCapability.path,
+    ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+  const afterChain=readCanonicalClaim(lockCapability.path,claim.claimsDir,targetIdentity,
+    runtime.fsApi);
+  if(canonicalJson(claimsBefore)!==canonicalJson(claimsAfter)||
+      canonicalJson(lockBefore)!==canonicalJson(lockAfter)||
+      !sameBytes(chain.ticketBytes,afterChain.ticketBytes)||
+      !sameBytes(chain.ownerBytes,afterChain.ownerBytes)||
+      !sameBytes(chain.heartbeatBytes,afterChain.heartbeatBytes))
+    fail('lock-inspect-unstable','owned lock claim changed during inspection');
+  const claimSha256=sha256(Buffer.concat([
+    Buffer.from('owned-directory-claim-v1\0'),
+    Buffer.from(canonicalJson(chain.core)),chain.ticketBytes,chain.ownerBytes,chain.heartbeatBytes,
+    Buffer.from(canonicalJson({claims:claimsBefore,lock:lockBefore})),
+  ]));
+  return Object.freeze({target_identity:targetIdentity,pid:chain.core.pid,
+    process_identity:chain.core.processIdentity,nonce:chain.core.nonce,
+    claim_sha256:claimSha256});
+}
+
+function inspectOwnedDirectoryClaim(lockCapability, claimToken) {
+  return inspectOwnedDirectoryClaimRuntime(lockCapability,claimToken,defaultRuntime());
+}
+
 function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
   if (typeof callback !== 'function') fail('lock-callback-invalid', 'lock callback must be a function');
   const claim = acquireDirectoryClaim(lockCapability, options, runtime);
@@ -3061,14 +3238,33 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
   updateOwnedHeartbeat(lockCapability, claim, runtime);
   reachLockTestSeam(runtime, 'after-first-heartbeat',
     {ticketPath:claim.ticketPath, lockPath:lockCapability.path, core:claim.core});
+  let identitySnapshot=null;
+  if(options.inspectable===true){
+    try{
+      const ticketName=path.basename(claim.ticketPath);
+      const initialClaimsSnapshot=stableDirectorySnapshot(claim.claimsDir,[ticketName],runtime.fsApi,
+        'lock-inspect-children');
+      const initialLockSnapshot=stableDirectorySnapshot(lockCapability.path,
+        ['heartbeat.json','owner.json'],runtime.fsApi,'lock-inspect-children');
+      identitySnapshot=immutableOwnedLockSnapshot(initialClaimsSnapshot,initialLockSnapshot);
+    }catch(error){
+      try{releaseDirectoryClaim(lockCapability,claim,runtime);}
+      catch(releaseError){throw releaseError;}
+      throw error;
+    }
+  }
   let heartbeatFailure = null;
   const timer = setInterval(() => {
     try { updateOwnedHeartbeat(lockCapability, claim, runtime); }
     catch (error) { heartbeatFailure = error; clearInterval(timer); }
   }, options.heartbeatMs);
   timer.unref?.();
+  const claimToken=Object.freeze({});
+  ownedDirectoryClaimTokens.set(claimToken,
+    {claim,runtime,identitySnapshot,inspectable:options.inspectable===true});
   const finish = (kind, value) => {
     clearInterval(timer);
+    ownedDirectoryClaimTokens.delete(claimToken);
     let releaseError;
     try { releaseDirectoryClaim(lockCapability, claim, runtime); }
     catch (error) { releaseError = error; }
@@ -3078,7 +3274,7 @@ function withDirectoryLockRuntime(lockCapability, options, callback, runtime) {
     return value;
   };
   let result;
-  try { result = callback(); }
+  try { result = callback(claimToken); }
   catch (error) { return finish('throw', error); }
   if (result && typeof result.then === 'function') {
     return Promise.resolve(result).then((value) => finish('return', value),
@@ -3354,6 +3550,8 @@ function createPlatformRuntimeForTest(options = {}) {
       atomicWriteWithFs(capability, data, writeOptions, runtime.fsApi),
     withDirectoryLock:(capability, lockOptions, callback) =>
       withDirectoryLockRuntime(capability, lockOptions, callback, runtime),
+    inspectOwnedDirectoryClaim:(capability, claim) =>
+      inspectOwnedDirectoryClaimRuntime(capability, claim, runtime),
     mutateFileWithPendingOperations:(capability, mutationOptions) =>
       mutateWithRuntime(capability, mutationOptions, runtime),
     drainPendingOperations:(capability, drainOptions) =>
@@ -3396,6 +3594,8 @@ module.exports = {
   sanitizePathInput,
   canonicalizePortableProjectPathV1,
   parseGitWorktreePorcelainZ,
+  resolveGitExecutable,
+  safeGitEnvironment,
   resolveProjectRoot,
   normalizeForCompare,
   isPathInside,
@@ -3420,6 +3620,7 @@ module.exports = {
   compareRemoveOwnedTemp,
   consumeFinalizedReceiptPayload,
   withDirectoryLock,
+  inspectOwnedDirectoryClaim,
   mutateFileWithPendingOperations,
   appendJsonLineLocked,
   drainPendingOperations,

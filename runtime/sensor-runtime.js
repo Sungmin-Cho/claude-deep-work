@@ -118,18 +118,21 @@ async function contextualize(result,context,project){if(!context)return result;c
   if(state.current_phase!=='implement'||state.active_slice!==context.sliceId||!cycle||
       cycle.writeOperationId!==context.afterWriteOperationId)fail('sensor-refactor-cycle');
   const plan=JSON.parse(transaction.readSessionFile(context.planCapability));const planSha256=sha256(canonicalJson(plan));
+  const planAuthoritySha256=plan.plan_authority_sha256||null;
   if(!(plan.slices||[]).some((row)=>row.id===context.sliceId))fail('sensor-plan');const operation=await beginOperation({
     projectCapability:project,sessionId,kind:'sensor-run',slice:context.sliceId,preconditions:{kind:result.kind,planSha256,
-      sliceId:context.sliceId,afterWriteOperationId:context.afterWriteOperationId}});await recordOperationStage(operation,'before-call',
+      planAuthoritySha256,sliceId:context.sliceId,afterWriteOperationId:context.afterWriteOperationId}});await recordOperationStage(operation,'before-call',
       {owned:{kind:result.kind}});await recordOperationStage(operation,'after-call-before-stage',{owned:{status:result.status}});
-  const canonical={...result,sessionId,planSha256,sliceId:context.sliceId,afterWriteOperationId:context.afterWriteOperationId};
+  const canonical={...result,sessionId,planSha256,planAuthoritySha256,
+    sliceId:context.sliceId,afterWriteOperationId:context.afterWriteOperationId};
   const resultSha256=sha256(canonicalJson(canonical));const target=path.join(project.path,'.claude',
     `deep-work.${sessionId}.sensor.${operation.operationId}.json`);const cap=issueProjectStateCapability(project.path,target,
       {allowMissingLeaf:true,role:'state'});atomicWriteFile(cap,canonicalJson(canonical));await recordOperationStage(operation,'result-published',
       {owned:{path:target,resultSha256}});await recordOperationStage(operation,'after-stage',{owned:{path:target,resultSha256}});
   const receipt=await completeOperation(operation,{status:'completed',resultPath:target,resultSha256,kind:result.kind,
-    sensorStatus:result.status,planSha256,sliceId:context.sliceId,afterWriteOperationId:context.afterWriteOperationId});return{...result,
-    operationId:operation.operationId,resultSha256,planSha256,sliceId:context.sliceId,
+    sensorStatus:result.status,planSha256,planAuthoritySha256,sliceId:context.sliceId,
+    afterWriteOperationId:context.afterWriteOperationId});return{...result,
+    operationId:operation.operationId,resultSha256,planSha256,planAuthoritySha256,sliceId:context.sliceId,
     afterWriteOperationId:context.afterWriteOperationId,resultCapability:cap,operationReceipt:receipt};}
 function aggregateSensorResults(rows){if(!Array.isArray(rows)||!rows.length)fail('sensor-aggregate');const normalized=rows.map((row)=>{
   if(!/^op-[0-9a-f]{32,64}$/.test(row.operationId||'')||!/^[0-9a-f]{64}$/.test(row.resultSha256||'')||!KINDS.has(row.kind))

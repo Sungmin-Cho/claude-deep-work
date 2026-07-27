@@ -121,7 +121,7 @@ function terminateWindowsTree(pid, {systemRoot, spawnImpl = childProcess.spawn, 
   });
 }
 
-function collectChild(child, {timeoutMs, maxOutputBytes, terminate}) {
+function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = false}) {
   return new Promise((resolve, reject) => {
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
@@ -181,8 +181,10 @@ function collectChild(child, {timeoutMs, maxOutputBytes, terminate}) {
           ok:code === 0 && !timedOut && !outputOverflow,
           exitCode:code,
           signal,
-          stdout:stdout.subarray(0, maxOutputBytes).toString('utf8'),
-          stderr:stderr.subarray(0, maxOutputBytes).toString('utf8'),
+          stdout:rawOutput ? Buffer.from(stdout.subarray(0, maxOutputBytes)) :
+            stdout.subarray(0, maxOutputBytes).toString('utf8'),
+          stderr:rawOutput ? Buffer.from(stderr.subarray(0, maxOutputBytes)) :
+            stderr.subarray(0, maxOutputBytes).toString('utf8'),
           timedOut,
           outputOverflow,
           error:timedOut ? {code:'process-timeout', message:'process timed out'} : overflowError,
@@ -210,6 +212,7 @@ async function runPosix(spec, options) {
   return collectChild(child, {
     timeoutMs:options.timeoutMs,
     maxOutputBytes:options.maxOutputBytes,
+    rawOutput:options.rawOutput,
     terminate:() => (options.terminationImpl
       ? options.terminationImpl({platform:options.platform, pid:child.pid, child})
       : terminatePosixGroup(child.pid)),
@@ -226,21 +229,23 @@ async function runWindows(spec, options) {
     return collectChild(child, {
       timeoutMs:options.timeoutMs,
       maxOutputBytes:options.maxOutputBytes,
+      rawOutput:options.rawOutput,
       terminate:() => options.terminationImpl
         ? options.terminationImpl({platform:'win32', pid:child.pid, child, knownPids:[child.pid]})
-        : terminateWindowsTree(child.pid, {systemRoot:options.env.SystemRoot || options.env.SYSTEMROOT,
+        : terminateWindowsTree(child.pid, {systemRoot:options.supervisorEnv.SystemRoot ||
+          options.supervisorEnv.SYSTEMROOT,
           knownPids:[child.pid]}),
     });
   }
 
   const supervisor = childProcess.fork(__filename, ['--windows-supervisor'], {
     cwd:options.cwd,
-    env:options.env,
+    env:options.supervisorEnv,
     windowsHide:true,
     detached:false,
     silent:true,
   });
-  supervisor.send({type:'start', spec,
+  supervisor.send({type:'start', spec, childEnv:options.env,
     input:options.input === undefined ? null : Buffer.from(options.input).toString('base64')});
   return new Promise((resolve, reject) => {
     let stdout = Buffer.alloc(0);
@@ -264,7 +269,7 @@ async function runWindows(spec, options) {
       ? options.terminationImpl({platform:'win32', pid:supervisor.pid, child:supervisor,
         knownPids:[...knownPids]})
       : terminateWindowsTree(supervisor.pid, {
-        systemRoot:options.env.SystemRoot || options.env.SYSTEMROOT,
+        systemRoot:options.supervisorEnv.SystemRoot || options.supervisorEnv.SYSTEMROOT,
         knownPids:[...knownPids],
       });
     const awaitOutputStreams = () => new Promise((resolveOutput, rejectOutput) => {
@@ -305,8 +310,10 @@ async function runWindows(spec, options) {
           ok:reason === 'normal' && toolResult && toolResult.exitCode === 0,
           exitCode:toolResult ? toolResult.exitCode : null,
           signal:toolResult ? toolResult.signal : null,
-          stdout:stdout.subarray(0, options.maxOutputBytes).toString('utf8'),
-          stderr:stderr.subarray(0, options.maxOutputBytes).toString('utf8'),
+          stdout:options.rawOutput ? Buffer.from(stdout.subarray(0, options.maxOutputBytes)) :
+            stdout.subarray(0, options.maxOutputBytes).toString('utf8'),
+          stderr:options.rawOutput ? Buffer.from(stderr.subarray(0, options.maxOutputBytes)) :
+            stderr.subarray(0, options.maxOutputBytes).toString('utf8'),
           timedOut,
           outputOverflow,
           error:timedOut ? {code:'process-timeout', message:'process timed out'}
@@ -382,6 +389,9 @@ async function runSupervisedProcess(spec, options = {}) {
     ...options,
     platform,
     env:Object.freeze(options.env === undefined ? {...process.env} : {...options.env}),
+    supervisorEnv:Object.freeze(options.supervisorEnv === undefined
+      ? (options.env === undefined ? {...process.env} : {...options.env})
+      : {...options.supervisorEnv}),
     timeoutMs:options.timeoutMs === undefined ? 30_000 : options.timeoutMs,
     maxOutputBytes:options.maxOutputBytes === undefined ? 16_777_216 : options.maxOutputBytes,
     input:options.input,
@@ -399,6 +409,7 @@ if (process.argv[2] === '--windows-supervisor') {
     if (!message || message.type !== 'start') process.exit(70);
     const child = childProcess.spawn(message.spec.executable, message.spec.args, {
       shell:false, detached:false, windowsHide:true,
+      env:message.childEnv,
       stdio:[message.input === null ? 'ignore' : 'pipe','pipe','pipe'],
     });
     process.send?.({type:'tool-started', pid:child.pid});

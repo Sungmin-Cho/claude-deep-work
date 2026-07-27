@@ -211,12 +211,12 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 6.13.1 with 6.9.0 feature docs intact', () => {
-    // 6.13.1 is a patch release (Windows-portable Codex hooks): the three
-    // manifests track the current version, while the README "What's New" and
+  it('active release metadata is bumped to 6.14.0 with 6.9.0 feature docs intact', () => {
+    // 6.14.0 is a feature release (correct RED and governed completion): the
+    // three manifests track the current version, while the README "What's New" and
     // the deep-memory CHANGELOG attributions stay pinned to the prior feature
-    // release (6.9.0), which this patch does not rewrite.
-    const version = '6.13.1';        // current release — manifests
+    // release (6.9.0), which this release does not rewrite.
+    const version = '6.14.0';        // current release — manifests
     const featureVersion = '6.9.0';  // last feature release — README highlight + deep-memory notes
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -231,13 +231,17 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (6.13.1) — Windows-portable Codex hooks.
+    // Current release (6.14.0) — correct RED and governed completion.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.ok(changelogCurrent.includes('hooks/scripts/hook-runtime-portability.test.js'),
-      'CHANGELOG.md 6.13.1 section must cite the hook portability regression test');
-    assert.ok(changelogKoCurrent.includes('hooks/scripts/hook-runtime-portability.test.js'),
-      'CHANGELOG.ko.md 6.13.1 section must cite the hook portability regression test');
+    assert.match(changelogCurrent,/Authenticated correct RED/);
+    assert.match(changelogCurrent,/Governed functional completion/);
+    assert.match(changelogKoCurrent,/인증된 correct RED/);
+    assert.match(changelogKoCurrent,/Governed functional completion/);
+    assert.ok(releaseSection(changelog, '6.13.1').includes('hooks/scripts/hook-runtime-portability.test.js'),
+      'CHANGELOG.md 6.13.1 section must retain the hook portability regression test');
+    assert.ok(releaseSection(changelogKo, '6.13.1').includes('hooks/scripts/hook-runtime-portability.test.js'),
+      'CHANGELOG.ko.md 6.13.1 section must retain the hook portability regression test');
     // The prior release (6.10.0) section stays intact with its own model-catalog
     // citation; the 6.12.0 promotion must not clobber or absorb it.
     assert.ok(releaseSection(changelog, '6.10.0').includes('runtime/model-catalog.js'),

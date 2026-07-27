@@ -57,7 +57,7 @@ function deriveTddTrace({plan,target,sliceId,expectedOutcome}={}){
     negative_test_ids:byteSort(contract.negative_tests||[]),gate_id:gateId,
     contract_spec_sha256:plan.contract_binding?.spec_contract?.spec_sha256||null};
 }
-function resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expectedOutcome}={}){
+async function resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expectedOutcome}={}){
   const expectedClass=state?.tdd_state==='PENDING'&&expectedOutcome==='must-fail'?'failing-test':
     state?.tdd_state==='RED_VERIFIED'&&expectedOutcome==='must-pass'?'production':
     state?.tdd_state==='REFACTOR_PENDING'&&expectedOutcome==='must-pass'?'refactor':null;
@@ -69,13 +69,17 @@ function resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expected
     `deep-work.${sessionId}.scoped-write.${operationId}.json`);const cap=platform.issueProjectStateCapability(
       stateCapability.projectRoot,target,{role:'state'});platform.revalidatePathCapability(cap,'verification-write-receipt');
   let receipt;try{receipt=JSON.parse(fs.readFileSync(target,'utf8'));}catch{fail('verification-write-receipt');}
-  const recomputed=sha256(canonicalJson({operationId,postManifestSha256:receipt.postManifest?.sha256,
-    changedPaths:receipt.changedPaths,planSha256:receipt.planSha256,sliceId,writeClass:receipt.writeClass}));
+  const scopedWrite=require('./slice-runtime.js');
+  try{scopedWrite.validateAcceptedScopedWriteReceipt(receipt,{operationId,sliceId});}
+  catch{fail('verification-write-receipt');}
+  const recomputed=scopedWrite.scopedWriteReceiptDigest(receipt);
   if(receipt.status!=='accepted'||receipt.operationId!==operationId||receipt.sliceId!==sliceId||
       receipt.writeClass!==expectedClass||receipt.planSha256!==planSha256||receipt.receiptSha256!==receiptSha256||
       recomputed!==receiptSha256||!receipt.preManifest?.sha256||!receipt.postManifest?.sha256) {
     fail('verification-write-receipt');
   }
+  try{await scopedWrite.authenticateScopedWriteProducer({stateCapability,receipt});}
+  catch{fail('verification-write-producer-ledger');}
   return {operationId,receiptSha256,writeClass:expectedClass,receipt,cap};
 }
 async function executeVerificationInMemory({checked,expectedOutcome,cwd,toolchainCapability,enforceOutcome=true}){const resolved=await resolveExecutable(checked.executable,checked.args,cwd,toolchainCapability);
@@ -105,7 +109,7 @@ async function runVerification(args={}){if(args.strictSpec===true)fail('strict-s
   if(!target)fail('verification-plan');if(target.verification_spec&&canonicalJson(validateVerificationSpec(target.verification_spec))!==canonicalJson(checked))
     fail('verification-spec-identity');const project=transaction.projectCapabilityFor(stateCapability);
   const trace=sliceId?deriveTddTrace({plan,target,sliceId,expectedOutcome}):null;
-  const planSha256=sha256(canonicalJson(plan));const write=sliceId?resolveAcceptedWrite({stateCapability,state,planSha256,
+  const planSha256=sha256(canonicalJson(plan));const write=sliceId?await resolveAcceptedWrite({stateCapability,state,planSha256,
     sliceId,expectedOutcome}):null;const operation=await beginOperation({projectCapability:project,sessionId,kind:'verification-run',slice:sliceId,
     preconditions:{planSha256,specSha256:sha256(canonicalJson(checked)),sliceId:sliceId||null,gateId:gateId||null,expectedOutcome,
       writeOperationId:write?.operationId||null,writeReceiptSha256:write?.receiptSha256||null}});
@@ -166,7 +170,7 @@ async function authenticateVerificationResult({stateCapability,planCapability,pl
   if(expectedOutcome==='must-pass'&&result.exit_code!==0)fail('verification-result-outcome');
   if(expectedOutcome==='must-fail'&&(result.exit_code===0||!`${result.stdout}\n${result.stderr}`.includes(checked.red_failure_literal)))
     fail('verification-result-outcome');
-  const write=resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expectedOutcome});
+  const write=await resolveAcceptedWrite({stateCapability,state,planSha256,sliceId,expectedOutcome});
   if(result.write_operation_id!==write.operationId||result.write_receipt_sha256!==write.receiptSha256||
       receipt.result.writeOperationId!==write.operationId||receipt.result.writeReceiptSha256!==write.receiptSha256)
     fail('verification-result-write');

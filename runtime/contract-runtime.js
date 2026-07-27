@@ -49,6 +49,14 @@ function digest(value) {
   return crypto.createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
+function semanticDigest(label,value,omitted) {
+  const copy=structuredClone(value);
+  if(omitted)delete copy[omitted];
+  return crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from(`${label}\0`),Buffer.from(canonicalJson(copy)),
+  ])).digest('hex');
+}
+
 function issue(code, path, message = code) {
   return { code, path, message };
 }
@@ -128,9 +136,11 @@ function specContractDigest(contract) {
 function buildSpecIndex(contract) {
   return {
     requirements: new Set((contract.requirements || []).map((row) => row.id)),
+    requirementRows: structuredClone(contract.requirements || []),
     invariants: new Set((contract.invariants || []).map((row) => row.id)),
     failureModes: new Set((contract.failure_matrix || []).map((row) => row.id)),
     negativeTests: new Set((contract.negative_tests || []).map((row) => row.id)),
+    compatibility: structuredClone(contract.compatibility || {}),
   };
 }
 
@@ -335,6 +345,95 @@ function parseInlineObject(raw, path) {
   return out;
 }
 
+function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplete=false,
+  expectedBackwardCompat,expectedMigration,expectedRequirementIds,expectedSliceIds}={}) {
+  const keys=['schema_version','authority','destructive','external_action','has_backward_compat','has_migration',
+    'host_dependent','source_requirement_ids','source_slice_ids','facts_sha256'];
+  if(!exactKeyBoolean(value,keys)||value.schema_version!==1||value.authority!=='reviewed-plan'||
+      ['destructive','external_action','has_backward_compat','has_migration','host_dependent']
+        .some((key)=>typeof value[key]!=='boolean')||value.destructive||value.external_action||
+      !Array.isArray(value.source_requirement_ids)||!value.source_requirement_ids.length||
+      !Array.isArray(value.source_slice_ids)||!value.source_slice_ids.length||
+      canonicalJson(value.source_requirement_ids)!==canonicalJson(byteSort(value.source_requirement_ids))||
+      canonicalJson(value.source_slice_ids)!==canonicalJson(byteSort(value.source_slice_ids))||
+      new Set(value.source_requirement_ids).size!==value.source_requirement_ids.length||
+      new Set(value.source_slice_ids).size!==value.source_slice_ids.length||
+      value.source_requirement_ids.some((id)=>!ID_PATTERNS.requirement.test(id))||
+      value.source_slice_ids.some((id)=>!ID_PATTERNS.slice.test(id))||
+      !/^[0-9a-f]{64}$/.test(value.facts_sha256||''))
+    fail('capability-facts-schema','capability_facts');
+  if(requirementIds&&value.source_requirement_ids.some((id)=>!requirementIds.has(id)))
+    fail('capability-facts-requirement','capability_facts');
+  if(sliceIds&&value.source_slice_ids.some((id)=>!sliceIds.has(id)))
+    fail('capability-facts-slice','capability_facts');
+  const requiredRequirements=expectedRequirementIds===undefined?null:
+    byteSort([...(expectedRequirementIds||[])]);
+  const requiredSlices=expectedSliceIds===undefined?null:byteSort([...(expectedSliceIds||[])]);
+  if((expectedBackwardCompat!==undefined&&
+      value.has_backward_compat!==expectedBackwardCompat)||
+    (expectedMigration!==undefined&&value.has_migration!==expectedMigration)||
+    (requiredRequirements!==null&&canonicalJson(value.source_requirement_ids)!==
+      canonicalJson(requiredRequirements))||
+    (requiredSlices!==null&&canonicalJson(value.source_slice_ids)!==canonicalJson(requiredSlices))||
+    (requireComplete&&expectedBackwardCompat===undefined&&expectedMigration===undefined&&
+      (value.has_backward_compat!==true||value.has_migration!==true||
+       canonicalJson(value.source_requirement_ids)!==canonicalJson(byteSort([...(requirementIds||[])]))||
+       canonicalJson(value.source_slice_ids)!==canonicalJson(byteSort([...(sliceIds||[])])))))
+    fail('capability-facts-incomplete','capability_facts');
+  const factsPreimage=structuredClone(value);delete factsPreimage.facts_sha256;
+  const factsDigest=crypto.createHash('sha256').update(Buffer.concat([
+    Buffer.from('capability-facts-v1\0'),
+    Buffer.from(require('./operation-journal.js').canonicalJson(factsPreimage)),
+  ])).digest('hex');
+  if(factsDigest!==value.facts_sha256)
+    fail('capability-facts-digest','capability_facts');
+  return canonicalize(value);
+}
+
+function validateVerificationSpecV2(value) {
+  const keys=['schema_version','executable','args','cwd_role','timeout_ms','max_output_bytes','environment','red_failure'];
+  if(!exactKeyBoolean(value,keys)||value.schema_version!==2||value.cwd_role!=='worktree'||
+      !Number.isInteger(value.timeout_ms)||value.timeout_ms<100||value.timeout_ms>120000||
+      !Number.isInteger(value.max_output_bytes)||value.max_output_bytes<1024||value.max_output_bytes>1048576)
+    fail('verification-spec-v2-schema','verification_spec');
+  if(!exactKeyBoolean(value.executable,['kind','name','supported_patches_sha256'])||
+      value.executable.kind!=='node-toolchain'||value.executable.name!=='node'||
+      !/^[0-9a-f]{64}$/.test(value.executable.supported_patches_sha256||''))
+    fail('verification-spec-v2-executable','verification_spec.executable');
+  if(!Array.isArray(value.args)||value.args.length!==4||value.args[0]!=='--test'||
+      value.args[1]!=='--test-reporter=tap'||value.args[2]!=='--'||
+      typeof value.args[3]!=='string'||!value.args[3]||value.args[3].startsWith('-')||
+      value.args[3].startsWith('/')||value.args[3].includes('\\')||
+      value.args[3].split('/').some((part)=>!part||part==='.'||part==='..'))
+    fail('verification-spec-v2-argv','verification_spec.args');
+  if(!exactKeyBoolean(value.environment,['mode','values'])||value.environment.mode!=='closed'||
+      !exactKeyBoolean(value.environment.values,['LANG','LC_ALL','TZ'])||
+      canonicalJson(value.environment.values)!==canonicalJson({LANG:'C',LC_ALL:'C',TZ:'UTC'}))
+    fail('verification-spec-v2-environment','verification_spec.environment');
+  const red=value.red_failure;
+  if(!exactKeyBoolean(red,['adapter','adapter_version','expected_class','expected_signal'])||
+      red.adapter!=='node-test-tap'||red.adapter_version!==1||red.expected_class!=='expected-failure')
+    fail('verification-spec-v2-red','verification_spec.red_failure');
+  const signal=red.expected_signal;
+  const assertionOperators=new Set(['strictEqual','deepStrictEqual','notStrictEqual',
+    'notDeepStrictEqual','match','doesNotMatch','throws','rejects']);
+  const signalKindOperatorValid=signal?.kind==='assertion'?
+    assertionOperators.has(signal?.operator):
+    signal?.kind==='contract'&&signal?.operator==='contract';
+  if(!exactKeyBoolean(signal,['kind','operator','test_identity','expected_digest','actual_digest','message_pattern'])||
+      !signalKindOperatorValid||
+      !exactKeyBoolean(signal.test_identity,['test_file','test_name','start_line'])||
+      signal.test_identity.test_file!==value.args[3]||typeof signal.test_identity.test_name!=='string'||
+      !signal.test_identity.test_name.trim()||!Number.isInteger(signal.test_identity.start_line)||
+      signal.test_identity.start_line<1||typeof signal.message_pattern!=='string'||
+      !signal.message_pattern.trim()||
+      signal.message_pattern!==signal.message_pattern.replaceAll('\r\n','\n').normalize('NFC')||
+      ![signal.expected_digest,signal.actual_digest].some((item)=>/^[0-9a-f]{64}$/.test(item||''))||
+      [signal.expected_digest,signal.actual_digest].some((item)=>item!==null&&!/^[0-9a-f]{64}$/.test(item||'')))
+    fail('verification-spec-v2-signal','verification_spec.red_failure.expected_signal');
+  return canonicalize(value);
+}
+
 function validateSliceContract(slice, context = {}) {
   if (!isObject(slice)) fail('slice-contract-type', 'slice');
   if (!ID_PATTERNS.slice.test(slice.id || '')) fail('slice-contract-id', 'id');
@@ -360,6 +459,20 @@ function validateSliceContract(slice, context = {}) {
       fail('slice-contract-rollback', 'rollback');
     }
     if (!REVIEW_POLICIES.has(slice.review_policy)) fail('slice-contract-review-policy', 'review_policy');
+    if(slice.slice_kind!==undefined){
+      if(!['functional','release-verification'].includes(slice.slice_kind))
+        fail('slice-kind','slice_kind');
+      if(slice.slice_kind==='functional'){
+        validateVerificationSpecV2(slice.verification_spec);
+        if(slice.verification_scope!==undefined||slice.release_gate_ids!==undefined)
+          fail('functional-release-fields','slice_kind');
+      }else{
+        if(slice.verification_spec!==null)fail('release-verification-spec','verification_spec');
+        if(slice.files.length||slice.failing_test!=='none'||!Array.isArray(slice.verification_scope)||
+            !slice.verification_scope.length||!Array.isArray(slice.release_gate_ids)||!slice.release_gate_ids.length)
+          fail('release-verification-scope','slice_kind');
+      }
+    }
   }
   const index = context.specIndex;
   if (index) {
@@ -392,6 +505,8 @@ function parsePlanContractMarkdown(source, context = {}) {
   const checklistBody = nextHeading ? checklistTail.slice(0, nextHeading.index) : checklistTail;
   const bindingSection = normalized.match(/^##\s+Spec\s+Contract\s+Binding\s*$([\s\S]*?)(?=^##\s+)/m);
   let binding = null;
+  let capabilityFacts = null;
+  let replanEpoch = null;
   if (bindingSection) {
     const fences = [...bindingSection[1].matchAll(/^```json\s*\n([\s\S]*?)^```\s*$/gm)];
     if (fences.length !== 1) fail('plan-binding-fence-count', context.path || 'plan.md');
@@ -399,6 +514,23 @@ function parsePlanContractMarkdown(source, context = {}) {
     const expected = ['schema_version', 'mode', 'created_by_version', 'spec_contract', 'risk_profile_sha256'];
     if (!exactKeyBoolean(binding, expected) || binding.schema_version !== 1 || binding.mode !== 'strict-spec') {
       fail('plan-binding-schema', 'binding');
+    }
+  }
+  if(binding){
+    const capabilityRows=[...normalized.matchAll(/^capability_facts:\s*(\{.*\})\s*$/gm)];
+    const replanRows=[...normalized.matchAll(/^replan_epoch:\s*(\S+)\s*$/gm)];
+    const v614=require('./verification-policy-runtime.js').isAtLeast614(
+      binding.created_by_version);
+    if(capabilityRows.length>1||replanRows.length>1||v614&&capabilityRows.length!==1)
+      fail('plan-carrier-count',context.path||'plan.md');
+    if(capabilityRows.length){
+      try{capabilityFacts=JSON.parse(capabilityRows[0][1]);}catch(error){
+        fail('capability-facts-json','capability_facts',error.message);
+      }
+    }
+    if(replanRows.length){
+      replanEpoch=replanRows[0][1]==='null'?null:replanRows[0][1];
+      if(replanEpoch!==null&&!/^[0-9a-f]{64}$/.test(replanEpoch))fail('replan-epoch','replan_epoch');
     }
   }
   const body = checklistBody;
@@ -414,6 +546,11 @@ function parsePlanContractMarkdown(source, context = {}) {
     const slice = {
       id: entry.id,
       goal: entry.goal,
+      ...(field(block,'slice_kind')?{
+        slice_kind:field(block,'slice_kind'),
+        verification_spec:field(block,'verification_spec')==='null'?null:
+          validateVerificationSpecV2(parseInlineObject(field(block,'verification_spec'),`${entry.id}.verification_spec`)),
+      }:{}),
       outcome: field(block, 'outcome'),
       files,
       depends_on: parseList(field(block, 'depends_on') || '[]', `${entry.id}.depends_on`),
@@ -437,10 +574,27 @@ function parsePlanContractMarkdown(source, context = {}) {
       size: field(block, 'size'),
       steps: parseSteps(block),
     };
+    if(slice.slice_kind==='release-verification'){
+      slice.verification_scope=parseList(field(block,'verification_scope')||'[]',`${entry.id}.verification_scope`);
+      slice.release_gate_ids=parseList(field(block,'release_gate_ids')||'[]',`${entry.id}.release_gate_ids`);
+    }
     return validateSliceContract(slice, { specIndex: context.specIndex, legacy: false });
   });
   if (new Set(slices.map((slice) => slice.id)).size !== slices.length) fail('plan-duplicate-slice', 'slices');
-  return canonicalize({ binding, slices });
+  if(capabilityFacts)capabilityFacts=validateCapabilityFactsV1(capabilityFacts,{
+    requirementIds:context.specIndex?.requirements,sliceIds:new Set(slices.map((slice)=>slice.id)),
+    ...(require('./verification-policy-runtime.js').isAtLeast614(
+      binding?.created_by_version)?{
+        expectedBackwardCompat:Object.hasOwn(context.specIndex?.compatibility||{},'legacy_inputs'),
+        expectedMigration:Object.hasOwn(context.specIndex?.compatibility||{},'migration'),
+        expectedRequirementIds:(context.specIndex?.requirementRows||[])
+          .filter((row)=>(row.evidence_gate_ids||[]).some((id)=>
+            ['GATE-backward-compat','GATE-migration-dry-run'].includes(id)))
+          .map((row)=>row.id),
+        expectedSliceIds:slices.filter((slice)=>slice.slice_kind==='release-verification')
+          .map((slice)=>slice.id),
+      }:{})});
+  return canonicalize({ binding, ...(binding&&capabilityFacts?{capability_facts:capabilityFacts,replan_epoch:replanEpoch}:{}), slices });
 }
 
 function exactKeyBoolean(value, expected) {
@@ -455,6 +609,8 @@ module.exports = {
   parsePlanContractMarkdown,
   validateSpecContract,
   validateSliceContract,
+  validateCapabilityFactsV1,
+  validateVerificationSpecV2,
   computeRequirementCoverage,
   computeFailureMatrixCoverage,
   specContractDigest,

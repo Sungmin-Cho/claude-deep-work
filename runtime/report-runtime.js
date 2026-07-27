@@ -19,9 +19,17 @@ function bound(stateCapability){const state=transaction.readState(stateCapabilit
     projectCapability:transaction.projectCapabilityFor(stateCapability)};}
 function resolveReceipts(input){if(input?.stateCapability)return bound(input.stateCapability).receiptsDir;
   if(typeof input?.receiptsDir!=='string')fail('receipt-directory');return input.receiptsDir;}
-function readReceiptDashboard(input){const receiptsDir=resolveReceipts(input);return files(receiptsDir).map((name)=>{const row=payload(readBoundedJson(path.join(receiptsDir,name)));
+function governedProjection(input){if(!input?.stateCapability)return null;
+  const loaded=require('./governed-context-runtime.js').loadGovernedContext({
+    stateCapability:input.stateCapability});
+  return loaded.plan?.contract_binding?.mode==='strict-spec'?loaded:null;}
+function readReceiptDashboard(input){const governed=governedProjection(input);
+  if(governed)return governed.projection;
+  const receiptsDir=resolveReceipts(input);return files(receiptsDir).map((name)=>{const row=payload(readBoundedJson(path.join(receiptsDir,name)));
   if(!row||typeof row!=='object')fail('receipt-schema');return {slice_id:row.slice_id||path.basename(name,'.json'),status:row.status||'unknown'};});}
-function readReceiptDetail(input){if(!/^SLICE-\d{3}$/.test(input?.sliceId||''))fail('slice-identity');const receiptsDir=resolveReceipts(input);
+function readReceiptDetail(input){if(!/^SLICE-\d{3}$/.test(input?.sliceId||''))fail('slice-identity');
+  const governed=governedProjection(input);if(governed)return governed.projection;
+  const receiptsDir=resolveReceipts(input);
   return payload(readBoundedJson(path.join(receiptsDir,`${input.sliceId}.json`)));}
 function readSessionHistory(input){const projectRoot=typeof input==='string'?input:input?.path;if(typeof projectRoot!=='string')fail('history-project');
   const root=path.join(projectRoot,'.deep-work','history');if(!fs.existsSync(root))return[];return fs.readdirSync(root)
@@ -30,6 +38,10 @@ function renderExport(receiptsDir,format){if(!['json','md','ci'].includes(format
   .map((name)=>readBoundedJson(path.join(receiptsDir,name)));if(format==='ci')return `${JSON.stringify(rows,null,2)}\n`;
   const bodies=rows.map(payload);if(format==='json')return `${JSON.stringify(bodies,null,2)}\n`;
   return bodies.map((row)=>`- ${row.slice_id}: ${row.status}`).join('\n')+'\n';}
+function renderGovernedExport(governed,format){
+  if(format==='json'||format==='ci')return governed.bytes;
+  return Buffer.concat([Buffer.from('# Governed Progress Projection\n\n```json\n'),
+    governed.bytes,Buffer.from('```\n')]);}
 function exportReceipts(input){if(!input.stateCapability)return renderExport(resolveReceipts(input),input.format);return exportReceiptsBound(input);}
 async function withOutputLocks(stateCapability,targetKey,callback){const sessionId=transaction.sessionIdFromState(stateCapability),root=
     stateCapability.projectRoot;return transaction.withRankedLocks([{rank:transaction.RANKS.session,capability:
@@ -55,14 +67,22 @@ async function publishOutput({stateCapability,kind,basename,role,derive,seam}){
 async function exportReceiptsBound(input){if(!['json','md','ci'].includes(input.format))fail('receipt-export-format');
   const names={json:'receipts-export.json',md:'receipts-export.md',ci:'receipts-export-ci.json'};
   return publishOutput({stateCapability:input.stateCapability,kind:'receipt-export',basename:names[input.format],role:'receipt-export',
-    derive:(info)=>{const sourceRows=files(info.receiptsDir).map((name)=>readBoundedJson(path.join(info.receiptsDir,name)));
+    derive:(info)=>{const governed=governedProjection(input);if(governed)return{
+      preconditions:{format:input.format,projectionSha256:governed.sha256},
+      bytes:renderGovernedExport(governed,input.format),result:{status:'exported',
+        format:input.format,projection_sha256:governed.sha256}};
+      const sourceRows=files(info.receiptsDir).map((name)=>readBoundedJson(path.join(info.receiptsDir,name)));
       return{preconditions:{format:input.format,sourceSha256:sha256(canonicalJson(sourceRows))},
         bytes:Buffer.from(renderExport(info.receiptsDir,input.format)),result:{status:'exported',format:input.format}};},seam:input.seam});}
 function renderReport(sessionId,receiptsDir){const rows=readReceiptDashboard({receiptsDir});return `# Deep Work Report\n\nSession: ${sessionId}\n\n${
   rows.map((row)=>`- ${row.slice_id}: ${row.status}`).join('\n')}\n`;}
 function generateReport(input){if(!input.stateCapability)return renderReport(input.sessionId,input.receiptsDir);return generateReportBound(input);}
 async function generateReportBound(input){return publishOutput({stateCapability:input.stateCapability,kind:'report-generate',basename:'report.md',
-    role:'report-output',derive:(info)=>{const bytes=Buffer.from(renderReport(info.sessionId,info.receiptsDir));return{
+    role:'report-output',derive:(info)=>{const governed=governedProjection(input);if(governed){const bytes=Buffer.concat([
+      Buffer.from(`# Deep Work Report\n\nSession: ${info.sessionId}\n\nProjection SHA-256: ${governed.sha256}\n\n\`\`\`json\n`),
+      governed.bytes,Buffer.from('```\n')]);return{preconditions:{projectionSha256:governed.sha256},
+        bytes,result:{status:'generated',projection_sha256:governed.sha256}};}
+      const bytes=Buffer.from(renderReport(info.sessionId,info.receiptsDir));return{
       preconditions:{sourceSha256:sha256(bytes)},bytes,result:{status:'generated'}};},seam:input.seam});}
 async function checked(run,args){const result=await run(args);if(!result?.ok)fail('report-git',result?.stderr);return result;}
 function reportStatusRows(stdout){const records=String(stdout||'').split('\0').filter(Boolean);const rows=[];

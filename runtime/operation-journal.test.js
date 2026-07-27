@@ -6,7 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { OPERATION_KINDS, beginOperation, recordOperationStage, completeOperation,
-  resumeOperation, WORKFLOW_STAGE_RULES } = require('./operation-journal.js');
+  resumeOperation, inspectExternalEffectOperationIds,
+  WORKFLOW_STAGE_RULES } = require('./operation-journal.js');
 const { issueProjectStateCapability } = require('./platform.js');
 
 function setup() {
@@ -51,6 +52,23 @@ test('journal stages and terminal ledger replay exactly once', async () => {
     kind:'registry-touch', operationId:begun.operationId, preconditions:{}}), /operation-id-complete/);
 });
 
+test('external effect index includes completed and call-started operations only',
+  async()=>{
+    const {projectCapability}=setup(),sessionId='s-aaaaaaaa';
+    const completed=await beginOperation({projectCapability,sessionId,
+      kind:'remote-push',operationId:`op-${'1'.repeat(64)}`,
+      preconditions:{remote:'origin'}});
+    await completeOperation(completed,{status:'pushed'});
+    const pending=await beginOperation({projectCapability,sessionId,
+      kind:'pull-request-create',operationId:`op-${'2'.repeat(64)}`,
+      preconditions:{remote:'origin'}});
+    assert.deepEqual(inspectExternalEffectOperationIds({projectCapability,
+      sessionId}),[completed.operationId]);
+    await recordOperationStage(pending,'before-call',{owned:{remote:'origin'}});
+    assert.deepEqual(inspectExternalEffectOperationIds({projectCapability,
+      sessionId}),[completed.operationId,pending.operationId]);
+  });
+
 test('completed ledger fails closed at capacity and preserves the oldest nonreuse tombstone', async () => {
   const {root,projectCapability}=setup();const sessionId='s-aaaaaaaa';
   const rows=Array.from({length:512},(_,index)=>({version:1,
@@ -65,4 +83,65 @@ test('completed ledger fails closed at capacity and preserves the oldest nonreus
   assert.equal(oldest.operationId,rows[0].operationId);
   await assert.rejects(()=>beginOperation({projectCapability,sessionId,kind:'registry-touch',
     operationId:rows[0].operationId,preconditions:{}}),/operation-id-complete/);
+});
+
+test('bootstrap operation kinds have closed crash-recoverable stage tables',async()=>{
+  const expected={
+    'bootstrap-abort':['prepared','authorization-authenticated','failure-authenticated',
+      'observed-manifest-authenticated','production-reverted','test-reverted','base-restored',
+      'abort-receipt-published','recovery-required-published'],
+    'bootstrap-failure-publish':['prepared','failure-published','claim-committed'],
+    'bootstrap-finalize':['prepared','authorization-authenticated','execution-authenticated',
+      'receipt-precomputed','marker-committed','receipt-published'],
+    'bootstrap-first-red':['prepared','containment-authenticated','pre-manifest-published',
+      'process-completed','post-manifest-published','result-published'],
+    'bootstrap-red-adoption':['prepared','bridge-authenticated','red-authority-adopted'],
+    'red-proof-publication':['prepared','proof-published','proof-ref-committed'],
+  };
+  for(const [kind,stages] of Object.entries(expected)){
+    assert.equal(OPERATION_KINDS.has(kind),true,kind);
+    for(const stage of stages)assert.equal(WORKFLOW_STAGE_RULES[kind].includes(stage),true,`${kind}:${stage}`);
+  }
+  const {projectCapability}=setup();
+  const begun=await beginOperation({projectCapability,sessionId:'s-aaaaaaaa',kind:'bootstrap-finalize',
+    preconditions:{authorizationSha256:'1'.repeat(64),witnessSha256:'2'.repeat(64)}});
+  await recordOperationStage(begun,'authorization-authenticated',{owned:{sha256:'1'.repeat(64)}});
+  await assert.rejects(()=>recordOperationStage(begun,'test-patch-applied'),/operation-stage-kind/);
+});
+
+test('ordinary operation journals retain LF while every bootstrap producer ledger completes once',async(t)=>{
+  const {root,projectCapability}=setup();
+  const kinds=['bootstrap-failure-publish','bootstrap-abort','bootstrap-finalize',
+    'bootstrap-first-red','bootstrap-red-adoption','red-proof-publication'];
+  for(const [index,kind] of kinds.entries()){
+    await t.test(kind,async()=>{
+      const operationId=`op-${(index+1).toString(16).repeat(64).slice(0,64)}`;
+      const begun=await beginOperation({projectCapability,sessionId:'s-aaaaaaaa',kind,operationId,
+        preconditions:{authoritySha256:String(index+1).repeat(64).slice(0,64)}});
+      const journalPath=path.join(root,'.claude',
+        `deep-work.s-aaaaaaaa.op.${kind}.${operationId}.json`);
+      assert.equal(fs.readFileSync(journalPath).at(-1),0x0a,`${kind}:journal-lf`);
+      const terminal={kind,status:'completed',operation_id:operationId};
+      const receipt=await completeOperation(begun,terminal);
+      assert.equal(receipt.stage,'completed-ledger');
+      assert.deepEqual((await resumeOperation({projectCapability,operationId,
+        sessionId:'s-aaaaaaaa',kind})).result,terminal);
+      const ledgerPath=path.join(root,'.claude','deep-work.s-aaaaaaaa.completed-operations.json');
+      assert.equal(fs.readFileSync(ledgerPath).at(-1),0x0a,`${kind}:ledger-lf`);
+      await assert.rejects(()=>beginOperation({projectCapability,sessionId:'s-aaaaaaaa',kind,
+        operationId,preconditions:{authoritySha256:'f'.repeat(64)}}),/operation-id-complete/);
+    });
+  }
+});
+
+test('bootstrap crash stages are forward-only and cannot skip into another operation branch',async()=>{
+  const {projectCapability}=setup();
+  const begun=await beginOperation({projectCapability,sessionId:'s-aaaaaaaa',
+    kind:'bootstrap-abort',preconditions:{authoritySha256:'1'.repeat(64)}});
+  await recordOperationStage(begun,'authorization-authenticated');
+  await assert.rejects(()=>recordOperationStage(begun,'base-restored'),/operation-stage-order/);
+  await recordOperationStage(begun,'failure-authenticated');
+  await recordOperationStage(begun,'observed-manifest-authenticated');
+  await recordOperationStage(begun,'recovery-required-published');
+  await assert.rejects(()=>recordOperationStage(begun,'production-reverted'),/operation-stage-order/);
 });

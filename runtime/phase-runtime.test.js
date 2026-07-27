@@ -47,10 +47,13 @@ test('spec resume does not rerun research', () => {
     expected_signal:'spec-approval-stale',gate_id:'GATE-negative-tests'}],compatibility:{legacy_inputs:'reject fresh',
     migration:'run deep-spec'},open_questions:[]};
   const specSha256=specContractDigest(contract);const approvedHash='a'.repeat(64);
+  const approvalOperationId=`op-${'9'.repeat(64)}`;
   const approved=approveSpecSubphase({state:entered,specApprovedHash:approvedHash,specContract:contract,
     specGateResult:{schema_version:1,pass:true,spec_id:'SPEC-PHASE',spec_sha256:specSha256,risk_class:'medium',
       errors:[],warnings:[],requirement_coverage:{contract:{ratio:1},execution:null},
-      failure_matrix_coverage:{contract:{ratio:null},execution:null}},at:'2026-07-22T00:01:00Z'});
+      failure_matrix_coverage:{contract:{ratio:null},execution:null}},
+    approvalOperationId,at:'2026-07-22T00:01:00Z'});
+  assert.equal(approved.spec_approval_operation_id,approvalOperationId);
   const advanced=advancePhase({state:{...approved,spec_current_sha256:approvedHash},from:'research',to:'plan',
     at:'2026-07-22T00:02:00Z'});
   assert.equal(advanced.current_phase,'plan');assert.equal(advanced.subphase,null);
