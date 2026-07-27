@@ -29,7 +29,7 @@ user-invocable: true
    `decodedRouting`/`decodedRoutingMeta`를 만든 뒤 읽는다.
 5. Verify: `current_phase` = "implement", `plan_approved` = true
 6. `implement_started_at` 기록 (ISO timestamp)
-7. Read `state.execution_override` from state YAML frontmatter (R3-W4: orchestrator §1-3-1
+7. Read `state.execution_override` from state YAML frontmatter (orchestrator §1-3-1
    already ran `scripts/parse-deep-work-flags.js` and persisted the value before this skill
    was invoked — no separate `--exec` extraction needed here):
    - `state.execution_override == "inline"` → Section 1.5 will select inline mode
@@ -56,7 +56,7 @@ Read `$WORK_DIR/plan.md` → **Slice Checklist** 파싱. 각 slice:
 
 완료된 slice (`- [x]`) 존재 시 → 미완료 slice부터 이어서 진행.
 
-## 완료-Marker 감지 (Phase-level resume — F1)
+## 완료-Marker 감지 (Phase-level resume)
 
 `implement_completed_at` 필드가 state에 이미 있고 모든 slice receipt가 `status: "complete"`이며 `$ARGUMENTS`에 `--force-rerun`이 없으면:
 - "Phase 3 (Implement)은 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
@@ -65,7 +65,7 @@ Read `$WORK_DIR/plan.md` → **Slice Checklist** 파싱. 각 slice:
 
 **주의**: Slice 단위 resume (일부 slice만 완료)은 위의 Resume Detection이 처리. 본 branch는 **Phase 전체 완료 후 Exit Gate에서 일시정지한 경우에만** 발동.
 
-## Section 1.5: Pre-routing — Inline Escape Hatches (v6.4.0)
+## Section 1.5: Pre-routing — Inline Escape Hatches
 
 Section 1 전체 완료 후 (state 로드 + Plan 파싱 + Slice 파싱 + Resume Detection + 완료-marker 감지가 모두 끝난 뒤), Section 2 First Action 진입 **전에** 실행 모드를 결정한다.
 
@@ -73,7 +73,7 @@ Section 1 전체 완료 후 (state 로드 + Plan 파싱 + Slice 파싱 + Resume 
 
 ```
 def decide_execution_mode(state, args):
-    # B. 명시적 override 우선순위: CLI args > state (W-4.2 fix)
+    # B. 명시적 override 우선순위: CLI args > state
     #    예전 버전: `args.exec == "inline" or state.execution_override == "inline"`
     #    → state=inline + CLI=delegate 일 때 state가 이기는 버그.
     #    수정: CLI가 지정된 경우 무조건 CLI가 이긴다.
@@ -113,12 +113,10 @@ def decide_execution_mode(state, args):
 Section 2 진입 시 메모리에 보유 + state YAML에 persist:
 - `execution_mode`: "inline" | "delegate" (메모리만)
 - `delegation_snapshot`: `git rev-parse HEAD` (delegate 모드 진입 직전에 기록)
-  — **state YAML에도 `delegation_snapshot: <hash>` 로 Edit tool로 기록** (C-1.1 fix).
+  — **state YAML에도 `delegation_snapshot: <hash>` 로 Edit tool로 기록**.
   이 persist가 있어야 verify-receipt fail 후 세션이 interrupted 되어도 `/deep-resume`이
   state에서 기준 hash를 읽어 Rollback Protocol을 재표시할 수 있다.
   verify-receipt가 pass하면 Section 2.3 말미에서 `delegation_snapshot: null` 로 clear.
-
-상세는 spec §5.5a, §7.5 참조.
 
 # Section 2: Phase 실행
 
@@ -168,15 +166,15 @@ Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 s
 
 **이 중 하나라도 해당되면**: 현재 작업을 멈추고, 해당 Red Flag의 "현실" 컬럼을 따르세요.
 
-## Model Routing (v6.10.0)
+## Model Routing
 
 공통 decode 결과 `decodedRouting.implement`와 `decodedRoutingMeta`를 확인한다.
 
 - **"main"**: 현재 대화 모델로 inline 실행 → Solo Slice Loop 진행
 - **pinned (concrete 또는 tier)** (`decodedRoutingMeta.pinned.implement` 존재, 또는 meta 부재 AND `decodedRouting.implement !== "auto"`): 해당 모델/tier로 Agent 위임 — 기존 동작
-- **엔진 자동** (`decodedRoutingMeta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석 (설계 §2.5):
+- **엔진 자동** (`decodedRoutingMeta.tiers.implement` 존재, pinned 아님): slice마다 per-slice 해석:
 
-  > **fail-safe 선행 체크**: decoded meta의 implement tier가 `main`이거나 error가 true이면 per-slice 해석을 하지 않고 **현재 세션 모델로 inline 실행**한다(설계 §3.1 error→main). 아래 per-slice 규칙은 tier가 light/standard/deep일 때만 적용.
+  > **fail-safe 선행 체크**: decoded meta의 implement tier가 `main`이거나 error가 true이면 per-slice 해석을 하지 않고 **현재 세션 모델로 inline 실행**한다(error → main). 아래 per-slice 규칙은 tier가 light/standard/deep일 때만 적용.
 
 ```javascript
 const { sliceModelTierWithRisk } = require("${CLAUDE_PLUGIN_ROOT}/runtime/model-routing-runtime.js");
@@ -196,12 +194,12 @@ const { model } = resolveTier(tier, decodedRoutingMeta.runtime);
   > `main`이면 inline 실행.
 
 - **legacy "auto" 문자열** (meta 부재 구세션): `sonnet` 취급 + 1회 경고 — 기존 S/M/L/XL 표는 위 per-slice 규칙으로 대체됨.
-  (이 legacy 분기는 프롬프트 경로 산문 규칙이다 — Node 픽스처 고정 대상 아님. 설계 §8의 "픽스처로 고정" 항목 중 이 케이스만 산문 acceptance로 대체됨을 명시 — 리뷰 Low-6.)
+  (이 legacy 분기는 프롬프트 경로 산문 규칙이다 — Node 픽스처 고정 대상이 아니라 산문 acceptance로 검증한다.)
 
 Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙을 프롬프트에 포함 (hook이 delegated agent에 미적용), slice당 10분 timeout.
 상세 및 carrier decode 정본: Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)
 
-## Section 2.1: Delegate Solo Path (v6.4.0)
+## Section 2.1: Delegate Solo Path
 
 `execution_mode == "delegate"` AND `team_mode == "solo"` 인 경우.
 
@@ -227,7 +225,7 @@ Agent(
 
 ### Union scope
 
-Agent의 out-of-scope guardrail은 "union of all assigned clusters' declared scopes" (spec §5.3). Solo는 cluster_ids 의 모든 cluster.files 의 union이 허용 범위.
+Agent의 out-of-scope guardrail은 "union of all assigned clusters' declared scopes". Solo는 cluster_ids 의 모든 cluster.files 의 union이 허용 범위.
 
 ### 반환 처리
 
@@ -239,7 +237,7 @@ Agent 반환 후 §Section 2.3 (verify-receipt + Rollback Protocol)으로 이동
 
 ### Step A: Activate Slice
 
-1. `git_before_slice` = `git rev-parse HEAD`  (v6.4.0: renamed from `git_before` for consistency with delegate path — spec §5.3, N1)
+1. `git_before_slice` = `git rev-parse HEAD`
 2. State 업데이트: `active_slice: SLICE-NNN`, `tdd_state: PENDING`
 3. Pre-flight: files 존재, verification_cmd 실행 가능 확인 → 실패 시 AskUserQuestion
 
@@ -274,7 +272,7 @@ delegated result, test, finish proof로 사용할 수 없다. 학습 artifact만
 production diff는 discard/isolate한 뒤 research/spec/plan을 갱신하고 새 strict
 slice를 RED부터 시작한다.
 
-### Stop/Replan trigger (v6.13)
+### Stop/Replan trigger
 
 authoritative/slice risk 상승, `scope_expansion_trigger` 일치, 새 public
 contract/invariant/failure state/external side effect, unplanned mock, 한 slice의
@@ -339,17 +337,17 @@ prompt에 넣지 않고 diff, slice 계약, receipt만 전달하며 두 결과�
 slice 종료 직전 (spec 검증 + slice review 완료 후):
 - `git_after_slice` = `git rev-parse HEAD`
 
-먼저 **legacy payload** (v6.4.0 per-slice baseline schema)를 in-memory로 구성한다 — 다음 필수 필드:
+먼저 **legacy payload** (per-slice baseline schema)를 in-memory로 구성한다 — 다음 필수 필드:
 - **status** (필수): "complete" | "blocked"
 - **tdd**:
   - `state_transitions`: ["PENDING", "RED_VERIFIED", "GREEN", "SENSOR_CLEAN"] 등
-  - **`red_verification_output`** (v6.4.0 필수, N1/W8): RED 단계 verification_cmd의 FAIL 출력 전문. "ok"/"pass" 같은 trivial 값 금지
-- **git_before_slice**, **git_after_slice** (v6.4.0 필수, F1): 이 slice만의 baseline pair
+  - **`red_verification_output`** (필수): RED 단계 verification_cmd의 FAIL 출력 전문. "ok"/"pass" 같은 trivial 값 금지
+- **git_before_slice**, **git_after_slice** (필수): 이 slice만의 baseline pair
 - **changes.git_diff**: `git diff git_before_slice..git_after_slice` 출력
 - sensor_results, spec_compliance, slice_review, harness_metadata
 - slice_confidence: done | done_with_concerns + concerns 배열
 
-#### Optional `review` evidence (v6.12.0)
+#### Optional `review` evidence
 
 통합 리뷰를 실행한 slice는 legacy payload에 optional `review` 블록을 추가한다. 블록은
 `findings_ref`(canonical `$WORK_DIR/reviews/slice-SLICE-NNN-round<N>-findings.json`),
@@ -427,7 +425,7 @@ GREEN 단계에서 예기치 않은 테스트 실패 시:
 2. 3회 실패 시 **STOP → 사용자에게 질문**
 3. Root cause를 receipt `debug.root_cause_note`에 기록
 
-## Section 2.2: Delegate Team Path (v6.4.0)
+## Section 2.2: Delegate Team Path
 
 `execution_mode == "delegate"` AND `team_mode == "team"` 인 경우.
 
@@ -442,7 +440,7 @@ env_var=$(echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}")
   [info] CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS 미설정 —
          Agent Team 대신 복수 Subagent 병렬 위임으로 진행합니다.
   ```
-- env_var 설정됨 → **AskUserQuestion tool invocation** (W3 — concrete API format):
+- env_var 설정됨 → **AskUserQuestion tool invocation**:
 
 ```json
 AskUserQuestion({
@@ -464,11 +462,11 @@ AskUserQuestion({
 })
 ```
 
-(N-R3 fix: header "Team mode" = 9 chars, 12자 제약 충족. 기존 "Team exec mode"는 14자로 위반했음. label 길이 1-5 단어 준수.)
+(header는 12자 이내여야 한다 — "Team mode"는 9자. label은 1-5 단어.)
 
 ### Branch A: Agent Team (env var 활성 + 사용자 선택)
 
-기존 v6.3.x의 TeamCreate 분기를 그대로 유지 (C8 — concrete inline). 현재
+기존 v6.3.x의 TeamCreate 분기를 그대로 유지. 현재
 `skills/deep-implement/SKILL.md:195-201`의 로직:
 
 ```
@@ -478,7 +476,7 @@ AskUserQuestion({
    - team_name: "deep-implement-v640"
    - 각 cluster마다 TaskCreate 생성 (subject: "Implement cluster C{n}",
      description: cluster의 slice_ids + files + TDD 규칙 + Slice Review 규칙)
-   - 그룹별 Agent 스폰 — **full worker contract 필수** (CA3 fix):
+   - 그룹별 Agent 스폰 — **full worker contract 필수**:
        Agent(subagent_type="deep-work:implement-slice-worker",
              model=decodedRouting.implement,  // 자동 경로는 cluster 대표 tier를 resolve한 값으로 교체. pinned/legacy면 그대로.
              mode="bypassPermissions",  // hook이 team agent에 미적용 → Receipt 중심 검증
@@ -500,7 +498,7 @@ AskUserQuestion({
    - 독립 cluster 쌍 → parallel Agent 호출
    - 의존 cluster 쌍 → sequential (같은 agent에 묶거나 순차)
 2. 각 independent cluster에 대해 Agent 호출을 단일 메시지에 parallel 실행.
-   **full worker contract 필수** (CA3 fix — Section 2.1 Solo와 동일 구조):
+   **full worker contract 필수** (Section 2.1 Solo와 동일 구조):
    ```
    Agent(subagent_type="deep-work:implement-slice-worker",
          model=decodedRouting.implement,  // 자동 경로는 cluster 대표 tier를 resolve한 값으로 교체. pinned/legacy면 그대로.
@@ -513,12 +511,12 @@ AskUserQuestion({
    ```
 3. 모든 Agent 완료 후 Section 2.3 로 이동.
 
-### Partial failure (W4)
+### Partial failure
 
 일부 agent timeout/fail 시 §7.1 "Parallel subagent의 partial timeout" 규칙:
 - AskUserQuestion: 실패한 cluster만 / 전체 / 수동 / abort.
 
-## Section 2.3: verify-receipt + Rollback Protocol (v6.4.0)
+## Section 2.3: verify-receipt + Rollback Protocol
 
 ### 전제
 
@@ -554,7 +552,7 @@ options = [
 
 #### "재위임" 선택 시
 
-hash는 **state YAML에 기록된** `delegation_snapshot`에서 읽는다 (C-1.1 — 메모리 only가 아닌 persist 된 값이므로 resume 후에도 정확한 값 확보):
+hash는 **state YAML에 기록된** `delegation_snapshot`에서 읽는다:
 
 ```bash
 snapshot_hash=$(awk '/^delegation_snapshot:/ {gsub(/["'\'']/, "", $2); print $2; exit}' "$state_file")
@@ -572,7 +570,7 @@ rm -f "${WORK_DIR}/receipts"/SLICE-*.json
 
 #### "abort" 선택 시
 
-세션 종료. state의 `delegation_snapshot`은 **그대로 남긴다** (W-5.3 fix) — 그 값이 non-null이면 `/deep-resume` 시 Section 2.3 Resume 분기가 Rollback Protocol AskUserQuestion을 다시 표시한다. 사용자는 worktree 상태를 수동 검토 후 resume 할 수 있다.
+세션 종료. state의 `delegation_snapshot`은 **그대로 남긴다** — 그 값이 non-null이면 `/deep-resume` 시 Section 2.3 Resume 분기가 Rollback Protocol AskUserQuestion을 다시 표시한다. 사용자는 worktree 상태를 수동 검토 후 resume 할 수 있다.
 
 (abort가 state를 완전히 clean하게 두면 resume이 verify 결과를 잃어버려 무한 루프에 빠짐 — delegation_snapshot을 pending signal로 유지해 명시적으로 재진입 가능.)
 
@@ -592,7 +590,7 @@ item 별 역할:
 - item 7: red_verification_output 기록 필수
 - item 8: 기록된 verification_output vs expected_output 비교 (shell 실행 없음)
 
-### Resume with `--exec` override 또는 takeover 분기 (C4, C-1.1)
+### Resume with `--exec` override 또는 takeover 분기
 
 `/deep-resume` 시 Section 1.5 진입 전에 다음 순서로 체크:
 
@@ -625,7 +623,7 @@ elif receipts_dir has complete receipts from prior session:
 
 ## Phase Review Gate
 
-> **Precondition (v6.4.0)**: Section 2.3 verify-receipt가 pass해야 이 단계에 도달한다. Fail 시 §5.6a Rollback Protocol이 이 단계를 우회한다.
+> **Precondition**: Section 2.3 verify-receipt가 pass해야 이 단계에 도달한다. Fail 시 §5.6a Rollback Protocol이 이 단계를 우회한다.
 
 모든 slice 완료 후, Test 전환 전:
 Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:

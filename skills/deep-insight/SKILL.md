@@ -29,7 +29,7 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Quality Gate (v6.2.4)** — `/deep-test`가 Insight Tier로 자동 실행합니다 (차단 없음). 특정 대상의 메트릭/복잡도/의존성 분석이 필요할 때 직접 사용하세요.
+> **Quality Gate** — `/deep-test`가 Insight Tier로 자동 실행합니다 (차단 없음). 특정 대상의 메트릭/복잡도/의존성 분석이 필요할 때 직접 사용하세요.
 > Standalone: `/deep-insight [target]`
 
 # Code Insight Analysis

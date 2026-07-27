@@ -34,10 +34,10 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Internal (v6.3.0)** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal** — `/deep-status --assumptions`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `skills/deep-status/SKILL.md` §9 (`Read skills/deep-assumptions/SKILL.md and follow its logic`).
 
-# Assumption Health Report (v5.0)
+# Assumption Health Report
 
 Analyze deep-work's enforcement assumptions against session history to determine which rules are justified by evidence and which should be loosened.
 
@@ -176,7 +176,7 @@ PROPOSED CONFIG CHANGES (for manual application):
   tdd_required_before_implement: strict -> coaching
   (no other changes recommended at this time)
 
-Auto-adjustment is active (v5.1). Adjustments are applied at session start.
+Auto-adjustment is active. Adjustments are applied at session start.
 To override: /deep-work --tdd=strict [task]
 ```
 

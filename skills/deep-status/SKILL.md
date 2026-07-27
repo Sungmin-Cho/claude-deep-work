@@ -23,7 +23,7 @@ user-invocable: true
 | `--history` | deep-history sub-skill 호출 (§7) |
 | `--report` | deep-report sub-skill 호출 (§8) |
 | `--assumptions` | deep-assumptions sub-skill 호출 (§9) |
-| `--risk` | Shadow risk/policy 표시 (v6.11.0, §13) |
+| `--risk` | Shadow risk/policy 표시 (§13) |
 | `--all` | 4 sub-page 모두 순차 실행 |
 | `--tree` | Fork tree 출력 |
 | `--badge` | Shields.io 호환 badge 출력 |
@@ -53,7 +53,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 If `$ARGUMENTS` contains `--compare`:
 
-#### Fork 자동 감지 (v5.6)
+#### Fork 자동 감지
 
 인자 없이 `--compare`만 사용하면 fork 관계를 자동 감지:
 - 현재 세션의 상태 파일에서 `fork_info`가 있으면 → 부모 세션과 비교
@@ -109,9 +109,9 @@ Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, exec
 | `--assumptions` | Show assumption health report |
 | `--assumptions --verbose` | Per-signal per-session breakdown |
 | `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
-| `--risk` | Show shadow risk profile & policy recommendation (v6.11.0) |
+| `--risk` | Show shadow risk profile & policy recommendation |
 | `--badge` | Generate shields.io badge markdown |
-| `--tree` | Fork relationship tree visualization (v5.6) |
+| `--tree` | Fork relationship tree visualization |
 | `--all` | Show all sessions dashboard (multi-session) + all flags |
 | `--compare` | Compare two sessions (existing, handled in Section 0) |
 
@@ -172,7 +172,7 @@ Read the following files if they exist:
 
 If receipts directory exists (`$WORK_DIR/receipts/`):
 - Read all `SLICE-NNN.json` receipt files
-- **Envelope-aware unwrap (v6.5.0)**: 각 receipt 의 root 가 M3 envelope
+- **Envelope-aware unwrap**: 각 receipt 의 root 가 M3 envelope
   형태(`schema_version === "1.0"` + `envelope` 객체 + `payload` 키)이면
   identity guard 검증 (`envelope.producer === "deep-work"` ∧
   `envelope.artifact_kind === "slice-receipt"` ∧
@@ -224,9 +224,9 @@ Deep Work 세션 상태
 프로젝트 타입: [Existing / Zero-Base]
 Git 브랜치: [git_branch or "없음"]
 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
-평가자 모델: [evaluator_model] (v5.1)
+평가자 모델: [evaluator_model]
 
-### Fork 관계 표시 (v5.6)
+### Fork 관계 표시
 
 상태 파일에서 `fork_info`가 있으면:
 ```
@@ -265,7 +265,7 @@ Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
    Plan (Structural): [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
    Plan (Adversarial): [Claude N/10, Codex N/10 — Consensus N, Conflicts N, Waivers N / 미실행 / 도구 미설치]
 크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
-Assumption 조정: [N]건 적용됨 (v5.1)
+Assumption 조정: [N]건 적용됨
 건너뛴 단계: [brainstorm, research, plan]
 
 센서 상태:
@@ -353,7 +353,7 @@ If insufficient session data (fewer than 2 completed sessions in `.deep-work/har
    /deep-work로 세션을 시작하고 완료하면 이력이 기록됩니다.
 ```
 
-**Quality Score Trend (v5.3)**: After displaying the existing session history, also show the quality score trend:
+**Quality Score Trend**: After displaying the existing session history, also show the quality score trend:
 
 1. Read `.deep-work/harness-history/harness-sessions.jsonl` (shared path)
 2. Filter to entries with `status: "finalized"` and `quality_score` not null
@@ -435,7 +435,7 @@ If registry doesn't exist or has no sessions:
 
 Then execute Steps 4 (default view for current session), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions), 11 (tree), 12 (badge) in sequence.
 
-### 11. --tree: Fork Relationship Tree (v5.6)
+### 11. --tree: Fork Relationship Tree
 
 If `$ARGUMENTS` contains `--tree`:
 
@@ -473,7 +473,7 @@ s-aaa11111 [implement] "JWT auth feature" ◀ current
 ℹ️ 등록된 세션이 없습니다.
 ```
 
-### 12. --badge: Quality Badge (v5.3)
+### 12. --badge: Quality Badge
 
 If `$ARGUMENTS` contains `--badge`:
 
@@ -518,13 +518,13 @@ loading fails; never reconstruct or weaken a fail-closed result.
 For a legacy session without strict-spec binding, use the compatibility display
 below.
 
-#### Legacy shadow display (v6.11–v6.14)
+#### Legacy shadow display
 
 If `$ARGUMENTS` contains `--risk`:
 
 state에서 `risk_profile_json` / `policy_shadow_json` / `slice_risk_shadow_json` 스칼라를 읽어 `JSON.parse` 후 표시한다. 파싱 실패 시 경고 1줄 후 해당 블록 생략 (fail-open).
 
-**3필드 모두 부재 시**: "이 세션은 risk shadow 데이터가 없습니다 (v6.11 이전 세션)" 출력 후 종료.
+**3필드 모두 부재 시**: "이 세션은 risk shadow 데이터가 없습니다 (shadow 도입 이전 세션)" 출력 후 종료.
 
 Policy 추천·Routing diff는 `policy_shadow_json`에 `authoritative`가 있으면 그것을, 없으면 `provisional`을 표시한다 (`based_on`으로 출처 표기).
 

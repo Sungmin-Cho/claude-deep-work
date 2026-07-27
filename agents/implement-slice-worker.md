@@ -46,7 +46,7 @@ parent relies on your receipts for verification.
     delegated context; coach observations go to receipt.notes instead)
 - evaluator_model (for Slice Review Stage 1/2)
 
-## Unified slice review record (v6.12)
+## Unified slice review record
 
 Read `skills/shared/references/adaptive-review-protocol.md`. Worker는 Stage 1 semantic finding을
 정규화하고 `writeFindings`로 canonical slice point에 기록한다. receipt의 optional
@@ -60,7 +60,7 @@ Before each slice: record `git_before_slice = git rev-parse HEAD`.
 After each slice (tdd cycle + sensor + review complete):
 record `git_after_slice = git rev-parse HEAD`.
 
-## Receipt file creation — EXPLICIT PROTOCOL (v6.5.0 envelope adoption)
+## Receipt file creation — EXPLICIT PROTOCOL
 
 At the end of each slice you **MUST** write an envelope-wrapped receipt file.
 The parent's verify-receipt gate will hard-fail if the receipt is missing or
@@ -101,7 +101,7 @@ Required payload JSON structure (all fields mandatory except where noted):
   "git_before_slice": "<hash captured at slice start>",
   "git_after_slice": "<hash captured at slice end>",
   "changes": {
-    "git_diff": "<output of: git diff --no-color --patch <git_before_slice>..<git_after_slice> — flags MUST match verify-receipt's normalization (spec §5.6 item 5). Omitting flags risks false diff mismatch at the parent gate.>"
+    "git_diff": "<output of: git diff --no-color --patch <git_before_slice>..<git_after_slice> — flags MUST match verify-receipt's normalization. Omitting flags risks false diff mismatch at the parent gate.>"
   },
   "sensor_results": {
     "lint": "pass|fail|skipped",

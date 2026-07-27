@@ -34,7 +34,7 @@ user-invocable: true
 - ONLY: 테스트 실행, 결과 분석, 문서 업데이트
 - 테스트 실패 시 implement phase로 복귀하여 수정
 
-## 완료-Marker 감지 (Phase-level resume — F1)
+## 완료-Marker 감지 (Phase-level resume)
 
 `test_completed_at` + `test_passed: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면:
 - "Phase 4 (Test)는 이미 완료되었습니다. Exit Gate를 재표시합니다." 출력
@@ -164,7 +164,7 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 3. Session report 자동 생성: `$WORK_DIR/report.md`
 4. Git commit 제안 (git_branch 설정 시)
 
-### Handoff to /deep-finish — M3 envelope chain (v6.5.0)
+### Handoff to /deep-finish — M3 envelope chain
 
 본 skill은 envelope을 직접 emit하지 않으며, `/deep-finish §7-Z`가 session-receipt envelope을 쓸 수 있도록 다음 contract만 보장한다:
 
@@ -173,7 +173,7 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 - **`parent_run_id` chain** — Phase 1 (deep-research)가 consume한 `evolve-insights` envelope의 `run_id`가 state에 보관되어 있으면, `/deep-finish §7-Z`가 session-receipt envelope의 `envelope.parent_run_id` 필드와 `envelope.provenance.source_artifacts[]`에 함께 기록한다 (cross-plugin chain trace).
 - **단일 writer 정책** — session-receipt는 `hooks/scripts/wrap-receipt-envelope.js`가 `--artifact-kind=session-receipt`로 호출되어 생성됨 (deep-implement Step D-1의 slice-receipt writer와 동일 helper). 본 skill은 helper를 호출하지 않는다.
 
-위 contract가 깨지면 `/deep-finish §7-Z`가 envelope emit을 실패시키므로, **Some Fail (retry exhausted) 분기의 receipt invalidation (NW1/NW6)** 은 envelope reader가 stale evidence를 받지 않도록 보장하는 contract의 일부다.
+위 contract가 깨지면 `/deep-finish §7-Z`가 envelope emit을 실패시키므로, **Some Fail (retry exhausted) 분기의 receipt invalidation** 은 envelope reader가 stale evidence를 받지 않도록 보장하는 contract의 일부다.
 
 ## Some Fail (retry available)
 
@@ -191,14 +191,14 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 
 1. 누적 실패 이력 표시
 2. `current_phase: implement` 유지 (사용자 수동 수정 경로)
-3. **Implement state cleanup (NW1 fix — v6.3.1, NW6 refined)**: 수동 수정 경로가 제대로 동작하려면 stale completion markers를 invalidate해야 함. 두 action 모두 수행:
+3. **Implement state cleanup**: 수동 수정 경로가 제대로 동작하려면 stale completion markers를 invalidate해야 함. 두 action 모두 수행:
    - `implement_completed_at: null` 설정 (Implement skill 완료-Marker branch가 발동하지 않도록)
    - 실패한 slice의 `[x]` 체크마크를 `[ ]`로 해제 (Implement skill Section 1 Resume Detection이 미완료 slice로 인식하도록)
    - **동시에** 해당 slice의 receipt에 `status: "invalidated"` 기록 — sensor/verification이 stale evidence를 재사용하지 않고 재구현 시 새 evidence를 생성하도록 보장
-   - **주의 (NW6)**: Receipt invalidate만 하고 `[x]`를 그대로 두면 Resume Detection이 미완료 slice를 찾지 못해 재구현이 skip됨. 반드시 둘 다 수행.
+   - **주의**: Receipt invalidate만 하고 `[x]`를 그대로 두면 Resume Detection이 미완료 slice를 찾지 못해 재구현이 skip됨. 반드시 둘 다 수행.
 4. 안내:
    - `/deep-test --force-rerun`로 Test phase 직접 재실행 (retry count 초기화)
    - 또는 사용자 수동 수정 후 `/deep-resume` → Orchestrator §3-4 (Implement) 경로. Step 3의 cleanup 덕분에 Implement skill이 Section 1 완료-Marker branch를 통과하고 Section 2에 진입하여 영향 slice 재구현 + 새 receipt/sensor evidence 생성. 완료 후 Exit Gate → 사용자가 "다음 phase로 진행" 선택 시 Test 재진입.
    - 또는 `/deep-status --report`로 결과 정리
 
-**주의 (v6.3.1)**: retry exhausted 후 `/deep-resume`은 current_phase(`implement`)를 읽어 Implement로 dispatch한다. Test skill의 완료-Marker 감지 branch는 `test_passed: true`를 요구하므로 이 상태에서는 발동하지 않음 — 순환 무한 루프를 방지한다. 또한 Step 3의 Implement marker cleanup은 stale evidence 재사용을 차단하여 수정된 코드가 실제로 검증되도록 한다 (NW1).
+**주의**: retry exhausted 후 `/deep-resume`은 current_phase(`implement`)를 읽어 Implement로 dispatch한다. Test skill의 완료-Marker 감지 branch는 `test_passed: true`를 요구하므로 이 상태에서는 발동하지 않음 — 순환 무한 루프를 방지한다. 또한 Step 3의 Implement marker cleanup은 stale evidence 재사용을 차단하여 수정된 코드가 실제로 검증되도록 한다.

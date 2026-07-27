@@ -53,7 +53,7 @@ model: inherit
 
 응답은 정확히 하나의 ` ```json ... ``` ` fenced block으로만 작성하십시오. 그 외 인사·설명·prefix를 포함하면 시스템이 응답을 거부합니다.
 
-**JSON 본문 안에 백틱(`) 또는 fenced block을 절대 사용하지 마십시오** (W6 fix — multi-fence detect 차단).
+**JSON 본문 안에 백틱(`) 또는 fenced block을 절대 사용하지 마십시오** (multi-fence detect 차단).
 
 ```json
 {

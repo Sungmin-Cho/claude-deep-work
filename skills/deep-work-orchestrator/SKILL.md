@@ -10,20 +10,20 @@ user-invocable: true
 
 > `--resume-from=<phase>` 가 지정된 경우: Step 1의 **interactive/setup 대화(프로필 질문, 작업 모드 선택 등)만 건너뛴다**. `SESSION_ID`는 `--session`에서 결정되고, 기존 state file을 재사용하며 새 세션 파일을 쓰지 않는다.
 >
-> **반드시 수행 (NO2 + NP1 fix)**:
+> **반드시 수행**:
 > 1. Step 1-2 state file 로드: `.claude/deep-work.{SESSION_ID}.md`에서 `work_dir`, `task_description`, `worktree_enabled`, `worktree_path`, `team_mode`, `cross_model_enabled`, `tdd_mode`, `iteration_count`, `skipped_phases`, `research_approved`, `research_approved_hash`, `plan_approved`, `plan_approved_hash`, `current_phase` 등 모든 상태 변수 로드.
 > 2. `$WORK_DIR` 변수 초기화 (state의 `work_dir`에서). §3-2/§3-3 hash check 등 파일 경로 참조 시 필수.
 > 3. Step 2 (조건 변수 조립 — `ARGS`, `tdd_mode` 등) 수행하여 Skill 호출에 session/worktree/tdd context 보존.
 >
 > 그 후 Step 3의 해당 `<phase>` branch로 점프한다.
 
-### Step 1-3: Model Routing Migration (v6.4.0)
+### Step 1-3: Model Routing Migration
 
-State load 직후, Step 3 dispatch 전에 migration helper 를 호출하여 `model_routing.{research,implement,test} == "main"` 값을 `"sonnet"` 으로 atomic 치환한다. `model_routing.plan` 은 migration 대상에서 제외 (Plan phase는 대화형 메인 세션이 설계상 필수 — spec §3 D1 W1).
+State load 직후, Step 3 dispatch 전에 migration helper 를 호출하여 `model_routing.{research,implement,test} == "main"` 값을 `"sonnet"` 으로 atomic 치환한다. `model_routing.plan` 은 migration 대상에서 제외 (Plan phase는 대화형 메인 세션이 설계상 필수).
 
 **호출 조건**: `$STATE_FILE`이 이미 존재할 때만 호출 (W-1.1 fix — 새 세션은 §1-9에서 state를 생성하므로 이 시점엔 파일이 없을 수 있음).
 
-> **v6.10.0 가드**: `migrateStateFile`은 state에 `model_routing_meta:`가 있으면 skip을 반환한다(자동 결정 엔진이 쓴 fail-safe `main` 보호 — 설계 §5). skip 시 알림 불필요.
+> **가드**: `migrateStateFile`은 state에 `model_routing_meta:`가 있으면 skip을 반환한다(자동 결정 엔진이 쓴 fail-safe `main` 보호). skip 시 알림 불필요.
 
 실행:
 ```bash
@@ -35,7 +35,7 @@ fi
 또는 동등한 JS import (orchestrator가 Node 런타임 내에서 실행 가능한 경우):
 ```javascript
 const { migrateStateFile } = require('./scripts/migrate-model-routing.js');
-// migrateStateFile 자체가 fs.existsSync 가드를 내부에서 처리 (W-2.2)
+// migrateStateFile 자체가 fs.existsSync 가드를 내부에서 처리
 const { replaced, warnings } = migrateStateFile(stateFile);
 ```
 
@@ -45,7 +45,6 @@ const { replaced, warnings } = migrateStateFile(stateFile);
 - `warnings`가 있으면 그대로 stderr에 출력 (치환 없이 원본 유지).
 - 치환이 발생한 경우 atomic `writeFile + rename` 으로 state file에 persist됨.
 
-(spec §5.7, §6.1 참조)
 
 ## 1-1. Update Check
 
@@ -73,7 +72,7 @@ SESSION_ID=$(generate_session_id)
 write_session_pointer "$SESSION_ID"
 ```
 
-## 1-3. 프로필 로드 + 플래그 파싱 (v6.4.2)
+## 1-3. 프로필 로드 + 플래그 파싱
 
 ### 플래그 표
 
@@ -88,12 +87,12 @@ write_session_pointer "$SESSION_ID"
 | `--skip-review` | review_state → "skipped" |
 | `--no-branch` | git → "current-branch" (해당 항목 ask 우회) |
 | `--skip-to-implement` | Plan까지 전부 건너뜀, 인라인 slice |
-| `--skip-integrate` | Phase 5 Integrate 건너뜀 (v6.3.0) |
-| `--profile=X` | 프리셋 X 직접 선택 (ask 단계는 진행, v6.4.2 의미 유지) |
-| `--no-ask` | 신규 (v6.4.2): ask 단계 모두 skip + 추천 skip (가장 빠른 경로) |
-| `--recommender=MODEL` | 신규 (v6.4.2): 추천 모델 override. allowlist `^(haiku\|sonnet\|opus)$`, 그 외 거부 + sonnet fallback + 1회 경고 |
-| `--no-recommender` | 신규 (v6.4.2): 추천 sub-agent skip (defaults 값으로 ask 진입) |
-| `--exec=<inline\|delegate>` | (v6.4.0) Implement 단계 실행 방식 override. parser → state.execution_override → deep-implement §1.5에서 read |
+| `--skip-integrate` | Phase 5 Integrate 건너뜀 |
+| `--profile=X` | 프리셋 X 직접 선택 (ask 단계는 진행) |
+| `--no-ask` | 신규: ask 단계 모두 skip + 추천 skip (가장 빠른 경로) |
+| `--recommender=MODEL` | 신규: 추천 모델 override. allowlist `^(haiku\|sonnet\|opus)$`, 그 외 거부 + sonnet fallback + 1회 경고 |
+| `--no-recommender` | 신규: 추천 sub-agent skip (defaults 값으로 ask 진입) |
+| `--exec=<inline\|delegate>` | Implement 단계 실행 방식 override. parser → state.execution_override → deep-implement §1.5에서 read |
 | `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `skills/deep-resume/SKILL.md`가 사용. |
 
 ### §1-3-1. 플래그 파서 호출
@@ -101,14 +100,14 @@ write_session_pointer "$SESSION_ID"
 orchestrator 본문에서 직접 실행 (process scope 일관 — R3-B):
 
 ````bash
-# C1 fix (R5): $ARGUMENTS를 double-quoted single arg로 전달 — shell metacharacters가
+# $ARGUMENTS를 double-quoted single arg로 전달 — shell metacharacters가
 # parser allowlist 적용 전에 shell에 의해 평가되지 않음.
 # parser CLI entrypoint는 단일 공백 포함 인자를 split-before-allowlist로 처리.
 PARSE_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-deep-work-flags.js" -- "$ARGUMENTS" 2>/tmp/dw-parse-err.txt)
 parse_rc=$?
 ````
 
-- `parse_rc` 비-zero → `/tmp/dw-parse-err.txt` 내용 표시 + AskUserQuestion (재입력 / 종료). `2>&1 || true` 패턴 사용 금지 (R3-C).
+- `parse_rc` 비-zero → `/tmp/dw-parse-err.txt` 내용 표시 + AskUserQuestion (재입력 / 종료). `2>&1 || true` 패턴 사용 금지.
 - `PARSE_OUT` (JSON) → `TASK_TEXT`, `FLAGS` 객체 추출.
 - `TASK_TEXT` 비어 있으면 AskUserQuestion("작업 내용을 입력해 주세요.").
 
@@ -116,7 +115,7 @@ parse_rc=$?
 
 ### §1-3-2. 프로필 v2→v3 마이그레이션
 
-파서 결과로 `DEEP_WORK_INITIAL_PRESET`(= `FLAGS.profile` 또는 null)이 채워진 후 migration 호출 (R3-W1):
+파서 결과로 `DEEP_WORK_INITIAL_PRESET`(= `FLAGS.profile` 또는 null)이 채워진 후 migration 호출:
 
 ````bash
 PROFILE_FILE="$PROJECT_ROOT/.claude/deep-work-profile.yaml"
@@ -126,7 +125,7 @@ MIGRATE_OUT=$(DEEP_WORK_INITIAL_PRESET="${FLAGS.profile}" \
 migrate_rc=$?
 ````
 
-- `migrate_rc` 비-zero → `$migrate_stderr` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지 (R3-C).
+- `migrate_rc` 비-zero → `$migrate_stderr` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지.
 - `MIGRATE_OUT` (JSON stdout):
   - `{ "migrated": true, "reason": "v2-to-v3" }` → 1회 안내:
     > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 4개 항목(team/start/tdd/git)에 대해 LLM 추천 + 확인을 거칩니다. 모델은 코드베이스 규모·난이도로 자동 선택됩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
@@ -147,7 +146,7 @@ migrate_rc=$?
 ### §1-3-3. v3 프로필 로더 호출
 
 ````bash
-# W3 fix (R5): --profile=X가 loader에 전달되도록 DEEP_WORK_INITIAL_PRESET export
+# --profile=X가 loader에 전달되도록 DEEP_WORK_INITIAL_PRESET export
 # (§1-3-2의 migrate-profile 호출과 동일한 env 전달 패턴으로 parity 확보)
 PROFILE_OUT=$(DEEP_WORK_INITIAL_PRESET="${FLAGS.profile}" \
   node "${CLAUDE_PLUGIN_ROOT}/scripts/load-v3-profile.js" "$PROFILE_FILE" 2>/tmp/dw-profile-err.txt)
@@ -181,7 +180,7 @@ profile_rc=$?
 
 `FLAGS.setup` = true → 기존 프로필 존재하면 프리셋 관리 UI (편집 / 새로 만들기).
 
-## 1-4. 항목별 대화형 설정 (v6.4.2)
+## 1-4. 항목별 대화형 설정
 
 `--no-ask` 또는 `--profile=X --no-ask` 지정 시 §1-4 전체 skip → §1-5로 진행.
 
@@ -200,7 +199,7 @@ profile_rc=$?
 capability 감지:
 
 ````bash
-# W2 fix (R5): env-only IS_GIT 의존 제거 — 실 git 명령으로 직접 검출
+# env-only IS_GIT 의존 제거 — 실 git 명령으로 직접 검출
 IS_GIT=$(git rev-parse --is-inside-work-tree 2>/dev/null || echo "false")
 WORKTREE_SUPPORTED=$(git worktree list >/dev/null 2>&1 && echo "true" || echo "false")
 TEAM_ENV=$([ -n "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ] && echo "true" || echo "false")
@@ -262,7 +261,7 @@ const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.
 
 ### §1-4-3. interactive_each_session 항목별 AskUserQuestion (in-memory only)
 
-> **v6.10.0**: 순회 전 `filterAskItems()`(recommender-runtime)를 적용한다 — 구프로필 `interactive_each_session`에 `model_routing`이 남아 있어도 ask하지 않는다(모델은 §1-8.5에서 자동 결정).
+> **주의**: 순회 전 `filterAskItems()`(recommender-runtime)를 적용한다 — 구프로필 `interactive_each_session`에 `model_routing`이 남아 있어도 ask하지 않는다(모델은 §1-8.5에서 자동 결정).
 
 `filterAskItems(PROFILE_DATA.interactive_each_session)` 배열을 순회하며 각 항목별 AskUserQuestion. CLI 플래그로 이미 override된 항목은 건너뜀.
 
@@ -317,7 +316,7 @@ Git repository인 경우:
 - Worktree 성공 시: `worktree_enabled: true`, `worktree_path`, `worktree_branch` state에 기록
 - 이후 모든 파일 작업은 worktree 절대 경로 기준
 
-## 1-8.5. Provisional risk-only → adaptive 모델 결정 (v6.12.0)
+## 1-8.5. Provisional risk-only → adaptive 모델 결정
 
 모델 라우팅은 유저에게 묻지 않는다. 동일한 유효 입력을 쓰는 다음 3단계를 순서대로
 실행한다. `REC_TASK_DIFFICULTY`는 §1-4-2의 `task_difficulty.value`이며 부재 시 빈 값이다.
@@ -363,7 +362,7 @@ MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
 `high` 또는 `critical`이면 `⚠️ 사용자 pin이 <phase> policy floor보다 낮습니다`를 phase별
 1회 표면화한다. pin은 최종 우선이며 이 경고가 실행을 차단하지는 않는다.
 
-## 1-8.6. Provisional policy snapshot (v6.12.0)
+## 1-8.6. Provisional policy snapshot
 
 **3단계 — 기존 policy snapshot, signals 재사용:** 2단계 결과의 routing을 신선하게
 입력에 추가하고 1단계 artifact의 signals만 재사용한다.
@@ -404,7 +403,7 @@ rm -f "$RISK_IN"
   reader fallback으로만 허용한다. `--policy`, `--risk`, `--review` 결정과 하향 승인
   `risk_acceptances`는 후자에 기록한다.
 - 각 phase timestamp, test_retry_count, max_test_retries 등
-- **`recommendations: { ... }`** (v6.4.2 신규) — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
+- **`recommendations: { ... }`** — §1-4-2 sub-agent 응답 + §1-4-3 사용자 최종 선택 (옵셔널 필드, phase-guard enforcement에는 영향 없음)
 - `execution_override: {FLAGS.exec_mode | null}` — v6.4.0 호환, deep-implement Section 1.5에서 read
 
 **작성 절차** (atomic + 권한 600):
@@ -491,8 +490,8 @@ AskUserQuestion:
   3. label: "일시정지", description: "세션 유지. /deep-resume으로 복귀 시 이 Exit Gate로 돌아옵니다"
 
 분기:
-- option 1 → **즉시 `current_phase: research` 설정** (F1 Option A) → **§3-2 Research로 dispatch** (§3-2 body가 Resume check + Skill 호출 담당). 본 branch에서 Skill을 직접 호출하지 않는다 — §3-2 본문과 중복 실행 방지 (v6.3.1 NO1 fix).
-- option 2 → **재실행 전 completion marker clear (v6.3.1 NC2 symmetric)**: `brainstorm_completed_at: null` 설정 → 이후 사용자 상세 지시 청취. brainstorm.md 직접 편집(phase-guard 허용) 또는 `Skill("deep-brainstorm", args=ARGS + " --force-rerun")` 재호출. 재실행이 완료된 뒤에만 `brainstorm_completed_at`이 다시 기록되어 Resume fast-path가 정상 동작.
+- option 1 → **즉시 `current_phase: research` 설정** → **§3-2 Research로 dispatch** (§3-2 body가 Resume check + Skill 호출 담당). 본 branch에서 Skill을 직접 호출하지 않는다 — §3-2 본문과 중복 실행 방지.
+- option 2 → **재실행 전 completion marker clear**: `brainstorm_completed_at: null` 설정 → 이후 사용자 상세 지시 청취. brainstorm.md 직접 편집(phase-guard 허용) 또는 `Skill("deep-brainstorm", args=ARGS + " --force-rerun")` 재호출. 재실행이 완료된 뒤에만 `brainstorm_completed_at`이 다시 기록되어 Resume fast-path가 정상 동작.
 - option 3 → current_phase는 `brainstorm` 유지. "세션 유지됨. `/deep-resume {SESSION_ID}`로 복귀 시 Exit Gate가 재표시됩니다." 출력 후 턴 종료.
 
 ## 3-2. Research
@@ -506,13 +505,13 @@ legacy `current_phase: research + subphase: spec`이면
 `Skill("deep-spec", args=ARGS)`로 spec gate에서 복구한다. 일치하고
 `spec_gate_result_json.pass:true`이면 아래 Research Exit Gate만 재표시한다.
 
-**Resume 분기 (v6.3.1 F1 + NW5 integrity check)**: state의 `research_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, **approval integrity check**가 추가로 필요:
+**Resume 분기**: state의 `research_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, **approval integrity check**가 추가로 필요:
 
 1. `research_approved_hash` (state) 와 현재 `$WORK_DIR/research.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` (or `sha256sum` on Linux)
    - 해시 일치 → approval은 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix + NP3 collision fix):
-     1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}-edit.md`로 복사 (편집 내용 백업). **`-edit` 접미사** 사용 — deep-research skill의 기존 `research.v{iteration_count}.md` backup과 파일명 충돌 방지 (NP3).
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (fix + NP3 collision fix):
+     1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}-edit.md`로 복사 (편집 내용 백업). **`-edit` 접미사** 사용 — deep-research skill의 기존 `research.v{iteration_count}.md` backup과 파일명 충돌 방지.
      2. `iteration_count`을 1 증가.
      3. Approval state invalidate: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`.
      4. 경고: "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 research.v{N}-edit.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
@@ -539,11 +538,11 @@ Phase Skill 완료 후 단일 리뷰 진입점만 실행한다:
    이동한다. 이 workflow는 자동 리뷰를 다시 실행하지 않는다.
 
 문서 최종 승인 후 → State 부분 업데이트:
-- `research_approved: true` (Resume fast-path baseline — v6.3.1 NC1 fix)
+- `research_approved: true` (Resume fast-path baseline)
 - `research_approved_at`: current ISO timestamp
-- `research_approved_hash`: `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` 결과 (v6.3.1 NW5 integrity snapshot)
+- `research_approved_hash`: `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` 결과 (integrity snapshot)
 
-### Spec Subphase Gate (v6.13)
+### Spec Subphase Gate
 
 authoritative `risk_profile_json`의 class가 `medium|high|critical`이면 Exit
 Gate 전에 반드시 runtime `phase spec enter`를 호출하고
@@ -579,20 +578,20 @@ AskUserQuestion:
 - option 1 → runtime `phase advance --from spec --to plan`으로 fresh spec
   admission을 재검증한 뒤 **§3-3 Plan으로 dispatch**한다. state 직접 전환은
   금지한다.
-- option 2 → **재실행 전 approval state clear (NC2 규칙 + NW5)**: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.
+- option 2 → **재실행 전 approval state clear**: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-research", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집 (phase-guard 허용 범위). 크기에 관계없이 post-approval 편집이면 approval clear 필수.
 - option 3 → current_phase는 `research` 유지. 재개 안내 후 턴 종료.
 
 ## 3-3. Plan
 
 `skipped_phases` / `--skip-to-implement` 포함 시 Exit Gate 생략하고 `current_phase: implement` + `plan_approved: true` + `plan_approved_at` 설정으로 직접 전환 → 3-4.
 
-**Resume 분기 (v6.3.1 F1 + NW5 integrity check)**: state의 `plan_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, **approval integrity check**가 추가로 필요:
+**Resume 분기**: state의 `plan_approved: true`가 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, **approval integrity check**가 추가로 필요:
 
 1. `plan_approved_hash` (state) 와 현재 `$WORK_DIR/plan.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` (or `sha256sum`)
    - 해시 일치 → approval 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (v6.3.1 NO3 fix + NP3 collision fix):
-     1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}-edit.md`로 복사. **`-edit` 접미사** 사용 — deep-plan skill의 기존 `plan.v{iteration_count}.md` backup(Pre-steps Backup 단계)과 파일명 충돌 방지 (NP3).
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (fix + NP3 collision fix):
+     1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}-edit.md`로 복사. **`-edit` 접미사** 사용 — deep-plan skill의 기존 `plan.v{iteration_count}.md` backup(Pre-steps Backup 단계)과 파일명 충돌 방지.
      2. `iteration_count`을 1 증가.
      3. Approval state invalidate: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`.
      4. 경고: "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 plan.v{N}-edit.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
@@ -615,7 +614,7 @@ Read(`../shared/references/review-approval-workflow.md`) Step 4-6 승인 UX로 �
 문서 최종 승인 후 → State 부분 업데이트:
 - `plan_approved: true`
 - `plan_approved_at`: current ISO timestamp (drift baseline)
-- `plan_approved_hash`: `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` 결과 (v6.3.1 NW5 integrity snapshot)
+- `plan_approved_hash`: `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` 결과 (integrity snapshot)
 - **`current_phase`는 이 시점에서는 변경하지 않는다.** Exit Gate "진행" 시에 `implement`로 전환.
 
 ### Exit Gate (Phase 2 → Phase 3)
@@ -629,8 +628,8 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → **즉시 `current_phase: implement` 설정** → **§3-4 Implement로 dispatch** (§3-4 body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
-- option 2 → **재실행 전 approval state clear (NC2 fix + NW5)**: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 모든 편집은 Step 6 re-approval을 거치며, approval clear가 없으면 Resume fast-path가 stale approval을 재사용함. 크기에 관계없이 post-approval 편집이면 approval clear 필수 — drift gate baseline의 `plan_approved_at` + `plan_approved_hash`가 실제 최종 plan과 일치하도록.
+- option 1 → **즉시 `current_phase: implement` 설정** → **§3-4 Implement로 dispatch** (§3-4 body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음.
+- option 2 → **재실행 전 approval state clear**: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`로 state 업데이트 → 이후 `Skill("deep-plan", args=ARGS + " --force-rerun")` 재호출 또는 사용자 지시 편집. 모든 편집은 Step 6 re-approval을 거치며, approval clear가 없으면 Resume fast-path가 stale approval을 재사용함. 크기에 관계없이 post-approval 편집이면 approval clear 필수 — drift gate baseline의 `plan_approved_at` + `plan_approved_hash`가 실제 최종 plan과 일치하도록.
 - option 3 → current_phase는 `plan` 유지. 재개 안내 후 턴 종료.
 
 ## 3-4. Implement
@@ -652,8 +651,8 @@ AskUserQuestion:
   3. "일시정지"
 
 분기:
-- option 1 → **즉시 `current_phase: test` 설정** (F1 Option A) → **§3-5 Test로 dispatch** (§3-5 body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
-- option 2 → **재실행/수정 전 completion state clear (v6.3.1 NC3 fix)**: completion marker + receipts + slice checklist 모두 invalidate해야 resume 시 stale evidence를 재사용하지 않는다.
+- option 1 → **즉시 `current_phase: test` 설정** (F1 Option A) → **§3-5 Test로 dispatch** (§3-5 body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음.
+- option 2 → **재실행/수정 전 completion state clear (fix)**: completion marker + receipts + slice checklist 모두 invalidate해야 resume 시 stale evidence를 재사용하지 않는다.
    - `implement_completed_at: null` 설정
    - 영향 받는 slice의 receipt (`$WORK_DIR/receipts/SLICE-NNN.json`) status를 `"invalidated"`로 기록
    - plan.md의 해당 slice `[x]` → `[ ]`로 해제 (Implement skill Resume Detection이 미완료로 인식하도록)
@@ -684,22 +683,22 @@ AskUserQuestion:
   4. "일시정지"
 
 분기:
-- option 1 → current_phase는 `test` 유지 (Integrate는 idle로 전환함) → **§3-5b Integrate로 dispatch** (§3-5b body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음 (NO1 fix).
-- option 2 → `$ARGUMENTS`에 **실제로 `--skip-integrate` 플래그 추가** (ARGS mutation) → §3-5b를 건너뛰고 **§3-6 Finish로 직접 분기**. `--skip-integrate` 미설정된 채 §3-5b 진입하면 skip이 반영되지 않으므로 반드시 실제 ARGS 변경 필요 (NO1 fix).
-- option 3 → **재실행 전 Test state clear (v6.3.1 NW4 fix)**: `test_passed: false`, `test_completed_at: null`, `test_retry_count: 0` 설정 → 그 후 `Skill("deep-test", args=ARGS + " --force-rerun")` 재호출. 이렇게 해야 재실행 도중 세션 중단 시 `/deep-resume`이 stale `test_passed: true` marker를 재사용해 quality gate를 건너뛰는 것을 방지한다 (failing rerun을 "passed"로 기만하는 경로 차단).
+- option 1 → current_phase는 `test` 유지 (Integrate는 idle로 전환함) → **§3-5b Integrate로 dispatch** (§3-5b body가 Skill 호출 담당). 본 branch에서 Skill 직접 호출하지 않음.
+- option 2 → `$ARGUMENTS`에 **실제로 `--skip-integrate` 플래그 추가** (ARGS mutation) → §3-5b를 건너뛰고 **§3-6 Finish로 직접 분기**. `--skip-integrate` 미설정된 채 §3-5b 진입하면 skip이 반영되지 않으므로 반드시 실제 ARGS 변경 필요.
+- option 3 → **재실행 전 Test state clear (fix)**: `test_passed: false`, `test_completed_at: null`, `test_retry_count: 0` 설정 → 그 후 `Skill("deep-test", args=ARGS + " --force-rerun")` 재호출. 이렇게 해야 재실행 도중 세션 중단 시 `/deep-resume`이 stale `test_passed: true` marker를 재사용해 quality gate를 건너뛰는 것을 방지한다 (failing rerun을 "passed"로 기만하는 경로 차단).
 - option 4 → current_phase는 `test` 유지. 재개 안내 후 턴 종료.
 
-## 3-5b. Integrate (v6.3.0, skippable)
+## 3-5b. Integrate
 
 Phase 5: 설치된 deep-suite 플러그인 아티팩트를 읽어 AI가 다음 단계를 추천하는 대화형 루프.
 
 - `$ARGUMENTS`에 `--skip-integrate` 포함 시 → 3-6로 직진 (state 변경 없음).
 - 없으면 → `Skill("deep-integrate", args=ARGS)` 호출.
   - 스킬이 정상 종료하면 → 3-6로 진행.
-  - 스킬이 에러로 종료하면 경고 메시지 출력 후 **`--skip-integrate`를 추가하여** 3-6로 진행한다. Phase 5는 진입 시 `phase5_entered_at`을 기록했지만 `phase5_completed_at`이 없으므로, `--skip-integrate` 없이 `/deep-finish`를 호출하면 "Phase 5 중단" 분기에 걸려 세션이 idle-but-unfinishable 상태에 고착된다(v6.3.0 review C2). `--skip-integrate`가 이 분기를 우회하여 정상 finish 경로를 보장한다.
+  - 스킬이 에러로 종료하면 경고 메시지 출력 후 **`--skip-integrate`를 추가하여** 3-6로 진행한다. Phase 5는 진입 시 `phase5_entered_at`을 기록했지만 `phase5_completed_at`이 없으므로, `--skip-integrate` 없이 `/deep-finish`를 호출하면 "Phase 5 중단" 분기에 걸려 세션이 idle-but-unfinishable 상태에 고착된다. `--skip-integrate`가 이 분기를 우회하여 정상 finish 경로를 보장한다.
   - 스킬이 `terminated_by: "interrupted"` 상태로 남기고 종료하면 auto-flow 중단 (재진입 대기).
 
-> current_phase 변경 주체: deep-integrate Skill이 Phase 5 진입 시 `idle`로 전환하고 `phase5_entered_at` + **`phase5_work_dir_snapshot`**(v6.3.0 review RC3-1) 필드를 기록한다. Phase 5 종료 시 `skills/deep-integrate/phase5-finalize.sh`로 `phase5_completed_at`만 atomically 기록한다. `current_phase` 자체는 `idle` 유지 (phase-guard Phase 5 mode와 호환). `phase5_work_dir_snapshot`은 phase-guard가 enforcement 기준으로 사용하는 불변 snapshot — state file의 `work_dir`이 런타임에 변조돼도 snapshot 값으로 방어된다. finished 같은 신규 state는 도입하지 않는다.
+> current_phase 변경 주체: deep-integrate Skill이 Phase 5 진입 시 `idle`로 전환하고 `phase5_entered_at` + **`phase5_work_dir_snapshot`** 필드를 기록한다. Phase 5 종료 시 `skills/deep-integrate/phase5-finalize.sh`로 `phase5_completed_at`만 atomically 기록한다. `current_phase` 자체는 `idle` 유지 (phase-guard Phase 5 mode와 호환). `phase5_work_dir_snapshot`은 phase-guard가 enforcement 기준으로 사용하는 불변 snapshot — state file의 `work_dir`이 런타임에 변조돼도 snapshot 값으로 방어된다. finished 같은 신규 state는 도입하지 않는다.
 
 ## 3-6. Finish
 
@@ -714,7 +713,7 @@ Read `skills/deep-finish/SKILL.md` → 완료 옵션 제시:
 Finish 완료 후: `current_phase: idle` 설정.
 Registry 해제: `unregister_session "$SESSION_ID"`.
 
-# current_phase 변경 주체 정리 (v6.3.1 Option A — 일원화)
+# current_phase 변경 주체 정리
 
 | Phase | Review | 사용자 승인 | current_phase 변경 주체 | 변경 시점 |
 |-------|--------|------------|----------------------|----------|
@@ -723,9 +722,6 @@ Registry 해제: `unregister_session "$SESSION_ID"`.
 | Plan | 필수 | review+approval + Exit Gate 필수 | **Orchestrator** | Exit Gate "진행" 선택 시 |
 | Implement | Phase Review | Exit Gate 필수 | **Orchestrator** | Exit Gate "진행" 선택 시 |
 | Test | 자동 | Exit Gate 필수 | **Orchestrator** (유지: `test` → `test`; Integrate 진입 시에도 test 유지, Integrate skill이 idle로 전환) | Exit Gate "진행" 선택 시 |
-| Integrate (v6.3.0) | 선택적 | 불필요 | **Integrate Phase Skill (`idle` + phase5_*_at 필드)** | 기존 동작 유지 |
+| Integrate | 선택적 | 불필요 | **Integrate Phase Skill (`idle` + phase5_*_at 필드)** | 기존 동작 유지 |
 
-**핵심 변화** (v6.3.0 → v6.3.1):
-- 기존에는 Brainstorm/Implement phase skill이 Section 3에서 직접 current_phase를 다음 값으로 전환 → Exit Gate 이전에 state가 이동되어 pause/resume 시 Exit Gate 재표시 불가
-- v6.3.1: 모든 phase skill은 `*_completed_at` marker만 기록하고 current_phase 변경을 Orchestrator에 위임
-- pause 선택 시 current_phase는 현재 값 유지 → resume 시 Orchestrator가 해당 phase를 재호출 → skill의 Section 1 완료-marker 감지 분기가 Orchestrator로 제어 반환 → Exit Gate 재표시
+**불변식**: 모든 phase skill은 `*_completed_at` marker만 기록하고 current_phase 변경은 Orchestrator에 위임한다. pause 선택 시 current_phase는 현재 값을 유지 → resume 시 Orchestrator가 해당 phase를 재호출 → skill의 완료-marker 감지 분기가 Orchestrator로 제어를 반환 → Exit Gate 재표시. skill이 직접 current_phase를 전환하면 Exit Gate 이전에 state가 이동해 pause/resume 시 Exit Gate를 재표시할 수 없다.

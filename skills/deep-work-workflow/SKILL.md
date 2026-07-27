@@ -185,11 +185,11 @@ contract before implementation planning.
 - **Plan templates**: Auto-suggests templates for common task types (API endpoint, UI component, DB migration, etc.)
 - **Version history**: Previous plans backed up as `plan.v1.md`, `plan.v2.md` with change logs
 - **Mode re-evaluation**: Suggests Team↔Solo switching based on plan complexity
-- **Exit Gate to Implement (v6.3.1)**: 문서 최종 승인 후 Orchestrator Phase Exit Gate가 "진행 / 재실행 / 일시정지"를 묻는다. "진행" 선택 시 Implement phase 자동 호출 (수동 `/deep-implement` 불필요).
+- **Exit Gate to Implement**: 문서 최종 승인 후 Orchestrator Phase Exit Gate가 "진행 / 재실행 / 일시정지"를 묻는다. "진행" 선택 시 Implement phase 자동 호출 (수동 `/deep-implement` 불필요).
 - **Claude 자체 재검토**: plan 작성 직후 placeholder/일관성/누락 자동 점검 및 수정
 - **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
 - **종합 판단**: cross-review 후 Claude 판단 + 사용자 일괄 확인 (개별 conflict 질문 대체)
-- **Team research 교차 검증** (v5.5.1): team_mode: team일 때 부분 리서치 파일(research-architecture/patterns/dependencies.md)을 보조 참조로 로드하여 합성 누락 세부 사항 교차 확인
+- **Team research 교차 검증**: team_mode: team일 때 부분 리서치 파일(research-architecture/patterns/dependencies.md)을 보조 참조로 로드하여 합성 누락 세부 사항 교차 확인
 
 **Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
 
@@ -203,7 +203,7 @@ For detailed guidance, see [Planning Guide](../shared/references/planning-guide.
 - Follow the plan checklist exactly
 - Implement one task at a time, marking each complete
 - Document any issues encountered — never improvise
-- **Exit Gate to Test phase (v6.3.1)**: 모든 slice 완료 시 Orchestrator가 Phase Exit Gate를 표시. "진행" 선택 시 Test phase 호출. Implement skill 자체는 `implement_completed_at`만 기록하고 current_phase 전환은 Orchestrator가 담당.
+- **Exit Gate to Test phase**: 모든 slice 완료 시 Orchestrator가 Phase Exit Gate를 표시. "진행" 선택 시 Test phase 호출. Implement skill 자체는 `implement_completed_at`만 기록하고 current_phase 전환은 Orchestrator가 담당.
 - **Computational sensors**: After each slice reaches GREEN, computational sensors (linter, type checker) run automatically. Failures trigger a self-correction loop (SENSOR_FIX state) where the AI attempts to fix sensor errors before moving to the next slice. Results are stored in receipt `sensor_results` fields.
 - **Slice Review**: After sensors pass, independent 2-stage review per slice — spec compliance (required) and code quality (advisory). Issues caught immediately, not deferred to Phase 5.
 - **Pre-flight Check**: Before each slice's TDD cycle, verify prerequisites (files exist, commands work). Problems surface immediately via AskUserQuestion.
@@ -218,8 +218,8 @@ For detailed guidance, see [Planning Guide](../shared/references/planning-guide.
 **Features**:
 - **Checkpoint support**: If interrupted, resumes from the last incomplete task
 - **Team mode**: Tasks clustered by file ownership, distributed to parallel agents with cross-review
-- **Exit Gate handoff to Test (v6.3.1)**: slice 완료 후 Implement는 완료-marker만 기록하고 Orchestrator Exit Gate로 제어 반환. 사용자 "진행" 선택 시 Test phase 호출 (수동 `/deep-test` 불필요).
-- **TDD state 업데이트 필수화** (v5.5.1): B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
+- **Exit Gate handoff to Test**: slice 완료 후 Implement는 완료-marker만 기록하고 Orchestrator Exit Gate로 제어 반환. 사용자 "진행" 선택 시 Test phase 호출 (수동 `/deep-test` 불필요).
+- **TDD state 업데이트 필수화**: B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
 - **Slice Review**: Per-slice 2-stage independent review (spec compliance → code quality) after sensors pass. Solo mode only; delegation mode uses self-review recorded as `slice_review.mode: "self"`
 
 For detailed guidance, see [Implementation Guide](../shared/references/implementation-guide.md).

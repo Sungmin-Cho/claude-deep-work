@@ -33,10 +33,10 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Internal (v6.3.0)** — `/deep-status --receipts`가 이 파일의 display logic을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal** — `/deep-status --receipts`가 이 파일의 display logic을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `skills/deep-status/SKILL.md` §6 (`Read skills/deep-receipt/SKILL.md and follow its display logic inline`).
 
-# Receipt Management (v4.0)
+# Receipt Management
 
 View, export, and manage evidence receipts from the implementation phase.
 
@@ -65,7 +65,7 @@ Set `$STATE_FILE` to the resolved path.
 Read `$STATE_FILE` and extract `work_dir`.
 Receipts are stored in `$WORK_DIR/receipts/SLICE-NNN.json`.
 
-**Envelope-aware reads (v6.5.0)**: deep-work 6.5.0 부터 SLICE-*.json 과
+**Envelope-aware reads**: deep-work 6.5.0 부터 SLICE-*.json 과
 `session-receipt.json` 는 M3 cross-plugin envelope (`{schema_version: "1.0",
 envelope: {...}, payload: {...}}`) 로 emit 된다 (cf.
 `claude-deep-suite/docs/envelope-migration.md` §1). 본 명령의 모든 receipt

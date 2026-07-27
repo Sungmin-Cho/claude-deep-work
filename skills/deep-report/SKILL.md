@@ -31,7 +31,7 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Internal (v6.3.0)** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `skills/deep-status/SKILL.md` §8 (`Read skills/deep-report/SKILL.md and follow its logic`).
 
 # Deep Work Session Report
@@ -251,7 +251,7 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 [If $WORK_DIR/insight-report.md exists, include the "종합 인사이트 요약" section here]
 [If insight-report.md does not exist: "Insight 분석 미실행"]
 
-## Assumption Health (v5.0)
+## Assumption Health
 
 Generate assumption health data by running the assumption engine:
 
@@ -281,7 +281,7 @@ Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumpt
 - Cross-model unique findings: [count]
 
 [Aggregate harness_metadata from $WORK_DIR/receipts/SLICE-*.json for the
-current session. **Envelope-aware unwrap (v6.5.0)**: receipts 는 M3 envelope
+current session. **Envelope-aware unwrap**: receipts 는 M3 envelope
 (`{schema_version: "1.0", envelope: {...}, payload: {...}}`) 로 emit 된다.
 각 파일을 읽을 때 envelope 형태이면 identity guard
 (`envelope.producer === "deep-work"` ∧

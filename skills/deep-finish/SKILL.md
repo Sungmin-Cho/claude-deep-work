@@ -37,10 +37,10 @@ user-invocable: true
 - Sibling skill helper at `skills/deep-integrate/phase5-record-error.sh` (used by §1c when `--skip-integrate` is taken with a stalled Phase 5).
 
 
-> **Internal (v6.3.0)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
+> **Internal** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
 > 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read skills/deep-finish/SKILL.md`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
 
-# Deep Work Session Completion (v4.1)
+# Deep Work Session Completion
 
 Finish the current Deep Work session with an explicit branch completion workflow.
 
@@ -66,14 +66,14 @@ Read `$STATE_FILE`. If the file doesn't exist:
    새 세션을 시작하려면: /deep-work <작업 설명>
 ```
 
-`current_phase` 분기 (v6.3.0):
+`current_phase` 분기:
 - `current_phase`가 empty → 위와 동일 "세션 없음" 메시지.
-- `finished_at` 필드 **존재** → 이미 종료된 세션. "ℹ️ 이 세션은 이미 종료되었습니다 (finished_at: <값>). 새 세션을 시작하려면 `/deep-work <작업>`을 실행하세요." → exit 0. (v6.3.0 review W-R2 — `--skip-integrate` 분기가 finalized 세션을 재실행하지 않도록 최상위 가드)
+- `finished_at` 필드 **존재** → 이미 종료된 세션. "ℹ️ 이 세션은 이미 종료되었습니다 (finished_at: <값>). 새 세션을 시작하려면 `/deep-work <작업>`을 실행하세요." → exit 0. (`--skip-integrate` 분기가 finalized 세션을 재실행하지 않도록 최상위 가드)
 - `current_phase == "idle"` + `phase5_completed_at` 필드 **존재** → Phase 5 완료 상태로 간주하고 **정상 진행** (Section 1a, 2, 3... 계속).
 - `current_phase == "idle"` + `phase5_completed_at` **부재**:
   - `phase5_entered_at` 존재:
     - `$ARGUMENTS`에 `--skip-integrate` 있음 → **정상 진행**. Phase 5가 에러/사용자 요청으로 중단되어 orchestrator가 강제 finish를 호출한 경로.
-      **v6.3.0 review RC-2 defensive guard**: 아래 `WORK_DIR` resolve(Section 1 말미) 이후 Section 2로 진입하기 전에 Section 1c를 실행하여 `integrate-loop.json`의 `terminated_by`를 `"error"`로 defensively 기록한다. 이 로직은 Section 1a(Phase 5 힌트) **다음**, Section 2 **이전**에 배치한다.
+      **Defensive guard**: 아래 `WORK_DIR` resolve(Section 1 말미) 이후 Section 2로 진입하기 전에 Section 1c를 실행하여 `integrate-loop.json`의 `terminated_by`를 `"error"`로 defensively 기록한다. 이 로직은 Section 1a(Phase 5 힌트) **다음**, Section 2 **이전**에 배치한다.
     - `--skip-integrate` 없음 → **Phase 5가 중단된 상태**. 메시지: "Phase 5 Integrate 루프가 중단되었습니다. `/deep-integrate`로 재진입하거나 `--skip-integrate`와 함께 `/deep-finish`를 다시 실행하세요." → exit 0.
   - `phase5_entered_at` 부재 → 기존 "세션 없음" 메시지.
 - 그 외 (`brainstorm`/`research`/`plan`/`implement`/`test`) → 정상 진행.
@@ -86,12 +86,12 @@ Resolve `$WORK_DIR` (used by Section 1a below):
 WORK_DIR="${PROJECT_ROOT}/$(read_frontmatter_field "$STATE_FILE" work_dir)"
 ```
 
-### 1a. Phase 5 Integrate 힌트 (v6.3.0, 선택적)
+### 1a. Phase 5 Integrate 힌트
 
 `$WORK_DIR/integrate-loop.json` 존재 여부 확인:
 - 존재 & `terminated_by != null` → 정상 진행 (Section 2로).
 - 존재 & `terminated_by == null`:
-  - **v6.3.0 review Codex P2**: `$ARGUMENTS`에 `--skip-integrate` 있음 → prompt 없이 Section 1c로 진행 (orchestrator auto-flow가 질문에 막히지 않도록).
+  - **주의**: `$ARGUMENTS`에 `--skip-integrate` 있음 → prompt 없이 Section 1c로 진행 (orchestrator auto-flow가 질문에 막히지 않도록).
   - `--skip-integrate` 없음 → **Phase 5 루프가 중단된 상태** (Ctrl-C 또는 재진입 대기). AskUserQuestion:
 
     ```
@@ -116,7 +116,7 @@ WORK_DIR="${PROJECT_ROOT}/$(read_frontmatter_field "$STATE_FILE" work_dir)"
 - (2) 선택 → 기존 절차 계속.
 - `$ARGUMENTS`에 `--skip-integrate` 있음 → 힌트 스킵하고 바로 Section 2.
 
-### 1c. Phase 5 defensive error marker (v6.3.0 review RC-2 + W3-1 + RC4-2)
+### 1c. Phase 5 defensive error marker
 
 `$ARGUMENTS`에 `--skip-integrate`가 있고 Section 1의 분기에서 `phase5_entered_at`이 있으나 `phase5_completed_at`이 없어 이 Section에 도달한 경우에만 실행한다. 이 시점에는 Section 1 말미에서 `$WORK_DIR`가 이미 resolve되었으므로 아래 helper 호출이 유효하다.
 
@@ -126,9 +126,9 @@ WORK_DIR="${PROJECT_ROOT}/$(read_frontmatter_field "$STATE_FILE" work_dir)"
 bash skills/deep-integrate/phase5-record-error.sh <ABSOLUTE_WORK_DIR>
 ```
 
-**중요 (v6.3.0 review W5-1)**: Claude Code의 Bash tool은 매 호출마다 새 shell을 spawn하므로 이전 단계에서 export한 `$WORK_DIR` 같은 변수가 persist하지 않는다. LLM은 state file에서 `work_dir`을 먼저 읽어 `<ABSOLUTE_WORK_DIR>` 자리에 실제 절대경로를 치환 후 호출한다. literal `"$WORK_DIR"`를 그대로 전달하면 empty string으로 확장되어 helper가 usage 에러로 fail한다.
+**중요**: Claude Code의 Bash tool은 매 호출마다 새 shell을 spawn하므로 이전 단계에서 export한 `$WORK_DIR` 같은 변수가 persist하지 않는다. LLM은 state file에서 `work_dir`을 먼저 읽어 `<ABSOLUTE_WORK_DIR>` 자리에 실제 절대경로를 치환 후 호출한다. literal `"$WORK_DIR"`를 그대로 전달하면 empty string으로 확장되어 helper가 usage 에러로 fail한다.
 
-또한 helper는 state file의 `phase5_work_dir_snapshot`을 읽어 인자와 일치하는지 검증하므로(RC5-3), 올바른 세션 work_dir이어야 실행된다.
+또한 helper는 state file의 `phase5_work_dir_snapshot`을 읽어 인자와 일치하는지 검증하므로, 올바른 세션 work_dir이어야 실행된다.
 
 이 helper가 `integrate-loop.json`의 `terminated_by`를 atomically `"error"`로 교체하거나, 파일 부재 시 최소 구조로 생성한다.
 
@@ -146,7 +146,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
 is slice receipts) **wrapped in the M3 cross-plugin envelope** (deep-work
 v6.5.0; cf. `claude-deep-suite/docs/envelope-migration.md` §1).
 
-> **Two-step protocol (v6.5.0)**: the legacy session-receipt body ("payload")
+> **Two-step protocol**: the legacy session-receipt body ("payload")
 > is built first into a temp file; quality fields (Section 2-1) and
 > outcome/outcome_ref (Section 7) are appended to that **same payload temp
 > file**; only at the end of Section 7 does the wrap helper produce the final
@@ -214,7 +214,7 @@ payload temp file. Section 7's option-specific blocks update
 `outcome`/`outcome_ref` on the same temp file. The final envelope wrap is
 performed by Section 7-Z below — exactly once per session.
 
-### 2-1. Calculate Session Quality Score (v5.8 — 5-component system)
+### 2-1. Calculate Session Quality Score
 
 Calculate a quality score (0-100) using the 5-component weighted system with not_applicable proportional redistribution.
 
@@ -262,7 +262,7 @@ Examples:
 `quality_diagnostics` (the 2 diagnostic metrics) to the
 **`$WORK_DIR/.session-receipt.payload.json` temp file** generated in Step 2.1.
 
-### Optional `methodology_shadow` (v6.11.0)
+### Optional `methodology_shadow`
 
 state에 `risk_profile_json`이 존재하면 payload에 다음 optional 블록을 추가한다 (부재 시 생략 — forward-compatible, 스키마 registry 새 minor 불필요):
 
@@ -392,7 +392,7 @@ If `slices.completed < slices.total`:
 
 The session receipt will include `"partial": true`.
 
-### 4a. Unified finish gate (v6.12)
+### 4a. Unified finish gate
 
 completion option을 제시하기 전에 state의 `review_execution_json`을 parse하고
 `finishGateAllowed(reviewExecutionJson)`을 호출한다. 반환값만 외부 변경 권한의 정본이다.
@@ -536,7 +536,7 @@ Use AskUserQuestion:
    `$WORK_DIR/.session-receipt.payload.json`. The envelope wrap happens in
    Section 7-Z.
 
-### 7-Z. Envelope wrap (v6.5.0 — runs once, after outcome is decided)
+### 7-Z. Envelope wrap
 
 Now that the payload temp file has all fields (Section 2 base + Section 2-1
 quality + Section 7 outcome), wrap it in the M3 envelope and write the final
@@ -603,7 +603,7 @@ WRAP_ARGS=(
 [ -n "$STATE_FILE_PATH" ] && WRAP_ARGS+=(--session-state-file "$STATE_FILE_PATH")
 
 # Cleanup payload temp file ONLY on helper success — preserve on failure for
-# retry (round-1 deep-review C2 lesson). The `set -e` guarantees abort if the
+# retry. The `set -e` guarantees abort if the
 # helper exits non-zero before this line runs.
 if node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" "${WRAP_ARGS[@]}"; then
   rm -f "$WORK_DIR/.session-receipt.payload.json"
@@ -634,7 +634,7 @@ The helper:
   (`outcome`) and the **verification signal** (`x-test-verified`) separately —
   downstream consumers judge trustworthiness from the pair.
 
-### 7-Z-A. Optional cross-plugin handoff emit (v6.6.0 — M5.7.A)
+### 7-Z-A. Optional cross-plugin handoff emit
 
 > **Ordering**: this block runs **after** Section 7-Z (which wraps the
 > session-receipt and assigns its `run_id`) and **before** Section 8 (state

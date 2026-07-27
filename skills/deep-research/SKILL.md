@@ -28,16 +28,16 @@ user-invocable: true
 5. `current_phase`가 "research"인지 확인 — 아니면 오류
 6. `research_started_at` 기록 (ISO timestamp)
 
-## 완료-Marker 감지 (resume 경로 — F1, NC1, NW5)
+## 완료-Marker 감지 (resume 경로)
 
 `research_approved: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun` / `--scope=` / `--incremental`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, Orchestrator §3-2가 이미 integrity check(sha256 비교)를 수행하여 stale approval 시 skill을 직접 재호출하므로, 본 branch는 Orchestrator dispatch를 통한 정상 경로 이외에는 도달하지 않는다. 진입 시:
 - "Phase 1 (Research)는 이미 승인·완료되었습니다. Exit Gate를 재표시합니다." 출력
 - Orchestrator §3-2로 제어 반환 (review+approval 거치지 않고 바로 Exit Gate 재실행)
 - Section 2/3 진입 금지
 
-**중요 (NC1)**: `research_completed_at` / `research_complete: true`만 있고 `research_approved`가 없으면 이 branch를 발동시키지 말 것 — skill completion과 review+approval 사이에 세션이 중단된 상태이며, resume 시 review+approval을 다시 거쳐야 한다.
+**중요**: `research_completed_at` / `research_complete: true`만 있고 `research_approved`가 없으면 이 branch를 발동시키지 말 것 — skill completion과 review+approval 사이에 세션이 중단된 상태이며, resume 시 review+approval을 다시 거쳐야 한다.
 
-**중요 (NW5)**: Resume fast-path의 integrity check는 Orchestrator §3-2가 우선 담당. 본 branch는 `research_approved: true`만 감지하나, Orchestrator가 hash 불일치 감지 시 approval을 invalidate하고 skill을 `--force-rerun`과 함께 호출하므로 이 branch는 out-of-band 편집 케이스에서 우회됨.
+**중요**: Resume fast-path의 integrity check는 Orchestrator §3-2가 우선 담당. 본 branch는 `research_approved: true`만 감지하나, Orchestrator가 hash 불일치 감지 시 approval을 invalidate하고 skill을 `--force-rerun`과 함께 호출하므로 이 branch는 out-of-band 편집 케이스에서 우회됨.
 
 ## Critical Constraints
 
@@ -93,13 +93,13 @@ Phase 1 Research 시작 시 외부 플러그인 데이터를 참조한다. 이 �
 3. 이 인사이트는 "참고" 수준 — 현재 작업과 관련 없으면 무시
 4. 향후 (Phase 5 deep-integrate) 에서 session-receipt 의 `envelope.parent_run_id` 가 이 evolve-insights 의 `envelope.run_id` 로 채워진다 (cross-plugin chain).
 
-### Deep-Memory Brief Context (v6.9.0+, consumer of `deep-memory` plugin)
+### Deep-Memory Brief Context
 
 `.deep-memory/latest-brief.md`가 프로젝트 루트(`git rev-parse --show-toplevel`을 `$WORK_DIR`에서 실행한 결과 — non-git worktree에서는 `$WORK_DIR`의 가장 가까운 ancestor 중 `.git/` 디렉토리가 있는 위치 — R1-I2)에 존재하면 cross-project semantic operational memory를 Research 컨텍스트로 인용한다. **자동 호출 금지** — brief 파일이 이미 materialize 되어 있는 경우(사용자가 명시적으로 `/deep-memory-brief`를 호출한 결과)에만 인용한다. 자세한 spec은 `docs/deep-memory-integration-handoff.md` §2 참조.
 
 처리 순서:
 
-1. **존재 확인** — `.deep-memory/latest-brief.md` 파일 stat. **부재 시 `research.md`에 아무것도 쓰지 않는다** — research artifact 는 brief 가 있을 때만 deep-memory 인지하게 한다 (R1-Y2 — opt-in 없는 사용자의 artifact에 deep-memory 권유가 leak 되지 않도록). 단 runtime Research context 에는 한 줄 안내만 emit: "No `.deep-memory/latest-brief.md` found. Run `/deep-memory-brief \"<task>\"` first if you want cross-project recall." 이후 §5 State 필드는 모두 부재 기본값으로 채우고 종료.
+1. **존재 확인** — `.deep-memory/latest-brief.md` 파일 stat. **부재 시 `research.md`에 아무것도 쓰지 않는다** — research artifact 는 brief 가 있을 때만 deep-memory 인지하게 한다. 단 runtime Research context 에는 한 줄 안내만 emit: "No `.deep-memory/latest-brief.md` found. Run `/deep-memory-brief \"<task>\"` first if you want cross-project recall." 이후 §5 State 필드는 모두 부재 기본값으로 채우고 종료.
 2. **Stale 가드** — 파일 mtime이 현재 시각보다 14일 이상 오래되면 "brief is stale — re-run /deep-memory-brief" 경고를 함께 출력하되 인용은 계속 진행한다 (사용자가 brief를 materialize한 시점에 이미 opt-in 한 것이므로 차단하지 않음).
 3. **Verbatim 인용** — brief markdown 본문 전체를 `research.md`의 **새 `## Cross-project Memory` 섹션** (이때 비로소 생성) 아래에 그대로 삽입한다. brief의 heading hierarchy는 두 단계 들여쓴다 (`# Deep-Memory Brief — ...` → `### Deep-Memory Brief — ...`, `## <idx>. <type> — ...` → `#### <idx>. ...`). 이는 deep-memory의 redaction(3-pass) + 포맷팅을 보존하기 위함이다 — re-rendering 금지.
 4. **Provenance 추출** — brief markdown 본문에서 정규식 `` /\bmem-[0-9A-HJKMNP-TV-Z]{26}\b/g `` (Crockford base32 ULID, **uppercase-only** — I/L/O/U 제외; deep-memory의 `memory_id` 는 uppercase 만 emit. 향후 lowercase 도입 시 provenance silently drop 되지 않도록 명시 — R1-I1) 으로 모든 `memory_id` 토큰을 추출하여 state에 `cross_project_memory.cited_memory_ids` 배열로 기록한다. 빈 배열도 유효 (인용 자체가 빈 brief일 수 있음).
@@ -147,7 +147,7 @@ First Action의 디렉토리 매핑 직후, Agent 위임 전에 부모 세션이
    - Agent prompt의 context에 `topology`, `health_report` 요약, `fitness_baseline`, `unresolved_required_issues`를 포함한다.
    - Health Check 실행 실패 시 실패 메시지와 skip 사유를 state에 남기고 Research 자체는 계속 진행한다.
 
-## 모드 분기 — delegation 기반 (v6.4.0)
+## 모드 분기 — delegation 기반
 
 Research 단계는 **항상 subagent에 위임**한다. 메인 세션은 오케스트레이터 역할만 수행.
 
@@ -159,7 +159,7 @@ Research 단계는 **항상 subagent에 위임**한다. 메인 세션은 오케�
    - `team` → 3개 Agent() 병렬 호출 (area는 project_type별로 다름)
 3. 먼저 Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
    scalar-first 규칙으로 `decodedRouting`/`decodedRoutingMeta`를 만든다. 모든 Agent 호출은
-   `model=decodedRouting.research` call-site override를 적용한다 (spec §5.8).
+   `model=decodedRouting.research` call-site override를 적용한다.
 
 ### Solo path (team_mode=solo)
 
@@ -173,7 +173,7 @@ Agent(
 )
 ```
 
-Agent가 `$WORK_DIR/research.md`를 **직접 작성**한다. 부모는 refinement protocol을 수행하지 않는다 (spec §6.2).
+Agent가 `$WORK_DIR/research.md`를 **직접 작성**한다. 부모는 refinement protocol을 수행하지 않는다.
 
 ### Team path (team_mode=team)
 
@@ -181,7 +181,7 @@ Agent가 `$WORK_DIR/research.md`를 **직접 작성**한다. 부모는 refinemen
 - codebase: `architecture`, `patterns`, `risks`
 - zero-base: `tech-stack`, `conventions`, `data-model`
 
-단일 메시지에 3개 Agent 호출을 parallel하게 실행. **각 호출은 Solo path와 동일한 prompt 계약을 유지** (area만 다름). work_dir/task/re_run_area/incremental_since 모두 전달 필요 — 생략 시 worker가 output path 결정 불가 (CA2 fix):
+단일 메시지에 3개 Agent 호출을 parallel하게 실행. **각 호출은 Solo path와 동일한 prompt 계약을 유지** (area만 다름). work_dir/task/re_run_area/incremental_since 모두 전달 필요 — 생략 시 worker가 output path 결정 불가:
 
 ```
 Agent(
@@ -209,7 +209,7 @@ Agent(
 
 각 Agent가 `$WORK_DIR/research-{area}.md` 부분 파일을 작성. 완료 후 부모가 3개 파일을 Read → Document Refinement Protocol (Apply / Deduplicate / Prune) → `$WORK_DIR/research.md` 로 merge.
 
-### Parallel partial timeout (spec §7.1 W4)
+### Parallel partial timeout
 
 3개 중 일부만 성공하고 일부 timeout/fail 시:
 - AskUserQuestion: (a) 실패한 area만 재위임 / (b) 전체 재위임 / (c) 수동 수정 / (d) abort
@@ -247,7 +247,7 @@ v6.3.x의 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` precheck과 TeamCreate+TaskCrea
 Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: research
 - Document: `$WORK_DIR/research.md`
-- Self-review checklist — **project_type에 따라 분기** (W-4.1 fix):
+- Self-review checklist — **project_type에 따라 분기**:
   - 기존 codebase (`project_type != zero-base`): 아키텍처 분석 완성도, 패턴 식별, 리스크 누락
   - 신규 프로젝트 (`project_type == zero-base`): tech-stack 선정 근거 (대안 비교 + URL 출처), conventions 완결성, data-model 적정성
 
@@ -260,7 +260,7 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - `phase_review.research` + `review_results.research` 업데이트
 - `cross_project_memory`: `{brief_path, brief_mtime, brief_stale, cited_memory_ids[]}` — Cross-Plugin Context의 Deep-Memory Brief Context 처리 결과 (부재 시 `{null, null, false, []}`)
 
-### Authoritative risk + adaptive 재라우팅 (v6.12.0)
+### Authoritative risk + adaptive 재라우팅
 
 research.md 완성 직후 Orchestrator 복귀 전에 수행한다. 라우팅 carrier 추출은 CLI의
 결정론 `extractRoutingState`에 위임하고, 이 절은 **T9의 유일한 state writer**로서 CLI
@@ -273,7 +273,7 @@ research.md 완성 직후 Orchestrator 복귀 전에 수행한다. 라우팅 car
 
 ```bash
 # 이 스킬 컨텍스트에는 PROJECT_ROOT가 정의되어 있지 않다 — line 98 관례와 동일하게 명시 설정
-# (미설정 시 CLI가 cwd로 fallback해 signals를 오수집: Task 7 리뷰 W1)
+# (미설정 시 CLI가 cwd로 fallback해 signals를 오수집)
 PROJECT_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)"
 RISK_IN=$(mktemp)
 # 1의 task/evidence/prior_profile와 현재 policy mode 및 검증된

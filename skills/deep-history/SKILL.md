@@ -30,10 +30,10 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Internal (v6.3.0)** — `/deep-status --history`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> **Internal** — `/deep-status --history`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
 > 참조처: `skills/deep-status/SKILL.md` §7 (`Read skills/deep-history/SKILL.md and follow its display logic inline`).
 
-# Deep Work Session History (v4.1)
+# Deep Work Session History
 
 View historical session data across all completed Deep Work sessions.
 
