@@ -45,34 +45,9 @@ const { replaced, warnings } = migrateStateFile(stateFile);
 - `warnings`가 있으면 그대로 stderr에 출력 (치환 없이 원본 유지).
 - 치환이 발생한 경우 atomic `writeFile + rename` 으로 state file에 persist됨.
 
-
-## 1-1. Update Check
-
-SessionStart hook의 update-check.sh 출력 처리:
-- `JUST_UPGRADED` → 업그레이드 완료 메시지, 계속 진행
-- `UPGRADE_AVAILABLE` → AskUserQuestion으로 업그레이드 제안 (업그레이드 / 건너뜀)
-
-## 1-2. 기존 세션 확인 (Multi-Session)
-
-### Legacy 마이그레이션
-`.claude/deep-work.local.md` 존재 + active → `migrate_legacy_state` 실행
-
-### Stale 세션 감지
-`detect_stale_sessions` → 각 stale 세션에 대해 AskUserQuestion:
-1. 이어서 진행 → state 읽기 + worktree 확인 + artifact 복원 → **Step 3으로 jump**
-2. 종료 처리 → idle 설정, registry 해제
-3. 무시 → 계속
-
-### Active 세션 목록
-Registry에서 활성 세션 표시. 5개 이상이면 경고.
-
-### 세션 ID 생성
-```
-SESSION_ID=$(generate_session_id)
-write_session_pointer "$SESSION_ID"
-```
-
-## 1-3. 프로필 로드 + 플래그 파싱
+§1-1 Update Check 부터 §1-2 세션 ID 생성까지의 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/session-discovery.md`
+를 읽고 그대로 수행한다.
 
 ### 플래그 표
 
@@ -95,226 +70,20 @@ write_session_pointer "$SESSION_ID"
 | `--exec=<inline\|delegate>` | Implement 단계 실행 방식 override. parser → state.execution_override → deep-implement §1.5에서 read |
 | `--resume-from=<phase>` | Step 1 초기화 건너뛰고 기존 state로 `<phase>`(research/plan/implement/test) 해당 Step 3-N부터 재개. `skills/deep-resume/SKILL.md`가 사용. |
 
-### §1-3-1. 플래그 파서 호출
+플래그 파서 호출(§1-3-1), v2→v3 프로필 마이그레이션(§1-3-2), v3 로더 호출(§1-3-3),
+플래그 우선순위(§1-3-4), 파싱 경고(§1-3-5), `--setup` 처리 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/flag-parsing.md`
+를 읽고 그대로 수행한다.
 
-orchestrator 본문에서 직접 실행 (process scope 일관 — R3-B):
+§1-4 항목별 대화형 설정(assumption auto-adjust 통합, session-recommender sub-agent 호출,
+항목별 AskUserQuestion, 결과 누적, 일시정지 재진입) 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/interactive-setup.md`
+를 읽고 그대로 수행한다. `--no-ask`로 이 단계를 건너뛴 경우에는 읽지 않는다.
 
-````bash
-# $ARGUMENTS를 double-quoted single arg로 전달 — shell metacharacters가
-# parser allowlist 적용 전에 shell에 의해 평가되지 않음.
-# parser CLI entrypoint는 단일 공백 포함 인자를 split-before-allowlist로 처리.
-PARSE_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/parse-deep-work-flags.js" -- "$ARGUMENTS" 2>/tmp/dw-parse-err.txt)
-parse_rc=$?
-````
-
-- `parse_rc` 비-zero → `/tmp/dw-parse-err.txt` 내용 표시 + AskUserQuestion (재입력 / 종료). `2>&1 || true` 패턴 사용 금지.
-- `PARSE_OUT` (JSON) → `TASK_TEXT`, `FLAGS` 객체 추출.
-- `TASK_TEXT` 비어 있으면 AskUserQuestion("작업 내용을 입력해 주세요.").
-
-> `scripts/parse-deep-work-flags.js`는 Task 4에서 구현. 본 task는 호출 step만 박제.
-
-### §1-3-2. 프로필 v2→v3 마이그레이션
-
-파서 결과로 `DEEP_WORK_INITIAL_PRESET`(= `FLAGS.profile` 또는 null)이 채워진 후 migration 호출:
-
-````bash
-PROFILE_FILE="$PROJECT_ROOT/.claude/deep-work-profile.yaml"
-migrate_stderr=$(mktemp)
-MIGRATE_OUT=$(DEEP_WORK_INITIAL_PRESET="${FLAGS.profile}" \
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/migrate-profile-v2-to-v3.js" "$PROFILE_FILE" 2>"$migrate_stderr")
-migrate_rc=$?
-````
-
-- `migrate_rc` 비-zero → `$migrate_stderr` 내용 표시 + AskUserQuestion (수동 이전 / 새 v3 강제 생성 / 종료). `2>&1 || true` 패턴 사용 금지.
-- `MIGRATE_OUT` (JSON stdout):
-  - `{ "migrated": true, "reason": "v2-to-v3" }` → 1회 안내:
-    > "프로필을 v3로 마이그레이션했습니다. 알림 설정은 제거되었고, 매 세션마다 4개 항목(team/start/tdd/git)에 대해 LLM 추천 + 확인을 거칩니다. 모델은 코드베이스 규모·난이도로 자동 선택됩니다. ask 항목 변경: `/deep-work --setup`. 빠른 경로: `/deep-work --profile=X --no-ask`."
-
-    이후 migrate warnings 표시:
-    ```bash
-    if echo "$MIGRATE_OUT" | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")); process.exit(r.warnings && r.warnings.length ? 0 : 1)'; then
-      echo "$MIGRATE_OUT" | node -e '
-        const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
-        for (const w of (r.warnings || [])) console.error("[migrate] " + w);
-      '
-    fi
-    ```
-  - `{ "migrated": false, "reason": "already-v3" }` → silent.
-  - `{ "migrated": false, "reason": "not-found-created-v3" }` → 1회 안내:
-    > "신규 프로필 (v3 형식)을 작성했습니다: `$PROFILE_FILE`. 매 세션마다 4개 항목 ask + 추천이 진행됩니다(모델은 자동 선택). 빠른 경로: `--profile=solo-strict --no-ask`."
-
-### §1-3-3. v3 프로필 로더 호출
-
-````bash
-# --profile=X가 loader에 전달되도록 DEEP_WORK_INITIAL_PRESET export
-# (§1-3-2의 migrate-profile 호출과 동일한 env 전달 패턴으로 parity 확보)
-PROFILE_OUT=$(DEEP_WORK_INITIAL_PRESET="${FLAGS.profile}" \
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/load-v3-profile.js" "$PROFILE_FILE" 2>/tmp/dw-profile-err.txt)
-profile_rc=$?
-````
-
-- `profile_rc` 비-zero → `/tmp/dw-profile-err.txt` 내용 표시 + AskUserQuestion (재시도 / 종료).
-- `PROFILE_OUT` (JSON stdout) → `PROFILE_DATA` (presets, default_preset, interactive_each_session, defaults) 추출.
-
-> `scripts/load-v3-profile.js`는 Task 3.5에서 구현. 본 task는 호출 step만 박제.
-
-### §1-3-4. 플래그 우선순위 적용
-
-아래 우선순위 순서로 in-memory `current_defaults` 구성 (나중 단계가 앞 단계를 override):
-
-1. `PROFILE_DATA.defaults` (프리셋 기본값)
-2. `--profile=X` 선택 프리셋 defaults (명시 선택 시)
-3. CLI 플래그 (`--team`, `--tdd=MODE`, `--no-branch`, `--skip-research` 등)
-4. `--no-ask` → `interactive_each_session` 전 항목 건너뜀 표시
-
-`current_defaults`는 §1-4 ask 흐름의 입력값. `--no-ask` 지정 시 §1-4 전체 skip.
-
-### §1-3-5. 파싱 경고 표시
-
-`FLAGS.warnings` 배열 비어있지 않으면 각 경고를 1회씩 표시:
-- 알 수 없는 플래그: `"⚠ 알 수 없는 플래그 무시됨: --foo"`
-- `--recommender=` allowlist 위반: `"⚠ --recommender=gpt4 불인식 → sonnet fallback"`
-- 기타 파서 경고: 그대로 표시.
-
-### --setup 사용 시
-
-`FLAGS.setup` = true → 기존 프로필 존재하면 프리셋 관리 UI (편집 / 새로 만들기).
-
-## 1-4. 항목별 대화형 설정
-
-`--no-ask` 또는 `--profile=X --no-ask` 지정 시 §1-4 전체 skip → §1-5로 진행.
-
-### §1-4-1. Assumption auto-adjust 결과 통합
-
-§1-7(Assumption Health Check)이 §1-4 이전에 실행되어 `tdd_mode` 등을 auto-adjust한 결과를 in-memory `current_defaults`에 반영. 이후 recommender 호출의 입력 `current_defaults`가 됨.
-
-(§1-7은 번호 유지, §1-4-1이 §1-7 결과를 consume하는 방식으로 연결 — 섹션 번호 재정렬 회피.)
-
-### §1-4-2. session-recommender sub-agent 호출 (in-memory only)
-
-조건:
-- `--no-recommender` 미지정 + sanitize 후 입력 토큰 ≤ 8k인 경우만 호출
-- 그 외: 추천 없이 ask 진입 (옵션 라벨 = "(자동 추천 실패 — 직접 선택)")
-
-capability 감지:
-
-````bash
-# env-only IS_GIT 의존 제거 — 실 git 명령으로 직접 검출
-IS_GIT=$(git rev-parse --is-inside-work-tree 2>/dev/null || echo "false")
-WORKTREE_SUPPORTED=$(git worktree list >/dev/null 2>&1 && echo "true" || echo "false")
-TEAM_ENV=$([ -n "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" ] && echo "true" || echo "false")
-
-export IS_GIT WORKTREE_SUPPORTED TEAM_ENV
-CAP=$(node -e '
-  const { detectCapability } = require("'"${CLAUDE_PLUGIN_ROOT}"'/scripts/detect-capability.js");
-  const cap = detectCapability({
-    is_git: process.env.IS_GIT === "true",
-    worktree_supported: process.env.WORKTREE_SUPPORTED === "true",
-    team_env_set: process.env.TEAM_ENV === "true"
-  });
-  process.stdout.write(JSON.stringify(cap));
-')
-````
-
-호출 (`deep-work:session-recommender` → 2단계 fallback):
-
-````javascript
-const { sanitizeInput } = require("${CLAUDE_PLUGIN_ROOT}/scripts/recommender-input.js");
-const { parseRecommendation } = require("${CLAUDE_PLUGIN_ROOT}/scripts/recommender-parser.js");
-const { filterAskItems } = require("${CLAUDE_PLUGIN_ROOT}/runtime/recommender-runtime.js");
-
-const input = sanitizeInput({
-  task_description: TASK_TEXT,
-  recent_commits: RECENT_COMMITS,
-  top_level_dirs: TOP_DIRS,
-  current_defaults: current_defaults,
-  capability: CAPABILITY,
-  ask_items: filterAskItems(PROFILE_DATA.interactive_each_session)  // v6.10.0: model_routing 영구 제거 (구프로필 포함)
-});
-
-let result;
-try {
-  result = await Agent({
-    subagent_type: "deep-work:session-recommender",
-    model: RECOMMENDER_MODEL,  // sonnet 기본, --recommender= override
-    prompt: JSON.stringify(input)
-  });
-} catch (e) {
-  if (/subagent_type.*not found/i.test(e.message || '')) {
-    result = await Agent({
-      subagent_type: "session-recommender",
-      model: RECOMMENDER_MODEL,
-      prompt: JSON.stringify(input)
-    });
-  } else {
-    throw e;
-  }
-}
-
-const parsed = parseRecommendation(result.text, { capability: input.capability });
-
-// v6.10.0: 자동 모델 결정(§1-8.5)의 난이도 입력. parsed.ok=false거나 task_difficulty 부재면 빈 값 → 무보정.
-const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.data.task_difficulty.value : "";
-````
-
-`parsed.ok=false` 또는 30초 timeout → recommender skip + `(자동 추천 실패 — 직접 선택)` 라벨로 ask 진입.
-
-### §1-4-3. interactive_each_session 항목별 AskUserQuestion (in-memory only)
-
-> **주의**: 순회 전 `filterAskItems()`(recommender-runtime)를 적용한다 — 구프로필 `interactive_each_session`에 `model_routing`이 남아 있어도 ask하지 않는다(모델은 §1-8.5에서 자동 결정).
-
-`filterAskItems(PROFILE_DATA.interactive_each_session)` 배열을 순회하며 각 항목별 AskUserQuestion. CLI 플래그로 이미 override된 항목은 건너뜀.
-
-각 ask 항목별로 옵션 라벨 빌드:
-
-````javascript
-const { formatOptions, capabilityToDisabled } = require("${CLAUDE_PLUGIN_ROOT}/scripts/format-ask-options.js");
-const disabled = capabilityToDisabled(CAP, item);
-const opts = formatOptions({
-  item,
-  recommendation: REC[item] || null,
-  default_value: DEFAULTS[item],
-  enum_values: ENUMS[item],
-  disabled_values: disabled
-});
-// AskUserQuestion(opts.map(o => ({ label: o.label, value: o.value })))
-````
-
-### §1-4-4. 결과 누적
-
-ask 결과는 orchestrator 변수에 누적. **state file 미생성**. §1-9 시점에 한 번에 atomic write.
-
-### §1-4-5. 일시정지 시 재진입
-
-ask 도중 사용자 일시정지 → state file 미생성 상태로 종료. 복귀(`/deep-work` 재호출) 시 §1-1부터 재시작 (recommender도 재호출).
-
-## 1-5. 작업 디렉토리 생성
-
-```
-mkdir -p .deep-work
-TASK_FOLDER="${TIMESTAMP}-${SLUG}"
-mkdir -p ".deep-work/${TASK_FOLDER}"
-```
-
-Legacy `deep-work/` → `.deep-work/` 마이그레이션 자동 처리.
-
-## 1-6. Cross-model 도구 감지
-
-codex/gemini 설치 여부 확인 → 프로필의 `cross_model_preference`에 따라 자동 활성화 / AskUserQuestion.
-
-## 1-7. Assumption Health Check
-
-세션 히스토리 충분 시 (>=5):
-- assumption engine auto-adjust 실행
-- 자동 조정 결과 표시 (tdd_mode 등)
-- 사용자 --tdd 플래그가 override
-
-## 1-8. Git Branch + Worktree
-
-Git repository인 경우:
-- 프로필/플래그에 따라 worktree 격리 / 새 브랜치 / 현재 브랜치 유지
-- Worktree 성공 시: `worktree_enabled: true`, `worktree_path`, `worktree_branch` state에 기록
-- 이후 모든 파일 작업은 worktree 절대 경로 기준
+§1-5 작업 디렉토리 생성 · §1-6 Cross-model 도구 감지 · §1-7 Assumption Health Check ·
+§1-8 Git Branch + Worktree 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/workspace-setup.md`
+를 읽고 그대로 수행한다.
 
 ## 1-8.5. Provisional risk-only → adaptive 모델 결정
 
@@ -420,40 +189,9 @@ mv -f "$state_tmp" "$state_path"   # atomic rename
 
 Registry 등록: `register_session "$SESSION_ID" ...`
 
-## 1-10. 프로필 저장 (첫 실행 시)
-
-프로필 미존재 시 `.claude/deep-work-profile.yaml`에 **v3 형식**으로 저장 (v2 형식 사용 금지). §1-3-2의 migration 단계가 `not-found-created-v3` 응답 시 이미 v3 파일이 생성되므로, 본 단계에서는 §1-4-3 ask 결과를 반영하여 해당 프리셋 defaults를 업데이트한다.
-
-## 1-11. 세션 확인 표시
-
-> **근거 라인 분기**: `MR_OUT.meta.error === true`(CLI 자동 결정 실패 — fail-safe)이면 아래 "근거" 라인 대신
-> `근거: 자동 선택 실패 — 전 phase main(현재 세션 모델)로 fallback`을 표시하고 `MR_OUT.warnings`의 사유도 함께 보여준다.
-> 정상 meta(`{tiers, scale, signals_summary, difficulty, ...}`)일 때만 아래 scale/tracked_files/difficulty 근거를 표시한다
-> (fallback meta는 `{runtime, tiers, error}` 형태뿐이라 `scale`/`signals_summary`/`difficulty` 참조 시 undefined 렌더 — final review #2).
-
-```
-Deep Work 세션이 시작되었습니다!
-
-작업: $ARGUMENTS
-작업 폴더: $WORK_DIR
-프리셋: [preset_name]
-작업 모드: Solo / Team
-TDD 모드: strict / relaxed / coaching / spike
-모델 라우팅(자동): R=[model] P=main I=[model] T=[model]
-  근거: [meta.scale] 코드베이스([meta.signals_summary.tracked_files] files) · 난이도 [meta.difficulty ?? "기준선"]
-  (또는 meta.error === true 시: 근거: 자동 선택 실패 — 전 phase main(현재 세션 모델)로 fallback)
-  조정: --model-routing=implement=deep 형식 또는 /deep-slice model
-
-워크플로우:
-  Phase 0: deep-brainstorm  [← 현재 / ✅ 건너뜀]
-  Phase 1: deep-research
-  Phase 2: deep-plan
-  Phase 3: deep-implement
-  Phase 4: deep-test
-  Phase 5: deep-integrate  [skippable]
-
-각 phase 완료 시 진행 확인을 받으며 순차 실행합니다. "다음 phase로 진행" 선택 시 추가 확인 없이 즉시 다음 단계를 시작합니다.
-```
+§1-10 프로필 저장 · §1-11 세션 확인 표시 절차는 같은 파일
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/workspace-setup.md`
+후반부를 읽고 수행한다.
 
 # Step 2: 조건 변수 조립
 
@@ -510,14 +248,10 @@ legacy `current_phase: research + subphase: spec`이면
 1. `research_approved_hash` (state) 와 현재 `$WORK_DIR/research.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/research.md\" | awk '{print $1}'" })` (or `sha256sum` on Linux)
    - 해시 일치 → approval은 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (fix + NP3 collision fix):
-     1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}-edit.md`로 복사 (편집 내용 백업). **`-edit` 접미사** 사용 — deep-research skill의 기존 `research.v{iteration_count}.md` backup과 파일명 충돌 방지.
-     2. `iteration_count`을 1 증가.
-     3. Approval state invalidate: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`.
-     4. 경고: "⚠️ research.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 research.v{N}-edit.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
-     5. **Skill 재호출 없이** 아래 Review+Approval workflow (Step 1-6)로 직접 진입 — 현재 수정된 문서를 in-place review. template 기반 재생성 path는 스킵하여 사용자 편집 보존.
-     6. 최종 승인 시 새 `research_approved_hash` 기록 (현재 편집된 파일의 sha256).
-     7. 사용자가 거부 시 옵션 제공: 직접 수정 / `Skill("deep-research", args + " --force-rerun")`로 완전 재생성. `-edit` 접미사 덕분에 force-rerun 경로에서 skill의 자체 backup(`v{N}.md`)과 collision 없이 원본 편집 backup 보존됨.
+   - 해시 불일치 → out-of-band 편집 감지. 데이터 보존 + in-place review 절차는
+     `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/out-of-band-edit-recovery.md`
+     의 research 절을 읽고 그대로 수행한다.
+
    - `research_approved_hash` 필드 부재 (pre-v6.3.1 세션 또는 재실행 후 미승인) → Skill 재실행 + review+approval. pre-v6.3.1 세션은 fresh approval flow로 가는 것이 safer default.
    - 파일 missing → 복구 불가능. Skill 재실행 + review+approval (edited doc 소실 시점을 감출 수 없음).
 
@@ -590,14 +324,10 @@ AskUserQuestion:
 1. `plan_approved_hash` (state) 와 현재 `$WORK_DIR/plan.md`의 sha256을 비교:
    - `Bash({ command: "shasum -a 256 \"$WORK_DIR/plan.md\" | awk '{print $1}'" })` (or `sha256sum`)
    - 해시 일치 → approval 유효. Skill 호출과 review+approval을 **건너뛰고** 바로 아래 Exit Gate 실행.
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (fix + NP3 collision fix):
-     1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}-edit.md`로 복사. **`-edit` 접미사** 사용 — deep-plan skill의 기존 `plan.v{iteration_count}.md` backup(Pre-steps Backup 단계)과 파일명 충돌 방지.
-     2. `iteration_count`을 1 증가.
-     3. Approval state invalidate: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`.
-     4. 경고: "⚠️ plan.md가 승인 이후 외부에서 수정되었습니다. 편집 내용은 plan.v{N}-edit.md로 백업되었습니다. 편집된 현재 문서를 대상으로 Review+Approval을 재실행합니다."
-     5. **Skill 재호출 없이** 아래 Review+Approval workflow로 직접 진입 — 편집된 문서 in-place review.
-     6. 최종 승인 시 새 `plan_approved_hash` + `plan_approved_at` 기록 (drift baseline 정정).
-     7. 거부 시 사용자 선택: 직접 수정 / `Skill("deep-plan", args + " --force-rerun")`로 완전 재생성. `-edit` 접미사 덕분에 collision 없음.
+   - 해시 불일치 → out-of-band 편집 감지. 데이터 보존 + in-place review 절차는
+     `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/references/out-of-band-edit-recovery.md`
+     의 plan 절을 읽고 그대로 수행한다.
+
    - `plan_approved_hash` 필드 부재 (pre-v6.3.1 세션 또는 재실행 후 미승인) → Skill 재실행 + review+approval.
    - 파일 missing → 복구 불가능. Skill 재실행.
 

@@ -30,7 +30,6 @@ user-invocable: true
 
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
-
 > **Utility** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
 > 향후 기능 이관 후 삭제 예정.
 >
@@ -48,61 +47,12 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Detect active session & extract WORK_DIR (multi-session aware)
 
-Resolve the session to resume using the following priority:
+env var → pointer file → registry → legacy 순의 탐지 체인, 다중 세션 선택,
+state file에서의 `WORK_DIR` 추출 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/references/session-detection.md`
+를 읽고 그대로 수행한다.
 
-#### 1a. Direct session ID (env var)
-
-If `DEEP_WORK_SESSION_ID` environment variable is set:
-- Read `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md` directly
-- If the file exists and `current_phase` is not `idle`: proceed to Step 1.5 with this session
-- If the file doesn't exist or phase is `idle`: fall through to 1b
-
-#### 1b. Registry-based session discovery
-
-Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where `current_phase` is NOT `idle`.
-
-**If no active sessions in registry:**
-- Check for legacy fallback: read `.claude/deep-work.local.md`
-  - If exists and `current_phase` is NOT `idle` and NOT empty: use this file as the state file. Display:
-    ```
-    ℹ️ 레거시 세션을 감지했습니다. 이 세션을 재개합니다.
-    ```
-    Proceed to Step 1.5.
-  - Otherwise:
-    ```
-    ℹ️ 활성 세션이 없습니다.
-
-    새 세션을 시작하려면: /deep-work <작업 설명>
-    ```
-    Stop here.
-
-**If exactly 1 active session in registry:**
-- Auto-select this session
-- Update the pointer file: `write_session_pointer SESSION_ID`
-- Read `.claude/deep-work.${SESSION_ID}.md`
-- Proceed to Step 1.5
-
-**If 2+ active sessions in registry:**
-- Present selection UI using AskUserQuestion:
-
-```
-재개할 세션을 선택하세요:
-
-  1. [SESSION_ID] [task_description] ([current_phase], [last_activity])
-  2. [SESSION_ID] [task_description] ([current_phase], [last_activity])
-  ...
-```
-
-- After user selects a session:
-  - Update the pointer file: `write_session_pointer SELECTED_SESSION_ID`
-  - Read `.claude/deep-work.${SELECTED_SESSION_ID}.md`
-  - Proceed to Step 1.5
-
-#### 1c. Extract state
-
-From the resolved state file, extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, `preset`, `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `auto_loop_enabled` from the YAML frontmatter.
-
-#### 신규 state 필드 복원
+### 1-1. 신규 state 필드 복원
 
 - phase dispatch 전에 다음 production route를 실행한다:
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" session authority validate --state "<STATE_FILE>"`.
@@ -123,19 +73,6 @@ From the resolved state file, extract `current_phase`, `work_dir`, `task_descrip
 - `execution_override: inline | delegate | null` (sets decide_execution_mode override for inline escape hatches)
 - `active_cluster_takeover: "<cluster_id>" | null` (debug takeover 중 세션 중단 시, resume 하면 해당 cluster를 inline으로 이어 실행)
 - `delegation_snapshot: "<git hash>" | null` (delegate 진입 직전 capture된 commit hash. verify-receipt pass 시 null로 clear. resume 시 non-null이면 "verify-receipt fail 후 interrupt" 신호로 해석되어 Rollback Protocol AskUserQuestion을 재표시한다.)
-
-Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
-
-**If `current_phase` is `idle` or empty:**
-
-```
-ℹ️ 완료된 세션입니다.
-
-리포트 확인: `/deep-status --report` · 재생성: `/deep-report`
-새 세션 시작: /deep-work <작업 설명>
-```
-
-Stop here.
 
 ### 1.4. State 스키마 마이그레이션
 
@@ -158,30 +95,9 @@ If a legacy `review_results` field exists:
 
 ### 1.5. Worktree restoration
 
-If `worktree_enabled` is `true` in the state file:
-
-1. Read `worktree_path` from state file
-2. Check if the worktree still exists on disk:
-   ```bash
-   [ -d "[worktree_path]" ] && echo "exists" || echo "missing"
-   ```
-3. **If exists**: Set working directory context to the worktree path.
-   - All subsequent Bash calls should prepend `cd [absolute_worktree_path] &&`
-   - Display:
-     ```
-     Worktree 복원: [worktree_branch]
-        Path: [worktree_path]
-     ```
-
-4. **If missing** (user manually deleted the worktree):
-   - Display warning:
-     ```
-     ⚠️ Worktree가 삭제되었습니다: [worktree_path]
-        현재 브랜치에서 계속 진행합니다.
-        Worktree 재생성은 지원하지 않습니다 — /deep-finish로 세션을 정리하세요.
-     ```
-   - Update state: `worktree_enabled: false`
-   - Continue with current directory as working directory
+세션이 worktree를 사용했거나 `--worktree=<path>`가 주어진 경우에만 수행한다. 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/references/worktree-restore.md`
+를 읽는다.
 
 ### 2. Restore context
 

@@ -5,75 +5,8 @@ description: "This skill provides a high-level overview of the deep-work workflo
 
 # Deep Work Workflow: Brainstorm → Research → Spec → Plan → Implement → Test → Integrate
 
-## v5.6.0 Session Fork
-
-**v5.6.0 신규 기능:**
-
-### `/deep-fork [session-id] [--from-phase=PHASE]`
-
-현재 세션을 fork하여 다른 접근법을 탐색합니다. 원래 세션은 보존됩니다.
-
-- **Git 환경**: worktree 기반 전체 복제. implement/test까지 진행 가능.
-  - Dirty 상태 검증: clean/commit/stash 중 선택
-  - Session ID 기반 branch suffix (race condition 방지)
-  - Worktree 컨텍스트 자동 전환 (`FORK_PROJECT_ROOT`)
-- **Non-git 환경**: 산출물만 복제. plan phase까지만 진행 가능.
-  - Phase guard가 implement/test 진입 차단
-- **Fork 관계 추적**:
-  - `fork_info`: fork된 세션의 상태 파일에 부모 관계 기록
-  - `fork_children`: 부모 세션의 상태 파일에 자식 목록 기록
-  - `fork-snapshot.yaml`: fork 시점 상태 스냅샷 (비교 기준점)
-- **비교 & 시각화**:
-  - `/deep-status --tree`: fork 관계 트리 시각화
-  - `/deep-status --compare`: fork 관계 자동 감지 비교
-- **Edge cases**: 최대 3세대 fork (경고), idle 세션 fork 금지, stale 부모 검증
-
-## v5.5.2 Robust Detection & Signal Processing
-
-**v5.5.2 신규 기능:**
-- **확장된 bash 파일 쓰기 감지**: perl, node -e, python -c, ruby -e, swift, awk, git destructive ops 등 20+ 패턴 추가
-- **보안: file-write-first 감지 순서**: FILE_WRITE 패턴을 SAFE 패턴보다 먼저 검사하여 우회 방지
-- **확장된 언어 지원**: Dart, Elixir, Lua, Vue 테스트 패턴 + fixtures/mocks 디렉토리 인식
-- **TDD exempt 확장**: .toml, .ini, .cfg, .lock, .editorconfig, 이미지 파일 면제
-- **splitCommands 개선**: backtick, $() subshell 깊이 추적으로 중첩 표현식 내부 잘못된 분할 방지
-- **TDD state 검증**: 알 수 없는 상태값 차단 + 안내 메시지
-- **에러 로깅**: /dev/null → `.claude/deep-work-guard-errors.log` 파일 기록
-- **Node.js 25 호환**: file-tracker.sh argv 인덱싱 수정 (receipt 생성 무음 실패 해결)
-- **Assumption Engine 수정**: CLI 버그, threshold 전달, dedup 순서 (keep-latest), 입력 가드
-
-## v6.0.2 Phase Review Gate & Folder Rename
-
-**v6.0.2 신규 기능:**
-- **Phase Review Gate**: 모든 Phase(0~4) 종료 시 통합 리뷰 게이트 자동 실행. 셀프 리뷰 + 외부 리뷰(deep-review/codex/gemini/Opus) 후 사용자 확인
-- **Phase별 Fallback 체인**: Phase 0~3(문서)는 Structural+Adversarial, Phase 4(코드)는 deep-review 우선
-- **사용자 확인 UX**: 요약 → 선택지(자동 수정/현재 진행/상세 보기)
-- **Degraded Mode**: 외부 리뷰어 실패 시 자동 fallback
-- **세션 폴더 이름 변경**: `deep-work/` → `.deep-work/` (숨김 폴더). 마이그레이션 자동 처리
-- **State 스키마 확장**: `phase_review` 필드 추가 (기존 `review_results` 하위 호환)
-
-## v5.5 Review Flow Enhancement
-
-**v5.5 신규 기능:**
-- **Research Cross-Model Review**: research 단계에도 codex/gemini 크로스 리뷰 적용
-- **Claude 자체 재검토**: plan 작성 직후 자동 품질 점검 (placeholder, 일관성, 누락)
-- **종합 판단 프로토콜**: cross-review 후 Claude 판단 + 사용자 일괄 확인 (개별 conflict 질문 대체)
-- **Structural Review 강화**: auto-fix 기준 score < 5 → score < 7, 스냅샷 기반 rollback
-- **Degraded Mode**: cross-model 리뷰어 실패 시 명시적 상태 표시 + graceful fallback
-- **State 스키마 마이그레이션**: 신규 필드 자동 초기화, resume 시 문서-판단 시각 검증
-
-## v5.3 Precision + Evidence
-
 `/deep-work "task"` 하나로 전체 워크플로우가 자동 진행됩니다.
 Plan 승인이 유일한 필수 인터랙션입니다.
-
-**v5.3 신규 기능:**
-- **Document Intelligence**: 피드백 적용 시 중복/불필요 내용 자동 정리 (Apply → Deduplicate → Prune)
-- **Session Relevance Detection**: 현재 세션 범위 밖 피드백 감지 → 새 세션 분리 제안
-- **Plan Fidelity Score**: 구현 vs 플랜 충실도 0-100 점수 산출
-- **Session Quality Score**: 세션 종료 시 품질 점수 자동 계산 — 5-component system: Test Pass Rate (25%), Rework Cycles (20%), Plan Fidelity (25%), Sensor Clean Rate (15%), Mutation Score (15%). Sensor/Mutation components excluded proportionally when not_applicable.
-- **Cross-Session Quality Trend**: `/deep-status --history`에서 세션 간 품질 추이 시각화
-- **Assumption Engine Quality Integration**: 품질 점수 기반 규칙 자가 최적화 (cohort 분석, 3세션 minimum gate)
-- **Quality Badge**: `/deep-status --badge`로 shields.io 뱃지 생성
 
 **Primary workflow (8):** `/deep-work`, `/deep-research`, `/deep-spec`, `/deep-plan`, `/deep-implement`, `/deep-test`, `/deep-status`, `/deep-debug`
 
@@ -108,150 +41,24 @@ The Deep Work workflow prevents these by **strictly separating brainstorming, an
 
 ## The Seven Phases
 
-### Phase 0: Brainstorm (`/deep-brainstorm`) — Optional
+| Phase | Skill | Produces | Gate before the next phase |
+|---|---|---|---|
+| Brainstorm | `deep-brainstorm` | `brainstorm.md` | Exit Gate (phase itself is skippable) |
+| Research | `deep-research` | `research.md` | review + approval, then Exit Gate |
+| Spec | `deep-spec` | `spec.md` | spec-contract validation, then Exit Gate |
+| Plan | `deep-plan` | `plan.md` with the SLICE DAG | review + approval, then Exit Gate |
+| Implement | `deep-implement` | `receipts/SLICE-*.json` | verify-receipt, then Exit Gate |
+| Test | `deep-test` | `test_passed` marker | verification gates, then Exit Gate |
+| Integrate | `deep-integrate` | `integrate-loop.json` | none — the loop is its own gate |
 
-**Goal**: Explore "why before how" — define the problem, compare approaches, establish success criteria.
+Phase numbering differs between this overview (Brainstorm = 0 … Integrate = 6)
+and the individual skill `description` fields, which still use the pre-Spec
+numbering. Refer to phases by name, not number.
 
-**What happens**:
-- Structured design conversation with the user
-- 2-3 approach comparison with pros/cons
-- Spec-reviewer subagent validates the brainstorm document
-- Documentation in `$WORK_DIR/brainstorm.md`
-- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
-
-**What's blocked**: All code file modifications (enforced by hook)
-**Skip**: Use `--skip-brainstorm` to start directly at Research.
-
-### Phase 1: Research (`/deep-research`)
-
-**Goal**: Build a complete mental model of the relevant codebase before making any decisions.
-
-**What happens**:
-- Exhaustive analysis of architecture, patterns, and conventions
-- Identification of all relevant files, dependencies, and risk areas
-- Documentation of everything in `$WORK_DIR/research.md`
-- **Output begins with Executive Summary and Key Findings** (pyramid principle)
-- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
-
-**What's blocked**: All code file modifications (enforced by hook)
-
-**Key principle**: "You cannot plan what you don't understand, and you cannot understand what you haven't read."
-
-**Features**:
-- **Zero-base mode**: For new projects, researches technology stacks, architecture patterns, and scaffolding instead of existing code
-- **Partial re-run**: `/deep-research --scope=api,data` re-analyzes specific areas only
-- **Research caching**: Reuses previous session's research as baseline, updating only changed areas
-- **Team mode**: 3 specialist agents (arch-analyst, pattern-analyst, risk-analyst) analyze in parallel
-- **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
-- **Cross-Model Review**: codex/gemini가 research.md를 독립 평가 (plan과 동일 패턴)
-- **종합 판단**: Claude가 모든 리뷰 결과를 분석, 사용자 일괄 확인 후 수정
-
-For detailed guidance, see [Research Guide](../shared/references/research-guide.md) or [Zero-Base Guide](../shared/references/zero-base-guide.md).
-
-### Phase 2: Spec (`/deep-spec`)
-
-**Goal**: Compile reviewed research and risk into an executable, digest-bound
-contract before implementation planning.
-
-**What happens**:
-- Requirements, invariants, failure modes, compatibility, and evidence gates are
-  recorded in `$WORK_DIR/spec.md`
-- The production dispatcher records canonical `current_phase: spec` and binds the
-  approved artifact digest
-- Legacy `current_phase: research` plus `subphase: spec` remains read-compatible
-
-**What's blocked**: All code file modifications (enforced by hook)
-
-### Phase 3: Plan (`/deep-plan`)
-
-**Goal**: Create a detailed, reviewable, approvable implementation plan.
-
-**What happens**:
-- Transform research findings into a concrete action plan
-- **Plan Summary at the top** with approach, scope, risk level, and key decisions
-- Define exact files to modify, code snippets, execution order
-- **Code completeness tiered by slice size**: S=pseudocode OK, M=signatures+types actual code, L=boundary code complete (interfaces, APIs, tests)
-- **No placeholders**: Plan must pass the Completeness Policy — no TBD, TODO, or vague directives
-- **Research traceability**: Architecture decisions reference tagged research findings [RF-NNN], [RA-NNN]
-- Create a checklist-style task list in `$WORK_DIR/plan.md`
-- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
-
-**What's blocked**: All code file modifications (enforced by hook)
-
-**Key principle**: "The plan is the contract between human and AI. No implementation without approval."
-
-**Features**:
-- **Interactive review**: Chat-based feedback loop — say "3번 항목 변경해줘" and plan.md updates automatically
-- **Plan templates**: Auto-suggests templates for common task types (API endpoint, UI component, DB migration, etc.)
-- **Version history**: Previous plans backed up as `plan.v1.md`, `plan.v2.md` with change logs
-- **Mode re-evaluation**: Suggests Team↔Solo switching based on plan complexity
-- **Exit Gate to Implement**: 문서 최종 승인 후 Orchestrator Phase Exit Gate가 "진행 / 재실행 / 일시정지"를 묻는다. "진행" 선택 시 Implement phase 자동 호출 (수동 `/deep-implement` 불필요).
-- **Claude 자체 재검토**: plan 작성 직후 placeholder/일관성/누락 자동 점검 및 수정
-- **Structural Review 강화**: score < 7 auto-fix, 스냅샷 기반 rollback
-- **종합 판단**: cross-review 후 Claude 판단 + 사용자 일괄 확인 (개별 conflict 질문 대체)
-- **Team research 교차 검증**: team_mode: team일 때 부분 리서치 파일(research-architecture/patterns/dependencies.md)을 보조 참조로 로드하여 합성 누락 세부 사항 교차 확인
-
-**Note**: Plan phase does not use Team mode — planning requires a single coherent document produced by one agent.
-
-For detailed guidance, see [Planning Guide](../shared/references/planning-guide.md).
-
-### Phase 4: Implement (`/deep-implement`)
-
-**Goal**: Mechanically execute the approved plan, task by task.
-
-**What happens**:
-- Follow the plan checklist exactly
-- Implement one task at a time, marking each complete
-- Document any issues encountered — never improvise
-- **Exit Gate to Test phase**: 모든 slice 완료 시 Orchestrator가 Phase Exit Gate를 표시. "진행" 선택 시 Test phase 호출. Implement skill 자체는 `implement_completed_at`만 기록하고 current_phase 전환은 Orchestrator가 담당.
-- **Computational sensors**: After each slice reaches GREEN, computational sensors (linter, type checker) run automatically. Failures trigger a self-correction loop (SENSOR_FIX state) where the AI attempts to fix sensor errors before moving to the next slice. Results are stored in receipt `sensor_results` fields.
-- **Slice Review**: After sensors pass, independent 2-stage review per slice — spec compliance (required) and code quality (advisory). Issues caught immediately, not deferred to Phase 5.
-- **Pre-flight Check**: Before each slice's TDD cycle, verify prerequisites (files exist, commands work). Problems surface immediately via AskUserQuestion.
-- **Status Reporting**: Each slice records `slice_confidence` (done/done_with_concerns) and specific concerns in the receipt.
-- **Red Flags**: Rationalization prevention tables in implement and test phases. Complements hook-based hard gates with soft behavioral guidance.
-- **Phase Review Gate**: Phase 완료 시 셀프 리뷰 + 외부 리뷰 자동 실행, 사용자 확인 후 전환
-
-**What's allowed**: All tools — code modification is now permitted
-
-**Key principle**: "The best implementation is a boring implementation. No creativity, no surprises, just faithful execution."
-
-**Features**:
-- **Checkpoint support**: If interrupted, resumes from the last incomplete task
-- **Team mode**: Tasks clustered by file ownership, distributed to parallel agents with cross-review
-- **Exit Gate handoff to Test**: slice 완료 후 Implement는 완료-marker만 기록하고 Orchestrator Exit Gate로 제어 반환. 사용자 "진행" 선택 시 Test phase 호출 (수동 `/deep-test` 불필요).
-- **TDD state 업데이트 필수화**: B-1/B-2 완료 후 state file 업데이트를 필수로 명시, 미수행 시 phase guard 차단 경고
-- **Slice Review**: Per-slice 2-stage independent review (spec compliance → code quality) after sensors pass. Solo mode only; delegation mode uses self-review recorded as `slice_review.mode: "self"`
-
-For detailed guidance, see [Implementation Guide](../shared/references/implementation-guide.md).
-
-### Phase 5: Test (`/deep-test`)
-
-**Goal**: Verify the implementation through comprehensive automated testing.
-
-**What happens**:
-- Auto-detects verification commands (test, lint, typecheck) from project config
-- Runs all checks sequentially, records results
-- **Sensor Clean gate**: Reads `sensor_results` from receipts (no re-execution) to verify all slices passed computational sensors
-- **Mutation testing**: Verifies AI-generated test quality by running mutation analysis (stryker/mutmut). Survived mutants trigger automatic test improvement via return to the implement phase — `/deep-mutation-test` handles this transition internally
-- **Cross-slice consistency + backfill review**: Phase 5 verifies inter-slice compatibility instead of per-slice compliance (done in Phase 4). Slices that skipped Phase 4 review get backfill (보완) review here.
-- **Pass**: Session completes, report generated
-- **Fail**: Returns to implement phase for fixes (up to 3 retries)
-
-**What's blocked**: All code file modifications (enforced by hook)
-
-**Key principle**: "Trust but verify. The test phase catches what implementation missed."
-
-**Features**:
-- **Auto-detection**: Scans package.json, pyproject.toml, Makefile, Cargo.toml, go.mod
-- **Implement-test loop**: Automatic retry cycle with detailed failure reports
-- **Cumulative results**: All attempts recorded in `$WORK_DIR/test-results.md`
-- **Git integration**: Suggests commit after all tests pass
-
-For detailed guidance, see [Testing Guide](../shared/references/testing-guide.md).
-
-### Phase 6: Integrate (skippable)
-
-Phase 5 Test 완료 후 옵션으로 호출되는 "다음 단계 추천 루프". 설치된 `deep-review`/`deep-docs`/`deep-wiki`/`deep-dashboard`/`deep-evolve` 플러그인의 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면, 사용자가 선택·실행하거나 skip·finish한다. `--skip-integrate`로 건너뛸 수 있고, `/deep-integrate`로 명시적 재진입도 가능하다. 자세한 UX/데이터 계약은 `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md` 참조.
+Per-phase inputs, outputs, gates and entry commands are in
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-work-workflow/references/phase-contracts.md`.
+Read it when the user asks what a specific phase does, what artifact it produces,
+or which phase to start from.
 
 ## Quality Gates & Utilities
 
