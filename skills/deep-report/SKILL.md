@@ -256,10 +256,20 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 Generate assumption health data by running the assumption engine:
 
 ```bash
-echo '{"action":"report","registryPath":"${CLAUDE_PLUGIN_ROOT}/assumptions.json","historyPath":".deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/assumption-engine.js
+# 1) plugin root를 실제로 해석하고, 해석에 실패하면 실행하지 않는다.
+PLUGIN_ROOT="$(cd "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT unset — abort}" 2>/dev/null && pwd -P)"
+[ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/assumptions.json" ] || { echo "plugin root 해석 실패 — 중단" >&2; exit 1; }
+
+# 2) 경로는 argv로 넘기고 JSON은 JSON.stringify로 만든다.
+#    (경로를 작은따옴표 JSON 안에 직접 쓰면 셸이 ${...}를 확장하지 않아
+#     리터럴 이름의 경로가 워크스페이스 기준으로 읽힌다.)
+node -e 'process.stdout.write(JSON.stringify({action:"report",registryPath:process.argv[1],historyPath:process.argv[2],options:{splitByModel:true}}))' \
+  "$PLUGIN_ROOT/assumptions.json" \
+  ".deep-work/harness-history/harness-sessions.jsonl" \
+  | node "$PLUGIN_ROOT/hooks/scripts/assumption-engine.js"
 ```
 
-`${CLAUDE_PLUGIN_ROOT}`는 plugin 설치 경로다 (`assumptions.json`이 있는 디렉터리). 해석 결과가 plugin root 밖이면 실행하지 말고 중단한다.
+`$PLUGIN_ROOT`는 위에서 `${CLAUDE_PLUGIN_ROOT}`를 해석한 절대 경로다 (`assumptions.json`이 있는 디렉터리). 해석에 실패하거나 결과가 plugin root 밖이면 실행하지 말고 중단한다.
 
 [If harness-sessions.jsonl exists and engine returns data:]
 

@@ -71,7 +71,7 @@ Set paths:
 ```
 PLUGIN_SCRIPTS = ${CLAUDE_PLUGIN_ROOT}/hooks/scripts
 (plugin root 기준 절대 경로. 이 파일 위치에서 상대 유도하지 말 것 — 해석 기준이 target workspace로 넘어간다.)
-REGISTRY_PATH = <directory containing this command file>/../assumptions.json
+REGISTRY_PATH = ${CLAUDE_PLUGIN_ROOT}/assumptions.json
 WORK_DIR = $PROJECT_ROOT/<work_dir from state or "deep-work">
 HISTORY_PATH = $WORK_DIR/harness-history/harness-sessions.jsonl
 ```

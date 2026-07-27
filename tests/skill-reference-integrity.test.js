@@ -227,6 +227,54 @@ function bareBasenameHits(line) {
   return out;
 }
 
+// EXPANSION SAFETY.
+//
+// An anchor is only an anchor if the shell actually expands it. Inside a
+// single-quoted string `${CLAUDE_PLUGIN_ROOT}` survives as a literal, and the
+// consumer then reads a path *named* `${CLAUDE_PLUGIN_ROOT}/...` relative to the
+// workspace — so anchoring a path into a single-quoted JSON payload converts a
+// fixed reference into a shadowable one. That regression was introduced by this
+// PR's own anchoring pass, which is why it is checked mechanically.
+//
+// Quote state must be tracked as a small machine, not by counting quotes: in
+// `node -e "…require('fs')…"` the single quotes are JS-level, sit inside a
+// double-quoted shell word, and expansion still happens. A naive counter calls
+// that broken and is wrong twice over four real cases.
+function expansionState(line, index) {
+  let state = 'normal';
+  for (let k = 0; k < index; k += 1) {
+    const c = line[k];
+    if (line[k - 1] === '\\') continue;
+    if (state === 'normal') {
+      if (c === "'") state = 'single';
+      else if (c === '"') state = 'double';
+    } else if (state === 'single') {
+      if (c === "'") state = 'normal';
+    } else if (c === '"') state = 'normal';
+  }
+  return state;
+}
+
+// Only a line that is actually a command can suffer this; prose containing an
+// apostrophe is not a shell word.
+const SHELL_COMMAND = /\b(?:echo|printf|cat|node|bash|sh|zsh|jq|awk|sed|curl|export)\b/;
+
+function nonExpandingAnchors(line) {
+  const out = [];
+  let i = line.indexOf('${CLAUDE_PLUGIN_ROOT}');
+  while (i !== -1) {
+    if (SHELL_COMMAND.test(line) && expansionState(line, i) === 'single') {
+      out.push({
+        form: 'non-expanding-anchor',
+        token: '${CLAUDE_PLUGIN_ROOT}',
+        why: 'single-quoted — the shell leaves it literal, so the path resolves against the workspace',
+      });
+    }
+    i = line.indexOf('${CLAUDE_PLUGIN_ROOT}', i + 1);
+  }
+  return out;
+}
+
 const ROOT_SENTINEL = path.sep === '/' ? '/plugin-root' : 'C:\\plugin-root';
 
 // Clause B. Substitute the anchor with a sentinel root, resolve, and require
@@ -282,6 +330,7 @@ function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md')) {
   }
   out.push(...bareBasenameHits(line));
   out.push(...denyByDefaultHits(line, sourceFile));
+  out.push(...nonExpandingAnchors(line));
   return out;
 }
 
@@ -410,6 +459,82 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
       'fixture is vacuous — an unanchored token must land on the planted shadow');
   } finally {
     fs.rmSync(evil, { recursive: true, force: true });
+  }
+});
+
+test('an anchor the shell will not expand counts as unanchored', () => {
+  // Each pair was checked against a real shell before being pinned here.
+  const mustFlag = [
+    // single-quoted JSON payload — the r9 finding, introduced by our own anchoring
+    `echo '{"registryPath":"\${CLAUDE_PLUGIN_ROOT}/assumptions.json"}' | node x.js`,
+    `printf '%s' '\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/utils.sh'`,
+  ];
+  for (const line of mustFlag) {
+    const hits = nonExpandingAnchors(line);
+    assert.equal(hits.length, 1, `must flag non-expanding anchor: ${line}`);
+    assert.match(hits[0].why, /single-quoted/);
+  }
+
+  const mustPass = [
+    // double-quoted shell word: the inner single quotes are JS-level, and the
+    // shell still expands. A naive quote counter gets this one wrong.
+    `node -e "JSON.parse(require('fs').readFileSync('\${CLAUDE_PLUGIN_ROOT}/.codex-plugin/plugin.json','utf8'))"`,
+    // close-single / open-double splice inside a single-quoted heredoc body
+    `  const { x } = require("'"\${CLAUDE_PLUGIN_ROOT}"'/scripts/detect-capability.js");`,
+    // plain expanding position
+    `node "\${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-receipt-core.js"`,
+    // prose, not a command
+    'Reads `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` for producer_version',
+  ];
+  for (const line of mustPass) {
+    assert.deepEqual(nonExpandingAnchors(line), [], `must accept: ${line}`);
+  }
+});
+
+test('the documented report command survives real shell semantics', () => {
+  // Runs the shape deep-report documents, from a malicious cwd that has planted
+  // a file at the literal path a non-expanding anchor would produce. Proves
+  // three things at once: the canonical registry is what gets consumed, the
+  // planted marker never reaches the output, and an unresolvable root aborts.
+  const evil = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-shell-evil-'));
+  const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-shell-plugin-'));
+  try {
+    // The literal path a single-quoted anchor leaves behind.
+    fs.mkdirSync(path.join(evil, '${CLAUDE_PLUGIN_ROOT}'), { recursive: true });
+    fs.writeFileSync(path.join(evil, '${CLAUDE_PLUGIN_ROOT}', 'assumptions.json'),
+      JSON.stringify({ marker: 'SHADOW-REGISTRY' }));
+    fs.writeFileSync(path.join(fakeRoot, 'assumptions.json'),
+      JSON.stringify({ marker: 'CANONICAL-REGISTRY' }));
+
+    const script = `
+      PLUGIN_ROOT="$(cd "\${CLAUDE_PLUGIN_ROOT:?unset}" 2>/dev/null && pwd -P)"
+      [ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/assumptions.json" ] || { echo "ABORT" >&2; exit 1; }
+      node -e 'process.stdout.write(JSON.stringify({registryPath:process.argv[1]}))' "$PLUGIN_ROOT/assumptions.json"
+    `;
+    const run = (env, cwd) => require('node:child_process')
+      .spawnSync('bash', ['-c', script], { cwd, env: { ...process.env, ...env }, encoding: 'utf8' });
+
+    const ok = run({ CLAUDE_PLUGIN_ROOT: fakeRoot }, evil);
+    assert.equal(ok.status, 0, ok.stderr);
+    const chosen = JSON.parse(ok.stdout).registryPath;
+    assert.equal(fs.realpathSync(chosen), fs.realpathSync(path.join(fakeRoot, 'assumptions.json')),
+      'must consume the canonical plugin registry, not the planted one');
+    assert.equal(JSON.parse(fs.readFileSync(chosen, 'utf8')).marker, 'CANONICAL-REGISTRY');
+    assert.doesNotMatch(ok.stdout, /SHADOW-REGISTRY|\$\{CLAUDE_PLUGIN_ROOT\}/,
+      'planted marker and literal anchor must never reach the output');
+
+    // Non-vacuity: the planted shadow is genuinely reachable if the anchor
+    // stays literal, which is exactly what the old single-quoted form did.
+    const literal = path.join(evil, '${CLAUDE_PLUGIN_ROOT}', 'assumptions.json');
+    assert.equal(JSON.parse(fs.readFileSync(literal, 'utf8')).marker, 'SHADOW-REGISTRY');
+
+    // Fail-closed when the root does not resolve.
+    const bad = run({ CLAUDE_PLUGIN_ROOT: path.join(evil, 'does-not-exist') }, evil);
+    assert.notEqual(bad.status, 0, 'unresolvable plugin root must abort');
+    assert.match(bad.stderr, /ABORT/);
+  } finally {
+    fs.rmSync(evil, { recursive: true, force: true });
+    fs.rmSync(fakeRoot, { recursive: true, force: true });
   }
 });
 
