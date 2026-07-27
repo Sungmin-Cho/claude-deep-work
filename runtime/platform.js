@@ -1691,9 +1691,12 @@ function safeGitEnvironment(executable, source = process.env, fsApi = fs) {
     };
   }
   const environment = {};
+  const windowsKeys = new Set();
   for (const key of ['HOME','USERPROFILE','SystemRoot','SYSTEMROOT','TEMP','TMP']) {
-    if (typeof source[key] === 'string' && !/[\0\r\n]/.test(source[key])) {
+    const folded = key.toLowerCase();
+    if (!windowsKeys.has(folded) && typeof source[key] === 'string' && !/[\0\r\n]/.test(source[key])) {
       environment[key] = source[key];
+      windowsKeys.add(folded);
     }
   }
   Object.assign(environment, {

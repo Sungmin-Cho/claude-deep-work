@@ -81,7 +81,7 @@ test('ReleaseToolchainManifestV1 rejects an unsorted or graph-drifted entry set'
 });
 
 test('POSIX owned bin exposes only authenticated tools through the closed environment',
-  async(t)=>{
+  {skip:process.platform==='win32'},async(t)=>{
     const parent=fs.mkdtempSync(path.join(os.tmpdir(),'dw-release-bin-'));
     t.after(()=>fs.rmSync(parent,{recursive:true,force:true}));
     const materialized=toolchain.materializeOwnedBin({parent,

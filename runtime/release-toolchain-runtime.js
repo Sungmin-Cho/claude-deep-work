@@ -35,7 +35,8 @@ function buildToolIdentity({name,targetPath,shimKind='none',shimPath=null,
   let physical,stat,bytes;try{physical=fs.realpathSync(targetPath);
     stat=fs.lstatSync(physical,{bigint:true});bytes=fs.readFileSync(physical);}
   catch{fail('release-tool-identity');}
-  if(!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o111n)===0n)
+  if(!stat.isFile()||stat.isSymbolicLink()||
+      (process.platform!=='win32'&&(stat.mode&0o111n)===0n))
     fail('release-tool-identity');
   return validateToolIdentity({name,target_path:physical,target_sha256:sha256(bytes),
     target_dev:decimal(stat.dev),target_ino:decimal(stat.ino),
@@ -121,7 +122,8 @@ function validateToolIdentity(value){
     stat=fs.lstatSync(physical,{bigint:true});bytes=fs.readFileSync(physical);}
   catch{fail('release-tool-identity');}
   if(physical!==value.target_path||!stat.isFile()||stat.isSymbolicLink()||
-      (stat.mode&0o111n)===0n||sha256(bytes)!==value.target_sha256||
+      (process.platform!=='win32'&&(stat.mode&0o111n)===0n)||
+      sha256(bytes)!==value.target_sha256||
       decimal(stat.dev)!==value.target_dev||decimal(stat.ino)!==value.target_ino||
       decimal(stat.mode)!==value.target_mode||decimal(stat.size)!==value.target_size||
       statNanos(stat)!==value.target_mtime_ns)fail('release-tool-identity');
