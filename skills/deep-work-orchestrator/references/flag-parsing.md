@@ -6,7 +6,7 @@
 
 ### §1-3-1. 플래그 파서 호출
 
-orchestrator 본문에서 직접 실행 (process scope 일관 — R3-B):
+orchestrator 본문에서 직접 실행 (process scope 일관):
 
 ````bash
 # $ARGUMENTS를 double-quoted single arg로 전달 — shell metacharacters가

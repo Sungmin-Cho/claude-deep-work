@@ -4,7 +4,11 @@
 
 ---
 
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (fix + NP3 collision fix):
+## research 절
+
+§3-2 Research Resume 분기에서 `research_approved_hash`가 현재 `research.md`의 sha256과 다를 때.
+
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review**:
      1. 현재 `$WORK_DIR/research.md`를 `$WORK_DIR/research.v{iteration_count+1}-edit.md`로 복사 (편집 내용 백업). **`-edit` 접미사** 사용 — deep-research skill의 기존 `research.v{iteration_count}.md` backup과 파일명 충돌 방지.
      2. `iteration_count`을 1 증가.
      3. Approval state invalidate: `research_approved: false`, `research_approved_at: null`, `research_approved_hash: null`.
@@ -15,7 +19,11 @@
 
 ---
 
-   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review** (fix + NP3 collision fix):
+## plan 절
+
+§3-3 Plan Resume 분기에서 `plan_approved_hash`가 현재 `plan.md`의 sha256과 다를 때.
+
+   - 해시 불일치 → **out-of-band 편집 감지 → data preservation + in-place review**:
      1. 현재 `$WORK_DIR/plan.md`를 `$WORK_DIR/plan.v{iteration_count+1}-edit.md`로 복사. **`-edit` 접미사** 사용 — deep-plan skill의 기존 `plan.v{iteration_count}.md` backup(Pre-steps Backup 단계)과 파일명 충돌 방지.
      2. `iteration_count`을 1 증가.
      3. Approval state invalidate: `plan_approved: false`, `plan_approved_at: null`, `plan_approved_hash: null`.

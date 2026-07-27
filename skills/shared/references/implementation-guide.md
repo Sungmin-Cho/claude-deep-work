@@ -99,7 +99,7 @@ git stash  # or git reset to the commit before implementation started
 
 Always prefer `git stash` over destructive operations to preserve work.
 
-## Completion Protocol (v6.3.1 F1 Option A)
+## Completion Protocol
 
 When all tasks are done:
 

@@ -296,7 +296,7 @@ slice 종료 직전 (spec 검증 + slice review 완료 후):
 `findings_ref`(canonical `$WORK_DIR/reviews/slice-SLICE-NNN-round<N>-findings.json`),
 reviewer별 `role`/`channel`/`status`/`fallback_used`/`effort`/`effort_applied`, 그리고
 최종 `verdict`를 보존한다. 리뷰를 실행하지 않은 구세션·spike receipt에서는 블록을
-생략한다. 이 optional 확장은 기존 verify-receipt 8개 항목의 판정 입력이 아니다.
+생략한다. 이 optional 확장은 verify-receipt 9개 항목의 판정 입력이 아니다.
 
 ### Step D-1: M3 Envelope Wrap
 
@@ -377,9 +377,11 @@ AskUserQuestion, Branch A(Agent Team) / Branch B(복수 Subagent) 분기, partia
 
 ## Section 2.3: verify-receipt + Rollback Protocol
 
-delegate 경로의 모든 slice가 끝난 뒤 실행한다. `verify-delegated-receipt.sh` 호출,
-pass/fail 분기, Rollback Protocol, inline 경로의 부분 verify, `delegation_snapshot`이
-non-null인 resume/takeover 분기는
+**모든 slice가 끝나면 execution_mode와 무관하게 반드시 실행한다** — delegate 경로는
+전체 verify, inline 경로는 부분 verify(`--skip-items=1,2,3,4`)로 형태만 다르며,
+inline 경로에서는 이것이 유일한 receipt 검증이다(item 1-4는 hook이 실시간으로 강제).
+`verify-delegated-receipt.sh` 호출, 두 경로의 차이, pass/fail 분기, Rollback Protocol,
+`delegation_snapshot`이 non-null인 resume/takeover 분기는
 `${CLAUDE_PLUGIN_ROOT}/skills/deep-implement/references/rollback-protocol.md`
 를 읽고 그대로 수행한다. 이 단계가 pass해야 Phase Review Gate에 도달한다.
 

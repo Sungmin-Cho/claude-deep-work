@@ -50,7 +50,7 @@ AskUserQuestion({
 
 ```
 1. Cluster: file 소유권 기반 slice 그룹화 (겹침 → sequential, 독립 → parallel)
-   — 이 logic은 Task 9 Section 2.1의 cluster 추출과 동일한 code path 재사용.
+   — 이 logic은 Section 2.1의 cluster 추출과 동일한 code path를 재사용한다.
 2. Dispatch: TeamCreate "deep-implement"
    - team_name: "deep-implement-v640"
    - 각 cluster마다 TaskCreate 생성 (subject: "Implement cluster C{n}",

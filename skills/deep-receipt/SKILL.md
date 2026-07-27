@@ -20,7 +20,7 @@ user-invocable: true
 | (없음) / `dashboard` | ASCII visual dashboard of all slice receipts |
 | `view SLICE-NNN` | 특정 slice 의 receipt 상세 |
 | `export` | JSON / Markdown export |
-| `validate` | 8-item 검증 (verify-delegated-receipt-runner) |
+| `validate` | 9-item 검증 (verify-delegated-receipt-runner) |
 
 빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
 

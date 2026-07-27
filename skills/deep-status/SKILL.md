@@ -167,7 +167,7 @@ From `$WORK_DIR/plan.md`, count:
 
 Show a comprehensive status report. If the `team_mode` field is missing from the state file, treat it as "Solo" (backward compatibility).
 
-**Conditional v5.1 fields:**
+**Conditional fields:**
 - `평가자 모델`: Always show the evaluator_model value (or "없음" if not set).
 - `Assumption 조정`: Only show if `assumption_adjustments` is non-empty. Display the count of adjustments.
 - `건너뛴 단계`: Only show if `skipped_phases` is non-empty. Display the list of skipped phase names.
@@ -186,12 +186,71 @@ Deep Work 세션 상태
 Git 브랜치: [git_branch or "없음"]
 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
 평가자 모델: [evaluator_model]
+[Fork 관계 — fork_info / fork_children 가 있을 때만 이 자리에 삽입]
 
-### Fork 관계 표시
+현재 단계: [Phase name with emoji]
+   Phase 0 (Brainstorm): [✅ 완료 / ⏳ 진행중 / ⬜ 대기 / ⏭️ 생략]
+   Phase 1 (Research):   [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   Phase 2 (Plan):       [✅ 승인됨 / ⏳ 진행중 / ⬜ 대기] (Auto-Loop: [plan_review_retries]/[plan_review_max_retries])
+   Phase 3 (Implement):  [✅ 완료 / ⏳ 진행중 / ⬜ 대기]
+   Phase 4 (Test):       [✅ 통과 / ⏳ 진행중 / ⬜ 대기 / ❌ 실패(N회)]
 
-세션 state에 `fork_info` 또는 `fork_children`이 있을 때에만 표시한다. 렌더링 절차는
+구현 진행률: [N/M 완료 (XX%)]
+   ████████░░ XX%
+
+Phase별 소요 시간:
+   Brainstorm: [duration or "N/A" or "생략"]
+   Research: [duration or "N/A"]
+   Plan: [duration or "N/A"]
+   Implement: [duration or "N/A"]
+   Test: [duration or "N/A"]
+Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
+리뷰 현황:
+   Brainstorm: [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
+   Research: [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
+   Plan (Structural): [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
+   Plan (Adversarial): [Claude N/10, Codex N/10 — Consensus N, Conflicts N, Waivers N / 미실행 / 도구 미설치]
+크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
+Assumption 조정: [N]건 적용됨
+건너뛴 단계: [brainstorm, research, plan]
+
+센서 상태:
+   생태계: [ecosystem, e.g. typescript (eslint ✅, tsc ✅, stryker ❌)] [or "감지 안됨 ⬜" if no sensor data]
+   Sensor Clean Rate: [N]/[total] ([N]%) [or "N/A ⬜" if no sensor data in receipts]
+   Mutation Score: [N]% ([Phase 4 실행됨 / 미실행 ⬜ / not_applicable ⏭️])
+
+Health Check:
+   드리프트: dead-export {N}건 ⚠️ | coverage {+/-N}%p ✅ | vuln {N}건 🔴 | stale {N}건 ✅
+   Fitness:  {N}/{M} 통과 ✅ | required_missing: {N}건
+
+산출물:
+   - $WORK_DIR/brainstorm.md: [존재함 ✅ / 없음 ⬜ / 생략 ⏭️]
+   - $WORK_DIR/research.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/plan.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/test-results.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/report.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/quality-gates.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/insight-report.md: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/file-changes.log: [존재함 ✅ / 없음 ⬜]
+   - $WORK_DIR/plan-diff.md: [존재함 ✅ / 없음 ⬜]
+
+다음 행동: [안내 메시지]
+```
+
+Adjust the "다음 행동" based on the current phase:
+- **brainstorm**: `자동 흐름이 brainstorm을 진행합니다. /deep-work로 시작하세요.`
+- **research**: `자동 흐름이 research를 진행 중입니다.`
+- **plan**: `plan 승인을 기다리고 있습니다.` (or "plan 수정이 필요하면 /deep-plan을 사용하세요" if plan exists)
+- **implement**: `자동 흐름이 구현을 진행 중입니다.`
+- **test**: `자동 흐름이 테스트를 진행 중입니다.` (or "자동 수정 루프가 진행 중입니다 (시도 N/3)" if test_retry_count > 0)
+- **idle**: `세션이 완료되었습니다. /deep-status --report로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
+
+#### Fork 관계 표시
+
+세션 state에 `fork_info` 또는 `fork_children`이 있을 때에만 위 템플릿의 해당 자리에
+삽입한다. 렌더링 절차는
 `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/fork-views.md`
-를 읽고 그대로 수행한다.
+를 읽고 그대로 수행한다. 둘 다 없으면 그 줄을 생략한다.
 
 ### 5. Show session history
 

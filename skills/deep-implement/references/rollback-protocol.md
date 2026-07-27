@@ -8,7 +8,13 @@
 
 ### 전제
 
-Sections 2.1 (solo delegate) 또는 2.2 (team delegate) 완료 직후. Phase Review Gate 진입 **직전** precondition으로 실행.
+모든 slice 완료 직후, Phase Review Gate 진입 **직전** precondition으로 실행한다.
+execution_mode에 따라 형태만 달라진다:
+
+- **delegate** (Section 2.1 solo / 2.2 team 완료 후) — 전체 verify.
+- **inline** (Section 1.5가 inline을 선택한 경로) — 부분 verify. 아래 §inline 절 참조.
+
+어느 경로도 이 단계를 건너뛰지 않는다.
 
 ### verify-delegated-receipt.sh 실행
 
@@ -24,7 +30,7 @@ rc=$?
 
 ### Pass 경로
 
-`rc == 0` → state의 `delegation_snapshot`을 null로 clear (Edit tool로 해당 라인만 교체; C-1.1 fix) → Phase Review Gate 진입 → state 업데이트 → Exit Gate.
+`rc == 0` → state의 `delegation_snapshot`을 null로 clear (Edit tool로 해당 라인만 교체) → Phase Review Gate 진입 → state 업데이트 → Exit Gate.
 
 ### Fail 경로 (§5.6a Rollback Protocol)
 
@@ -64,7 +70,7 @@ rm -f "${WORK_DIR}/receipts"/SLICE-*.json
 
 ### inline 경로에서의 부분 verify-receipt
 
-Section 1.5 `execution_mode == "inline"` 경로도 Phase Review Gate 직전에 verify-delegated-receipt를 실행하되, **item 5/6/7/8만 precondition**으로 평가 (item 1-4는 hook이 real-time으로 강제). 구현: Task 5의 runner JS에 `--skip-items=1,2,3,4` 플래그 추가, 그리고 inline 경로에서 해당 플래그로 스크립트 호출:
+Section 1.5 `execution_mode == "inline"` 경로도 Phase Review Gate 직전에 verify-delegated-receipt를 실행하되, **item 1-4만 skip**한다 (item 1-4는 hook이 real-time으로 강제). 나머지 item 5-9는 그대로 평가된다 — item 9(spec-governed evidence 완결성)는 governed slice가 있으면 skip 자체가 거부된다. `verify-delegated-receipt.sh`의 `--skip-items=` 플래그로 호출한다:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-delegated-receipt.sh" \
@@ -74,9 +80,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-delegated-receipt.sh" \
 
 item 별 역할:
 - item 5: out-of-scope 편집 탐지 (hook의 edit 차단 이외 이중 안전망)
-- item 6: baseline chain — inline Solo Slice Loop이 `git_before_slice`/`git_after_slice` 기록 필수 (Task 7.5)
+- item 6: baseline chain — inline Solo Slice Loop이 `git_before_slice`/`git_after_slice` 기록 필수
 - item 7: red_verification_output 기록 필수
 - item 8: 기록된 verification_output vs expected_output 비교 (shell 실행 없음)
+- item 9: spec-governed slice의 committed evidence 완결성·identity 검증 (skip 불가)
 
 ### Resume with `--exec` override 또는 takeover 분기
 
@@ -85,7 +92,7 @@ item 별 역할:
 ```
 # 최우선: delegation_snapshot이 set되어 있고 implement가 미완료 → verify-receipt fail 후 interrupt된 케이스
 if state.delegation_snapshot is not null and state.implement_completed_at is null:
-    # C-1.1 fix — Rollback Protocol AskUserQuestion을 재표시
+    # Rollback Protocol AskUserQuestion을 재표시
     # (재위임 / 수동 수정 / abort 중 선택, §2.3 Fail 경로와 동일)
     re_present_rollback_askuserquestion(state.delegation_snapshot)
     # 사용자 선택에 따라 Section 2.1/2.2 재진입 or inline takeover or abort
@@ -98,14 +105,14 @@ elif state.active_cluster_takeover != null:
     # 다음 cluster는 다시 decide_execution_mode에 따름
 
 elif receipts_dir has complete receipts from prior session:
-    # 완료된 slice는 item 5/6/7/8만 부분 검증 (이미 수용된 산출물)
+    # 완료된 slice는 item 1-4를 skip한 부분 검증 (이미 수용된 산출물)
     # 미완료 slice만 새 경로(현재 execution_mode)로 실행
     verify-delegated-receipt.sh --skip-items=1,2,3,4 --only-completed
     delegate_or_inline_remaining_slices()
 ```
 
 구현 세부:
-- Task 5의 runner에 `--only-completed` 플래그 추가 — `status: "complete"` 만 골라 검증.
+- `--only-completed` 플래그는 `status: "complete"` 인 receipt만 골라 검증한다.
 - deep-implement Section 1의 Resume Detection 이 `delegation_snapshot` / `active_cluster_takeover` 필드를 읽어 분기 우선순위 결정.
 - `delegation_snapshot`은 delegate 진입 직전에 state에 persist, verify-receipt pass 시 null로 clear. 따라서 resume 시 이 필드가 non-null이면 "fail 후 interrupt" 신호.
 

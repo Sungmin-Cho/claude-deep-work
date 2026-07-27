@@ -53,7 +53,7 @@ const input = sanitizeInput({
   top_level_dirs: TOP_DIRS,
   current_defaults: current_defaults,
   capability: CAPABILITY,
-  ask_items: filterAskItems(PROFILE_DATA.interactive_each_session)  // v6.10.0: model_routing 영구 제거 (구프로필 포함)
+  ask_items: filterAskItems(PROFILE_DATA.interactive_each_session)  // model_routing은 영구 제거 (구프로필 포함)
 });
 
 let result;
@@ -77,7 +77,7 @@ try {
 
 const parsed = parseRecommendation(result.text, { capability: input.capability });
 
-// v6.10.0: 자동 모델 결정(§1-8.5)의 난이도 입력. parsed.ok=false거나 task_difficulty 부재면 빈 값 → 무보정.
+// 자동 모델 결정(§1-8.5)의 난이도 입력. parsed.ok=false거나 task_difficulty 부재면 빈 값 → 무보정.
 const REC_TASK_DIFFICULTY = (parsed.ok && parsed.data.task_difficulty) ? parsed.data.task_difficulty.value : "";
 ````
 
