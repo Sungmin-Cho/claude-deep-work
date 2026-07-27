@@ -4520,6 +4520,20 @@ test('environment sanitizer applies exact POSIX and case-insensitive Windows key
     /process-env-invalid/);
 });
 
+test('safe Git environment collapses case-insensitive Windows ambient aliases', () => {
+  const environment = platform.safeGitEnvironment(process.execPath, {
+    HOME:'/tmp/home',
+    SystemRoot:'C:\\Windows',
+    SYSTEMROOT:'C:\\Windows',
+    TEMP:'C:\\Temp',
+    TMP:'C:\\Temp',
+  }, {
+    lstatSync(){ throw Object.assign(new Error('not a release carrier'), {code:'ENOENT'}); },
+  });
+  assert.deepEqual(Object.keys(environment).filter((key) => key.toLowerCase() === 'systemroot'),
+    ['SystemRoot']);
+});
+
 test('native Windows launcher preserves the inherited parenthesized environment key', {
   skip:process.platform !== 'win32' ? 'native Windows only' : false,
 }, async () => {

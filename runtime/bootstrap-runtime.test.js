@@ -63,6 +63,10 @@ const {authenticateRedProof}=require('./functional-receipt-runtime.js');
 const digest=(value)=>crypto.createHash('sha256').update(value).digest('hex');
 const NODE_PATH='/opt/homebrew/Cellar/node/26.0.0/bin/node';
 const WORKTREE=process.cwd();
+const ISOLATED_ROOT=process.platform==='win32'?'D:\\isolated-bootstrap':'/private/tmp/isolated-bootstrap';
+const OUTSIDE_ROOT=process.platform==='win32'?'D:\\outside-bootstrap-root':'/outside-bootstrap-root';
+const WINDOWS_ROOT='D:\\agent\\deep-work';
+const WINDOWS_OUTSIDE_ROOT='D:\\agent\\outside';
 const EMPTY_SHA256=digest(Buffer.alloc(0));
 const semantic=(label,value,key)=>{
   const copy=structuredClone(value);delete copy[key];
@@ -71,9 +75,10 @@ const semantic=(label,value,key)=>{
 
 function specOutput({root=WORKTREE,name='bootstrap contract',duration='1.25',status='✔',pass=1,fail=0,
   testPath='runtime/a.test.js',moduleLoad=false,opaqueLine=null}={}){
-  let prelude=moduleLoad?`Error: Cannot find module ./bootstrap-runtime.js\nRequire stack:\n- ${root}/${testPath}\n`+
-    `    at Example (${root}/${testPath}:1:2) {\n  requireStack: [\n    '${root}/${testPath}'\n  ]\n}\n`:
-    `    at Example (${root}/${testPath}:1:2)\n`;
+  const location=path.join(root,testPath);
+  let prelude=moduleLoad?`Error: Cannot find module ./bootstrap-runtime.js\nRequire stack:\n- ${location}\n`+
+    `    at Example (${location}:1:2) {\n  requireStack: [\n    '${location}'\n  ]\n}\n`:
+    `    at Example (${location}:1:2)\n`;
   if(opaqueLine!==null)prelude+=`${opaqueLine}\n`;
   const details=fail===0?'':`\n✖ failing tests:\n\ntest at ${testPath}:1:2\n`+
     `✖ ${name} (${duration}ms)\n  Error: expected failure\n`;
@@ -161,8 +166,8 @@ test('witness binds patches, commands, results and disjoint changed paths',()=>{
 test('node spec bootstrap normalization binds the complete stream but erases only root and timing',()=>{
   const first=normalizeNodeTestBootstrapStdout(specOutput({duration:'1.25'}),normalizationContext());
   const alternate=normalizeNodeTestBootstrapStdout(
-    specOutput({root:'/private/tmp/isolated-bootstrap',duration:'999.5'}),
-    normalizationContext('/private/tmp/isolated-bootstrap'));
+    specOutput({root:ISOLATED_ROOT,duration:'999.5'}),
+    normalizationContext(ISOLATED_ROOT));
   assert.equal(first.stdout_semantic_sha256,alternate.stdout_semantic_sha256);
   assert.equal(first.semantic.normalized_stdout_sha256,alternate.semantic.normalized_stdout_sha256);
   const changed=normalizeNodeTestBootstrapStdout(
@@ -172,12 +177,25 @@ test('node spec bootstrap normalization binds the complete stream but erases onl
     tests:1,pass:1,fail:0,skipped:0});
 });
 
+test('node spec bootstrap normalization authenticates Windows drive locations on every host',()=>{
+  const first=normalizeNodeTestBootstrapStdout(
+    specOutput({root:WINDOWS_ROOT,duration:'1.25'}),normalizationContext(WINDOWS_ROOT));
+  const alternate=normalizeNodeTestBootstrapStdout(
+    specOutput({root:'d:\\AGENT\\deep-work',duration:'999.5'}),
+    normalizationContext(WINDOWS_ROOT));
+  assert.equal(first.stdout_semantic_sha256,alternate.stdout_semantic_sha256);
+  assert.match(first.normalized_bytes.toString(),/<worktree>\/runtime[\\/]a\.test\.js:1:2/u);
+  assert.throws(()=>normalizeNodeTestBootstrapStdout(
+    specOutput({root:WINDOWS_OUTSIDE_ROOT}),normalizationContext(WINDOWS_ROOT)),
+  /stdout-out-of-root-location/);
+});
+
 test('normalizer closes reserved roots, module contexts, timing, summaries and failure details',()=>{
   const context=normalizationContext();
   assert.throws(()=>normalizeNodeTestBootstrapStdout(Buffer.from([0xff]),context),/stdout-invalid-utf8/);
   assert.throws(()=>normalizeNodeTestBootstrapStdout(Buffer.from(specOutput().toString().replaceAll('\n','\r\n')),
     context),/stdout-crlf/);
-  assert.throws(()=>normalizeNodeTestBootstrapStdout(specOutput({root:'/outside-root'}),context),
+  assert.throws(()=>normalizeNodeTestBootstrapStdout(specOutput({root:OUTSIDE_ROOT}),context),
     /stdout-out-of-root-location/);
   assert.throws(()=>normalizeNodeTestBootstrapStdout(
     Buffer.from(specOutput().toString().replace('(1.25ms)','(01.25ms)')),context),/stdout-malformed-timing/);
@@ -189,7 +207,8 @@ test('normalizer closes reserved roots, module contexts, timing, summaries and f
     Buffer.from(specOutput().toString().replace('bootstrap contract','<worktree>/bootstrap contract')),context),
   /stdout-reserved-root-token/);
   assert.throws(()=>normalizeNodeTestBootstrapStdout(
-    Buffer.from(specOutput({moduleLoad:true}).toString().replace(`- ${WORKTREE}/runtime/a.test.js\n`,'')),context),
+    Buffer.from(specOutput({moduleLoad:true}).toString().replace(
+      `- ${path.join(WORKTREE,'runtime/a.test.js')}\n`,'')),context),
   /stdout-malformed-location-context/);
   assert.throws(()=>normalizeNodeTestBootstrapStdout(
     Buffer.from(specOutput({status:'✖',pass:0,fail:1}).toString().replace('✖ failing tests:','✖ failures:')),
@@ -536,6 +555,7 @@ function bootstrapControlFixture({stage='green-command-completed',partialPatch=f
   require('node:child_process').execFileSync('git',['init','-q'],{cwd:root});
   require('node:child_process').execFileSync('git',['config','user.email','bootstrap@example.invalid'],{cwd:root});
   require('node:child_process').execFileSync('git',['config','user.name','Bootstrap Fixture'],{cwd:root});
+  require('node:child_process').execFileSync('git',['config','core.autocrlf','false'],{cwd:root});
   fs.mkdirSync(path.join(root,'runtime'));fs.mkdirSync(path.join(root,'.claude'));
   fs.writeFileSync(path.join(root,'.gitignore'),'.claude/\n.deep-work/\n');
   fs.writeFileSync(path.join(root,'runtime','a.js'),'module.exports = 1;\n');
@@ -696,7 +716,7 @@ test('public failure publication reauthenticates normalized and every rejected r
     ['stdout-crlf',{stdout:(root)=>Buffer.from(specOutput({root}).toString().replaceAll('\n','\r\n'))}],
     ['stdout-reserved-root-token',{stdout:(root)=>Buffer.from(specOutput({root}).toString()
       .replace('bootstrap contract','<worktree>/bootstrap contract'))}],
-    ['stdout-out-of-root-location',{stdout:()=>specOutput({root:'/outside-bootstrap-root'})}],
+    ['stdout-out-of-root-location',{stdout:()=>specOutput({root:OUTSIDE_ROOT})}],
     ['stdout-malformed-location-context',{stdout:(root)=>Buffer.from(
       specOutput({root,moduleLoad:true}).toString().replace('  ]\n',''))}],
     ['stdout-malformed-timing',{stdout:(root)=>Buffer.from(
