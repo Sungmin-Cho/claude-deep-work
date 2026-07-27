@@ -23,7 +23,7 @@ user-invocable: true
    - worktree_path — $ARGUMENTS 우선, 없으면 state에서
    - team_mode — $ARGUMENTS 우선, 없으면 state에서
 4. 추출: `work_dir`, `test_retry_count`, `max_test_retries`, `evaluator_model`. 모델은
-   Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+   Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
    만든 `decodedRouting.test`를 사용한다.
 5. Verify: `current_phase` = "test", plan.md slice checklist 모두 `[x]`
 6. `test_started_at` 기록 (ISO timestamp)
@@ -94,7 +94,7 @@ plan.md의 모든 SLICE-NNN에 대해 `$WORK_DIR/receipts/SLICE-NNN.json` 존재
 
 ### 4-1. Cross-Slice Spec Consistency (✅ Required)
 
-Read(`../shared/references/adaptive-review-protocol.md`)하고 전체 receipt + plan.md로
+Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)하고 전체 receipt + plan.md로
 `compileReviewPlan({artifactKind:'cross-slice', ...})`를 호출한다. Phase 3에서 review가
 빠진 slice는 backfill하고 `done_with_concerns`는 extra scrutiny한다. 이 gate는 Required다.
 
@@ -117,7 +117,7 @@ verdictFromFindings → writeFindings`다. 결과는
 ### 4-4. SOLID Review (⚠️ Advisory)
 
 변경된 source 파일 대상 SOLID 원칙 평가 → `$WORK_DIR/solid-review.md`
-상세: Read("../shared/references/solid-guide.md")
+상세: Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/solid-guide.md")
 
 ### 4-5. Insight Analysis (ℹ️ Insight)
 
@@ -144,7 +144,7 @@ Phase 1의 fitness_baseline과 현재 비교. 위반 증가 시 경고.
 Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 acknowledge 요청.
 
 모든 gate 후: quality_gates_passed 업데이트 + `$WORK_DIR/quality-gates.md` 작성.
-상세: Read("../shared/references/testing-guide.md")
+상세: Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/testing-guide.md")
 
 # Section 3: 완료
 

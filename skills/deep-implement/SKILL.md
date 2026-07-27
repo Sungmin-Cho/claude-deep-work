@@ -25,7 +25,7 @@ user-invocable: true
    - team_mode — $ARGUMENTS 우선, 없으면 state에서
    - tdd_mode — $ARGUMENTS에 --tdd=MODE 우선, 없으면 state에서 (기본: strict)
 4. 추출: `work_dir`, `active_slice`, `tdd_state`, `evaluator_model`. 라우팅은
-   Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+   Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
    `decodedRouting`/`decodedRoutingMeta`를 만든 뒤 읽는다.
 5. Verify: `current_phase` = "implement", `plan_approved` = true
 6. `implement_started_at` 기록 (ISO timestamp)
@@ -140,7 +140,7 @@ const { model } = resolveTier(tier, decodedRoutingMeta.runtime);
   (이 legacy 분기는 프롬프트 경로 산문 규칙이다 — Node 픽스처 고정 대상이 아니라 산문 acceptance로 검증한다.)
 
 Agent 위임 시: `mode: "bypassPermissions"`, TDD 규칙 + Slice Review 규칙을 프롬프트에 포함 (hook이 delegated agent에 미적용), slice당 10분 timeout.
-상세 및 carrier decode 정본: Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)
+상세 및 carrier decode 정본: Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)
 
 ## Section 2.1: Delegate Solo Path
 
@@ -243,7 +243,7 @@ canonical `current_phase: spec`에서 재개한다. legacy
 
 per-slice diff: `git diff $git_before_slice -- [slice files]`
 
-Read(`../shared/references/adaptive-review-protocol.md`)하고
+Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)하고
 `compileReviewPlan({artifactKind:'slice-diff', riskClass, sliceRiskClass, runtime,
 availableChannels, tddMode, evaluatorModelOverride, policyMode, reviewModeOverride})`를 호출한다.
 
@@ -395,12 +395,12 @@ inline 경로에서는 이것이 유일한 receipt 검증이다(item 1-4는 hook
 > **Precondition**: Section 2.3 verify-receipt가 pass해야 이 단계에 도달한다. Fail 시 §5.6a Rollback Protocol이 이 단계를 우회한다.
 
 모든 slice 완료 후, Test 전환 전:
-Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: implement
 - Document: 구현된 코드 전체 (git diff)
 - Self-review: 계획 충실도, 크로스 슬라이스 일관성, 미구현 항목
 
-상세: Read("../shared/references/implementation-guide.md")
+상세: Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/implementation-guide.md")
 
 # Section 3: 완료
 

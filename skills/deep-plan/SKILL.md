@@ -67,21 +67,21 @@ Section 1 state 로드, Prerequisites research.md Read, 완료-marker 감지가 
 기존 plan.md → `$WORK_DIR/plan.v{iteration_count}.md`로 복사
 
 ### Template 제안 (선택적)
-Read("../shared/references/plan-templates.md") → 적합 템플릿 확인 → 사용자에게 제안
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/plan-templates.md") → 적합 템플릿 확인 → 사용자에게 제안
 
 ### 사용자 피드백 확인
 기존 plan.md에 `> [!NOTE]`, `<!-- HUMAN: -->`, inline comment가 있으면 반영
 
 ## plan.md 작성
 
-상세 작성 가이드: Read("../shared/references/planning-guide.md")
+상세 작성 가이드: Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/planning-guide.md")
 
 ### 문서 구조
 
 **Template 로드 (project_type 분기)**:
 
-- `project_type: existing` → Read `../shared/templates/plan-template-existing.md`
-- `project_type: zero-base` → Read `../shared/templates/plan-template-zerobase.md`
+- `project_type: existing` → Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/plan-template-existing.md`
+- `project_type: zero-base` → Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/plan-template-zerobase.md`
 
 둘 중 해당하는 template을 Read하여 구조를 파악한 뒤, Section 2에서 수행한 분석 결과로 placeholder를 전부 치환하고 `$WORK_DIR/plan.md`에 Write.
 
@@ -168,7 +168,7 @@ The plan approval runtime is the sole producer of the derived `plan.json`.
 
 ## Phase Review Gate
 
-Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: plan
 - Document: `$WORK_DIR/plan.md`
 - Self-review checklist: placeholder 없음, 연구-계획 추적성, 슬라이스 완성도

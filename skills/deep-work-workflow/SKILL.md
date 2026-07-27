@@ -70,12 +70,12 @@ Standalone mode available: `/drift-check [plan-file]`.
 ### SOLID Design Review (/solid-review) — *Quality Gate — auto-runs in /deep-test; standalone: /solid-review [target]*
 
 Evaluates code against the 5 SOLID design principles with a per-principle scorecard.
-Standalone mode available: `/solid-review [target]`. See [SOLID Guide](../shared/references/solid-guide.md).
+Standalone mode available: `/solid-review [target]`. See [SOLID Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/solid-guide.md).
 
 ### Code Insight Analysis (/deep-insight) — *Quality Gate — auto-runs in /deep-test; standalone: /deep-insight [target]*
 
 Measures file metrics, complexity indicators, and dependency graphs. Never blocks workflow.
-Standalone mode available: `/deep-insight [target]`. See [Insight Guide](../shared/references/insight-guide.md).
+Standalone mode available: `/deep-insight [target]`. See [Insight Guide](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/insight-guide.md).
 
 ### Session Report (/deep-report) — *Internal — auto-generated after test pass; manual: /deep-report or /deep-status --report*
 

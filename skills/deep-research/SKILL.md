@@ -191,7 +191,7 @@ team 경로에서 부모가 병합을 건너뛰면 `research.md`가 생성되지
 
 ## Phase Review Gate
 
-Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: research
 - Document: `$WORK_DIR/research.md`
 - Self-review checklist — **project_type에 따라 분기**:
@@ -233,7 +233,7 @@ rm -f "$RISK_IN"
 ```
 
 3. 성공한 authoritative class로 재라우팅한다. 초기 spawn에서 이미
-   Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)를
+   Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)를
    수행했으므로 pin은 `decodedRoutingMeta.pinned`, runtime은 CLI 자동 감지를 사용한다.
    v1이면 `methodology_policy_json.policy_sha256`를 먼저 검증한다. legacy
    v6.12 shape는 closed fallback parser로 읽어 새 authority로 승격한다. `RISK_OUT`은 새

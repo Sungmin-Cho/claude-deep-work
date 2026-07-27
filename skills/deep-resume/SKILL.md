@@ -61,7 +61,7 @@ state file에서의 `WORK_DIR` 추출 절차는
   `verification_plan_json`, committed evidence package 중 하나라도 승인 digest에서
   drift한 상태로 phase skill을 호출해서는 안 된다. legacy session은 route의
   `governed: false` 결과로 계속 읽을 수 있다.
-- Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+- Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
   `decodedRouting`/`decodedRoutingMeta`를 복원한다.
 - `methodology_policy_json`과 `review_execution_json`을 각각 `JSON.parse`해 policy mode,
   risk class, review mode override, floor baseline, channels, human ack,

@@ -159,7 +159,7 @@ temp path, e.g. `$WORK_DIR/.session-receipt.payload.json`:
 }
 ```
 
-> **v6.12.0**: Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+> **v6.12.0**: Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
 > routing carrier를 decode한다. decoded meta가 있으면 payload의 optional `model_routing_meta`
 > 필드에 포함하고, 부재/손상 시 생략한다. deep-suite payload-registry minor bump는 suite 측 후속 작업.
 

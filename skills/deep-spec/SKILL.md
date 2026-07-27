@@ -36,7 +36,7 @@ Do not implement source code and do not create `requirements.json`,
 
 Announce: "Spec 단계를 시작합니다. research.md를 실행 가능한 계약으로 고정합니다."
 
-1. Read `../shared/templates/spec-template.md` and write exactly one
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/spec-template.md` and write exactly one
    `$WORK_DIR/spec.md`. Preserve the required heading order and exactly one
    fenced `json spec-contract` block.
 2. Replace every template marker. An unresolved marker (`PENDING`, `TBD`,

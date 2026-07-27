@@ -266,9 +266,9 @@ Skill("deep-research", args=ARGS)
 완료 후: **Review + Approval Workflow 실행** (문서 수정 승인 단계).
 
 Phase Skill 완료 후 단일 리뷰 진입점만 실행한다:
-1. Read(`../shared/references/adaptive-review-protocol.md`) 후 document 입력을 조립한다.
+1. Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`) 후 document 입력을 조립한다.
 2. `compileReviewPlan` 결과대로 reviewers 실행과 execution/finding 판정을 수행한다.
-3. 통과 후에만 Read(`../shared/references/review-approval-workflow.md`)의 Step 4-6 승인 UX로
+3. 통과 후에만 Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-approval-workflow.md`)의 Step 4-6 승인 UX로
    이동한다. 이 workflow는 자동 리뷰를 다시 실행하지 않는다.
 
 문서 최종 승인 후 → State 부분 업데이트:
@@ -337,9 +337,9 @@ AskUserQuestion:
 
 Skill("deep-plan", args=ARGS)
 
-완료 후 Read(`../shared/references/adaptive-review-protocol.md`)의 document 단일 진입에서
+완료 후 Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)의 document 단일 진입에서
 `compileReviewPlan` 결과를 실행한다. 실행 판정과 finding verdict 통과 후에만
-Read(`../shared/references/review-approval-workflow.md`) Step 4-6 승인 UX로 이동한다.
+Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-approval-workflow.md`) Step 4-6 승인 UX로 이동한다.
 
 문서 최종 승인 후 → State 부분 업데이트:
 - `plan_approved: true`

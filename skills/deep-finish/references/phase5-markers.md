@@ -1,6 +1,6 @@
 # Phase 5 entry hint and defensive error marker
 
-> Reference for `skills/deep-finish/SKILL.md`. Sections 1a and 1c: the optional Phase 5 Integrate prompt and the defensive `terminated_by: "error"` marker written into integrate-loop.json before Section 2. Read when the session state carries a Phase 5 hint or `--skip-integrate` is absent.
+> Reference for `skills/deep-finish/SKILL.md`. Sections 1a and 1c: the optional Phase 5 Integrate prompt (§1a — runs when a Phase 5 hint is present and `--skip-integrate` is absent) and the defensive `terminated_by: "error"` marker written into integrate-loop.json (§1c — runs when `--skip-integrate` IS present and Phase 5 entered but never completed). Both are reached from Section 1, so read this whenever Section 1 completes.
 
 ---
 

@@ -108,7 +108,7 @@ Read the resolved state file (from Step 1) to get session state.
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
 
-Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
+Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
 scalar-first 규칙으로 `decodedRouting`을 만든다. decode 실패 시 기본값
 (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku)을 표시한다.
 
@@ -351,7 +351,10 @@ Sub-flags:
 
 `$ARGUMENTS`에 `--all`이 있으면
 `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/flag-views.md`
-의 `--all` 절을 읽고 그대로 수행한다.
+의 `--all` 절을 읽고 그대로 수행한다. `--all`의 §10b는 Step 11(tree)까지 실행하도록
+요구하므로, `--tree`가 함께 주어지지 않았더라도
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/fork-views.md`
+를 **함께 읽는다** — tree 절차는 그 파일에만 있다.
 
 ### 11. --tree: Fork Relationship Tree
 
