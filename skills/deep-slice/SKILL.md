@@ -33,7 +33,7 @@ user-invocable: true
 
 
 > **Escape hatch utility** — TDD 블록 시 `phase-guard`가 안내하는 수동 slice 개입 경로 (`spike`, `reset`, `model`). `/deep-implement` auto-flow가 정상 동작할 때는 대부분 자동 관리됩니다.
-> 참조처: `hooks/scripts/phase-guard-core.js` L110-L123 (TDD 블록 메시지에서 `/deep-slice spike/reset` 안내).
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard-core.js` L110-L123 (TDD 블록 메시지에서 `/deep-slice spike/reset` 안내).
 
 # Slice Management
 

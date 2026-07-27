@@ -15,7 +15,7 @@ Resolve the session to resume using the following priority:
 
 #### 1a-0. Explicit `--session=<id>`
 
-`scripts/parse-deep-work-flags.js` parses `--session=<id>` and rejects anything outside
+`${CLAUDE_PLUGIN_ROOT}/scripts/parse-deep-work-flags.js` parses `--session=<id>` and rejects anything outside
 `[A-Za-z0-9.-]` with a warning. When a valid value is present it wins over every source
 below — read `.claude/deep-work.<id>.md` directly. If that file does not exist, report it
 and stop rather than silently falling through to another session.
@@ -31,7 +31,7 @@ If `DEEP_WORK_SESSION_ID` environment variable is set:
 
 If neither of the above resolved, read `.claude/deep-work-current-session` — a single
 line holding the session ID. This is the same pointer the hooks fall back to
-(`hooks/scripts/utils.sh`, `phase-guard.sh`, `session-end.sh`), so honouring it here
+(`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/utils.sh`, `phase-guard.sh`, `session-end.sh`), so honouring it here
 keeps the skill and the hooks pointed at one session. If it names a session whose
 state file is missing or `idle`, fall through to 1b.
 

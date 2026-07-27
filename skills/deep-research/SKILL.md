@@ -135,8 +135,8 @@ First Action의 디렉토리 매핑 직후, Agent 위임 전에 부모 세션이
    - 감지 결과를 state frontmatter/body의 `topology` 필드에 기록한다.
 2. Fitness rules 준비:
    - `$WORK_DIR/.deep-review/fitness.json` 존재 여부를 확인한다.
-   - 없으면 `health/fitness/fitness-generator.js`의 `generateFitnessRules($WORK_DIR)`로 rules 후보를 생성하고, 자동 적용하지 말고 research context에 "fitness.json proposal available" 또는 명시적 skip 사유를 기록한다.
-   - 있으면 그대로 사용한다. CLI 경로에서는 `health/health-check.js --fitness "$WORK_DIR/.deep-review/fitness.json"`을 사용할 수 있다.
+   - 없으면 `${CLAUDE_PLUGIN_ROOT}/health/fitness/fitness-generator.js`의 `generateFitnessRules($WORK_DIR)`로 rules 후보를 생성하고, 자동 적용하지 말고 research context에 "fitness.json proposal available" 또는 명시적 skip 사유를 기록한다.
+   - 있으면 그대로 사용한다. CLI 경로에서는 `${CLAUDE_PLUGIN_ROOT}/health/health-check.js --fitness "$WORK_DIR/.deep-review/fitness.json"`을 사용할 수 있다.
 3. Health Check 실행:
    - `node ${CLAUDE_PLUGIN_ROOT}/health/health-check.js "$WORK_DIR" --skip-audit` 또는 `runHealthCheck($WORK_DIR, { fitnessPath })` 동등 호출을 실행한다.
    - 결과 전체를 state의 `health_report`에 기록한다.

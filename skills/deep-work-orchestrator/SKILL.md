@@ -34,7 +34,7 @@ fi
 
 또는 동등한 JS import (orchestrator가 Node 런타임 내에서 실행 가능한 경우):
 ```javascript
-const { migrateStateFile } = require('./scripts/migrate-model-routing.js');
+const { migrateStateFile } = require(`${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js`);
 // migrateStateFile 자체가 fs.existsSync 가드를 내부에서 처리
 const { replaced, warnings } = migrateStateFile(stateFile);
 ```
@@ -113,7 +113,7 @@ METHODOLOGY_AUTHORITY=$(printf '%s' "$RISK_ONLY_OUT" | node -e \
 `FLAGS.risk`가 있으면 해당 class를 `RISK_CLASS`에 적용한다. 자동/기존 class보다 낮은
 override는 확인을 받은 뒤에만 적용하고 `review_execution_json.risk_acceptances`에
 `{from,to,reason,at,scope:"session"}`를 append한다. 상향은 즉시 적용한다.
-override로 effective class가 바뀌면 `runtime/policy-runtime.js`의
+override로 effective class가 바뀌면 `${CLAUDE_PLUGIN_ROOT}/runtime/policy-runtime.js`의
 `compileMethodologyAuthority`를 그 승인된 class와 `POLICY_MODE`에 다시 적용해
 `METHODOLOGY_AUTHORITY`를 교체한다. 이 재컴파일 없이 legacy `--risk-class`로
 router를 직접 우회하는 것은 금지한다.
@@ -428,7 +428,7 @@ Phase 5: 설치된 deep-suite 플러그인 아티팩트를 읽어 AI가 다음 �
   - 스킬이 에러로 종료하면 경고 메시지 출력 후 **`--skip-integrate`를 추가하여** 3-6로 진행한다. Phase 5는 진입 시 `phase5_entered_at`을 기록했지만 `phase5_completed_at`이 없으므로, `--skip-integrate` 없이 `/deep-finish`를 호출하면 "Phase 5 중단" 분기에 걸려 세션이 idle-but-unfinishable 상태에 고착된다. `--skip-integrate`가 이 분기를 우회하여 정상 finish 경로를 보장한다.
   - 스킬이 `terminated_by: "interrupted"` 상태로 남기고 종료하면 auto-flow 중단 (재진입 대기).
 
-> current_phase 변경 주체: deep-integrate Skill이 Phase 5 진입 시 `idle`로 전환하고 `phase5_entered_at` + **`phase5_work_dir_snapshot`** 필드를 기록한다. Phase 5 종료 시 `skills/deep-integrate/phase5-finalize.sh`로 `phase5_completed_at`만 atomically 기록한다. `current_phase` 자체는 `idle` 유지 (phase-guard Phase 5 mode와 호환). `phase5_work_dir_snapshot`은 phase-guard가 enforcement 기준으로 사용하는 불변 snapshot — state file의 `work_dir`이 런타임에 변조돼도 snapshot 값으로 방어된다. finished 같은 신규 state는 도입하지 않는다.
+> current_phase 변경 주체: deep-integrate Skill이 Phase 5 진입 시 `idle`로 전환하고 `phase5_entered_at` + **`phase5_work_dir_snapshot`** 필드를 기록한다. Phase 5 종료 시 `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/phase5-finalize.sh`로 `phase5_completed_at`만 atomically 기록한다. `current_phase` 자체는 `idle` 유지 (phase-guard Phase 5 mode와 호환). `phase5_work_dir_snapshot`은 phase-guard가 enforcement 기준으로 사용하는 불변 snapshot — state file의 `work_dir`이 런타임에 변조돼도 snapshot 값으로 방어된다. finished 같은 신규 state는 도입하지 않는다.
 
 ## 3-6. Finish
 

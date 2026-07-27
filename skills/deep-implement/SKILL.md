@@ -30,7 +30,7 @@ user-invocable: true
 5. Verify: `current_phase` = "implement", `plan_approved` = true
 6. `implement_started_at` 기록 (ISO timestamp)
 7. Read `state.execution_override` from state YAML frontmatter (orchestrator §1-3-1
-   already ran `scripts/parse-deep-work-flags.js` and persisted the value before this skill
+   already ran `${CLAUDE_PLUGIN_ROOT}/scripts/parse-deep-work-flags.js` and persisted the value before this skill
    was invoked — no separate `--exec` extraction needed here):
    - `state.execution_override == "inline"` → Section 1.5 will select inline mode
    - `state.execution_override == "delegate"` → Section 1.5 will select delegate mode
@@ -48,7 +48,7 @@ Read `$WORK_DIR/plan.md` → **Slice Checklist** 파싱. 각 slice:
 - strict-spec plan은 outcome, depends_on, integration_touchpoints, requirements,
   invariants, failure_modes, risk, negative_tests, evidence_required, rollback,
   review_policy, scope_expansion_trigger를 모두 전달한다. 누락/중복/잘못된 ID는
-  `runtime/contract-runtime.js:parsePlanContractMarkdown` 결과로 fail-closed한다.
+  `${CLAUDE_PLUGIN_ROOT}/runtime/contract-runtime.js:parsePlanContractMarkdown` 결과로 fail-closed한다.
 
 인라인 plan (state `skipped_phases` includes "plan"): SLICE-001만 존재, failing_test/contract 최소화 가능.
 
@@ -259,7 +259,7 @@ subagent reviewer를 세션 runtime으로 해석해 concrete `reviewer.model`을
 소비자는 channel runtime을 다시 해석하지 않고 `reviewer.model`과 `reviewer.effort`를
 빠뜨리지 않는다.
 `reviewer.channel === 'codex-cli'`이면 prompt를 dispatcher 소유 임시 파일로 만든 뒤 반드시
-다음 `scripts/deep-work-runtime.js` dispatcher route로 실행한다.
+다음 `${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js` dispatcher route로 실행한다.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" review run \
@@ -305,7 +305,7 @@ reviewer별 `role`/`channel`/`status`/`fallback_used`/`effort`/`effort_applied`,
 
 ### Step D-1: M3 Envelope Wrap
 
-legacy payload 구성 후, **`hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 — 이 helper가 유일한 envelope writer이다 (`AGENTS.md` §Receipt envelope).
+legacy payload 구성 후, **`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`** helper를 호출하여 M3 envelope으로 래핑한 최종 `$WORK_DIR/receipts/SLICE-NNN.json`을 emit한다. delegate 경로에서는 `agents/implement-slice-worker.md`가 worker 내부에서 동일 helper를 호출하고, solo inline 경로도 동일 helper를 직접 호출 — 이 helper가 유일한 envelope writer이다 (`AGENTS.md` §Receipt envelope).
 
 호출 예시 (실제 CLI는 helper 상단 usage block 참조):
 
@@ -350,7 +350,7 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" \
 ```
 
 - **Identity guard** — 모든 reader (`verify-delegated-receipt-runner.js`, `session-end.sh`, deep-test §4-1)가 `envelope.producer === "deep-work"` + `artifact_kind === "slice-receipt"` + `schema.name === artifact_kind` 3중 검증 후 `.payload`로 unwrap하여 legacy 필드를 읽는다.
-- **Self-test** — `scripts/validate-envelope-emit.js` (zero-dep release-lint) + `tests/envelope-emit.test.js` + `tests/envelope-chain.test.js`가 corrupt payload, ULID alphabet 위반, SemVer strict, cross-plugin chain assertion을 cover.
+- **Self-test** — `${CLAUDE_PLUGIN_ROOT}/scripts/validate-envelope-emit.js` (zero-dep release-lint) + `tests/envelope-emit.test.js` + `tests/envelope-chain.test.js`가 corrupt payload, ULID alphabet 위반, SemVer strict, cross-plugin chain assertion을 cover.
 - **Legacy compat** — non-envelope receipt(이전 세션 잔존)는 reader 측에서 forward-compat 통과. 본 skill의 writer 경로는 무조건 envelope-wrap.
 
 ### Step E: Mark Complete

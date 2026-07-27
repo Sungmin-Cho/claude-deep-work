@@ -171,7 +171,7 @@ Phase 1의 `unresolved_required_issues` 확인. 있으면 AskUserQuestion으로 
 - **`state.test_passed === true` + `state.test_completed_at`** 마커 기록 — `/deep-finish §7-Z`의 envelope writer dispatcher가 이 두 필드를 precondition으로 읽는다.
 - **모든 slice receipt가 M3 envelope 형태** (`producer === "deep-work"` + `artifact_kind === "slice-receipt"` + `schema.name === artifact_kind`)로 wrap된 상태 — §4-1 (Receipt Completeness) gate가 identity guard로 이를 검증하므로, gate를 통과한 시점에 모든 receipt가 envelope임이 보장됨.
 - **`parent_run_id` chain** — Phase 1 (deep-research)가 consume한 `evolve-insights` envelope의 `run_id`가 state에 보관되어 있으면, `/deep-finish §7-Z`가 session-receipt envelope의 `envelope.parent_run_id` 필드와 `envelope.provenance.source_artifacts[]`에 함께 기록한다 (cross-plugin chain trace).
-- **단일 writer 정책** — session-receipt는 `hooks/scripts/wrap-receipt-envelope.js`가 `--artifact-kind=session-receipt`로 호출되어 생성됨 (deep-implement Step D-1의 slice-receipt writer와 동일 helper). 본 skill은 helper를 호출하지 않는다.
+- **단일 writer 정책** — session-receipt는 `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`가 `--artifact-kind=session-receipt`로 호출되어 생성됨 (deep-implement Step D-1의 slice-receipt writer와 동일 helper). 본 skill은 helper를 호출하지 않는다.
 
 위 contract가 깨지면 `/deep-finish §7-Z`가 envelope emit을 실패시키므로, **Some Fail (retry exhausted) 분기의 receipt invalidation** 은 envelope reader가 stale evidence를 받지 않도록 보장하는 contract의 일부다.
 

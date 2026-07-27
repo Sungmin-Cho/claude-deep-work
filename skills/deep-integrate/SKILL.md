@@ -31,7 +31,7 @@ user-invocable: true
    - state file의 `current_phase`를 **`idle`**로 전환 (phase-guard.sh의 Phase 5 mode 경로로 진입)
    - `phase5_entered_at: $(date -u +%FT%TZ)` 필드 추가
    - **주의**: `phase5_work_dir_snapshot: "<work_dir slug>"` 필드도 함께 추가. phase-guard가 이 snapshot을 enforcement 기준으로 사용하므로 진입 시점의 work_dir 값이 **불변 boundary**가 된다. 런타임에 state file의 `work_dir`이 변조되어도 Phase 5 guard는 snapshot 값을 따른다.
-   - Phase 5 종료 시 `current_phase`는 **`idle` 유지**하고 `phase5_completed_at` 필드로 완료 신호 전달. 이 쓰기는 일반 Edit/Bash redirect가 아닌 전용 helper `skills/deep-integrate/phase5-finalize.sh`를 호출한다 (Section 4 참조) — phase-guard가 state file 전체 쓰기를 거부하되 이 helper만 허용하기 때문.
+   - Phase 5 종료 시 `current_phase`는 **`idle` 유지**하고 `phase5_completed_at` 필드로 완료 신호 전달. 이 쓰기는 일반 Edit/Bash redirect가 아닌 전용 helper `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/phase5-finalize.sh`를 호출한다 (Section 4 참조) — phase-guard가 state file 전체 쓰기를 거부하되 이 helper만 허용하기 때문.
 
 ## Section 2: Loop state 초기화 또는 재개
 

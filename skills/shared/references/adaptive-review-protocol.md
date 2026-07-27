@@ -2,8 +2,8 @@
 
 이 문서는 deep-work의 document, slice-diff, cross-slice, session-final 리뷰에 대한 단일
 실행 정본이다. 강도 표를 prose에서 다시 구현하지 않는다. 정책과 degraded 판정은
-`runtime/review-policy-runtime.js`, finding 정규화와 저장은
-`runtime/review-finding-runtime.js`가 소유한다.
+`${CLAUDE_PLUGIN_ROOT}/runtime/review-policy-runtime.js`, finding 정규화와 저장은
+`${CLAUDE_PLUGIN_ROOT}/runtime/review-finding-runtime.js`가 소유한다.
 
 ## 1. 입력 조립
 
