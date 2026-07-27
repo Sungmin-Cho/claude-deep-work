@@ -538,6 +538,42 @@ test('the documented report command survives real shell semantics', () => {
   }
 });
 
+test('the plugin obeys the rules it states', () => {
+  // Self-consistency axis. Both round-9 findings had the same shape: a rule
+  // this PR added, violated inside the very file that states it, or two lines
+  // below. Writing a rule is not enforcing it, so the mechanically checkable
+  // ones are asserted here.
+  const violations = [];
+  for (const file of markdownFiles()) {
+    const rel = path.relative(ROOT, file);
+    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      const at = `${rel}:${i + 1}`;
+
+      // "이 파일 위치에서 상대 유도하지 말 것" — a path derived from the
+      // document's own location resolves against the workspace once the
+      // document is read from there.
+      if (/directory containing this|이 파일이 있는 (디렉터리|디렉토리)/.test(line)
+          && !/말 것|하지 마|never|must not/i.test(line)) {
+        violations.push(`${at}  source-relative derivation`);
+      }
+
+      // "Never `git add -A`" — the statement itself is allowed, an instruction
+      // to do it is not.
+      if (/git add -A/.test(line) && !/Never|절대|금지|하지 ?마/i.test(line)) {
+        violations.push(`${at}  instructs 'git add -A'`);
+      }
+
+      // phase-guard rejects `$(...)` in the Phase 5 helper calls, so a
+      // documented call that uses it would be blocked at runtime.
+      if (/phase5-(?:finalize|record-error)\.sh/.test(line) && /\$\(/.test(line)) {
+        violations.push(`${at}  command substitution in a phase-guard helper call`);
+      }
+    });
+  }
+  assert.deepEqual(violations, [],
+    `the plugin violates a rule it states:\n  ${violations.join('\n  ')}`);
+});
+
 test('mixed lines fail on the bare token', () => {
   // A line-level anchor check passes this; the token-level check must not.
   const line = 'Read `${CLAUDE_PLUGIN_ROOT}/skills/a/SKILL.md` then Read `../shared/references/b.md`';
