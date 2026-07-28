@@ -1,6 +1,6 @@
 ---
 name: deep-slice
-description: "Use when the user wants slice-level management inside a deep-work Phase 3 (Implement) session — status dashboard, manual activation, spike mode entry, reset, or per-slice model override. Triggers on `/deep-slice`, \"slice status\", \"spike mode\", \"slice reset\", \"슬라이스 상태\", \"스파이크 모드\". Primary escape hatch for TDD-blocked scenarios (phase-guard surfaces `/deep-slice spike|reset` in block messages). Subcommands: `activate SLICE-NNN`, `spike SLICE-NNN`, `reset SLICE-NNN`, `model SLICE-NNN [model]`."
+description: "Slice-level management inside Phase 3 — status, activate, spike, reset, per-slice model override; the escape hatch phase-guard points at when TDD blocks. Triggers on `/deep-slice`, \"slice status\", \"spike mode\", \"slice reset\", \"슬라이스 상태\", \"스파이크 모드\"."
 user-invocable: true
 ---
 
@@ -32,10 +32,10 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Escape hatch utility (v6.2.4)** — TDD 블록 시 `phase-guard`가 안내하는 수동 slice 개입 경로 (`spike`, `reset`, `model`). `/deep-implement` auto-flow가 정상 동작할 때는 대부분 자동 관리됩니다.
-> 참조처: `hooks/scripts/phase-guard-core.js` L110-L123 (TDD 블록 메시지에서 `/deep-slice spike/reset` 안내).
+> **Escape hatch utility** — TDD 블록 시 `phase-guard`가 안내하는 수동 slice 개입 경로 (`spike`, `reset`, `model`). `/deep-implement` auto-flow가 정상 동작할 때는 대부분 자동 관리됩니다.
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/phase-guard-core.js` L110-L123 (TDD 블록 메시지에서 `/deep-slice spike/reset` 안내).
 
-# Slice Management (v4.0)
+# Slice Management
 
 Manage slices within a Deep Work implementation session.
 
@@ -49,7 +49,7 @@ Detect the user's language from their messages or the Claude Code `language` set
 - `/deep-slice activate SLICE-NNN` — Manually activate a specific slice
 - `/deep-slice spike SLICE-NNN` — Enter spike mode for a specific slice
 - `/deep-slice reset SLICE-NNN` — Reset a slice to PENDING
-- `/deep-slice model SLICE-NNN [model]` — Override model for a specific slice (v4.1)
+- `/deep-slice model SLICE-NNN [model]` — Override model for a specific slice
 
 ## Slice Status Dashboard
 
@@ -131,7 +131,7 @@ TDD state icon mapping:
       종료 시 /deep-slice reset SLICE-NNN 으로 TDD로 복귀하세요.
    ```
 
-## Model Override Command (v4.1)
+## Model Override Command
 
 `/deep-slice model SLICE-NNN [model]`:
 

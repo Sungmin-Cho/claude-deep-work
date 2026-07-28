@@ -211,8 +211,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 7.0.0 with evergreen usage docs', () => {
-    const version = '7.0.0';
+  it('active release metadata is bumped to 7.1.0 with evergreen usage docs', () => {
+    const version = '7.1.0';
     const featureVersion = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -227,13 +227,19 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (7.0.0) — explicit Spec and methodology authority.
+    // Current release (7.1.0) — context diet: references/ split and single agent guide.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.match(changelogCurrent,/Explicit Spec phase and profile v4/);
-    assert.match(changelogCurrent,/Single methodology authority/);
-    assert.match(changelogKoCurrent,/정식 Spec phase와 profile v4/);
-    assert.match(changelogKoCurrent,/단일 methodology authority/);
+    assert.match(changelogCurrent,/Per-skill `references\/` split/);
+    assert.match(changelogCurrent,/`AGENTS\.md` is the single agent guide/);
+    assert.match(changelogKoCurrent,/스킬별 `references\/` 분할/);
+    assert.match(changelogKoCurrent,/`AGENTS\.md`가 단일 에이전트 가이드/);
+    // The prior release (7.0.0) section keeps its own Spec / methodology-authority
+    // headlines; the 7.1.0 promotion must not clobber or absorb them.
+    assert.match(releaseSection(changelog, '7.0.0'),/Explicit Spec phase and profile v4/);
+    assert.match(releaseSection(changelog, '7.0.0'),/Single methodology authority/);
+    assert.match(releaseSection(changelogKo, '7.0.0'),/정식 Spec phase와 profile v4/);
+    assert.match(releaseSection(changelogKo, '7.0.0'),/단일 methodology authority/);
     assert.ok(releaseSection(changelog, '6.13.1').includes('hooks/scripts/hook-runtime-portability.test.js'),
       'CHANGELOG.md 6.13.1 section must retain the hook portability regression test');
     assert.ok(releaseSection(changelogKo, '6.13.1').includes('hooks/scripts/hook-runtime-portability.test.js'),

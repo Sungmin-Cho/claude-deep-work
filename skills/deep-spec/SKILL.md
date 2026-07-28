@@ -1,6 +1,6 @@
 ---
 name: deep-spec
-description: "Author the executable spec contract for deep-work research sessions. Invoked through /deep-spec, $deep-work:deep-spec, or orchestrator dispatch."
+description: "Author the executable spec contract for a deep-work session. Invoked through /deep-spec, $deep-work:deep-spec, or orchestrator dispatch."
 user-invocable: true
 ---
 
@@ -36,7 +36,7 @@ Do not implement source code and do not create `requirements.json`,
 
 Announce: "Spec 단계를 시작합니다. research.md를 실행 가능한 계약으로 고정합니다."
 
-1. Read `../shared/templates/spec-template.md` and write exactly one
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/spec-template.md` and write exactly one
    `$WORK_DIR/spec.md`. Preserve the required heading order and exactly one
    fenced `json spec-contract` block.
 2. Replace every template marker. An unresolved marker (`PENDING`, `TBD`,
@@ -48,7 +48,7 @@ Announce: "Spec 단계를 시작합니다. research.md를 실행 가능한 계�
    it.
 4. Run:
 
-   `node scripts/validate-spec-contract.js --spec "$WORK_DIR/spec.md" --risk-class "$RISK_CLASS"`
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/validate-spec-contract.js" --spec "$WORK_DIR/spec.md" --risk-class "$RISK_CLASS"`
 
    Require exit 0 and one stdout JSON object with `pass:true`. Medium+ requires
    contract requirement coverage `1`; High/Critical additionally requires a

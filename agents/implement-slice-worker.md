@@ -1,18 +1,12 @@
 ---
 name: implement-slice-worker
 description: |
-  Delegated implementation worker for deep-work's Implement phase.
-  Receives a list of slice IDs to execute and runs the full TDD + Sensor +
-  Slice Review protocol for each. Invoked by the deep-implement skill.
+  Delegated implementation worker for deep-work's Implement phase. Runs the
+  full TDD + Sensor + Slice Review protocol for each assigned slice ID.
+  Dispatched by the deep-implement skill, never by the user.
 
   <example>
-  Context: solo implement — parent delegates all slices to one worker
-  prompt: "cluster_ids=[SLICE-001,SLICE-002,SLICE-003]; sequential; tdd_mode=strict"
-  </example>
-
-  <example>
-  Context: team implement with multiple subagents — each worker handles one cluster
-  prompt: "cluster_ids=[SLICE-004]; tdd_mode=strict; evaluator_model=opus"
+  prompt: "cluster_ids=[SLICE-001,SLICE-002]; sequential; tdd_mode=strict"
   </example>
 model: inherit
 color: magenta
@@ -46,9 +40,9 @@ parent relies on your receipts for verification.
     delegated context; coach observations go to receipt.notes instead)
 - evaluator_model (for Slice Review Stage 1/2)
 
-## Unified slice review record (v6.12)
+## Unified slice review record
 
-Read `skills/shared/references/adaptive-review-protocol.md`. Worker는 Stage 1 semantic finding을
+Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md` (plugin root 기준 절대 경로 — 해석 결과가 plugin root 밖이면 읽지 말고 중단). Worker는 Stage 1 semantic finding을
 정규화하고 `writeFindings`로 canonical slice point에 기록한다. receipt의 optional
 `review.findings_ref`에는 그 경로와 reviewer status/fallback/effort evidence를 넣는다.
 dual plan의 Stage 2 executability는 부모가 worker 완료 후 실행한다. 부모 prompt에 worker
@@ -60,7 +54,7 @@ Before each slice: record `git_before_slice = git rev-parse HEAD`.
 After each slice (tdd cycle + sensor + review complete):
 record `git_after_slice = git rev-parse HEAD`.
 
-## Receipt file creation — EXPLICIT PROTOCOL (v6.5.0 envelope adoption)
+## Receipt file creation — EXPLICIT PROTOCOL
 
 At the end of each slice you **MUST** write an envelope-wrapped receipt file.
 The parent's verify-receipt gate will hard-fail if the receipt is missing or
@@ -101,7 +95,7 @@ Required payload JSON structure (all fields mandatory except where noted):
   "git_before_slice": "<hash captured at slice start>",
   "git_after_slice": "<hash captured at slice end>",
   "changes": {
-    "git_diff": "<output of: git diff --no-color --patch <git_before_slice>..<git_after_slice> — flags MUST match verify-receipt's normalization (spec §5.6 item 5). Omitting flags risks false diff mismatch at the parent gate.>"
+    "git_diff": "<output of: git diff --no-color --patch <git_before_slice>..<git_after_slice> — flags MUST match verify-receipt's normalization. Omitting flags risks false diff mismatch at the parent gate.>"
   },
   "sensor_results": {
     "lint": "pass|fail|skipped",
@@ -161,7 +155,7 @@ rm -f "$WORK_DIR/receipts/.SLICE-NNN.payload.json"
 
 The helper:
 - Generates an MSB-first Crockford Base32 ULID into `envelope.run_id`.
-- Reads `producer_version` from the plugin's `.claude-plugin/plugin.json`
+- Reads `producer_version` from the plugin's `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
   (resolved relative to the helper's module path — handoff §4
   literal-cwd-resolve).
 - Detects `git.head` / `git.branch` / `git.dirty` from the current worktree.

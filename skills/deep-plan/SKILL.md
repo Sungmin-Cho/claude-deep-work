@@ -1,6 +1,6 @@
 ---
 name: deep-plan
-description: "This skill should be used at Phase 2 of deep-work, after research.md approval, to design a detailed implementation plan with TDD slices. Decomposes work into SLICE-NNN units with `depends_on` DAG, acceptance contracts (`failing_test`, `acceptance_threshold`), and optional `cluster_id` hint for parallel-safe grouping. Emits plan.md with the inline slice DAG (Implement Phase's deep-implement skill parses it for worker fan-out — no external slices.md/slice-graph.json is emitted). Triggered by 'create implementation plan', '계획 수립', /deep-plan slash, cross-platform Skill({ skill: \"deep-work:deep-plan\", args: \"...\" }), or orchestrator dispatch after research approval."
+description: "Phase 2 — decompose approved research into SLICE-NNN units with a `depends_on` DAG and acceptance contracts, emitted as the inline slice DAG in plan.md. Triggered by 'create implementation plan', '계획 수립', /deep-plan slash, Skill({ skill: \"deep-work:deep-plan\", args: \"...\" }), or orchestrator dispatch after research approval."
 user-invocable: true
 ---
 
@@ -27,14 +27,14 @@ user-invocable: true
 5. `current_phase`가 "plan"이고 `research_complete`가 true인지 확인
 6. `plan_started_at` 기록 (ISO timestamp)
 
-## 완료-Marker 감지 (resume 경로 — F1, NW5)
+## 완료-Marker 감지 (resume 경로)
 
 `plan_approved: true` 필드가 state에 이미 있고 `$ARGUMENTS`에 `--force-rerun`이 없으면 paused-after-approval 복귀 후보 경로이다. 단, Orchestrator §3-3가 이미 integrity check(sha256 비교)를 수행하여 stale approval 시 skill을 직접 재호출하므로, 본 branch는 정상 dispatch 경로에서만 도달:
 - "Phase 2 (Plan)은 이미 승인·완료되었습니다. Exit Gate를 재표시합니다." 출력
 - Orchestrator §3-3으로 제어 반환 (review+approval 거치지 않고 바로 Exit Gate 재실행)
 - Section 2/3 진입 금지
 
-**중요 (NW5)**: Resume fast-path의 integrity check(`plan_approved_hash` 비교)는 Orchestrator §3-3가 우선 담당. 본 branch는 `plan_approved: true`만 감지하나, Orchestrator가 hash 불일치 감지 시 approval invalidate + skill 재호출로 우회됨.
+**중요**: Resume fast-path의 integrity check(`plan_approved_hash` 비교)는 Orchestrator §3-3가 우선 담당. 본 branch는 `plan_approved: true`만 감지하나, Orchestrator가 hash 불일치 감지 시 approval invalidate + skill 재호출로 우회됨.
 
 ## Prerequisites 로드
 
@@ -67,27 +67,27 @@ Section 1 state 로드, Prerequisites research.md Read, 완료-marker 감지가 
 기존 plan.md → `$WORK_DIR/plan.v{iteration_count}.md`로 복사
 
 ### Template 제안 (선택적)
-Read("../shared/references/plan-templates.md") → 적합 템플릿 확인 → 사용자에게 제안
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/plan-templates.md") → 적합 템플릿 확인 → 사용자에게 제안
 
 ### 사용자 피드백 확인
 기존 plan.md에 `> [!NOTE]`, `<!-- HUMAN: -->`, inline comment가 있으면 반영
 
 ## plan.md 작성
 
-상세 작성 가이드: Read("../shared/references/planning-guide.md")
+상세 작성 가이드: Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/planning-guide.md")
 
 ### 문서 구조
 
 **Template 로드 (project_type 분기)**:
 
-- `project_type: existing` → Read `../shared/templates/plan-template-existing.md`
-- `project_type: zero-base` → Read `../shared/templates/plan-template-zerobase.md`
+- `project_type: existing` → Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/plan-template-existing.md`
+- `project_type: zero-base` → Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/plan-template-zerobase.md`
 
 둘 중 해당하는 template을 Read하여 구조를 파악한 뒤, Section 2에서 수행한 분석 결과로 placeholder를 전부 치환하고 `$WORK_DIR/plan.md`에 Write.
 
 **Placeholder policy**: `Completeness Policy` (아래 섹션)가 남은 placeholder를 차단한다.
 
-### Slice Format (v4.0 + v6.7 executable steps + v6.6 DAG)
+### Slice Format
 
 Medium+ spec-governed plans place exactly one `## Spec Contract Binding` JSON
 block before the checklist. It records `schema_version: 1`, `mode: strict-spec`,
@@ -137,11 +137,11 @@ The plan approval runtime is the sole producer of the derived `plan.json`.
 `depends_on`과 `cluster_id`는 deep-implement skill이 worker fan-out 시 읽는 contract이다.
 
 - **`depends_on: [SLICE-MMM, ...]`** — slice 간 DAG edge 정의. 빈 배열이면 root slice (다른 slice 의존 없이 즉시 시작 가능). DAG는 plan.md 단일 파일에 인라인으로 표현되며, **별도 `slices.md` 또는 `slice-graph.json` 산출물은 emit하지 않는다.** Implement Phase의 deep-implement skill (§Section 1)이 plan.md를 파싱해 DAG를 in-memory로 재구성한다.
-- **`cluster_id`** — parallel-safe grouping의 hint. deep-plan은 선택적으로 명시할 수 있으나, **권한적 cluster 결정은 deep-implement이 수행한다** (project size, team_mode, slice 의존성 위상에 따라 동적 grouping; `agents/implement-slice-worker.md`가 worker invocation 시 `cluster_id` + `cluster_ids` prompt 인자를 받음).
+- **`cluster_id`** — parallel-safe grouping의 hint. deep-plan은 선택적으로 명시할 수 있으나, **권한적 cluster 결정은 deep-implement이 수행한다** (project size, team_mode, slice 의존성 위상에 따라 동적 grouping; `${CLAUDE_PLUGIN_ROOT}/agents/implement-slice-worker.md`가 worker invocation 시 `cluster_id` + `cluster_ids` prompt 인자를 받음).
 - **Circular dependency 금지** — A → B → A 형태의 사이클은 plan 실패로 처리한다 (Completeness Policy 차단 대상). 같은 cluster 내 slice는 동일 cluster_id를 공유해야 한다.
 - **외부 산출물 없음 정책** — deep-plan은 plan.md만 emit한다. slice 목록이 별도 파일로 필요한 경우 deep-implement이 plan.md 파싱 결과를 in-memory로 보유하거나 receipt provenance에 기록한다.
 
-### Completeness Policy (v5.8)
+### Completeness Policy
 
 **금지 패턴** — 최종 plan.md에 아래가 남으면 plan 실패:
 `TBD`, `TODO`, `FIXME`, `PLACEHOLDER`, `implement later`,
@@ -155,9 +155,9 @@ The plan approval runtime is the sole producer of the derived `plan.json`.
 
 해결 불가 시 → Open Questions로 이동.
 
-## Contract Negotiation (v5.1)
+## Contract Negotiation
 
-모든 S/M/L slice의 contract 필드를 Agent(contract-validator)로 검증:
+모든 S/M/L slice의 contract 필드를 Agent(contract-validator)로 검증 (`Agent` 도구가 없는 호스트에서는 동일 기준으로 인라인 검증 — `AGENTS.md` §Host differences):
 - 모호성, 테스트 불가, 누락된 엣지 케이스 검출
 - Auto-fix + 재검증 (최대 2회)
 
@@ -168,7 +168,7 @@ The plan approval runtime is the sole producer of the derived `plan.json`.
 
 ## Phase Review Gate
 
-Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: plan
 - Document: `$WORK_DIR/plan.md`
 - Self-review checklist: placeholder 없음, 연구-계획 추적성, 슬라이스 완성도
@@ -190,7 +190,7 @@ Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
 - `phase_review.plan` + `review_results.plan` 업데이트
 - `plan_completed_at`: ISO timestamp
 
-### Slice risk projection (v6.13 strict binding; legacy shadow compatibility)
+### Slice risk projection
 
 plan.md 작성 완료 직후 slice별 위험도를 계산한다. strict-spec plan은 계산된
 class/score/triggers를 각 slice의 `risk` 필드에 투영하고 approval 전에
@@ -198,7 +198,7 @@ class/score/triggers를 각 slice의 `risk` 필드에 투영하고 approval 전�
 display-only shadow 호환 경로를 사용한다. 실패는 slice 단위 fail-open이지만
 strict-spec approval은 불일치 상태에서 fail-closed한다.
 
-먼저 `PROJECT_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)"`를 설정한다 — 이 스킬 컨텍스트에 `PROJECT_ROOT`는 미정의이며, 미설정 시 CLI가 cwd로 fallback해 signals를 오수집한다 (Task 7 리뷰 W1과 동일 처방). 입력 파일은 `RISK_IN=$(mktemp)`로 만들고 각 호출 후 `rm -f "$RISK_IN"` 한다.
+먼저 `PROJECT_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || pwd)"`를 설정한다 — 이 스킬 컨텍스트에 `PROJECT_ROOT`는 미정의이며, 미설정 시 CLI가 cwd로 fallback해 signals를 오수집한다. 입력 파일은 `RISK_IN=$(mktemp)`로 만들고 각 호출 후 `rm -f "$RISK_IN"` 한다.
 
 각 SLICE-NNN에 대해:
 1. 입력 JSON: `{"task_text": "<slice 제목+outcome+steps 요약>", "slice_id": "SLICE-NNN", "evidence": {"changed_paths": <slice files 목록>, "keywords": [], "side_effects": [], "evidence_refs": []}}`
@@ -211,7 +211,7 @@ strict-spec approval은 불일치 상태에서 fail-closed한다.
 호출한다. slice class가 없으면 helper가 기존 `sliceModelTier`와 같은 결과를 내므로 legacy와
 fail-open 동작은 보존된다.
 
-`--force-rerun`으로 plan.md가 재작성되면 이 계산도 재수행한다 — 이때 `slice_risk_shadow_json`은 병합이 아니라 **현재 plan.md의 slice 집합만으로 새 객체를 구성해 통째로 교체(replace)** 한다. 제거된 slice의 이전 결과가 유령 항목으로 잔존하면 `/deep-status --risk`가 plan에 없는 slice를 표시하게 된다 (Task 8 리뷰 W1).
+`--force-rerun`으로 plan.md가 재작성되면 이 계산도 재수행한다 — 이때 `slice_risk_shadow_json`은 병합이 아니라 **현재 plan.md의 slice 집합만으로 새 객체를 구성해 통째로 교체(replace)** 한다. 제거된 slice의 이전 결과가 유령 항목으로 잔존하면 `/deep-status --risk`가 plan에 없는 slice를 표시하게 된다.
 
 **NOTE: `current_phase`를 변경하지 않는다.** Orchestrator가 리뷰+승인 후 변경.
 

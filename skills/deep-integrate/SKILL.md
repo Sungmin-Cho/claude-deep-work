@@ -1,10 +1,6 @@
 ---
 name: deep-integrate
-description: |
-  Phase 5 — Integrate: 설치된 deep-suite 플러그인 상태를 수집하여 AI가 다음 단계를
-  추천하고 사용자가 선택·실행하는 대화형 루프. Phase 4(Test) 완료 후 호출되거나
-  `/deep-integrate` slash 또는 cross-platform Skill({ skill: "deep-work:deep-integrate", args: "..." })로 명시적 재진입 가능.
-  `--skip-integrate`로 건너뛸 수 있다.
+description: "Phase 5 — Integrate: 설치된 deep-suite 플러그인 상태를 수집해 AI가 다음 단계를 추천하고 사용자가 선택·실행하는 대화형 루프. Test 완료 후 호출되거나 `/deep-integrate` 또는 Skill({ skill: \"deep-work:deep-integrate\", args: \"...\" })로 재진입. `--skip-integrate`로 생략."
 user-invocable: true
 ---
 
@@ -31,11 +27,11 @@ user-invocable: true
    - `current_phase: test` 유지 (변경 없음)
    - orchestrator에게 즉시 반환 → `/deep-finish`로 진행
 
-5. **Phase 5 진입 기록** (C5 fix — `finished` 신규 state 도입 폐기):
+5. **Phase 5 진입 기록** (`finished` 신규 state는 도입하지 않는다):
    - state file의 `current_phase`를 **`idle`**로 전환 (phase-guard.sh의 Phase 5 mode 경로로 진입)
    - `phase5_entered_at: $(date -u +%FT%TZ)` 필드 추가
-   - **v6.3.0 review RC3-1**: `phase5_work_dir_snapshot: "<work_dir slug>"` 필드도 함께 추가. phase-guard가 이 snapshot을 enforcement 기준으로 사용하므로 진입 시점의 work_dir 값이 **불변 boundary**가 된다. 런타임에 state file의 `work_dir`이 변조되어도 Phase 5 guard는 snapshot 값을 따른다.
-   - Phase 5 종료 시 `current_phase`는 **`idle` 유지**하고 `phase5_completed_at` 필드로 완료 신호 전달. 이 쓰기는 일반 Edit/Bash redirect가 아닌 전용 helper `skills/deep-integrate/phase5-finalize.sh`를 호출한다 (Section 4 참조) — phase-guard가 state file 전체 쓰기를 거부하되 이 helper만 허용하기 때문.
+   - **주의**: `phase5_work_dir_snapshot: "<work_dir slug>"` 필드도 함께 추가. phase-guard가 이 snapshot을 enforcement 기준으로 사용하므로 진입 시점의 work_dir 값이 **불변 boundary**가 된다. 런타임에 state file의 `work_dir`이 변조되어도 Phase 5 guard는 snapshot 값을 따른다.
+   - Phase 5 종료 시 `current_phase`는 **`idle` 유지**하고 `phase5_completed_at` 필드로 완료 신호 전달. 이 쓰기는 일반 Edit/Bash redirect가 아닌 전용 helper `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/phase5-finalize.sh`를 호출한다 (Section 4 참조) — phase-guard가 state file 전체 쓰기를 거부하되 이 helper만 허용하기 때문.
 
 ## Section 2: Loop state 초기화 또는 재개
 
@@ -64,31 +60,14 @@ user-invocable: true
 
 각 라운드마다 다음을 순차 수행.
 
-### 3-1. 감지 & 수집
-
-**중요 (v6.3.0 review RC3-3/RC5-1)**: Phase 5 mode의 phase-guard는 Bash 쓰기 대상 경로를 snapshot된 `$WORK_DIR` 절대경로와 대조한다. LLM이 아래 예제를 실행할 때는 반드시 **변수 확장된 절대 경로**로 쓰기 리다이렉트를 수행해야 하며, `"$WORK_DIR/..."` 같은 literal 문자열이나 `$(...)` command substitution은 **phase-guard에서 block**된다. 즉 LLM은 state에서 `work_dir`을 먼저 읽어 `WORK_DIR_ABS="$PROJECT_ROOT/$WORK_DIR_REL"` 식으로 expanded 후 명령 문자열을 구성한다. `$(cat ...)` 같은 substitution 대신 **`--plugins-file` / `--loop-file` 옵션**을 사용하여 파일 경로를 직접 전달한다.
-
-```bash
-# 아래는 LLM이 변수 치환 후 최종 구성할 예시 형태 (실제 실행 시 절대 경로로 확장):
-bash skills/deep-integrate/detect-plugins.sh > /abs/path/to/.deep-work/<sid>/tmp-plugins.json
-# W2 fix: SKILL이 resolve한 SESSION_ID를 env var로 명시 전달
-# N19 fix: 임시 파일을 세션 디렉토리 안에 두어 디버깅/재현성 향상 (세션 종료 시 자동 정리됨)
-# v6.3.0 review C1: --loop-file 옵션으로 integrate-loop.json 경로 전달 — envelope에 `loop` 필드 병합
-# v6.3.0 review RC5-1: --plugins-file 옵션 사용. `$(cat ...)` substitution은 phase-guard가 block.
-DEEP_WORK_SESSION_ID=<session-id> \
-  bash skills/deep-integrate/gather-signals.sh <abs-project-root> \
-    --plugins-file /abs/path/to/.deep-work/<sid>/tmp-plugins.json \
-    --loop-file /abs/path/to/.deep-work/<sid>/integrate-loop.json \
-  > /abs/path/to/.deep-work/<sid>/tmp-envelope.json
-```
-
-두 파일의 생성 여부 확인. 실패 시 "Phase 5 시그널 수집 실패" 경고 + `integrate-loop.json`에 `terminated_by: "error"` 기록. Section 4의 종료 절차는 **스킵**하고 skill을 에러 종료시킨다 — orchestrator가 이 종료를 감지하면 `--skip-integrate`와 함께 `/deep-finish`를 호출하여 state machine을 닫는다 (v6.3.0 review C2). `phase5_completed_at`은 기록하지 않으며, `phase5_entered_at`만 남은 상태는 `--skip-integrate`가 우회한다.
-
-`loop_round += 1` (SKILL이 먼저 반영한 뒤 gather-signals를 호출하므로 envelope의 `loop.round`가 현재 라운드 번호와 일치). `already_executed`는 gather-signals가 `integrate-loop.json`의 `executed[].plugin`에서 자동 추출한다 — SKILL이 별도로 주입할 필요 없음.
+감지 & 수집 명령 구성은
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/references/signal-collection.md`
+를 읽고 그대로 수행한다. phase-guard가 literal `"$WORK_DIR/..."`와 `$(...)` substitution을
+block하므로, 반드시 변수 확장된 절대 경로로 구성해야 한다.
 
 ### 3-2. LLM 추천 요청
 
-Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_type: general-purpose`로 호출 — signal envelope를 LLM 프롬프트로 전달하고 JSON 응답을 받는 단순 추론용이므로 특화 에이전트 불필요):
+Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_type: general-purpose`로 호출 — signal envelope를 LLM 프롬프트로 전달하고 JSON 응답을 받는 단순 추론용이므로 특화 에이전트 불필요). `Agent` 도구가 없는 호스트에서는 동일한 프롬프트·스키마로 인라인 추론한다 (`AGENTS.md` §Host differences):
 
 ```
 당신은 deep-suite 플러그인 워크플로우의 "다음 단계 추천자"다.
@@ -113,13 +92,13 @@ Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_ty
   installation_suggestions에 동일 신호로 1건 추가 가능.
 
 출력 스키마:
-<skills/deep-integrate/schema/llm-output.json 첨부>
+<${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/schema/llm-output.json 첨부>
 
 반드시 위 스키마를 준수하는 JSON만 반환. 설명 문장·마크다운 코드블록 감싸기 금지.
 ```
 
 응답 파싱:
-- JSON 파싱 성공 → **runtime 검증** (W7 fix, JSON Schema로 표현 불가):
+- JSON 파싱 성공 → **runtime 검증** (JSON Schema로 표현 불가):
   - `recommendations` 배열의 `rank`가 **정확히 {1, 2, …, N}** 집합인지 확인
   - 위반 시 재시도 요청 — "rank가 1..N 연속 집합이어야 합니다. 받은 값: `[…]`. 다시 생성하세요."
 - 모두 통과 → Section 3-3로
@@ -162,7 +141,7 @@ Claude 에이전트에게 다음 프롬프트로 요청 (Agent tool `subagent_ty
 "자동 ranking 실패 — 수동 선택:" 메시지 출력. 후보가 3개를 초과하면 신호 강도 순으로 상위 3개만 노출 (deep-memory-harvest는 changes.files_changed > 0 신호가 있을 때만 후보군 진입).
 ```
 
-### 3-5. 선택된 커맨드 실행 및 이력 기록 (W6 fix — v1 UX 결정 명시)
+### 3-5. 선택된 커맨드 실행 및 이력 기록
 
 **V1 정책 — optimistic 기록**
 
@@ -199,36 +178,9 @@ SKILL은 out-of-process 플러그인의 완료/실패를 직접 관찰할 수 �
 
 아니면 Section 3-1로 돌아가 다음 라운드.
 
-## Section 4: 루프 종료 및 복귀
+## Section 4-6: 루프 종료 · 엣지 케이스 · 재귀 차단
 
-1. `LOOP_FILE` 최종 write (terminated_by 확정).
-2. state file 업데이트 (C5 fix, v6.3.0 review RC3-1 반영):
-   - `current_phase`는 **`idle` 유지** (Phase 5 진입 시 설정된 값 그대로).
-   - `phase5_completed_at` 기록은 **전용 helper로만** 수행 — phase-guard가 일반 Write/Edit에는 state file 쓰기를 차단한다. 호출 시 **command substitution(`$(...)`) 금지** — phase-guard가 shell metacharacter를 block하므로 helper에게 timestamp 인자를 생략하거나 이미 resolve된 literal 값을 전달한다:
-     ```bash
-     # 권장: helper가 내부에서 timestamp 생성 (phase-guard-friendly)
-     DEEP_WORK_SESSION_ID=<session-id> bash skills/deep-integrate/phase5-finalize.sh <abs-path-to-state.md>
-     # 또는 literal ISO 8601 값을 미리 생성 후 전달 (LLM이 date를 먼저 read-only Bash로 받고 값 embedding)
-     DEEP_WORK_SESSION_ID=<session-id> bash skills/deep-integrate/phase5-finalize.sh <abs-path-to-state.md> 2026-04-19T03:45:00Z
-     ```
-   - helper는 ISO 8601 형식 검증과 atomic write(awk frontmatter rewrite + mv)를 수행하며 그 외 state file 필드는 건드리지 않는다. `DEEP_WORK_SESSION_ID` env prefix는 `--session=<id>` 재진입 시 helper의 session 검증이 정확히 작동하도록 한다.
-   - Task 9의 deep-finish 수정이 "idle + phase5_completed_at 존재"를 "정상 완료"로 해석하도록 연동.
-3. 사용자에게 요약 출력:
-   ```
-   Phase 5 종료 — terminated_by: <reason>
-   실행 이력: <N>개
-   다음: /deep-finish
-   ```
+루프 종료 조건 충족 시의 종료·복귀 절차, 엣지 케이스 처리, `/deep-integrate` 재귀 차단 규칙은
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/references/loop-exit.md`
+를 읽고 그대로 수행한다.
 
-## Section 5: 엣지 케이스 참조
-
-spec 섹션 4.1/4.2의 대응 정책을 그대로 따른다. 주요 지점:
-- 아티팩트 파싱 실패 → null fallback (`gather-signals.sh`가 이미 처리)
-- LLM JSON 파싱 실패 → 1회 재시도 → B-fallback
-- 이미 실행한 플러그인 재추천 → `requires_rerun` 필드 기반 필터링 (정규식은 safety-net)
-- envelope 총 크기 > 20KB 예산 → E7 축약 정책 적용 (gather-signals에 미래 확장)
-- Ctrl-C / 중단 → Stop hook이 `terminated_by: "interrupted"` 기록 (Task 10 참조)
-
-## Section 6: 재귀 차단
-
-Phase 5는 다른 플러그인을 호출하지만 **다른 플러그인은 Phase 5를 호출하지 않는다** (단방향 원칙). 환경변수·파일 flag 기반 차단 장치는 v1 범위 밖. 만약 미래에 외부가 Phase 5를 호출하는 시나리오가 생기면 `integrate-loop.json`에 `running: true` file flag를 도입 (spec 섹션 4.2 E5).

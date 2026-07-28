@@ -4,7 +4,7 @@
 
 이 문서는 document review의 structural 차원, 작성자 auto-fix snapshot, 사용자 조정 UX만
 보존한다. reviewer 선택, adversarial 실행, severity, degraded, blocking, 재리뷰 cap은
-Read(`adaptive-review-protocol.md`)와 런타임 결과를 따른다.
+Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)와 런타임 결과를 따른다.
 
 ## 1. Structural review
 

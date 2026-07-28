@@ -1,6 +1,6 @@
 ---
 name: deep-work
-description: "Use when the user invokes /deep-work \"task\", uses cross-platform Skill({ skill: \"deep-work:deep-work\", args: \"task\" }) or $deep-work:deep-work \"task\", asks to start a new deep-work session, or requests the primary Evidence-Driven Development auto-flow entry point. This is a compatibility alias for deep-work-orchestrator and preserves the historical /deep-work entry name."
+description: "Primary Evidence-Driven Development entry point. Triggers on /deep-work \"task\", Skill({ skill: \"deep-work:deep-work\", args: \"task\" }), $deep-work:deep-work \"task\", or a request to start a new deep-work session. Compatibility alias for deep-work-orchestrator."
 user-invocable: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: deep-sensor-scan
-description: "Use when the user wants to manually run computational sensors (linter, type checker, coverage) — works inside or outside a deep-work session. Triggers on `/deep-sensor-scan`, \"run sensors\", \"lint check\", \"type check\", \"coverage\", \"센서 실행\", \"린트 검사\", \"타입 검사\". Detects ecosystems via `sensors/detect.js`, runs per-tool with timeout, returns errors/warnings + FIX suggestions per file:line. Supports `--detect` (detection only), `--lint`, `--typecheck`, `--coverage` flags for selective runs."
+description: "Run computational sensors (linter, type checker, coverage) inside or outside a deep-work session. Triggers on `/deep-sensor-scan`, \"run sensors\", \"lint check\", \"type check\", \"coverage\", \"센서 실행\", \"린트 검사\", \"타입 검사\". Flags: `--detect`, `--lint`, `--typecheck`, `--coverage`."
 user-invocable: true
 ---
 

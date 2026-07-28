@@ -99,7 +99,7 @@ git stash  # or git reset to the commit before implementation started
 
 Always prefer `git stash` over destructive operations to preserve work.
 
-## Completion Protocol (v6.3.1 F1 Option A)
+## Completion Protocol
 
 When all tasks are done:
 
@@ -107,7 +107,7 @@ When all tasks are done:
    - `implement_completed_at`: current ISO timestamp
    - `phase_review.implement`: `{reviewed, reviewers, self_issues, external_issues, resolved}`
    - `review_state: completed`
-   - **DO NOT set `current_phase: test`.** v6.3.1 F1: Orchestrator가 Exit Gate "진행" 선택 시에만 `current_phase`를 전환한다. Phase skill은 완료-marker만 기록하고 제어를 반환한다.
+   - **DO NOT set `current_phase: test`.** Orchestrator가 Exit Gate "진행" 선택 시에만 `current_phase`를 전환한다. Phase skill은 완료-marker만 기록하고 제어를 반환한다.
 2. Present a summary showing:
    - Tasks completed vs total
    - Files modified/created
@@ -132,7 +132,7 @@ A good implementation:
 모델 라우팅 활성화 시, Solo 모드의 비대화형 Phase는 Agent를 스폰하여 실행된다.
 
 ### 동작 방식
-1. Read(`model-routing-guide.md#model-routing-state-decode-v612`)의 scalar-first 규칙으로
+1. Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의 scalar-first 규칙으로
    `decodedRouting.implement`를 읽기 (decode 실패 기본값: sonnet)
 2. Agent 스폰: 지정 모델로 전체 구현 지시를 위임
 3. Agent 완료 후 메인 세션에서 상태 업데이트

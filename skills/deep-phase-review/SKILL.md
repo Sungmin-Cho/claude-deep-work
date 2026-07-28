@@ -1,6 +1,6 @@
 ---
 name: deep-phase-review
-description: "Use when the user manually requests a deep-work phase document review. Parses --phase, --structural, and --adversarial compatibility arguments, then enters the canonical adaptive review protocol."
+description: "Manual deep-work phase document review. Parses --phase, --structural and --adversarial, then enters the canonical adaptive review protocol."
 user-invocable: true
 ---
 
@@ -27,13 +27,13 @@ fallback, severity, degraded, finding verdict는 본문에 재정의하지 않�
    `methodology_policy_json`, `review_execution_json`을 읽는다.
 2. args의 phase를 검증하고 `$WORK_DIR/<phase>.md` 존재를 확인한다. 없으면 경로와 생성
    command를 표시하고 종료한다.
-3. Read(`../shared/references/adaptive-review-protocol.md`)하고
+3. Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md`)하고
    `artifactKind:'document'`, phase, state risk/policy/review override, 감지 채널을 입력으로
    조립한다. `--structural`/`--adversarial` compatibility 요청은 승인된
    `reviewModeOverride`로만 전달한다.
 4. protocol의 `compileReviewPlan → reviewers → evaluateReviewExecution → finding verdict →
    persistence` 순서를 실행한다. structural role은
-   Read(`../shared/references/review-gate.md`)의 차원과 snapshot 계약을 사용한다.
+   Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-gate.md`)의 차원과 snapshot 계약을 사용한다.
 5. 결과를 `review_execution_json`과 호환 `phase_review`/`review_results`에 기록하고
    decision/verdict/open finding/degraded event를 표시한다.
 

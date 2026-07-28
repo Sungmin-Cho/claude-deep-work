@@ -1,6 +1,6 @@
 ---
 name: deep-report
-description: "Use when the user wants to generate or view the comprehensive deep-work session report — session lifecycle, slice summary, evidence trail, TDD compliance, sensor pass-rate, model usage, evaluation outcomes. Triggers on `/deep-report`, `/deep-status --report`, \"session report\", \"deep-work report\", \"세션 리포트\", \"세션 보고서\", \"리포트 생성\". Writes to `$WORK_DIR/report.md` and prints inline summary. Sub-page of the deep-status hub."
+description: "Generate or view the deep-work session report — lifecycle, slice summary, evidence trail, TDD compliance, model usage. Triggers on `/deep-report`, `/deep-status --report`, \"session report\", \"deep-work report\", \"세션 리포트\", \"세션 보고서\", \"리포트 생성\". Sub-page of the deep-status hub."
 user-invocable: true
 ---
 
@@ -31,8 +31,8 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Internal (v6.3.0)** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
-> 참조처: `skills/deep-status/SKILL.md` §8 (`Read skills/deep-report/SKILL.md and follow its logic`).
+> **Internal** — `/deep-status --report`가 이 파일의 로직을 `Read`하여 실행합니다. 자동 호출이 주 경로이며, 직접 호출도 지원됩니다.
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/skills/deep-status/SKILL.md` §8 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-report/SKILL.md and follow its logic`).
 
 # Deep Work Session Report
 
@@ -145,7 +145,7 @@ Write `$WORK_DIR/report.md` with the following structure:
 | Model Routing | Research: [model], Plan: 현재 세션, Implement: [model], Test: [model] |
 | Assumption Adjustments | [list of assumption adjustments applied, or "None"] |
 
-Model Routing 행은 Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
+Model Routing 행은 Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
 scalar-first decode 결과로 채운다. decode 실패 시 phase 기본값을 사용하고 경고를 보고서에 남긴다.
 
 ## Phase Duration
@@ -251,15 +251,25 @@ If `file-changes.log` doesn't exist, fall back to `git diff --name-only`.
 [If $WORK_DIR/insight-report.md exists, include the "종합 인사이트 요약" section here]
 [If insight-report.md does not exist: "Insight 분석 미실행"]
 
-## Assumption Health (v5.0)
+## Assumption Health
 
 Generate assumption health data by running the assumption engine:
 
 ```bash
-echo '{"action":"report","registryPath":"<PLUGIN_DIR>/assumptions.json","historyPath":".deep-work/harness-history/harness-sessions.jsonl","options":{"splitByModel":true}}' | node <PLUGIN_DIR>/hooks/scripts/assumption-engine.js
+# 1) plugin root를 실제로 해석하고, 해석에 실패하면 실행하지 않는다.
+PLUGIN_ROOT="$(cd "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT unset — abort}" 2>/dev/null && pwd -P)"
+[ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/assumptions.json" ] || { echo "plugin root 해석 실패 — 중단" >&2; exit 1; }
+
+# 2) 경로는 argv로 넘기고 JSON은 JSON.stringify로 만든다.
+#    (경로를 작은따옴표 JSON 안에 직접 쓰면 셸이 ${...}를 확장하지 않아
+#     리터럴 이름의 경로가 워크스페이스 기준으로 읽힌다.)
+node -e 'process.stdout.write(JSON.stringify({action:"report",registryPath:process.argv[1],historyPath:process.argv[2],options:{splitByModel:true}}))' \
+  "$PLUGIN_ROOT/assumptions.json" \
+  ".deep-work/harness-history/harness-sessions.jsonl" \
+  | node "$PLUGIN_ROOT/hooks/scripts/assumption-engine.js"
 ```
 
-Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumptions.json`).
+`$PLUGIN_ROOT`는 위에서 `${CLAUDE_PLUGIN_ROOT}`를 해석한 절대 경로다 (`assumptions.json`이 있는 디렉터리). 해석에 실패하거나 결과가 plugin root 밖이면 실행하지 말고 중단한다.
 
 [If harness-sessions.jsonl exists and engine returns data:]
 
@@ -281,7 +291,7 @@ Where `<PLUGIN_DIR>` is the plugin's install path (directory containing `assumpt
 - Cross-model unique findings: [count]
 
 [Aggregate harness_metadata from $WORK_DIR/receipts/SLICE-*.json for the
-current session. **Envelope-aware unwrap (v6.5.0)**: receipts 는 M3 envelope
+current session. **Envelope-aware unwrap**: receipts 는 M3 envelope
 (`{schema_version: "1.0", envelope: {...}, payload: {...}}`) 로 emit 된다.
 각 파일을 읽을 때 envelope 형태이면 identity guard
 (`envelope.producer === "deep-work"` ∧

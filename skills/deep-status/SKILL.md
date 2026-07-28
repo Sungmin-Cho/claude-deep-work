@@ -1,6 +1,6 @@
 ---
 name: deep-status
-description: "Use when the user wants to see the current deep-work session status and progress — dashboard, badge, tree, or routing to sub-pages (receipts / history / report / assumptions). Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Hub command that dispatches to deep-receipt (§6), deep-history (§7), deep-report (§8), deep-assumptions (§9) sub-skills via inline body Read. Supports `--compare` (fork comparison), `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`, `--risk`."
+description: "Current deep-work session status — dashboard, badge, tree, or routing to the receipts / history / report / assumptions sub-pages. Triggers on `/deep-status`, \"session status\", \"deep-work status\", \"세션 상태\", \"세션 현황\", \"상태 확인\". Flags: `--compare`, `--receipts`, `--history`, `--report`, `--assumptions`, `--all`, `--tree`, `--badge`, `--risk`."
 user-invocable: true
 ---
 
@@ -23,7 +23,7 @@ user-invocable: true
 | `--history` | deep-history sub-skill 호출 (§7) |
 | `--report` | deep-report sub-skill 호출 (§8) |
 | `--assumptions` | deep-assumptions sub-skill 호출 (§9) |
-| `--risk` | Shadow risk/policy 표시 (v6.11.0, §13) |
+| `--risk` | Shadow risk/policy 표시 (§13) |
 | `--all` | 4 sub-page 모두 순차 실행 |
 | `--tree` | Fork tree 출력 |
 | `--badge` | Shields.io 호환 badge 출력 |
@@ -38,7 +38,6 @@ user-invocable: true
 
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
-
 # Deep Work Status
 
 Display the current state of the Deep Work session and session history.
@@ -51,47 +50,9 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 0. Check for compare mode
 
-If `$ARGUMENTS` contains `--compare`:
-
-#### Fork 자동 감지 (v5.6)
-
-인자 없이 `--compare`만 사용하면 fork 관계를 자동 감지:
-- 현재 세션의 상태 파일에서 `fork_info`가 있으면 → 부모 세션과 비교
-- 현재 세션의 상태 파일에서 `fork_children`이 있으면 → 가장 최근 fork 자식과 비교
-- fork 관계가 없으면 → 아래의 기존 수동 선택 플로우로 진행
-
-Fork 관계로 자동 감지된 비교인 경우 출력에 라벨 추가:
-```
-📊 Session Comparison (fork relationship)
-```
-
-#### 기존 비교 플로우
-
-1. List all session folders in `.deep-work/` directory
-2. If fewer than 2 sessions exist, inform the user:
-   ```
-   ℹ️ 비교할 세션이 부족합니다. 최소 2개의 세션이 필요합니다.
-   ```
-3. Present the session list and ask the user to select 2 sessions to compare
-4. Read research.md, plan.md, and report.md from both sessions
-5. Display a comparison summary:
-   ```
-   세션 비교
-
-   | 항목 | 세션 A | 세션 B |
-   |------|--------|--------|
-   | 작업 | [task A] | [task B] |
-   | 접근법 | [approach A] | [approach B] |
-   | 수정 파일 수 | [N] | [M] |
-   | 검증 결과 | ✅/❌ | ✅/❌ |
-   | 소요 시간 | [duration A] | [duration B] |
-
-   ### 주요 차이점
-   - **접근법 변화**: [description]
-   - **수정 파일 차이**: [files only in A], [files only in B]
-   - **검증 결과 차이**: [description]
-   ```
-6. Stop here (do not proceed to regular status display).
+`$ARGUMENTS`에 `--compare`가 있으면
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/compare-mode.md`
+를 읽고 그대로 수행한 뒤 종료한다. 없으면 §0-1로 진행한다.
 
 ### 0-1. Parse flags
 
@@ -109,9 +70,9 @@ Parse `$ARGUMENTS` for the following flags. If multiple flags are provided, exec
 | `--assumptions` | Show assumption health report |
 | `--assumptions --verbose` | Per-signal per-session breakdown |
 | `--assumptions --rebuild` | Regenerate JSONL from receipts, then show report |
-| `--risk` | Show shadow risk profile & policy recommendation (v6.11.0) |
+| `--risk` | Show shadow risk profile & policy recommendation |
 | `--badge` | Generate shields.io badge markdown |
-| `--tree` | Fork relationship tree visualization (v5.6) |
+| `--tree` | Fork relationship tree visualization |
 | `--all` | Show all sessions dashboard (multi-session) + all flags |
 | `--compare` | Compare two sessions (existing, handled in Section 0) |
 
@@ -147,7 +108,7 @@ Read the resolved state file (from Step 1) to get session state.
 Extract `work_dir` from the state file. If missing, default to `deep-work` (backward compatibility).
 Set `WORK_DIR` to this value.
 
-Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
+Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)의
 scalar-first 규칙으로 `decodedRouting`을 만든다. decode 실패 시 기본값
 (Research=sonnet, Plan=현재 세션, Implement=sonnet, Test=haiku)을 표시한다.
 
@@ -172,7 +133,7 @@ Read the following files if they exist:
 
 If receipts directory exists (`$WORK_DIR/receipts/`):
 - Read all `SLICE-NNN.json` receipt files
-- **Envelope-aware unwrap (v6.5.0)**: 각 receipt 의 root 가 M3 envelope
+- **Envelope-aware unwrap**: 각 receipt 의 root 가 M3 envelope
   형태(`schema_version === "1.0"` + `envelope` 객체 + `payload` 키)이면
   identity guard 검증 (`envelope.producer === "deep-work"` ∧
   `envelope.artifact_kind === "slice-receipt"` ∧
@@ -206,7 +167,7 @@ From `$WORK_DIR/plan.md`, count:
 
 Show a comprehensive status report. If the `team_mode` field is missing from the state file, treat it as "Solo" (backward compatibility).
 
-**Conditional v5.1 fields:**
+**Conditional fields:**
 - `평가자 모델`: Always show the evaluator_model value (or "없음" if not set).
 - `Assumption 조정`: Only show if `assumption_adjustments` is non-empty. Display the count of adjustments.
 - `건너뛴 단계`: Only show if `skipped_phases` is non-empty. Display the list of skipped phase names.
@@ -224,23 +185,8 @@ Deep Work 세션 상태
 프로젝트 타입: [Existing / Zero-Base]
 Git 브랜치: [git_branch or "없음"]
 모델 라우팅: Research=[model], Plan=main (현재 세션), Implement=[model], Test=[model]
-평가자 모델: [evaluator_model] (v5.1)
-
-### Fork 관계 표시 (v5.6)
-
-상태 파일에서 `fork_info`가 있으면:
-```
-Fork: {SESSION_ID} (forked from {fork_info.parent_session} at {fork_info.parent_phase_at_fork} → {fork_info.restart_phase})
-Mode: {fork_info.fork_mode} | Generation: {fork_info.fork_generation}
-```
-
-상태 파일에서 `fork_children`이 있으면:
-```
-Fork children:
-  - {child.session_id} ({child.restart_phase}) {child.status || "active"}
-```
-
-fork_info도 fork_children도 없으면 이 섹션을 생략한다.
+평가자 모델: [evaluator_model]
+[Fork 관계 — fork_info / fork_children 가 있을 때만 이 자리에 삽입]
 
 현재 단계: [Phase name with emoji]
    Phase 0 (Brainstorm): [✅ 완료 / ⏳ 진행중 / ⬜ 대기 / ⏭️ 생략]
@@ -265,7 +211,7 @@ Quality Gates: [통과 ✅ / 실패 ❌ / 미정의 ⬜]
    Plan (Structural): [N/10 (N회) ✅ / 미실행 ⬜ / 스킵 ⏭️]
    Plan (Adversarial): [Claude N/10, Codex N/10 — Consensus N, Conflicts N, Waivers N / 미실행 / 도구 미설치]
 크로스 모델: [codex ✅ + gemini ❌ / 모두 미설치 / 비활성화]
-Assumption 조정: [N]건 적용됨 (v5.1)
+Assumption 조정: [N]건 적용됨
 건너뛴 단계: [brainstorm, research, plan]
 
 센서 상태:
@@ -298,6 +244,13 @@ Adjust the "다음 행동" based on the current phase:
 - **implement**: `자동 흐름이 구현을 진행 중입니다.`
 - **test**: `자동 흐름이 테스트를 진행 중입니다.` (or "자동 수정 루프가 진행 중입니다 (시도 N/3)" if test_retry_count > 0)
 - **idle**: `세션이 완료되었습니다. /deep-status --report로 리포트를 확인하세요. 새 세션: /deep-work <작업>`
+
+#### Fork 관계 표시
+
+세션 state에 `fork_info` 또는 `fork_children`이 있을 때에만 위 템플릿의 해당 자리에
+삽입한다. 렌더링 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/fork-views.md`
+를 읽고 그대로 수행한다. 둘 다 없으면 그 줄을 생략한다.
 
 ### 5. Show session history
 
@@ -353,7 +306,7 @@ If insufficient session data (fewer than 2 completed sessions in `.deep-work/har
    /deep-work로 세션을 시작하고 완료하면 이력이 기록됩니다.
 ```
 
-**Quality Score Trend (v5.3)**: After displaying the existing session history, also show the quality score trend:
+**Quality Score Trend**: After displaying the existing session history, also show the quality score trend:
 
 1. Read `.deep-work/harness-history/harness-sessions.jsonl` (shared path)
 2. Filter to entries with `status: "finalized"` and `quality_score` not null
@@ -396,147 +349,22 @@ Sub-flags:
 
 ### 10. --all: All Sessions Dashboard + Everything
 
-If `$ARGUMENTS` contains `--all`:
+`$ARGUMENTS`에 `--all`이 있으면
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/flag-views.md`
+의 `--all` 절을 읽고 그대로 수행한다. `--all`의 §10b는 Step 11(tree)까지 실행하도록
+요구하므로, `--tree`가 함께 주어지지 않았더라도
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/fork-views.md`
+를 **함께 읽는다** — tree 절차는 그 파일에만 있다.
 
-#### 10a. Multi-session dashboard
+### 11. --tree: Fork Relationship Tree
 
-Read the registry (`.claude/deep-work-sessions.json`). If the registry exists and has sessions:
+`$ARGUMENTS`에 `--tree`가 있으면 같은 파일
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/fork-views.md`
+의 `--tree` 절을 읽고 그대로 수행한다.
 
-Display a table of all registered sessions:
+### 12. --badge / 13. --risk
 
-```
-📋 전체 세션 대시보드
-━━━━━━━━━━━━━━━━━━━━━━━━━━
+`--badge`(shields.io 품질 뱃지) 또는 `--risk`(governed risk & policy) 요청 시 같은 파일
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-status/references/flag-views.md`
+의 해당 절을 읽고 그대로 수행한다.
 
-| 세션 ID | 작업 | Phase | 최근 활동 | 상태 | 소유 파일 |
-|---------|------|-------|----------|------|----------|
-| s-a3f7b2c1 | JWT 인증 구현 | implement | 5분 전 | ✅ 활성 | src/auth/**, src/middleware/jwt.ts |
-| s-b8e2d4f0 | API 리팩토링 | plan | 2시간 전 | ⚠️ stale? | src/api/** |
-| s-c1d3e5f7 | 테스트 추가 | idle | 1일 전 | 💤 완료 | — |
-
-현재 세션: [current SESSION_ID or "없음"]
-총 활성: [N]개 / 총 등록: [M]개
-```
-
-For each session:
-- **상태**: Check PID liveness (`kill -0 PID 2>/dev/null`)
-  - PID alive → `✅ 활성`
-  - PID dead → `⚠️ stale?`
-  - Phase is `idle` → `💤 완료`
-- **최근 활동**: Relative time from `last_activity` field
-- **소유 파일**: Abbreviated `file_ownership` list (max 3 items, then `+N more`)
-
-If registry doesn't exist or has no sessions:
-```
-ℹ️ 등록된 세션이 없습니다.
-```
-
-#### 10b. Standard views
-
-Then execute Steps 4 (default view for current session), 5 (session history), 6 (receipts dashboard), 7 (history trends), 8 (report), 9 (assumptions), 11 (tree), 12 (badge) in sequence.
-
-### 11. --tree: Fork Relationship Tree (v5.6)
-
-If `$ARGUMENTS` contains `--tree`:
-
-레지스트리(`.claude/deep-work-sessions.json`)에서 모든 세션을 읽고, `fork_parent` 관계로 트리를 구성한다.
-
-**구현 방법:**
-1. 레지스트리에서 모든 세션을 읽는다
-2. `fork_parent`가 없는 세션을 루트 노드로 식별
-3. `fork_parent`로 부모-자식 관계를 트리로 구성
-4. DFS로 트리를 순회하며 UTF-8 트리 문자(├── └──)로 출력
-5. 각 노드: `{session_id} [{phase}] "{task_description}"`
-6. Fork 세션이면: `fork @ {restart_phase} → {task_description}`
-
-**트리 표시 형식:**
-
-```
-🌳 Fork Relationship Tree
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-s-aaa11111 [implement] "JWT auth feature"
-├── s-bbb22222 [implement] fork @ plan → GraphQL approach
-└── s-ccc33333 [plan] fork @ research → microservice approach
-    └── s-ddd44444 [research] fork @ brainstorm → serverless approach
-
-s-eee55555 [idle] "Refactor API"  (no forks)
-```
-
-현재 세션은 `◀` 표시로 강조:
-```
-s-aaa11111 [implement] "JWT auth feature" ◀ current
-```
-
-레지스트리가 없거나 세션이 없으면:
-```
-ℹ️ 등록된 세션이 없습니다.
-```
-
-### 12. --badge: Quality Badge (v5.3)
-
-If `$ARGUMENTS` contains `--badge`:
-
-1. Read `harness-sessions.jsonl` from `.deep-work/harness-history/` (shared path)
-2. Calculate average quality score, session count, and average fidelity from finalized sessions
-3. Generate shields.io badge markdown:
-
-```
-📛 Badges (copy to README.md):
-
-![Deep Work Quality](https://img.shields.io/badge/deep--work-quality%20[score]%2F100-[color])
-![Sessions](https://img.shields.io/badge/sessions-[count]-blue)
-![Plan Fidelity](https://img.shields.io/badge/plan%20fidelity-[pct]%25-[color])
-```
-
-Color thresholds:
-- 80+: brightgreen
-- 60-79: green
-- 40-59: yellow
-- <40: red
-
-If no finalized sessions exist:
-```
-ℹ️ Badge 생성을 위해 최소 1개의 완료된 세션이 필요합니다.
-   /deep-work로 세션을 시작하고 완료하면 badge가 생성됩니다.
-```
-
-### 13. `--risk` — Governed Risk & Policy
-
-For a v7 strict-spec session, do not parse independent state scalars. Invoke the
-production dispatcher and render the returned canonical progress projection:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" receipt dashboard --state "$STATE_FILE"
-```
-
-The projection is the sole status/dashboard authority for plan identity,
-methodology policy, evidence, residual risk, invalidations, findings, receipts,
-replan state, and admission blockers. Report the command error and stop if governed
-loading fails; never reconstruct or weaken a fail-closed result.
-
-For a legacy session without strict-spec binding, use the compatibility display
-below.
-
-#### Legacy shadow display (v6.11–v6.14)
-
-If `$ARGUMENTS` contains `--risk`:
-
-state에서 `risk_profile_json` / `policy_shadow_json` / `slice_risk_shadow_json` 스칼라를 읽어 `JSON.parse` 후 표시한다. 파싱 실패 시 경고 1줄 후 해당 블록 생략 (fail-open).
-
-**3필드 모두 부재 시**: "이 세션은 risk shadow 데이터가 없습니다 (v6.11 이전 세션)" 출력 후 종료.
-
-Policy 추천·Routing diff는 `policy_shadow_json`에 `authoritative`가 있으면 그것을, 없으면 `provisional`을 표시한다 (`based_on`으로 출처 표기).
-
-표시 형식:
-
-```text
-🔍 Shadow Risk (관찰 전용 — 라우팅·게이트 무영향)
-  Provisional:  <class> <score>/14 (confidence <val>) — <dimensions 중 0이 아닌 항목 요약>
-  Authoritative: <class> <score>/14 (confidence <val>) | hard triggers: <각 항목의 `.id` 목록 또는 없음>
-  History: <from> → <to> (<stage>, <reason>) — 항목별 1줄
-  Policy 추천: <profile> | 리뷰: <review_policy.recommended> | 검증: <verification_policy.recommended>
-  Routing diff (<based_on> 기준): phase별 1줄 — 일치 시 "= <tier>", 불일치 시 "<actual_tier> → 추천 <recommended_tier>", 제외 시 "(제외: <excluded_reason>)"
-  Slice risk: SLICE-NNN <class> <score>/14 — 항목별 1줄 (없으면 생략)
-  Errors: <stage>: <message> — 항목별 1줄 (없으면 생략)
-```

@@ -1,6 +1,6 @@
 ---
 name: drift-check
-description: "Use when the user wants plan-alignment verification — comparing the approved plan against actual implementation to detect unimplemented items, out-of-scope changes, and design drift. Triggers on `/drift-check`, \"plan drift\", \"drift detection\", \"plan alignment\", \"플랜 드리프트\", \"계획 정합성\", \"드리프트 검증\", or auto-invocation by `/deep-test` as the Required Gate (blocks on drift). Read-only — does NOT modify code. Saves results to `$WORK_DIR/drift-report.md` when in workflow mode."
+description: "Plan-alignment verification — approved plan vs actual implementation, reporting unimplemented items, out-of-scope changes and design drift. Read-only. Triggers on `/drift-check`, \"plan drift\", \"drift detection\", \"plan alignment\", \"플랜 드리프트\", \"계획 정합성\", \"드리프트 검증\", or `/deep-test` running it as the Required Gate."
 user-invocable: true
 ---
 
@@ -29,7 +29,7 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Quality Gate (v6.2.4)** — `/deep-test`가 Required Gate로 자동 실행합니다. 특정 plan 파일에 대한 독립 검증이 필요할 때 직접 사용하세요.
+> **Quality Gate** — `/deep-test`가 Required Gate로 자동 실행합니다. 특정 plan 파일에 대한 독립 검증이 필요할 때 직접 사용하세요.
 > Standalone: `/drift-check [plan-file]`
 
 # Plan Alignment Check (Drift Detection)

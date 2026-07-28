@@ -1,6 +1,6 @@
 ---
 name: deep-brainstorm
-description: "This skill should be used at Phase 0 of a deep-work session to explore the problem space before implementation — defining goals, success criteria, boundaries, and comparing 2-3 candidate approaches. Triggered when the /deep-work orchestrator enters brainstorm phase, when /deep-brainstorm is invoked directly, or via cross-platform Skill({ skill: \"deep-work:deep-brainstorm\", args: \"...\" }) to ideate on a task without writing code yet. Skippable via --skip-brainstorm."
+description: "Phase 0 — explore the problem space before implementation: goals, success criteria, boundaries, 2-3 candidate approaches. Triggered by the /deep-work orchestrator entering brainstorm phase, /deep-brainstorm, or Skill({ skill: \"deep-work:deep-brainstorm\", args: \"...\" }). Skippable via --skip-brainstorm."
 user-invocable: true
 ---
 
@@ -100,7 +100,7 @@ APPROACH A: [Name]
 
 ## Step 2: brainstorm.md 작성
 
-1. Read `../shared/templates/brainstorm-template.md` — 구조 템플릿 로드.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/brainstorm-template.md` — 구조 템플릿 로드.
 2. Step 1에서 사용자와의 대화로 수집한 실제 내용으로 placeholder (`[Task Title]`, `[한 단락 — ...]`, `[Approach N: Name]` 등)를 **전부** 치환.
 3. Write `$WORK_DIR/brainstorm.md`에 치환 완료된 내용 저장.
 
@@ -108,7 +108,7 @@ APPROACH A: [Name]
 
 ## Step 3: Review Gate
 
-Read("../shared/references/review-gate.md") — Structural Review 실행:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-gate.md") — Structural Review 실행:
 - Phase: brainstorm
 - Document: `$WORK_DIR/brainstorm.md`
 - Dimensions: problem_clarity, approach_differentiation, success_measurability, edge_case_coverage
@@ -119,7 +119,7 @@ Read("../shared/references/review-gate.md") — Structural Review 실행:
 
 ## Step 4: Phase Review Gate
 
-Read("../shared/references/phase-review-gate.md") — 프로토콜 실행:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/phase-review-gate.md") — 프로토콜 실행:
 - Phase: brainstorm
 - Document: `$WORK_DIR/brainstorm.md`
 - Self-review checklist: 문제 정의 명확성, 접근법 비교 충실도, 성공 기준 존재

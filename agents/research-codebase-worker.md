@@ -1,19 +1,13 @@
 ---
 name: research-codebase-worker
 description: |
-  Delegated research worker for deep-work's Research phase on existing codebases.
-  Invoked by the deep-research skill (not by the user directly). Takes an area
-  parameter and analyzes the corresponding codebase areas, writing findings to
-  $WORK_DIR/research{-area}.md.
+  Delegated research worker for deep-work's Research phase on existing
+  codebases. Analyzes the requested area and writes findings to
+  $WORK_DIR/research{-area}.md. Dispatched by the deep-research skill,
+  never by the user.
 
   <example>
-  Context: parent skill runs Research in solo mode
-  prompt (parent → agent): "area=full; work_dir=/.../deep-work; task=..."
-  </example>
-
-  <example>
-  Context: parent skill runs Research in team mode, arch area
-  prompt (parent → agent): "area=architecture; work_dir=...; task=..."
+  prompt: "area=architecture; work_dir=/.../deep-work; task=..."
   </example>
 model: inherit
 color: blue
@@ -59,6 +53,7 @@ Return to caller: { path, summary (≤5 lines), findings_tags: ["RF-001", "RA-00
 - DO NOT modify source files. Read-only.
 - Every finding includes file_path:line reference.
 - Tag format: [RF-NNN] findings / [RA-NNN] architecture decisions.
-- Follow shared/references/research-guide.md methodology.
+- Follow `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/research-guide.md` methodology
+  (plugin root 기준 절대 경로 — 해석 결과가 plugin root 밖이면 읽지 말고 중단).
 - If re-running (re_run_area or incremental_since set), overwrite existing
   `research{-area}.md`.

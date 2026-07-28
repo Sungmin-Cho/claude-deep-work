@@ -7,6 +7,29 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.0] — 2026-07-27 (플러그인 경로 신뢰 강화 + 컨텍스트 다이어트)
+
+### Security
+
+- **분석 대상 저장소가 플러그인 지시를 가로챌 수 없습니다.** deep-work가 읽거나 실행하라고 지시하는 모든 경로는 이제 플러그인 설치 위치를 기준으로 해석되며, 그 밖으로 벗어나면 거부됩니다. 이전에는 작업 중인 프로젝트가 자기 트리에 같은 이름의 파일이나 Node 모듈을 두면 그 내용이 지시로 읽히거나 사용자 권한으로 실행될 수 있었고, 상대 경로 read, 플러그인 helper 스크립트, 첨부 JSON 스키마, 셸이 확장하지 않은 앵커, 워크스페이스 `node_modules`에서 해석되던 모듈 경로가 그 경로였습니다.
+
+### Added
+
+- **스킬별 `references/` 분할**: 가장 큰 진입 스킬 8개가 디스패치 로직만 본문에 두고, 조건부 절차(팀 위임, 롤백, 완료 옵션, cross-plugin handoff, fork·플래그 뷰, 세션 탐지)는 해당 분기에 들어갈 때만 `references/`에서 읽습니다.
+
+### Changed
+
+- **`AGENTS.md`가 단일 에이전트 가이드**가 되어 Claude Code와 Codex가 공유하며, `CLAUDE.md`는 이를 import하고 Claude 전용 subagent 안내만 남깁니다.
+- **스킬 27개와 에이전트 4개의 description 축약** — 트리거 문구는 모두 원문 그대로 보존했습니다.
+- **스킬 본문에서 릴리스 이력 제거**: 버전별 기능 소개 절과 내부 fix/review 라벨을 걷어내고 그것이 달려 있던 제약 문장만 남겼습니다. 무엇이 언제 바뀌었는지는 CHANGELOG가 단일 출처입니다.
+
+### Fixed
+
+- **Assumption Health이 레지스트리에 항목이 있어도 비어 보였습니다.** `/deep-status --report`·`--assumptions`·timeline·badge가 존재하지 않는 경로에서 레지스트리를 읽었고, 파일 부재가 오류가 아니라 빈 레지스트리로 처리되어 해당 섹션이 조용히 비어 보였습니다.
+
+- **에이전트 가이드 오류 수정**: phase-guard denylist 설명이 `hooks/scripts/phase-guard-core.js`와 일치하도록 5개 계열로 정정(`dd`/`mkfs`/`fdisk`와 단독 SQL `DELETE`는 차단 대상이 아니라 의도적 제외 항목), receipt 검증기는 8개가 아니라 9개 항목, 요구 Node 버전은 20이 아니라 22.
+- **릴리스 절차**: `npm run release:bump`가 대체한 marketplace·README 수동 편집 안내를 삭제했습니다. 손으로 동기화가 필요한 파일은 `.agents/plugins/marketplace.json` 하나뿐입니다.
+
 ## [7.0.0] — 2026-07-27 (적응형 방법론 권위)
 
 ### Added

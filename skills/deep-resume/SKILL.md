@@ -1,6 +1,6 @@
 ---
 name: deep-resume
-description: "Use when the user wants to resume an active deep-work session — restoring context from previous artifacts and continuing from the current phase. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or when interrupted mid-phase. Detects active session via env var → pointer file → legacy fallback, restores worktree context, migrates state if version-bumped, clears phase cache, and dispatches to the per-phase resume skill. Supports `--session=<id>`, `--resume-from=<phase>`, `--worktree=<path>`."
+description: "Resume an active deep-work session from its current phase, restoring artifacts and worktree context. Triggers on `/deep-resume`, \"resume session\", \"deep-work 이어서\", \"세션 재개\", \"이전 작업 계속\", or an interruption mid-phase. Supports `--session=<id>` and `--resume-from=<phase>`."
 user-invocable: true
 ---
 
@@ -20,7 +20,7 @@ user-invocable: true
 | (없음) | Auto-detect active session + 현재 phase resume |
 | `--session=<id>` | 명시 세션 ID resume |
 | `--resume-from=<phase>` | `brainstorm|research|spec|plan|implement|test` 강제 |
-| `--worktree=<path>` | worktree 경로 명시 |
+| `--worktree=<path>` | 파서가 받아 검증하지만 **resume 경로에서 소비하는 곳이 없다** — worktree는 state의 `worktree_path`에서만 복원된다 |
 
 빈 args / 매칭되지 않는 토큰 → 본문의 default 분기로 진입.
 
@@ -30,9 +30,8 @@ user-invocable: true
 
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
-
-> **Utility (v6.2.4)** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
-> 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
+> **Utility** — standalone 명령. `/deep-work` init은 stale 세션 감지만 수행하며, active 세션 선택·worktree 컨텍스트 복원·state 마이그레이션·phase cache 정리·phase별 resume dispatch는 이 커맨드가 유일한 경로입니다.
+> 향후 기능 이관 후 삭제 예정.
 >
 > **v6.4.2**: `parse-deep-work-flags` 파서가 `--session=<id>`, `--resume-from=brainstorm` (및 `research|plan|implement|test`), `--worktree=<path>` 플래그를 지원합니다.
 
@@ -48,61 +47,12 @@ Detect the user's language from their messages or the Claude Code `language` set
 
 ### 1. Detect active session & extract WORK_DIR (multi-session aware)
 
-Resolve the session to resume using the following priority:
+env var → pointer file → registry → legacy 순의 탐지 체인, 다중 세션 선택,
+state file에서의 `WORK_DIR` 추출 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/references/session-detection.md`
+를 읽고 그대로 수행한다.
 
-#### 1a. Direct session ID (env var)
-
-If `DEEP_WORK_SESSION_ID` environment variable is set:
-- Read `.claude/deep-work.${DEEP_WORK_SESSION_ID}.md` directly
-- If the file exists and `current_phase` is not `idle`: proceed to Step 1.5 with this session
-- If the file doesn't exist or phase is `idle`: fall through to 1b
-
-#### 1b. Registry-based session discovery
-
-Read the registry (`.claude/deep-work-sessions.json`). Filter to sessions where `current_phase` is NOT `idle`.
-
-**If no active sessions in registry:**
-- Check for legacy fallback: read `.claude/deep-work.local.md`
-  - If exists and `current_phase` is NOT `idle` and NOT empty: use this file as the state file. Display:
-    ```
-    ℹ️ 레거시 세션을 감지했습니다. 이 세션을 재개합니다.
-    ```
-    Proceed to Step 1.5.
-  - Otherwise:
-    ```
-    ℹ️ 활성 세션이 없습니다.
-
-    새 세션을 시작하려면: /deep-work <작업 설명>
-    ```
-    Stop here.
-
-**If exactly 1 active session in registry:**
-- Auto-select this session
-- Update the pointer file: `write_session_pointer SESSION_ID`
-- Read `.claude/deep-work.${SESSION_ID}.md`
-- Proceed to Step 1.5
-
-**If 2+ active sessions in registry:**
-- Present selection UI using AskUserQuestion:
-
-```
-재개할 세션을 선택하세요:
-
-  1. [SESSION_ID] [task_description] ([current_phase], [last_activity])
-  2. [SESSION_ID] [task_description] ([current_phase], [last_activity])
-  ...
-```
-
-- After user selects a session:
-  - Update the pointer file: `write_session_pointer SELECTED_SESSION_ID`
-  - Read `.claude/deep-work.${SELECTED_SESSION_ID}.md`
-  - Proceed to Step 1.5
-
-#### 1c. Extract state
-
-From the resolved state file, extract `current_phase`, `work_dir`, `task_description`, `started_at`, `team_mode`, `plan_approved`, `test_retry_count`, `max_test_retries`, `preset`, `evaluator_model`, `assumption_adjustments`, `skipped_phases`, `plan_review_retries`, and `auto_loop_enabled` from the YAML frontmatter.
-
-#### 신규 state 필드 복원 (v6.12)
+### 1-1. 신규 state 필드 복원
 
 - phase dispatch 전에 다음 production route를 실행한다:
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" session authority validate --state "<STATE_FILE>"`.
@@ -111,7 +61,7 @@ From the resolved state file, extract `current_phase`, `work_dir`, `task_descrip
   `verification_plan_json`, committed evidence package 중 하나라도 승인 digest에서
   drift한 상태로 phase skill을 호출해서는 안 된다. legacy session은 route의
   `governed: false` 결과로 계속 읽을 수 있다.
-- Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+- Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
   `decodedRouting`/`decodedRoutingMeta`를 복원한다.
 - `methodology_policy_json`과 `review_execution_json`을 각각 `JSON.parse`해 policy mode,
   risk class, review mode override, floor baseline, channels, human ack,
@@ -120,68 +70,34 @@ From the resolved state file, extract `current_phase`, `work_dir`, `task_descrip
 - `risk_profile_json`, `policy_shadow_json`, `slice_risk_shadow_json`도 같은 JSON-string
   규칙으로 복원한다. resume 인자가 state의 명시 값을 변경하지 않는 한 원래 값을 보존한다.
 
-- `execution_override: inline | delegate | null` (v6.4.0 — sets decide_execution_mode override for inline escape hatches)
-- `active_cluster_takeover: "<cluster_id>" | null` (v6.4.0 — debug takeover 중 세션 중단 시, resume 하면 해당 cluster를 inline으로 이어 실행)
-- `delegation_snapshot: "<git hash>" | null` (v6.4.0 C-1.1 — delegate 진입 직전 capture된 commit hash. verify-receipt pass 시 null로 clear. resume 시 non-null이면 "verify-receipt fail 후 interrupt" 신호로 해석되어 Rollback Protocol AskUserQuestion을 재표시한다.)
+- `execution_override: inline | delegate | null` (sets decide_execution_mode override for inline escape hatches)
+- `active_cluster_takeover: "<cluster_id>" | null` (debug takeover 중 세션 중단 시, resume 하면 해당 cluster를 inline으로 이어 실행)
+- `delegation_snapshot: "<git hash>" | null` (delegate 진입 직전 capture된 commit hash. verify-receipt pass 시 null로 clear. resume 시 non-null이면 "verify-receipt fail 후 interrupt" 신호로 해석되어 Rollback Protocol AskUserQuestion을 재표시한다.)
 
-Set `$WORK_DIR` to the value of `work_dir` (used in all subsequent steps).
-
-**If `current_phase` is `idle` or empty:**
-
-```
-ℹ️ 완료된 세션입니다.
-
-리포트 확인: `/deep-status --report` · 재생성: `/deep-report`
-새 세션 시작: /deep-work <작업 설명>
-```
-
-Stop here.
-
-### 1.4. State 스키마 마이그레이션 (v6.0.2)
+### 1.4. State 스키마 마이그레이션
 
 Resume 시 state 파일에 `phase_review` 필드가 없으면 빈 객체로 자동 초기화:
 
 If `phase_review` field is missing from state YAML frontmatter:
 - Add `phase_review: {}` to the state file
-- Log: `📋 phase_review 필드 초기화 완료 (v6.0.2 마이그레이션)`
+- Log: `📋 phase_review 필드 초기화 완료 (마이그레이션)`
 
-If `review_results` field exists (v5.5 legacy):
+If a legacy `review_results` field exists:
 - Read `review_results.{phase}` values
 - Migrate to `phase_review.{phase}.reviewed: true` for phases that have review data
 - Keep `review_results` for backward compatibility (read-only)
 
-> **모델 라우팅 재해석 (v6.12.0)**: `decodedRoutingMeta.runtime`이 현재 감지 런타임
+> **모델 라우팅 재해석**: `decodedRoutingMeta.runtime`이 현재 감지 런타임
 > (`node "${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js"`)과 다르면 decoded tiers를 현재
 > 카탈로그로 재해석한다. 결과는 `model_routing_json`/`model_routing_meta_json` JSON-string
 > 스칼라로 atomic 갱신하고 1회 안내한다. decoded meta 부재는 skip한다. runtime 변경 시
 > concrete pin은 드롭하고 해당 phase는 재해석된 tier를 사용한다(1회 안내).
 
-### 1.5. Worktree restoration (v4.1)
+### 1.5. Worktree restoration
 
-If `worktree_enabled` is `true` in the state file:
-
-1. Read `worktree_path` from state file
-2. Check if the worktree still exists on disk:
-   ```bash
-   [ -d "[worktree_path]" ] && echo "exists" || echo "missing"
-   ```
-3. **If exists**: Set working directory context to the worktree path.
-   - All subsequent Bash calls should prepend `cd [absolute_worktree_path] &&`
-   - Display:
-     ```
-     Worktree 복원: [worktree_branch]
-        Path: [worktree_path]
-     ```
-
-4. **If missing** (user manually deleted the worktree):
-   - Display warning:
-     ```
-     ⚠️ Worktree가 삭제되었습니다: [worktree_path]
-        현재 브랜치에서 계속 진행합니다.
-        Worktree 재생성은 지원하지 않습니다 — /deep-finish로 세션을 정리하세요.
-     ```
-   - Update state: `worktree_enabled: false`
-   - Continue with current directory as working directory
+state의 `worktree_enabled`가 true일 때에만 수행한다. 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-resume/references/worktree-restore.md`
+를 읽는다.
 
 ### 2. Restore context
 
@@ -261,7 +177,7 @@ Assumption 조정: [N]건 또는 없음
 
 Omit lines that don't apply to the current phase (e.g., don't show 체크리스트 for research phase). (If `preset` is empty or not set, omit the 프리셋 line.) If `evaluator_model` is empty or not set, omit the 평가자 모델 line. If `assumption_adjustments` is empty or not set, show "없음". If `skipped_phases` is empty or not set, show "없음".
 
-### 3.5. Phase cache cleanup (v6.1)
+### 3.5. Phase cache cleanup
 
 Before dispatching to the phase skill, delete any stale phase cache to ensure a clean resume:
 
@@ -277,7 +193,7 @@ Execute the appropriate phase skill based on the current phase. Each skill handl
 
 #### `brainstorm`
 
-Brainstorm phase는 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+Brainstorm phase는 Orchestrator Exit Gate 재표시가 필요합니다.
 **Orchestrator를 경유하여 resume합니다:**
 
 ```
@@ -301,7 +217,7 @@ Orchestrator가 research skill 호출 → review → approval → plan 진전까
 
 #### `plan`
 
-Plan phase도 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+Plan phase도 Orchestrator Exit Gate 재표시가 필요합니다.
 **Orchestrator를 경유하여 resume합니다:**
 
 ```
@@ -313,7 +229,7 @@ Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=plan"
 
 #### `implement`
 
-Implement phase도 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+Implement phase도 Orchestrator Exit Gate 재표시가 필요합니다.
 **Orchestrator를 경유하여 resume합니다:**
 
 ```
@@ -325,7 +241,7 @@ Skill("deep-work-orchestrator", args="--session={SESSION_ID} --resume-from=imple
 
 #### `test`
 
-Test phase도 Orchestrator Exit Gate 재표시(v6.3.1 F1)가 필요합니다.
+Test phase도 Orchestrator Exit Gate 재표시가 필요합니다.
 
 - If `test_passed: true`:
   All Pass된 세션. Orchestrator §3-5 Exit Gate 재표시:

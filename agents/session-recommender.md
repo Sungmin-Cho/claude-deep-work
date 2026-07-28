@@ -2,21 +2,12 @@
 name: session-recommender
 description: |
   Deep-work 세션 초기화 시 task description + workspace meta + capability를
-  분석하여 4개 ask 항목(team_mode, start_phase, tdd_mode, git)에 대한
-  추천 값과 task_difficulty를 fenced JSON으로 반환합니다.
+  분석하여 4개 ask 항목(team_mode, start_phase, tdd_mode, git)에 대한 추천 값과
+  task_difficulty를 fenced JSON으로 반환합니다.
 
   <example>
-  Context: 사용자가 "Refactor authentication module" task로 deep-work 호출
-  prompt: { "task_description": "Refactor authentication module", "workspace_meta": { "git_status": "clean", "recent_commits": [], "top_level_dirs": ["src", "tests"] }, "capability": { "git_worktree": true, "team_mode_available": true } }
-  expected_output: ```json
-  {
-    "team_mode": { "value": "team", "reason": "리팩터 + 인증 = 다중 모듈 변경 예상" },
-    "start_phase": { "value": "research", "reason": "기존 코드 구조 파악 필요" },
-    "tdd_mode": { "value": "strict", "reason": "인증 모듈은 core 안정성 요구" },
-    "git": { "value": "worktree", "reason": "리팩터 범위 격리 필요" },
-    "task_difficulty": { "value": "high", "reason": "인증 + 다중 모듈 리팩터" }
-  }
-  ```
+  prompt: { "task_description": "Refactor authentication module", "workspace_meta": {...}, "capability": {...} }
+  expected_output: fenced JSON — team_mode / start_phase / tdd_mode / git / task_difficulty, 각각 { value, reason }
   </example>
 tools:
 model: inherit
@@ -53,7 +44,7 @@ model: inherit
 
 응답은 정확히 하나의 ` ```json ... ``` ` fenced block으로만 작성하십시오. 그 외 인사·설명·prefix를 포함하면 시스템이 응답을 거부합니다.
 
-**JSON 본문 안에 백틱(`) 또는 fenced block을 절대 사용하지 마십시오** (W6 fix — multi-fence detect 차단).
+**JSON 본문 안에 백틱(`) 또는 fenced block을 절대 사용하지 마십시오** (multi-fence detect 차단).
 
 ```json
 {

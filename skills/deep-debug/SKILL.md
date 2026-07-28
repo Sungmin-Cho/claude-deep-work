@@ -1,6 +1,6 @@
 ---
 name: deep-debug
-description: "Use when the user enters debug sub-mode during deep-work Phase 3 (Implement) to investigate root causes before applying fixes. Triggers on `/deep-debug`, \"systematic debug\", \"root cause investigation\", \"디버그 모드\", \"근본 원인 분석\", `verification_cmd` 실패 시 자동 진입, or \"fix this\" once iron-rule blocks guessing. Four phases: Investigate → Analyze → Hypothesize → Implement. Iron rule: NO fixes without root cause investigation first. Escalates to user after 3 invalidated hypotheses."
+description: "Debug sub-mode for Phase 3 — Investigate → Analyze → Hypothesize → Implement, with the iron rule that no fix ships before root-cause investigation. Triggers on `/deep-debug`, \"systematic debug\", \"root cause investigation\", \"디버그 모드\", \"근본 원인 분석\", `verification_cmd` 실패 시 자동 진입, or \"fix this\"."
 user-invocable: true
 ---
 
@@ -28,7 +28,7 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-# Systematic Debugging (v4.0)
+# Systematic Debugging
 
 You are entering **Debug Sub-Mode** within a Deep Work implementation session.
 

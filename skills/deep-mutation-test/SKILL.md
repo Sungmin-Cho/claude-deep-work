@@ -1,6 +1,6 @@
 ---
 name: deep-mutation-test
-description: "Use when the user wants mutation testing on changed files to verify AI-generated test quality, with optional auto-fix loop for surviving mutants. Triggers on `/deep-mutation-test`, \"mutation test\", \"test quality\", \"mutation score\", \"뮤테이션 테스트\", \"테스트 품질 검증\". Primary callsite is Phase 4 (Test) but supports standalone manual use. Computes `killed / (killed + survived)` score (excludes NoCoverage), auto-fix loop (max 3 rounds) transitions back to Implement phase to add tests for survived mutants then re-runs."
+description: "Mutation testing on changed files to verify AI-generated test quality, with an auto-fix loop that returns to Implement for survived mutants. Triggers on `/deep-mutation-test`, \"mutation test\", \"test quality\", \"mutation score\", \"뮤테이션 테스트\", \"테스트 품질 검증\"."
 user-invocable: true
 ---
 

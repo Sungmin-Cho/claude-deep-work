@@ -1,6 +1,6 @@
 ---
 name: deep-finish
-description: "Use when the user finishes a deep-work session — merging, opening a PR, keeping the branch as-is, or discarding. Triggers on `/deep-finish`, \"finish session\", \"wrap up session\", \"세션 마무리\", \"세션 종료\", \"PR 만들어줘\", or orchestrator auto-call after Phase 5 (Integrate) completes. Emits an M3-envelope-wrapped `session-receipt.json` (and optionally a cross-plugin `handoff.json`). Supports `--skip-integrate` (Phase 5 bypass), `--handoff-to=<plugin>` / `--no-handoff` (post-finish handoff control)."
+description: "Finish a deep-work session — merge, open a PR, keep the branch, or discard — and emit the M3-envelope-wrapped `session-receipt.json`. Triggers on `/deep-finish`, \"finish session\", \"wrap up session\", \"세션 마무리\", \"세션 종료\", \"PR 만들어줘\", or orchestrator auto-call after Integrate. Flags: `--skip-integrate`, `--handoff-to=<plugin>`, `--no-handoff`."
 user-invocable: true
 ---
 
@@ -33,14 +33,13 @@ user-invocable: true
 **Runtime dependencies (cross-platform invokers must provide)**:
 - `CLAUDE_PLUGIN_ROOT` env var — absolute path to the deep-work plugin root (used by §7-Z `wrap-receipt-envelope.js` and §7-Z-A `emit-handoff.js`).
 - `PROJECT_ROOT` env var — absolute path to the repository root (used by §1, §7-Z, §7-Z-A). Standalone invokers can derive via `git rev-parse --show-toplevel`.
-- Node 20+ on PATH (the two hook scripts above are zero-dep Node CLIs).
-- Sibling skill helper at `skills/deep-integrate/phase5-record-error.sh` (used by §1c when `--skip-integrate` is taken with a stalled Phase 5).
+- Node 22+ on PATH (the two hook scripts above are zero-dep Node CLIs; `package.json` declares `engines.node: ">=22"`).
+- Sibling skill helper at `${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/phase5-record-error.sh` (used by §1c when `--skip-integrate` is taken with a stalled Phase 5).
 
+> **Internal** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
+> 참조처: `${CLAUDE_PLUGIN_ROOT}/skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read ${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md`). `${CLAUDE_PLUGIN_ROOT}/skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
 
-> **Internal (v6.3.0)** — orchestrator가 이 파일의 로직을 참조합니다. 자동 호출이 주 경로이며, 수동 호출도 공식 경로입니다(특히 test 통과 후 세션 완료 시).
-> 참조처: `skills/deep-work-orchestrator/SKILL.md` Step 3-6 (`Read skills/deep-finish/SKILL.md`). `skills/deep-test/SKILL.md`가 test pass 후 수동 호출을 안내.
-
-# Deep Work Session Completion (v4.1)
+# Deep Work Session Completion
 
 Finish the current Deep Work session with an explicit branch completion workflow.
 
@@ -66,14 +65,14 @@ Read `$STATE_FILE`. If the file doesn't exist:
    새 세션을 시작하려면: /deep-work <작업 설명>
 ```
 
-`current_phase` 분기 (v6.3.0):
+`current_phase` 분기:
 - `current_phase`가 empty → 위와 동일 "세션 없음" 메시지.
-- `finished_at` 필드 **존재** → 이미 종료된 세션. "ℹ️ 이 세션은 이미 종료되었습니다 (finished_at: <값>). 새 세션을 시작하려면 `/deep-work <작업>`을 실행하세요." → exit 0. (v6.3.0 review W-R2 — `--skip-integrate` 분기가 finalized 세션을 재실행하지 않도록 최상위 가드)
+- `finished_at` 필드 **존재** → 이미 종료된 세션. "ℹ️ 이 세션은 이미 종료되었습니다 (finished_at: <값>). 새 세션을 시작하려면 `/deep-work <작업>`을 실행하세요." → exit 0. (`--skip-integrate` 분기가 finalized 세션을 재실행하지 않도록 최상위 가드)
 - `current_phase == "idle"` + `phase5_completed_at` 필드 **존재** → Phase 5 완료 상태로 간주하고 **정상 진행** (Section 1a, 2, 3... 계속).
 - `current_phase == "idle"` + `phase5_completed_at` **부재**:
   - `phase5_entered_at` 존재:
     - `$ARGUMENTS`에 `--skip-integrate` 있음 → **정상 진행**. Phase 5가 에러/사용자 요청으로 중단되어 orchestrator가 강제 finish를 호출한 경로.
-      **v6.3.0 review RC-2 defensive guard**: 아래 `WORK_DIR` resolve(Section 1 말미) 이후 Section 2로 진입하기 전에 Section 1c를 실행하여 `integrate-loop.json`의 `terminated_by`를 `"error"`로 defensively 기록한다. 이 로직은 Section 1a(Phase 5 힌트) **다음**, Section 2 **이전**에 배치한다.
+      **Defensive guard**: 아래 `WORK_DIR` resolve(Section 1 말미) 이후 Section 2로 진입하기 전에 Section 1c를 실행하여 `integrate-loop.json`의 `terminated_by`를 `"error"`로 defensively 기록한다. 이 로직은 Section 1a(Phase 5 힌트) **다음**, Section 2 **이전**에 배치한다.
     - `--skip-integrate` 없음 → **Phase 5가 중단된 상태**. 메시지: "Phase 5 Integrate 루프가 중단되었습니다. `/deep-integrate`로 재진입하거나 `--skip-integrate`와 함께 `/deep-finish`를 다시 실행하세요." → exit 0.
   - `phase5_entered_at` 부재 → 기존 "세션 없음" 메시지.
 - 그 외 (`brainstorm`/`research`/`plan`/`implement`/`test`) → 정상 진행.
@@ -86,53 +85,9 @@ Resolve `$WORK_DIR` (used by Section 1a below):
 WORK_DIR="${PROJECT_ROOT}/$(read_frontmatter_field "$STATE_FILE" work_dir)"
 ```
 
-### 1a. Phase 5 Integrate 힌트 (v6.3.0, 선택적)
-
-`$WORK_DIR/integrate-loop.json` 존재 여부 확인:
-- 존재 & `terminated_by != null` → 정상 진행 (Section 2로).
-- 존재 & `terminated_by == null`:
-  - **v6.3.0 review Codex P2**: `$ARGUMENTS`에 `--skip-integrate` 있음 → prompt 없이 Section 1c로 진행 (orchestrator auto-flow가 질문에 막히지 않도록).
-  - `--skip-integrate` 없음 → **Phase 5 루프가 중단된 상태** (Ctrl-C 또는 재진입 대기). AskUserQuestion:
-
-    ```
-    ⚠️ Phase 5 Integrate 루프가 중단된 상태입니다.
-       (1) /deep-integrate로 재진입 (권장)
-       (2) 강제로 건너뛰고 finish 진행 (--skip-integrate 없이도)
-    ```
-    - (1) 선택 → "exit 후 /deep-integrate 실행하세요" + exit 0.
-    - (2) 선택 → 기존 절차 계속.
-
-- 부재 & `$ARGUMENTS`에 `--skip-integrate` 없음 → AskUserQuestion:
-
-  ```
-  ℹ️ Phase 5 Integrate를 아직 실행하지 않았습니다.
-     `/deep-integrate`로 AI의 다음 단계 추천을 받을 수 있습니다.
-
-     (1) /deep-integrate 먼저 실행 (권장)
-     (2) Phase 5 건너뛰고 바로 finish 진행
-  ```
-
-- (1) 선택 → "exit 후 /deep-integrate 실행하세요" 안내 + exit 0.
-- (2) 선택 → 기존 절차 계속.
-- `$ARGUMENTS`에 `--skip-integrate` 있음 → 힌트 스킵하고 바로 Section 2.
-
-### 1c. Phase 5 defensive error marker (v6.3.0 review RC-2 + W3-1 + RC4-2)
-
-`$ARGUMENTS`에 `--skip-integrate`가 있고 Section 1의 분기에서 `phase5_entered_at`이 있으나 `phase5_completed_at`이 없어 이 Section에 도달한 경우에만 실행한다. 이 시점에는 Section 1 말미에서 `$WORK_DIR`가 이미 resolve되었으므로 아래 helper 호출이 유효하다.
-
-**LLM은 아래 명령을 그대로 Bash tool로 단일 호출한다** (compound 연산자·shell metacharacter 없이 단일 명령이어야 Phase 5 guard helper exception 적용, RC4-1/RC5-1):
-
-```bash
-bash skills/deep-integrate/phase5-record-error.sh <ABSOLUTE_WORK_DIR>
-```
-
-**중요 (v6.3.0 review W5-1)**: Claude Code의 Bash tool은 매 호출마다 새 shell을 spawn하므로 이전 단계에서 export한 `$WORK_DIR` 같은 변수가 persist하지 않는다. LLM은 state file에서 `work_dir`을 먼저 읽어 `<ABSOLUTE_WORK_DIR>` 자리에 실제 절대경로를 치환 후 호출한다. literal `"$WORK_DIR"`를 그대로 전달하면 empty string으로 확장되어 helper가 usage 에러로 fail한다.
-
-또한 helper는 state file의 `phase5_work_dir_snapshot`을 읽어 인자와 일치하는지 검증하므로(RC5-3), 올바른 세션 work_dir이어야 실행된다.
-
-이 helper가 `integrate-loop.json`의 `terminated_by`를 atomically `"error"`로 교체하거나, 파일 부재 시 최소 구조로 생성한다.
-
-`session-end.sh` Stop hook의 `terminated_by=interrupted` 마킹은 여전히 belt-and-suspenders로 남아있어, finish가 실행되지 않고 세션이 Ctrl-C로 종료된 경우에도 evidence가 남는다.
+Phase 5 Integrate 힌트(§1a)와 Phase 5 defensive error marker(§1c) 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/references/phase5-markers.md`
+를 읽고 그대로 수행한다. Section 1 말미의 `WORK_DIR` resolve 이후, Section 2 진입 전에 실행한다.
 
 ### 2. Read all receipts and generate session receipt
 
@@ -146,7 +101,7 @@ Scan `$WORK_DIR/receipts/` for all `SLICE-*.json` files. For each:
 is slice receipts) **wrapped in the M3 cross-plugin envelope** (deep-work
 v6.5.0; cf. `claude-deep-suite/docs/envelope-migration.md` §1).
 
-> **Two-step protocol (v6.5.0)**: the legacy session-receipt body ("payload")
+> **Two-step protocol**: the legacy session-receipt body ("payload")
 > is built first into a temp file; quality fields (Section 2-1) and
 > outcome/outcome_ref (Section 7) are appended to that **same payload temp
 > file**; only at the end of Section 7 does the wrap helper produce the final
@@ -204,7 +159,7 @@ temp path, e.g. `$WORK_DIR/.session-receipt.payload.json`:
 }
 ```
 
-> **v6.12.0**: Read(`../shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
+> **v6.12.0**: Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)로
 > routing carrier를 decode한다. decoded meta가 있으면 payload의 optional `model_routing_meta`
 > 필드에 포함하고, 부재/손상 시 생략한다. deep-suite payload-registry minor bump는 suite 측 후속 작업.
 
@@ -214,55 +169,11 @@ payload temp file. Section 7's option-specific blocks update
 `outcome`/`outcome_ref` on the same temp file. The final envelope wrap is
 performed by Section 7-Z below — exactly once per session.
 
-### 2-1. Calculate Session Quality Score (v5.8 — 5-component system)
+Session Quality Score(§2-1) 계산 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/references/session-quality-score.md`
+를 읽고 그대로 수행한 뒤, 결과를 아래 payload에 채운다.
 
-Calculate a quality score (0-100) using the 5-component weighted system with not_applicable proportional redistribution.
-
-**Data collection** — read these values from the state file and session artifacts:
-
-1. **Test Pass Rate** (weight: 25%): Read `test_retry_count` from state. If 0 retries (passed first try) → 100. If 1 retry → 70. If 2 retries → 40. If 3+ retries → 10.
-2. **Rework Cycles** (weight: 20%): Same as test_retry_count for this metric. Score: 0 retries → 100, 1 → 75, 2 → 50, 3+ → 20.
-3. **Plan Fidelity** (weight: 25%): Read `fidelity_score` from state file (written by deep-test drift-check). If not present, default to 80 (assume reasonable fidelity when drift-check wasn't run).
-4. **Sensor Clean Rate** (weight: 15%): Read all slice receipts' `sensor_results`. Count slices where all sensors are `pass` or `not_applicable`. Score: (clean_slices / total_slices_with_sensor_data) * 100. If all slices have `sensor_results` absent or all statuses are `not_applicable` → mark as `not_applicable` (exclude from denominator).
-5. **Mutation Score** (weight: 15%): Read `mutation_testing.score` from state file (written by deep-test Section 4-7). If `status: "not_applicable"` or field absent → mark as `not_applicable` (exclude from denominator).
-
-**Core Score formula (with not_applicable proportional redistribution)**:
-```
-applicable_weights = sum of weights for components that are NOT not_applicable
-score = Σ (component_score × component_weight) / applicable_weights × 100
-```
-
-Round to the nearest integer. Clamp to 0-100.
-
-Examples:
-- All 5 applicable: score = (tpr×0.25 + rw×0.20 + fp×0.25 + sc×0.15 + ms×0.15)
-- Sensor+Mutation not_applicable: score = (tpr×0.25 + rw×0.20 + fp×0.25) / 0.70 × 100
-
-**Diagnostic Metrics** (informational only — NOT included in core score):
-
-1. **Code Efficiency**: Read `$WORK_DIR/file-changes.log` to count total lines changed. Count total plan items from plan.md. Ratio = lines_changed / plan_items. Score: <50 lines/item → 100, 50-100 → 80, 100-200 → 60, 200+ → 40.
-2. **Phase Balance**: Calculate (research_duration + plan_duration) / total_session_duration. Score: 20-50% → 100, 10-20% or 50-70% → 70, <10% or >70% → 40.
-
-**Display**:
-```
-📈 Session Quality Score: [score]/100
-   Test Pass Rate:    [N]/100 ([detail]) — weight: 25%
-   Rework Cycles:     [N]/100 ([detail]) — weight: 20%
-   Plan Fidelity:     [N]/100 — weight: 25%
-   Sensor Clean Rate: [N]/100 ([N]/[total] slices) — weight: 15% [or: N/A (not_applicable)]
-   Mutation Score:    [N]/100 ([N]%) — weight: 15% [or: N/A (not_applicable)]
-
-   Diagnostics (참고용):
-     Code Efficiency: [N]/100 ([detail])
-     Phase Balance:   [N]/100 ([detail])
-```
-
-**Persist to session receipt**: Add `quality_score`, `quality_breakdown`
-(object with all 5 component scores + not_applicable flags), and
-`quality_diagnostics` (the 2 diagnostic metrics) to the
-**`$WORK_DIR/.session-receipt.payload.json` temp file** generated in Step 2.1.
-
-### Optional `methodology_shadow` (v6.11.0)
+### Optional `methodology_shadow`
 
 state에 `risk_profile_json`이 존재하면 payload에 다음 optional 블록을 추가한다 (부재 시 생략 — forward-compatible, 스키마 registry 새 minor 불필요):
 
@@ -392,7 +303,7 @@ If `slices.completed < slices.total`:
 
 The session receipt will include `"partial": true`.
 
-### 4a. Unified finish gate (v6.12)
+### 4a. Unified finish gate
 
 completion option을 제시하기 전에 state의 `review_execution_json`을 parse하고
 `finishGateAllowed(reviewExecutionJson)`을 호출한다. 반환값만 외부 변경 권한의 정본이다.
@@ -409,134 +320,11 @@ which gh 2>/dev/null
 
 If `gh` is not available, the PR option will be marked as unavailable.
 
-### 6. Present completion options
+완료 옵션 제시(§6)와 선택 실행(§7 — merge / PR / branch 유지 / 폐기) 절차는
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/references/completion-options.md`
+를 읽고 그대로 수행한다. §4a Unified finish gate를 통과한 뒤에만 진입한다.
 
-Use AskUserQuestion:
-
-**If `worktree_enabled` is `true`:**
-
-```
-세션을 어떻게 마무리할까요?
-
-1. Merge — 베이스 브랜치로 병합
-2. PR 생성 — Pull Request 만들기 [gh 미설치시: (unavailable — gh CLI 필요)]
-3. 브랜치 유지 — 나중에 /deep-finish로 다시 정리
-4. 삭제 — 브랜치와 worktree 삭제
-```
-
-**If `worktree_enabled` is `false`:**
-
-```
-세션을 어떻게 마무리할까요?
-
-1. PR 생성 — Pull Request 만들기 [gh 미설치시: (unavailable)]
-2. 현재 상태 유지 — 세션만 종료
-```
-
-(Merge와 Discard는 worktree가 없으면 위험하므로 비활성화)
-
-### 7. Execute chosen option
-
-#### Option: Merge
-
-1. Check for uncommitted changes in worktree:
-   ```bash
-   git -C [worktree_path] status --porcelain
-   ```
-   If dirty:
-   ```
-   ⚠️ Worktree에 커밋되지 않은 변경이 있습니다.
-      먼저 변경사항을 커밋하거나 stash 하세요.
-   ```
-   Ask: A) 변경사항 커밋 후 진행 B) 취소
-2. Get base branch from state: `worktree_base_branch` (stored at worktree creation time)
-3. Switch to base: `cd [project_root] && git checkout [worktree_base_branch]`
-4. Merge: `git merge [worktree_branch]`
-5. **Merge conflict handling**: If merge fails:
-   ```
-   ⚠️ 충돌이 발생했습니다. 충돌 파일:
-   [list conflict files]
-
-   수동으로 충돌을 해결한 후 /deep-finish를 다시 실행하세요.
-   ```
-   Abort: `git merge --abort`. Stop here.
-6. On success: `git worktree remove [worktree_path]` + `git branch -d [worktree_branch]`
-7. Update session-receipt **payload**: set `outcome: "merge"` in
-   `$WORK_DIR/.session-receipt.payload.json` (Edit tool — preserve existing
-   fields). The envelope wrap happens in Section 7-Z.
-
-#### Option: PR
-
-1. Check `gh` is available. If not:
-   ```
-   ⚠️ gh CLI가 필요합니다: https://cli.github.com/
-      설치 후 `gh auth login`으로 인증하세요.
-   ```
-   Stop here.
-2. Check `gh auth status`. If not authenticated:
-   ```
-   ⚠️ gh 인증이 필요합니다: `gh auth login`
-   ```
-   Stop here.
-3. Push branch: `git push -u origin [worktree_branch]`
-   - If no remote:
-     ```
-     ⚠️ 원격 저장소가 없습니다. `git remote add origin <url>`로 추가하세요.
-     ```
-     Stop here.
-4. Create PR with session receipt summary as body:
-   ```bash
-   gh pr create --title "deep-work: [task_description]" --body "$(cat <<'EOF'
-   ## Deep Work Session Receipt
-
-   - **Slices**: [completed]/[total]
-   - **TDD compliance**: [summary]
-   - **Model usage**: [summary]
-   - **Quality gates**: [summary]
-
-   Full receipt: `[work_dir]/session-receipt.json`
-   EOF
-   )"
-   ```
-5. Worktree is **NOT** removed (PR review 중 추가 작업 가능)
-6. Update session-receipt **payload**: set `outcome: "pr"`,
-   `outcome_ref: [PR URL]` in `$WORK_DIR/.session-receipt.payload.json` (Edit
-   tool — preserve existing fields). The envelope wrap happens in Section 7-Z.
-
-#### Option: Keep
-
-1. Update session-receipt **payload**: set `outcome: "keep"` in
-   `$WORK_DIR/.session-receipt.payload.json`. The envelope wrap happens in
-   Section 7-Z.
-2. Display:
-   ```
-   브랜치가 유지됩니다: [worktree_branch]
-      나중에 /deep-finish로 다시 정리할 수 있습니다.
-   ```
-
-#### Option: Discard
-
-1. Confirm with AskUserQuestion:
-   ```
-   ⚠️ 정말 삭제하시겠습니까?
-      브랜치: [worktree_branch]
-      변경사항이 모두 삭제됩니다.
-
-   1. 네, 삭제합니다
-   2. 아니오, 취소
-   ```
-2. If worktree has uncommitted changes:
-   ```
-   ⚠️ 커밋되지 않은 변경이 있습니다. 강제로 삭제하시겠습니까?
-   1. 강제 삭제
-   2. 취소
-   ```
-3. On confirm: `git worktree remove --force [worktree_path]` + `git branch -D [worktree_branch]`
-4. Update session-receipt **payload**: set `outcome: "discard"` in
-   `$WORK_DIR/.session-receipt.payload.json`. The envelope wrap happens in
-   Section 7-Z.
-
-### 7-Z. Envelope wrap (v6.5.0 — runs once, after outcome is decided)
+### 7-Z. Envelope wrap
 
 Now that the payload temp file has all fields (Section 2 base + Section 2-1
 quality + Section 7 outcome), wrap it in the M3 envelope and write the final
@@ -603,7 +391,7 @@ WRAP_ARGS=(
 [ -n "$STATE_FILE_PATH" ] && WRAP_ARGS+=(--session-state-file "$STATE_FILE_PATH")
 
 # Cleanup payload temp file ONLY on helper success — preserve on failure for
-# retry (round-1 deep-review C2 lesson). The `set -e` guarantees abort if the
+# retry. The `set -e` guarantees abort if the
 # helper exits non-zero before this line runs.
 if node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js" "${WRAP_ARGS[@]}"; then
   rm -f "$WORK_DIR/.session-receipt.payload.json"
@@ -634,120 +422,21 @@ The helper:
   (`outcome`) and the **verification signal** (`x-test-verified`) separately —
   downstream consumers judge trustworthiness from the pair.
 
-### 7-Z-A. Optional cross-plugin handoff emit (v6.6.0 — M5.7.A)
+Cross-plugin handoff emit(§7-Z-A)은 다음 **두 경로 중 하나라도** 성립하면 수행한다:
 
-> **Ordering**: this block runs **after** Section 7-Z (which wraps the
-> session-receipt and assigns its `run_id`) and **before** Section 8 (state
-> finalization). It MUST not run before 7-Z — the handoff payload chains its
-> `parent_run_id` to the session-receipt's envelope `run_id`. If 7-Z fails
-> (exit 1), skip this block and tell the user to re-run `/deep-finish` after
-> resolving the wrap retry.
+- `$ARGUMENTS`에 `--handoff-to=<plugin>`가 있다 (명시 경로 — 사용자 확인 없이 자동 실행).
+- `outcome`이 `merge` 또는 `pr`이고 `$ARGUMENTS`에 `--no-handoff`가 **없다**
+  (대화형 경로 — reference가 AskUserQuestion으로 인계 여부를 묻는다).
 
-When the user opts to hand off to another deep-suite plugin (typically
-deep-evolve for performance optimization, deep-review for security audit, or
-a custom downstream), emit a cross-plugin handoff artifact (`handoff.json`).
-The dashboard's `suite.handoff.roundtrip_success_rate` metric reads these.
+둘 중 하나라도 성립하면
+`${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/references/handoff-emit.md`
+를 읽고 그대로 실행한다. 두 트리거 중 어느 쪽인지 판정하고 `HANDOFF_TO`를 정하는 것은
+reference가 담당한다.
 
-**Trigger conditions** (LLM decides which path applies):
-- `$ARGUMENTS` includes `--handoff-to=<plugin>` (preferred — fully automated;
-  no user prompt). Parse the value into `HANDOFF_TO`.
-- `outcome` is `"merge"` or `"pr"` AND `$ARGUMENTS` has no `--no-handoff` AND
-  the orchestrator is in interactive mode → AskUserQuestion:
-
-  ```
-  세션을 다른 플러그인에 인계할까요?
-  1. 인계 안함 — 이대로 종료
-  2. deep-evolve — 성능/품질 최적화 루프
-  3. deep-review — 독립 코드 리뷰
-  4. (기타) — 직접 플러그인 이름 입력
-  ```
-
-  (2)/(3)/(4) → set `HANDOFF_TO` accordingly; (1) → skip this block.
-
-**Payload composition** (per `claude-deep-suite/schemas/handoff.schema.json`):
-
-Write `$WORK_DIR/.handoff.payload.json` with the LLM-composed payload. Pull
-fields from the session-receipt + slice receipts + any review reports under
-`.deep-review/reports/`:
-
-```json
-{
-  "schema_version": "1.0",
-  "handoff_kind": "phase-5-to-evolve",
-  "from": {
-    "producer": "deep-work",
-    "session_id": "<SESSION_ID>",
-    "phase": "integrate",
-    "completed_at": "<RFC 3339 — session-receipt.finished_at>"
-  },
-  "to": {
-    "producer": "<HANDOFF_TO>",
-    "intent": "<short label — LLM-derived from session goals or user-supplied>",
-    "scope_hint": "<optional: src path or module name>"
-  },
-  "summary": "<one paragraph: outcome + slice GREEN count + key metric baseline>",
-  "next_action_brief": "<seed prompt for receiver: WHY + CURRENT STATE + TARGET (measurable)>",
-  "key_artifacts": [
-    { "path": "<work_dir>/session-receipt.json", "kind": "session-receipt", "run_id": "<from 7-Z>" }
-  ],
-  "completed_actions": ["<from session-receipt + slice receipts>"],
-  "context_window_state": {
-    "compacted_at": "<RFC 3339>",
-    "compaction_strategy": "key-artifacts-only",
-    "preserved_artifact_paths": ["<work_dir>/session-receipt.json"]
-  }
-}
-```
-
-`handoff_kind` defaults to `phase-5-to-evolve` when `HANDOFF_TO == "deep-evolve"`;
-use `custom` + `x-handoff-subkind` for non-canonical receivers (e.g.
-`HANDOFF_TO == "deep-review"`).
-
-**Emit**:
-
-```bash
-set -euo pipefail
-
-# HANDOFF_TO must be set by the parser above; if empty, skip.
-[ -z "${HANDOFF_TO:-}" ] && exit 0
-
-RECEIPT_PATH="$WORK_DIR/session-receipt.json"
-HANDOFF_PAYLOAD="$WORK_DIR/.handoff.payload.json"
-# Flat-dir layout matches dashboard SOURCE_SPECS (`.deep-work/handoffs/*.json`).
-HANDOFF_DIR="$PROJECT_ROOT/.deep-work/handoffs"
-HANDOFF_OUT="$HANDOFF_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${SESSION_ID:-session}.json"
-
-mkdir -p "$HANDOFF_DIR"
-
-if node "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/emit-handoff.js" \
-    --payload-file "$HANDOFF_PAYLOAD" \
-    --output "$HANDOFF_OUT" \
-    --source-session-receipt "$RECEIPT_PATH" \
-    ${SESSION_ID:+--session-id "$SESSION_ID"}; then
-  rm -f "$HANDOFF_PAYLOAD"
-  echo "✓ handoff emitted → $HANDOFF_OUT (receiver: $HANDOFF_TO)"
-else
-  echo "⚠️ handoff emit failed — payload preserved at $HANDOFF_PAYLOAD for inspection" >&2
-fi
-```
-
-The helper:
-- Sets `envelope.parent_run_id = session-receipt.envelope.run_id` automatically
-  (closes the intra-plugin chain the dashboard reads for
-  `suite.handoff.roundtrip_success_rate`).
-- Sets the identity-triplet (`producer = deep-work`, `artifact_kind = handoff`,
-  `schema.name = handoff`, `schema.version = "1.0"`) — required by the
-  dashboard's `unwrapStrict`.
-- Validates payload required fields before writing — exit 1 with the missing
-  field; the temp payload is preserved for retry.
-
-**Receiver workflow** (informational; not part of `/deep-finish`):
-
-```
-/deep-evolve --resume-from-handoff .deep-work/handoffs/<file>.json
-```
-
-This block does NOT replace Section 8 — state finalization still runs.
+건너뛰고 §8로 진행하는 경우는 두 가지뿐이다: `--handoff-to`가 **없고** `--no-handoff`가 있을 때
+(대화형 제안만 스킵), 또는 `outcome`이 `keep`/`discard`이면서 `--handoff-to`도 없을 때.
+`--handoff-to`는 명시 지시이므로 `--no-handoff`와 함께 주어져도 수행한다 — `--no-handoff`는
+대화형 경로에만 걸린다.
 
 ### 8. Finalize state
 

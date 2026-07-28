@@ -1,6 +1,6 @@
 ---
 name: deep-cleanup
-description: "Use when the user wants to scan and clean up stale deep-work git worktrees (`dw/*` branches) plus fork worktrees. Triggers on `/deep-cleanup`, \"clean worktrees\", \"stale worktree\", \"worktree 정리\", \"fork 정리\", \"deep-work 정리\". Scans `git worktree list`, classifies stale/active, offers per-worktree or batch deletion via AskUserQuestion, handles dirty trees with extra confirmation, and prunes `.claude/deep-work-sessions.json` registry for idle fork sessions."
+description: "Scan and clean up stale deep-work git worktrees (`dw/*` branches) plus fork worktrees, and prune idle fork sessions from the registry. Triggers on `/deep-cleanup`, \"clean worktrees\", \"stale worktree\", \"worktree 정리\", \"fork 정리\", \"deep-work 정리\"."
 user-invocable: true
 ---
 
@@ -28,10 +28,10 @@ user-invocable: true
 **Cross-platform self-containment**: Claude Code 에서는 sibling skill 이 description 매칭으로 자동 로드됩니다. Codex / Copilot CLI / Gemini CLI / Agent SDK 에서 `Skill()` 로 호출 시 sibling auto-load 보장이 약할 수 있으므로, 본문은 self-contained 으로 보존되어 있습니다 — state file 해석, `$ARGUMENTS` 파싱, AskUserQuestion 분기, 출력 포맷이 인라인.
 
 
-> **Utility (v6.2.4)** — standalone 명령. `/deep-work` init이 stale 세션 일부를 감지하지만, `git worktree list` 스캔·stale/active 분류·dirty 트리 삭제 확인·fork worktree 및 registry 정리는 이 커맨드가 유일한 경로입니다.
-> 향후 기능 이관 후 삭제 예정 (spec §7 follow-up).
+> **Utility** — standalone 명령. `/deep-work` init이 stale 세션 일부를 감지하지만, `git worktree list` 스캔·stale/active 분류·dirty 트리 삭제 확인·fork worktree 및 registry 정리는 이 커맨드가 유일한 경로입니다.
+> 향후 기능 이관 후 삭제 예정.
 
-# Deep Work Worktree Cleanup (v4.1)
+# Deep Work Worktree Cleanup
 
 Scan for stale deep-work worktrees and offer cleanup options.
 
@@ -127,7 +127,7 @@ Cleanup 완료
    유지: [M]개 worktree (active 또는 사용자 선택)
 ```
 
-### 7. Fork Worktree 정리 (v5.6)
+### 7. Fork Worktree 정리
 
 기존 worktree 스캔 로직(Step 1-6)에 추가로 fork 세션 정리를 수행한다.
 
