@@ -343,6 +343,23 @@ function expansionState(line, index) {
 // apostrophe is not a shell word.
 const SHELL_COMMAND = /\b(?:echo|printf|cat|node|bash|sh|zsh|jq|awk|sed|curl|export)\b/;
 
+// A command is written inside an inline-code span in these documents; prose is
+// written outside one. So an anchor inside backticks is in a command context
+// whatever the verb, and an apostrophe in "the plugin's root" is outside one and
+// cannot open a quote. Judging context structurally instead of by a command-name
+// list is what covers `cp`, `mv`, `install`, `rsync` and any future wrapper —
+// enumeration left every one of them unflagged, which is a missed detection, not
+// a blocked edit: the anchor stays literal and resolves against the workspace.
+// Yields [start, end) offsets of each inline-code span on the line.
+function inlineCodeSpans(line) {
+  const spans = [];
+  const re = /(`+)([^`]|[^`][\s\S]*?)\1/g;
+  let m;
+  while ((m = re.exec(line))) spans.push([m.index + m[1].length, m.index + m[0].length - m[1].length]);
+  return spans;
+}
+
+
 // `${...}` only interpolates in a JS *template literal*. In a quoted string it
 // is inert, and a specifier that does not start with ./ ../ or / is a bare
 // package specifier — so `require("${CLAUDE_PLUGIN_ROOT}/runtime/x.js")` sends
@@ -370,7 +387,11 @@ function nonExpandingAnchors(line) {
   // 1. shell — single quotes and quoted heredocs leave it literal
   let i = line.indexOf('${CLAUDE_PLUGIN_ROOT}');
   while (i !== -1) {
-    if (SHELL_COMMAND.test(line) && expansionState(line, i) === 'single') {
+    const __span = inlineCodeSpans(line).find(([s, e]) => i >= s && i < e);
+      const __literal = __span
+        ? expansionState(line.slice(__span[0], __span[1]), i - __span[0]) === 'single'
+        : SHELL_COMMAND.test(line) && expansionState(line, i) === 'single';
+      if (__literal) {
       flag('single-quoted shell — literal, so the path resolves against the workspace');
     }
     i = line.indexOf('${CLAUDE_PLUGIN_ROOT}', i + 1);
