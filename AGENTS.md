@@ -161,14 +161,21 @@ pack covers more families at the hook level.
 ## Release
 
 A plugin PR touches this repo only: CHANGELOG in both languages plus the version
-triple-sync. The marketplace pin, payload-registry promotion and adoption-ledger
-line are batched on the suite side afterwards, once the merge lands on `main`:
+triple-sync across `package.json` and both plugin manifests, which the release
+metadata test pins together. The marketplace pin and any payload-registry
+promotion are batched on the suite side afterwards, once the merge lands on
+`main`:
 
 ```bash
 cd /Users/sungmin/Dev/claude-plugins/deep-suite
-npm run release:bump -- deep-work <sha40>   # writes .claude-plugin/marketplace.json
-npm run preflight
+npm run release:bump -- deep-work <sha40>
 ```
 
-`release:bump` does **not** touch `.agents/plugins/marketplace.json` — sync that
-file by hand in the same commit.
+That one command is the whole suite-side step. It writes **both** manifests —
+`.claude-plugin/marketplace.json` and the Codex mirror
+`.agents/plugins/marketplace.json` — validating the edit against both before
+writing either, so a plugin present in only one cannot end up pinned to different
+commits. It then runs `docs:write` and `preflight` itself, so neither needs
+invoking separately. Nothing here needs a hand sync;
+`tests/codex-marketplace-contract.test.js` on the suite side deep-compares
+`source` and `description` across the two manifests as the backstop.
