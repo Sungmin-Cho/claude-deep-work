@@ -149,6 +149,19 @@ const FORMS = [
 // anchored, whatever the verb, extension or sentence around it — which covers
 // .json, .yaml, extensionless scripts and assets that do not exist yet, without
 // another form list. Anything that does not resolve is prose and passes.
+
+// Repo-relative key, in the one spelling both sides of every PLUGIN_FILES
+// comparison must use. `path.relative` returns the *host's* separator, so on
+// Windows it hands back `scripts\lib\x.js` while the token being looked up has
+// already been normalised to `scripts/lib/x.js` — the two never meet and the
+// membership test misses every time. Normalising the token but not the key
+// normalises one side of a comparison, which is not normalising at all.
+// `relative` is injectable so the Windows spelling can be exercised from a POSIX
+// CI run — path.win32.relative is the same implementation that host uses. It
+// defaults to the host's and disables nothing, so it is a seam for emulation
+// rather than a switch that can turn the rule off.
+const repoKey = (from, to, relative = path.relative) => normalizePath(relative(from, to));
+
 const PLUGIN_FILES = (() => {
   const rel = new Set();
   const skip = new Set(['node_modules', '.git', '.claude', '.deep-work', 'docs',
@@ -158,7 +171,7 @@ const PLUGIN_FILES = (() => {
       if (skip.has(e.name)) continue;
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p);
-      else rel.add(path.relative(ROOT, p));
+      else rel.add(repoKey(ROOT, p));
     }
   };
   walk(ROOT);
@@ -195,7 +208,7 @@ function resolvesInPlugin(token, sourceFile) {
   const clean = normalizePath(token).replace(/^\.\//, '');
   if (PLUGIN_FILES.has(clean)) return true;
   try {
-    const fromSource = path.relative(ROOT, path.resolve(path.dirname(sourceFile), normalizePath(token)));
+    const fromSource = repoKey(ROOT, path.resolve(path.dirname(sourceFile), normalizePath(token)));
     if (PLUGIN_FILES.has(fromSource)) return true;
   } catch { /* unresolvable token — prose */ }
   return false;
@@ -401,6 +414,19 @@ function escapesViaSymlink(token) {
   return real !== realRoot && !real.startsWith(realRoot + path.sep);
 }
 
+// Resolve a token for real, from a given cwd, exactly as a runtime agent would.
+// Re-running the classifier tells you only what the classifier already believes;
+// this performs the resolution and asks which file the instruction lands on. It
+// is the second, independent layer, and it is shared by every fixture that needs
+// it so no two of them can disagree about what resolution means.
+function resolveAsAgentWould(token, cwd) {
+  if (/^(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)\//.test(token)) {
+    const body = token.replace(/^(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)\//, '');
+    return path.resolve(ROOT, body);              // anchored → resolves in the plugin
+  }
+  return path.resolve(cwd, token.replace(/^\.\//, '')); // unanchored → cwd
+}
+
 // Indented too: fences nested in a list item or a numbered step are still fences,
 // and 24 of these files use them. A column-0-only match left two reference files
 // (loop-exit, worktree-restore) with zero of their fences checked.
@@ -555,23 +581,11 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
     fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'schema', 'llm-output.json'),
       '{"SHADOW":"must never be attached"}\n');
 
-    // Resolve for real, from the evil cwd, exactly as a runtime agent would.
-    // Re-running the classifier here would only restate what it already
-    // believes; this instead performs the resolution and asks which file the
-    // instruction actually lands on.
-    const resolveAsAgentWould = (token) => {
-      if (/^(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)\//.test(token)) {
-        const body = token.replace(/^(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)\//, '');
-        return path.resolve(ROOT, body);      // anchored → resolves in the plugin
-      }
-      return path.resolve(evil, token.replace(/^\.\//, '')); // unanchored → cwd
-    };
-
     const landed = [];
     for (const file of markdownFiles()) {
       fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
         for (const token of scopedTokens(line)) {
-          const target = resolveAsAgentWould(token);
+          const target = resolveAsAgentWould(token, evil);
           if (target.startsWith(evil + path.sep) && fs.existsSync(target)) {
             landed.push(`${path.relative(ROOT, file)}:${i + 1}  ${token} → ${target}`);
           }
@@ -584,7 +598,7 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
     // Non-vacuity: the same resolution, given an unanchored token, does land on
     // the shadow — so an empty result above is a property of the docs, not of a
     // resolver that never finds anything.
-    const control = resolveAsAgentWould('adaptive-review-protocol.md');
+    const control = resolveAsAgentWould('adaptive-review-protocol.md', evil);
     assert.ok(control.startsWith(evil + path.sep) && fs.existsSync(control),
       'fixture is vacuous — an unanchored token must land on the planted shadow');
   } finally {
@@ -628,7 +642,40 @@ test('an anchor the shell will not expand counts as unanchored', () => {
   }
 });
 
-test('the documented report command survives real shell semantics', () => {
+// HOST CAPABILITIES.
+//
+// Two fixtures below drive a real POSIX harness — a `bash -c` script and a
+// symlink — because the properties they prove (shell expansion, realpath
+// containment) cannot be demonstrated any other way. On a Windows host without
+// Git Bash, spawnSync returns ENOENT; without Developer Mode, symlinkSync throws
+// EPERM. Either turns a green suite red for a reason that has nothing to do with
+// the invariant, which is the same "npm test is red on Windows" failure the
+// separator index bug caused.
+//
+// These are probed, not inferred from process.platform: a Windows host WITH Git
+// Bash should still run the shell fixture, and a Linux CI that somehow lost bash
+// should not silently skip a security test. The skip reason is a string so it
+// prints, rather than a bare `true` that vanishes into the summary.
+const BASH_AVAILABLE = (() => {
+  const r = require('node:child_process').spawnSync('bash', ['-c', 'exit 0']);
+  return r.status === 0;
+})();
+const SYMLINKS_AVAILABLE = (() => {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-symlink-probe-'));
+  try {
+    fs.writeFileSync(path.join(probe, 'target'), 'x');
+    fs.symlinkSync(path.join(probe, 'target'), path.join(probe, 'link'));
+    return true;
+  } catch {
+    return false;                       // EPERM on unprivileged Windows
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
+test('the documented report command survives real shell semantics', {
+  skip: BASH_AVAILABLE ? false : 'no working bash on this host (Windows without Git Bash)',
+}, () => {
   // Runs the shape deep-report documents, from a malicious cwd that has planted
   // a file at the literal path a non-expanding anchor would produce. Proves
   // three things at once: the canonical registry is what gets consumed, the
@@ -793,7 +840,9 @@ test('markdown link destinations are never environment variables', () => {
     + `source-relative path instead:\n  ${broken.join('\n  ')}`);
 });
 
-test('pluginRequire refuses a symlink that leaves the plugin root', () => {
+test('pluginRequire refuses a symlink that leaves the plugin root', {
+  skip: SYMLINKS_AVAILABLE ? false : 'this host cannot create symlinks (unprivileged Windows)',
+}, () => {
   // path.resolve is lexical, so a symlink inside the root pointing outside
   // passes a prefix check and require then follows it. The helper documented in
   // the skills realpaths the target; this pins that it must.
@@ -949,6 +998,120 @@ test('a backslash separator does not hide a path from the guard', () => {
   assert.deepEqual(
     shadowableTokens('const { x } = require("\'"${CLAUDE_PLUGIN_ROOT}"\'\\scripts\\detect-capability.js");'), [],
     'a spliced anchor followed by a backslash must still count as anchored');
+});
+
+test('a separator run reaches the planted file, not just the classifier', () => {
+  // The defect this pins is invisible to a failure count. With a one-character
+  // separator element in PATH_TOKEN, a run-spelled path (`skills\\x\\y.sh`) still
+  // makes the classifier report — a FORM matches the raw text — while the
+  // reachability fixture goes blind, because scopedTokens dies at the second
+  // separator and yields only the bare basename. Counting failures reads that as
+  // "caught"; it is the layer that proves an instruction *actually lands on a
+  // planted file* that has stopped working, and that is the only layer that
+  // demonstrates the attack rather than describing it.
+  //
+  // So the two layers are asserted separately, by what each concludes. Verified
+  // by reverting PATH_TOKEN's run element alone: the classifier assertion keeps
+  // passing and the reachability assertion fails, for every run row below.
+  const evil = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-run-evil-'));
+  try {
+    fs.mkdirSync(path.join(evil, 'skills', 'deep-integrate'), { recursive: true });
+    fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'phase5-record-error.sh'),
+      '#!/bin/sh\necho SHADOW\n');
+
+    for (const [label, line] of [
+      ['single slash', 'bash skills/deep-integrate/phase5-record-error.sh /abs/work'],
+      ['single backslash', 'bash skills\\deep-integrate\\phase5-record-error.sh /abs/work'],
+      ['backslash run', 'bash skills\\\\deep-integrate\\\\phase5-record-error.sh /abs/work'],
+      ['slash run', 'bash skills//deep-integrate//phase5-record-error.sh /abs/work'],
+      ['mixed run', 'bash skills\\/deep-integrate\\/phase5-record-error.sh /abs/work'],
+    ]) {
+      assert.ok(shadowableTokens(line).length > 0,
+        `layer 1 (classifier) must flag: ${label} — ${line}`);
+
+      const landed = [...scopedTokens(line)]
+        .map((t) => resolveAsAgentWould(t, evil))
+        .filter((t) => t.startsWith(evil + path.sep) && fs.existsSync(t));
+      assert.ok(landed.length > 0,
+        `layer 2 (reachability) must land on the planted shadow: ${label} — ${line}. `
+        + `scopedTokens yielded ${JSON.stringify([...scopedTokens(line)])}`);
+    }
+
+    // Non-vacuity for layer 2: an anchored spelling of the same path must NOT
+    // land in the workspace, so "landed" is a property of the token and not of a
+    // resolver that points everything at the evil root.
+    const anchored = resolveAsAgentWould(
+      '${CLAUDE_PLUGIN_ROOT}/skills/deep-integrate/phase5-record-error.sh', evil);
+    assert.equal(anchored.startsWith(evil + path.sep), false,
+      'an anchored token must resolve into the plugin, never the workspace');
+  } finally {
+    fs.rmSync(evil, { recursive: true, force: true });
+  }
+});
+
+test('the plugin file index and the tokens looked up in it use one spelling', () => {
+  // Normalising the token but not the index normalises one side of a comparison,
+  // which is not normalising at all. `path.relative` returns the host's
+  // separator, so on Windows every PLUGIN_FILES key would read
+  // `scripts\deep-work-runtime.js` while every token looked up in it reads
+  // `scripts/deep-work-runtime.js` — deny-by-default would then resolve nothing
+  // at all, and the isolating cases above would fail on Windows only.
+  //
+  // Windows is emulated here rather than assumed: path.win32.relative is the
+  // same implementation that host runs, so this reproduces the mismatch on macOS
+  // and Linux CI instead of waiting for a Windows user to find it.
+  const wrongSpelling = [...PLUGIN_FILES].filter((k) => k.includes('\\'));
+  assert.deepEqual(wrongSpelling, [],
+    'PLUGIN_FILES keys must be canonicalised at construction, not left in the '
+    + `host separator:\n  ${wrongSpelling.slice(0, 10).join('\n  ')}`);
+
+  const winRel = path.win32.relative(
+    'C:\\plugin-root', 'C:\\plugin-root\\scripts\\deep-work-runtime.js');
+  assert.equal(winRel, 'scripts\\deep-work-runtime.js',
+    'precondition — win32 relative must produce the backslash spelling');
+  assert.equal(normalizePath(winRel), 'scripts/deep-work-runtime.js');
+
+  // The real index must contain the canonical form and not the host-shaped one.
+  // The second assertion is what makes the first non-vacuous: it shows the two
+  // spellings are genuinely different keys, so agreeing on one is load-bearing.
+  assert.ok(PLUGIN_FILES.has(normalizePath(winRel)),
+    'the canonical spelling must be a key in the index');
+  assert.equal(PLUGIN_FILES.has(winRel), false,
+    'the host-shaped spelling must not be — otherwise this test proves nothing');
+
+  // The derivation itself, driven by the Windows implementation.
+  assert.equal(
+    repoKey('C:\\plugin-root', 'C:\\plugin-root\\scripts\\deep-work-runtime.js',
+      path.win32.relative),
+    'scripts/deep-work-runtime.js',
+    'repoKey must canonicalise whatever separator its host relative() returns');
+
+  // End-to-end: rebuild the entire index the way a Windows host would spell it —
+  // every real plugin file, re-rooted under a win32 path, run back through the
+  // same derivation — and require the result to be identical. This is what makes
+  // the whole axis provable from a POSIX runner: with the normalisation removed
+  // from repoKey, every one of these keys comes back with backslashes.
+  const winRoot = 'C:\\plugin-root';
+  const rebuilt = new Set([...PLUGIN_FILES].map((key) =>
+    repoKey(winRoot, path.win32.join(winRoot, ...key.split('/')), path.win32.relative)));
+  assert.deepEqual([...rebuilt].sort(), [...PLUGIN_FILES].sort(),
+    'the index a Windows host builds must be key-for-key identical to this one');
+  assert.ok(rebuilt.size > 100,
+    `emulation swept only ${rebuilt.size} keys — the index is too small to be real`);
+
+  // The two call sites cannot be told apart behaviourally from a POSIX runner:
+  // path.relative already returns `/` here, so `repoKey(...)` and
+  // `path.relative(...)` produce identical output and no assertion can
+  // distinguish them. The Windows difference is real but undecidable from this
+  // host, so the call sites are pinned structurally instead — the same technique
+  // this file already uses to require the documented pluginRequire helpers to
+  // realpath. Mutating either site back to a raw path.relative fails here.
+  const src = fs.readFileSync(__filename, 'utf8');
+  assert.match(src, /rel\.add\(repoKey\(ROOT, p\)\)/,
+    'the index must be built through repoKey, not a raw path.relative');
+  assert.match(src, /const fromSource = repoKey\(ROOT,/,
+    'the source-relative lookup must go through repoKey too — it is the other '
+    + 'side of the same comparison');
 });
 
 test('normalising separators does not promote prose into a path', () => {
