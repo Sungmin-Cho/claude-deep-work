@@ -319,9 +319,16 @@ function expansionState(line, index) {
     // POSIX sh does not treat a backslash as an escape inside single quotes:
     // `'C:\tmp\'` is the literal `C:\tmp\` and the quote closes. Honouring it
     // there flips the parity, so a line ending a Windows path in `\` before an
-    // anchor reports `normal` and the non-expanding anchor goes unflagged. Only
-    // reachable now that a backslash is legitimate path content.
-    if (state !== 'single' && line[k - 1] === '\\') continue;
+    // anchor reported `normal` and the non-expanding anchor went unflagged.
+    //
+    // Consume the escaped character rather than looking back at the previous
+    // one. Looking back fails on `"C:\tmp\\"`: the second backslash of the pair
+    // is itself treated as escaped, so the closing quote also looks escaped and
+    // the double-quote state never ends — a following single-quoted anchor never
+    // reaches `single` and goes unflagged. Both spellings are forms this branch
+    // legitimised, and the guard's own fixtures pin `"C:\\Users\\me\\notes.md"`
+    // as legal, so the pair form is not hypothetical.
+    if (state !== 'single' && c === '\\') { k += 1; continue; }
     if (state === 'normal') {
       if (c === "'") state = 'single';
       else if (c === '"') state = 'double';
@@ -1207,14 +1214,41 @@ test('every referenced skill path resolves', () => {
   // Pin the separator symmetry before walking real files: a slash-only resolver
   // here made the backslash spelling of an out-of-root reference invisible to
   // every layer, because deny-by-default defers anchored tokens to the FORMS and
-  // `.json` matches none of them. Reverting any separator class below fails this
-  // pair, and it fails on the axis rather than on whatever file happens to be in
-  // the tree.
-  for (const spelling of ['${CLAUDE_PLUGIN_ROOT}/../workspace/evil.json',
-    '${CLAUDE_PLUGIN_ROOT}\\..\\workspace\\evil.json']) {
-    const anchored = patterns[0][0];
-    anchored.lastIndex = 0;
-    assert.ok(anchored.exec(spelling), `resolver must see both spellings: ${spelling}`);
+  // `.json` matches none of them.
+  //
+  // Every pattern, not just the first. Two of the four match nothing in the
+  // current corpus, so a real-file sweep gives them no coverage at all and only
+  // this loop can hold their separator class. One sample per pattern, in both
+  // spellings, so a revert fails on the axis rather than on whatever file happens
+  // to be in the tree.
+  const samples = [
+    ['${CLAUDE_PLUGIN_ROOT}/../workspace/evil.json',
+      '${CLAUDE_PLUGIN_ROOT}\\..\\workspace\\evil.json'],
+    ['`../shared/references/x.md`', '`..\\shared\\references\\x.md`'],
+    ['[label](../shared/x.md)', '[label](..\\shared\\x.md)'],
+    ['Read("../shared/x.md")', 'Read("..\\shared\\x.md")'],
+  ];
+  patterns.forEach(([re], i) => {
+    for (const spelling of samples[i]) {
+      re.lastIndex = 0;
+      assert.ok(re.exec(spelling), `pattern ${i} must see both spellings: ${spelling}`);
+    }
+  });
+
+  // Normalising the capture below is load-bearing but NOT pinned, and this pair
+  // does not pin it — it proves only that normalisation is what makes a
+  // backslash spelling resolve, not that the resolver applies it. Removing
+  // `normalizePath` from the resolution site breaks no test today, because no
+  // shipped document is written that way: the failure would appear the first time
+  // one is, as a false `missing` on a file that exists. Same disposition as the
+  // three leaf normalisations this file already labels unproven — recorded, not
+  // claimed.
+  {
+    const raw = 'scripts\\deep-work-runtime.js';
+    assert.ok(fs.existsSync(path.join(ROOT, normalizePath(raw))),
+      'normalising a backslash spelling is what makes it resolve');
+    assert.ok(!fs.existsSync(path.join(ROOT, raw)),
+      'the pair is vacuous unless the un-normalised form really fails');
   }
 
   const broken = [];
