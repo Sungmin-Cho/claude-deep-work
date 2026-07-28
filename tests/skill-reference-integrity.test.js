@@ -87,12 +87,37 @@ const PLUGIN_DOCS = pluginDocBasenames();
 // for running or loading it — so those are checked wherever they appear. For
 // `.md` it is the instruction forms below; a descriptive cross-reference in
 // prose is not a load instruction and is deliberately out of scope.
+//
+// SEPARATORS. Windows is a supported host — v7.0.0 exists to bootstrap there
+// without Git Bash — so `scripts\deep-work-runtime.js` names the same file as
+// `scripts/deep-work-runtime.js`. A matcher that knows only `/` lets the whole
+// deny-by-default invariant be bypassed with one character, which is what review
+// measured: the slash form produced seven failures and the backslash form none.
+//
+// The fix is not to teach each matcher a second shape. That leaves the mixed
+// form (`scripts\lib/x.js`) open and re-opens on the next rule added — the same
+// enumeration trap rounds 4-8 kept falling into. Instead every extracted token is
+// normalised once, at tokenisation, so deny-by-default, the FORMS, bare-basename
+// and containment all judge one canonical spelling without being taught anything.
+// Runs of separators collapse, so an escaped `scripts\\x.js` in a string literal
+// normalises to the same path. Over-normalising is the safe direction here: a
+// token only matters once it resolves to a real file in the plugin, and prose
+// carrying a stray backslash resolves to nothing.
+//
+// normalizePath is also applied at the leaves — resolvesInPlugin, escapesRoot,
+// escapesViaSymlink — where it is redundant today, because both tokenisers
+// canonicalise before calling them. That redundancy is deliberate and is why
+// mutating those three call sites alone fails nothing: they are not the fix,
+// they are the thing that keeps a future caller from having to remember it.
+const SEP = String.raw`[\\/]`;
+const normalizePath = (token) => token.replace(/[\\/]+/g, '/');
+
 const PLUGIN_DIRS = 'skills|agents|scripts|hooks|runtime|templates|health|sensors';
 const ANCHOR = String.raw`\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>`;
 const ANCHORED_TOKEN = new RegExp(`^(?:${ANCHOR})/`);
-const PATH_BODY = String.raw`[A-Za-z0-9._/${'{}'}|$-]+`;
-const REL = String.raw`\.{1,2}/`;
-const ANY_ROOT = String.raw`(?:(?:${ANCHOR})/|${REL}|(?:${PLUGIN_DIRS})/)`;
+const PATH_BODY = String.raw`[A-Za-z0-9._/\\${'{}'}|$-]+`;
+const REL = String.raw`\.{1,2}${SEP}`;
+const ANY_ROOT = String.raw`(?:(?:${ANCHOR})${SEP}|${REL}|(?:${PLUGIN_DIRS})${SEP})`;
 
 // Each pattern captures the path token in group 1, so anchoring and containment
 // are judged per token rather than per line — a line mixing an anchored and a
@@ -109,7 +134,7 @@ const FORMS = [
   // 5. executable path token anywhere — the form that hid health/health-check.js
   // The trailing boundary matters: without it `.js` matches the prefix of
   // `hooks/hooks.json` and the guard reports a file that does not exist.
-  ['executable-token', new RegExp(String.raw`(?<![A-Za-z0-9._/{}<>$-])((?:${ANCHOR})/|${REL}|(?:${PLUGIN_DIRS})/)([A-Za-z0-9._/-]*\.(?:js|sh)(?![A-Za-z0-9]))`, 'g')],
+  ['executable-token', new RegExp(String.raw`(?<![A-Za-z0-9._/\\{}<>$-])((?:${ANCHOR})${SEP}|${REL}|(?:${PLUGIN_DIRS})${SEP})([A-Za-z0-9._/\\-]*\.(?:js|sh)(?![A-Za-z0-9]))`, 'g')],
 ];
 
 // DENY BY DEFAULT.
@@ -157,13 +182,20 @@ const ROOT_METADATA = new Set(['package.json', 'plugin.json', 'assumptions.json'
   'AGENTS.md', 'CLAUDE.md', 'README.md', 'CHANGELOG.md', 'SKILL.md', 'hooks.json']);
 
 // Path-shaped tokens: multi-segment paths, plus dotted single segments.
-const PATH_TOKEN = /[A-Za-z0-9_.@${}<>-]+(?:\/[A-Za-z0-9_.@{}|*-]+)+|[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,6}\b/g;
+// The separator element is `+`, not a single character: `skills\\deep-finish\\x`
+// is how the path appears inside a string literal, and a one-character element
+// cannot span it — the match dies at the second backslash, the second
+// alternative then extracts the bare basename, and ROOT_METADATA exempts it. So
+// the escaped spelling of a plugin path was invisible to deny-by-default even
+// after the matchers learned `\`. Collapsing the run here is what makes
+// normalizePath's own run-collapsing reachable.
+const PATH_TOKEN = /[A-Za-z0-9_.@${}<>-]+(?:[\\/]+[A-Za-z0-9_.@{}|*-]+)+|[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,6}\b/g;
 
 function resolvesInPlugin(token, sourceFile) {
-  const clean = token.replace(/^\.\//, '');
+  const clean = normalizePath(token).replace(/^\.\//, '');
   if (PLUGIN_FILES.has(clean)) return true;
   try {
-    const fromSource = path.relative(ROOT, path.resolve(path.dirname(sourceFile), token));
+    const fromSource = path.relative(ROOT, path.resolve(path.dirname(sourceFile), normalizePath(token)));
     if (PLUGIN_FILES.has(fromSource)) return true;
   } catch { /* unresolvable token — prose */ }
   return false;
@@ -181,16 +213,23 @@ function* scopedTokens(line) {
     // Without trimming them, `<skills/…/llm-output.json 첨부>` extracts with a
     // leading `<`, fails to resolve, and the token silently escapes the guard —
     // which is exactly how the r8 finding stayed invisible.
-    const token = m[0].startsWith('<') && !m[0].startsWith('<PLUGIN_ROOT>')
+    const raw = m[0].startsWith('<') && !m[0].startsWith('<PLUGIN_ROOT>')
       ? m[0].slice(1)
       : m[0];
+    // Normalise once, here, so every consumer of scopedTokens — the classifier,
+    // the ALLOWLIST and ROOT_METADATA lookups, and the malicious-workspace
+    // fixture alike — judges the same string. Doing it any later means the
+    // basename exemption below sees `SKILL.md` where the whole token was
+    // `skills\deep-finish\SKILL.md`, which is precisely the hole.
+    const token = normalizePath(raw);
     if (ALLOWLIST.has(token)) continue;
     if (!token.includes('/') && ROOT_METADATA.has(token)) continue;
     const before = line.slice(Math.max(0, m.index - 30), m.index);
-    // Already inside an anchored path. The trailing form covers shell splicing
-    // — require("'"${CLAUDE_PLUGIN_ROOT}"'/scripts/x.js") is anchored, just
+    // Already inside an anchored path, written with either separator. The
+    // trailing form covers shell splicing —
+    // require("'"${CLAUDE_PLUGIN_ROOT}"'/scripts/x.js") is anchored, just
     // quoted for a heredoc.
-    if (/(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)["'\s]*\/?$/.test(before)) continue;
+    if (/(?:\$\{CLAUDE_PLUGIN_ROOT\}|<PLUGIN_ROOT>)["'\s]*[\\/]?$/.test(before)) continue;
     // Markdown link target `](x.md)` — rendered navigation between docs, not an
     // instruction handed to a file tool. Runtime reads use the Read forms above.
     if (/\]\($/.test(before)) continue;
@@ -344,7 +383,7 @@ const ROOT_SENTINEL = path.sep === '/' ? '/plugin-root' : 'C:\\plugin-root';
 // (`{codebase|zerobase}`, `$WORK_DIR`) cannot be resolved literally, so they
 // are checked lexically for `..` instead.
 function escapesRoot(token) {
-  const body = token.replace(new RegExp(`^(?:${ANCHOR})/`), '');
+  const body = normalizePath(token).replace(new RegExp(`^(?:${ANCHOR})/`), '');
   if (/[{}|$]/.test(body)) return body.split('/').includes('..');
   const resolved = path.resolve(ROOT_SENTINEL, body);
   return resolved !== ROOT_SENTINEL && !resolved.startsWith(ROOT_SENTINEL + path.sep);
@@ -353,7 +392,7 @@ function escapesRoot(token) {
 // Symlink escape: an anchored, lexically-contained path can still point out of
 // the root if a component is a symlink. Only checkable for targets that exist.
 function escapesViaSymlink(token) {
-  const body = token.replace(new RegExp(`^(?:${ANCHOR})/`), '');
+  const body = normalizePath(token).replace(new RegExp(`^(?:${ANCHOR})/`), '');
   if (/[{}|$]/.test(body)) return false;
   const target = path.join(ROOT, body);
   if (!fs.existsSync(target)) return false;
@@ -390,7 +429,7 @@ function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body 
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(line))) {
-      const token = m[2] === undefined ? m[1] : m[1] + m[2];
+      const token = normalizePath(m[2] === undefined ? m[1] : m[1] + m[2]);
       if (programmaticAll.has(token)) continue;
       if (!ANCHORED_TOKEN.test(token)) out.push({ form, token, why: 'unanchored' });
       else if (escapesRoot(token)) out.push({ form, token, why: 'escapes plugin root' });
@@ -806,6 +845,160 @@ test('the documented pluginRequire helpers realpath their target', () => {
   assert.deepEqual(missing, [],
     `pluginRequire resolves lexically without realpath — a symlink out of the `
     + `root would be followed:\n  ${missing.join('\n  ')}`);
+});
+
+test('a backslash separator does not hide a path from the guard', () => {
+  // The bypass table from review, used verbatim as the fixture. Measured on the
+  // commit before this fix by planting one line at a time into AGENTS.md in a
+  // detached copy and running this guard: every slash row failed the build and
+  // every backslash row scored zero. The same unanchored reference to the same
+  // real file, invisible because the matchers knew only `/`.
+  //
+  // Mixed separators matter as much as pure backslash: a rule taught to
+  // recognise "a backslash path" as a second shape would still miss
+  // `hooks\scripts/envelope.js`. That is the argument for normalising at
+  // tokenisation rather than per matcher — every rule underneath, present and
+  // future, sees one canonical spelling without being taught anything.
+  const TABLE = [
+    ['unanchored slash', 'Run `node scripts/deep-work-runtime.js` now.'],
+    ['unanchored backslash', 'Run `node scripts\\deep-work-runtime.js` now.'],
+    ['read-verb slash', 'Read `skills/deep-finish/SKILL.md` first.'],
+    ['read-verb backslash', 'Read `skills\\deep-finish\\SKILL.md` first.'],
+    ['mixed separators', 'Run `node hooks\\scripts/envelope.js` now.'],
+    ['read-verb mixed', 'Read `skills/deep-finish\\SKILL.md` first.'],
+  ];
+  for (const [label, line] of TABLE) {
+    assert.ok(shadowableTokens(line).length > 0, `${label} must be flagged: ${line}`);
+  }
+
+  // An anchored traversal written with backslashes is still a traversal, and
+  // must be rejected for that reason rather than as "unanchored". Asserting the
+  // reason is what keeps this row from passing for the wrong cause: with
+  // normalizePath removed the token stays `${CLAUDE_PLUGIN_ROOT}\..\…`, fails
+  // ANCHORED_TOKEN, and is flagged — correctly, but as an anchoring failure.
+  const traversal = shadowableTokens('node "${CLAUDE_PLUGIN_ROOT}\\..\\workspace\\evil.js"');
+  assert.ok(traversal.length > 0, 'anchored backslash traversal must be flagged');
+  assert.equal(traversal[0].why, 'escapes plugin root',
+    `traversal must fail on containment, not anchoring: ${JSON.stringify(traversal)}`);
+
+  // Escape parity: a doubled backslash is how the same path appears inside a
+  // string literal, and separator runs collapse, so it resolves identically.
+  assert.ok(shadowableTokens('const p = "hooks\\\\scripts\\\\envelope.js";').length > 0,
+    'an escaped backslash path must be flagged too');
+
+  // …and the same spelling where only deny-by-default can see it: `.md`, so no
+  // executable-token FORM, no read verb, and a basename ROOT_METADATA exempts.
+  // This is the case that showed a one-character separator element in PATH_TOKEN
+  // cannot span `\\` — the match died at the second backslash and the bare
+  // basename was extracted and exempted instead.
+  assert.ok(shadowableTokens('const p = "skills\\\\deep-finish\\\\SKILL.md";').length > 0,
+    'an escaped backslash path must survive tokenisation as one whole token');
+
+  // PER-AXIS ISOLATION. The rows above are caught by several rules at once, so
+  // they prove the bug is closed without proving which piece closed it. Each
+  // case below is chosen so exactly one piece can see it — verified by mutating
+  // that piece alone and watching only this test fail.
+
+  // PATH_TOKEN + the normalise-before-exemption ordering, isolated. No read
+  // verb, so no FORM matches, and a basename ROOT_METADATA exempts on its own —
+  // so if the token is not extracted whole and canonicalised before the
+  // exemption lookup, nothing sees it at all.
+  assert.ok(
+    shadowableTokens('워크플로우 정본은 `skills\\deep-finish\\SKILL.md` 이다.').length > 0,
+    'deny-by-default must extract a backslash path whole, not just its basename');
+
+  // ANY_ROOT/REL separator, isolated. Deny-by-default asks whether a token
+  // resolves inside the plugin, so a path to a file that does not exist is
+  // invisible to it — only a FORM can match, and only if the separator directly
+  // after the root directory is accepted.
+  assert.ok(shadowableTokens('Read `skills\\missing.md` before starting.').length > 0,
+    'a FORM must accept a backslash directly after the root directory');
+
+  // PATH_BODY separator, isolated. Slash after the root so ANY_ROOT matches
+  // either way; the backslash is inside the body, and the file does not exist so
+  // deny-by-default cannot cover for it.
+  assert.ok(shadowableTokens('Read `skills/zzz\\missing.md` before starting.').length > 0,
+    'a FORM must match a backslash inside the path body');
+
+  // executable-token, isolated. This is the form that hid health/health-check.js
+  // and it has its own inline copy of the root and body patterns rather than
+  // sharing ANY_ROOT/PATH_BODY, so the other FORMS learning `\` does not teach
+  // it anything. No interpreter, no read verb, and deliberately not `from` —
+  // that word alone puts module-load on the line — and a file that does not
+  // exist, so this rule is the only one that can see it.
+  for (const line of [
+    'the generator is at `health\\fitness\\missing-generator.js`',
+    'the helper `hooks\\scripts\\missing-helper.sh` is invoked at Stop',
+  ]) {
+    const hits = shadowableTokens(line);
+    assert.deepEqual(hits.map((h) => h.form), ['executable-token'],
+      `executable-token must be the rule that catches this, alone: ${line}`);
+  }
+
+  // NEGATIVES live in their own test below, because "stays silent" turns out to
+  // have two different mechanisms behind it and pinning the wrong one is how a
+  // negative assertion becomes decorative. The two accepts here are about
+  // anchoring rather than over-flagging, so they stay.
+  assert.deepEqual(
+    shadowableTokens('Read `${CLAUDE_PLUGIN_ROOT}\\skills\\deep-finish\\SKILL.md`'), [],
+    'an anchored backslash path must be accepted, not flagged as unanchored');
+  // The heredoc quote-splice, spelled for Windows. This is the isolating case
+  // for the anchored-prefix lookbehind: PATH_TOKEN cannot start a match on the
+  // leading `\`, so the token arrives as a bare `scripts/…` and only the
+  // preceding-context check knows it was anchored.
+  assert.deepEqual(
+    shadowableTokens('const { x } = require("\'"${CLAUDE_PLUGIN_ROOT}"\'\\scripts\\detect-capability.js");'), [],
+    'a spliced anchor followed by a backslash must still count as anchored');
+});
+
+test('normalising separators does not promote prose into a path', () => {
+  // Collapsing separator runs makes over-flagging the failure mode to watch, so
+  // the text that must stay silent is pinned. But "produces no violation" has
+  // two mechanisms behind it, and asserting only the outcome hides which one is
+  // load-bearing — the first draft of this test asserted silence for five lines
+  // and four of them were silent for a reason the rule never touched.
+  //
+  // So each line declares its mechanism and is checked against it.
+
+  // A. The tokeniser must not see a path here at all. Escape sequences and
+  //    regex bodies are the shapes most at risk once `\` is a separator.
+  for (const line of [
+    'escape a quote with \\" and a backslash with \\\\',
+    'Use `\\n` for a newline and `\\t` for a tab.',
+    'A literal backslash is written `\\\\` in a JS string literal.',
+    'The validator matches /^[A-Za-z]+\\/[a-z-]+$/ against each entry.',
+  ]) {
+    assert.deepEqual([...scopedTokens(line)], [],
+      `no path token may be extracted from: ${line}`);
+    assert.deepEqual(shadowableTokens(line), [], `must not be flagged: ${line}`);
+  }
+
+  // B. Here the tokeniser does extract something — a Windows path quoted inside
+  //    user input is genuinely path-shaped — and it stays silent only because it
+  //    resolves to no plugin file. That is a claim about the rule, so it gets the
+  //    non-vacuity check: declare those exact tokens plugin files and the line
+  //    must be flagged. Nothing is stubbed; only the file set the rule consults
+  //    is changed, so what runs is the real classifier.
+  for (const [line, expected] of [
+    ['Windows paths in user input (`C:\\Users\\me\\project`) are normalised before use.',
+      ['Users/me/project']],
+    ['The workspace was at `D:\\repos\\acme\\notes.md` on that machine.',
+      ['repos/acme/notes.md']],
+    ['const p = "C:\\\\Users\\\\me\\\\notes.md";', ['Users/me/notes.md']],
+  ]) {
+    assert.deepEqual([...scopedTokens(line)], expected,
+      `separator runs must collapse to one canonical token: ${line}`);
+    assert.deepEqual(shadowableTokens(line), [], `must not be flagged: ${line}`);
+
+    for (const t of expected) PLUGIN_FILES.add(t);
+    try {
+      assert.ok(shadowableTokens(line).length > 0,
+        'vacuous negative — this line stays silent even when its tokens name real '
+        + `plugin files, so asserting its silence proves nothing: ${line}`);
+    } finally {
+      for (const t of expected) PLUGIN_FILES.delete(t);
+    }
+  }
 });
 
 test('mixed lines fail on the bare token', () => {
