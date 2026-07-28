@@ -639,6 +639,13 @@ test('an anchor the shell will not expand counts as unanchored', () => {
     // `normal`, which reported nothing. Only reachable once a backslash became
     // legitimate path content.
     [`node 'C:\\tmp\\' '\${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js'`, /single-quoted shell/],
+    // The double-quoted twin. Looking back at the previous character got this one
+    // wrong: the second backslash of the `\\` pair looked escaped, so the closing
+    // quote did too and the double-quote state never ended, leaving the anchor
+    // that follows unflagged. bash returns that anchor as its own literal, so it
+    // genuinely does not expand. Without this row the consume fix can regress in
+    // silence — the single-quoted row above passes under both implementations.
+    [`node "C:\\tmp\\\\" '\${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js'`, /single-quoted shell/],
   ];
   for (const [line, reason] of mustFlag) {
     const hits = nonExpandingAnchors(line);
@@ -1244,11 +1251,25 @@ test('every referenced skill path resolves', () => {
   // three leaf normalisations this file already labels unproven — recorded, not
   // claimed.
   {
+    // `path.posix.join` on purpose. With `path.join` these two are byte-identical
+    // on Windows — `\` is a separator there, so the "un-normalised" form names
+    // the same existing file and the pair contradicts itself, turning the suite
+    // deterministically red on the platform 7.1.1 claims to have fixed.
     const raw = 'scripts\\deep-work-runtime.js';
-    assert.ok(fs.existsSync(path.join(ROOT, normalizePath(raw))),
+    assert.ok(fs.existsSync(path.posix.join(ROOT, normalizePath(raw))),
       'normalising a backslash spelling is what makes it resolve');
-    assert.ok(!fs.existsSync(path.join(ROOT, raw)),
+    assert.ok(!fs.existsSync(path.posix.join(ROOT, raw)),
       'the pair is vacuous unless the un-normalised form really fails');
+    // The reason, asserted rather than only commented, because it cannot be
+    // pinned on a POSIX host: `path.join` would make the pair contradict itself
+    // on Windows, where `\` is a separator and both spellings name one file.
+    // This holds on every platform, so the rationale cannot be lost even though
+    // the fix itself is unobservable here.
+    assert.equal(
+      path.win32.join('C:\\r', 'a\\b.js'),
+      path.win32.join('C:\\r', normalizePath('a\\b.js')),
+      'win32 joins both spellings to one path — hence path.posix above',
+    );
   }
 
   const broken = [];
