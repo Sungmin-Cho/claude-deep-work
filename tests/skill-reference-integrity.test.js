@@ -316,7 +316,12 @@ function expansionState(line, index) {
   let state = 'normal';
   for (let k = 0; k < index; k += 1) {
     const c = line[k];
-    if (line[k - 1] === '\\') continue;
+    // POSIX sh does not treat a backslash as an escape inside single quotes:
+    // `'C:\tmp\'` is the literal `C:\tmp\` and the quote closes. Honouring it
+    // there flips the parity, so a line ending a Windows path in `\` before an
+    // anchor reports `normal` and the non-expanding anchor goes unflagged. Only
+    // reachable now that a backslash is legitimate path content.
+    if (state !== 'single' && line[k - 1] === '\\') continue;
     if (state === 'normal') {
       if (c === "'") state = 'single';
       else if (c === '"') state = 'double';
@@ -619,6 +624,14 @@ test('an anchor the shell will not expand counts as unanchored', () => {
     ['const { m } = require(\`\${CLAUDE_PLUGIN_ROOT}/scripts/migrate-model-routing.js\`);', /template literal/],
     ['const x = require("\${CLAUDE_PLUGIN_ROOT}/runtime/model-catalog.js");', /bare package name/],
     ['import x from \'\${CLAUDE_PLUGIN_ROOT}/runtime/x.js\';', /bare package name/],
+    // A Windows path ending in a backslash, immediately before the anchor.
+    // POSIX sh does not escape inside single quotes — `'C:\tmp\'` is literal and
+    // the quote closes — so the anchor really is single-quoted and really is not
+    // expanded. Verified against bash: the anchor came back as its own literal.
+    // Honouring the backslash as an escape flipped the parity and reported
+    // `normal`, which reported nothing. Only reachable once a backslash became
+    // legitimate path content.
+    [`node 'C:\\tmp\\' '\${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js'`, /single-quoted shell/],
   ];
   for (const [line, reason] of mustFlag) {
     const hits = nonExpandingAnchors(line);
@@ -1173,16 +1186,37 @@ test('mixed lines fail on the bare token', () => {
 });
 
 test('every referenced skill path resolves', () => {
+  // Either separator, everywhere. This resolver bypasses tokenization on
+  // purpose — it reads the raw body — so normalizePath cannot reach it and each
+  // pattern has to accept `\` itself. A slash-only resolver made the backslash
+  // spelling *weaker* than the slash one: `${CLAUDE_PLUGIN_ROOT}\..\evil.json`
+  // matched no FORM, was waved through by deny-by-default as anchored, and then
+  // matched nothing here either, so an out-of-root reference was invisible to
+  // every layer. Captures are normalised before resolution so `path.join` sees
+  // one shape.
   const patterns = [
     // Trailing boundary, same reason as the guard: without it `.js` matches the
     // prefix of `.json` and the resolver reports files that never existed.
-    [/\$\{CLAUDE_PLUGIN_ROOT\}\/([A-Za-z0-9._/-]+\.(?:md|js|sh|json|yaml)(?![A-Za-z0-9]))/g, false],
-    [/`(\.\.\/[A-Za-z0-9._/-]+\.md)(?:#[a-z0-9-]+)?`/g, true],
-    [/\]\((\.\.?\/[A-Za-z0-9._/-]+\.md)\)/g, true],
+    [/\$\{CLAUDE_PLUGIN_ROOT\}[\\/]([A-Za-z0-9._\\/-]+\.(?:md|js|sh|json|yaml)(?![A-Za-z0-9]))/g, false],
+    [/`(\.\.[\\/][A-Za-z0-9._\\/-]+\.md)(?:#[a-z0-9-]+)?`/g, true],
+    [/\]\((\.\.?[\\/][A-Za-z0-9._\\/-]+\.md)\)/g, true],
     // Read("../shared/references/foo.md") — the double-quoted call form, used in
     // five phase skills. It resolves today but was outside the backtick pattern.
-    [/Read\("(\.\.\/[A-Za-z0-9._/-]+\.md)(?:#[a-z0-9-]+)?"\)/g, true],
+    [/Read\("(\.\.[\\/][A-Za-z0-9._\\/-]+\.md)(?:#[a-z0-9-]+)?"\)/g, true],
   ];
+  // Pin the separator symmetry before walking real files: a slash-only resolver
+  // here made the backslash spelling of an out-of-root reference invisible to
+  // every layer, because deny-by-default defers anchored tokens to the FORMS and
+  // `.json` matches none of them. Reverting any separator class below fails this
+  // pair, and it fails on the axis rather than on whatever file happens to be in
+  // the tree.
+  for (const spelling of ['${CLAUDE_PLUGIN_ROOT}/../workspace/evil.json',
+    '${CLAUDE_PLUGIN_ROOT}\\..\\workspace\\evil.json']) {
+    const anchored = patterns[0][0];
+    anchored.lastIndex = 0;
+    assert.ok(anchored.exec(spelling), `resolver must see both spellings: ${spelling}`);
+  }
+
   const broken = [];
   let resolved = 0;
   const realRoot = fs.realpathSync(ROOT);
@@ -1192,9 +1226,10 @@ test('every referenced skill path resolves', () => {
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(body))) {
+        const spelling = normalizePath(m[1]);
         const target = isRelative
-          ? path.resolve(path.dirname(file), m[1])
-          : path.join(ROOT, m[1]);
+          ? path.resolve(path.dirname(file), spelling)
+          : path.join(ROOT, spelling);
         if (!fs.existsSync(target)) {
           broken.push(`${path.relative(ROOT, file)} -> ${m[1]} (missing)`);
           continue;

@@ -28,9 +28,11 @@ full suite, so it is kept on a separate script.
 
 ## Conventions
 
-- **Documentation** follows [`docs/DOCS_RULE.md`](docs/DOCS_RULE.md) (the local
-  maintainer rulebook). The README is evergreen; release notes live only in the
-  CHANGELOG.
+- **Documentation** — the README is evergreen; release notes live only in the
+  CHANGELOG. A fuller maintainer rulebook exists at `docs/DOCS_RULE.md`, but it is
+  **not shipped**: it is gitignored, so your clone does not have it and CI never
+  sees it. Do not try to open it; when it is absent, the rules in this file and in
+  `AGENTS.md` are the whole contract.
 - **CHANGELOG** uses [Keep a Changelog](https://keepachangelog.com/) — add your
   entry under `[Unreleased]` in both `CHANGELOG.md` and `CHANGELOG.ko.md`.
 - **Version triple-sync** — `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`,
