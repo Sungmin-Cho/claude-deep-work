@@ -287,6 +287,15 @@ function denyByDefaultHits(line, sourceFile, body) {
 // plugin document are flagged, so ordinary prose is untouched.
 const BARE_BASENAME = /\b(?:Read|Follow|read|follow)\s*\(?\s*["'`]([A-Za-z0-9][A-Za-z0-9._-]*\.md)(?:#[^`"']*)?["'`]/g;
 
+// The executable twin. A read verb on a `.md` was covered; an interpreter on a
+// runnable file was not, and that shape is strictly more dangerous: `node
+// prep-scout.js` resolves against cwd — the analysed workspace — and running a
+// planted file there is arbitrary code execution with the caller's permissions.
+// Membership in the shipped set is still required, so prose that merely names a
+// script is untouched; it is the interpreter that makes it an instruction.
+const BARE_EXEC_BASENAME =
+  /\b(?:node|python3?|deno|bun|bash|sh|zsh)\s+["'`]?([A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|cjs|mjs|py|sh))["'`]?/g;
+
 function bareBasenameHits(line) {
   const out = [];
   BARE_BASENAME.lastIndex = 0;
@@ -294,6 +303,14 @@ function bareBasenameHits(line) {
   while ((m = BARE_BASENAME.exec(line))) {
     if (PLUGIN_DOCS.has(m[1])) {
       out.push({ form: 'bare-basename', token: m[1], why: 'unanchored' });
+    }
+  }
+  const shippedBasenames = new Set([...PLUGIN_FILES].map((f) => f.split('/').pop()));
+  BARE_EXEC_BASENAME.lastIndex = 0;
+  let em;
+  while ((em = BARE_EXEC_BASENAME.exec(line))) {
+    if (shippedBasenames.has(em[1])) {
+      out.push({ form: 'bare-exec-basename', token: em[1], why: 'unanchored' });
     }
   }
   return out;
@@ -1272,25 +1289,22 @@ test('every referenced skill path resolves', () => {
   // three leaf normalisations this file already labels unproven — recorded, not
   // claimed.
   {
-    // `path.posix.join` on purpose. With `path.join` these two are byte-identical
-    // on Windows — `\` is a separator there, so the "un-normalised" form names
-    // the same existing file and the pair contradicts itself, turning the suite
-    // deterministically red on the platform 7.1.1 claims to have fixed.
+    // A string comparison, not a filesystem probe. Both earlier attempts probed
+    // the disk and both were wrong on Windows: `path.join` makes the two
+    // spellings identical there, and `path.posix.join` only stops *join* from
+    // folding — `fs` folds `/` to `\\` below it, so the un-normalised form still
+    // names the existing file and the pair contradicted itself either way. What
+    // the block is actually documenting is that normalisation changes the string,
+    // and that holds on every platform.
     const raw = 'scripts\\deep-work-runtime.js';
-    assert.ok(fs.existsSync(path.posix.join(ROOT, normalizePath(raw))),
-      'normalising a backslash spelling is what makes it resolve');
-    assert.ok(!fs.existsSync(path.posix.join(ROOT, raw)),
-      'the pair is vacuous unless the un-normalised form really fails');
-    // The reason, asserted rather than only commented, because it cannot be
-    // pinned on a POSIX host: `path.join` would make the pair contradict itself
-    // on Windows, where `\` is a separator and both spellings name one file.
-    // This holds on every platform, so the rationale cannot be lost even though
-    // the fix itself is unobservable here.
-    assert.equal(
-      path.win32.join('C:\\r', 'a\\b.js'),
-      path.win32.join('C:\\r', normalizePath('a\\b.js')),
-      'win32 joins both spellings to one path — hence path.posix above',
-    );
+    assert.notEqual(normalizePath(raw), raw,
+      'normalisation must change a backslash spelling, or nothing below it matters');
+    assert.ok(fs.existsSync(path.join(ROOT, normalizePath(raw))),
+      'and the normalised spelling must name a file that exists');
+    // Load-bearing but unpinned: removing `normalizePath` at the resolution site
+    // breaks no test, because no shipped document is written that way yet. The
+    // failure would first appear as a false `missing` on a file that exists.
+    // Recorded, not claimed — same label this file gives its leaf normalisations.
   }
 
   const broken = [];
