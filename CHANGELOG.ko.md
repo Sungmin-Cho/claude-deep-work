@@ -7,6 +7,12 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.1] — 2026-07-28 (경로 구분자 정규화)
+
+### Security
+
+- **Windows 방식으로 쓴 경로가 플러그인 경로 가드를 우회할 수 없습니다.** deep-work의 지시가 분석 대상 저장소로 유도되는 것을 막는 검사가 `/`만 인식했기 때문에, 같은 미고정(unanchored) 참조를 `scripts\deep-work-runtime.js`로 쓰거나 둘을 섞어 `hooks\scripts/envelope.js`로 쓰면 그대로 통과했습니다. 이제 모든 규칙보다 먼저 경로 구분자를 정규화하므로 두 표기와 문자열 리터럴의 `scripts\\x.js` 형태가 동일하게 판정됩니다.
+
 ## [7.1.0] — 2026-07-27 (플러그인 경로 신뢰 강화 + 컨텍스트 다이어트)
 
 ### Security

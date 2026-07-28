@@ -7,6 +7,12 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.1] — 2026-07-28 (Separator Normalisation)
+
+### Security
+
+- **A Windows-style path spelling no longer escapes the plugin-path guard.** The check that keeps deep-work's own instructions from being redirected into the repository under analysis only understood `/`, so the same unanchored reference written `scripts\deep-work-runtime.js` — or with the two mixed, `hooks\scripts/envelope.js` — passed silently. Path separators are now canonicalised before any rule sees them, so both spellings, and the escaped `scripts\\x.js` form that a string literal produces, are judged identically.
+
 ## [7.1.0] — 2026-07-27 (Plugin-Path Trust Hardening + Context Diet)
 
 ### Security
