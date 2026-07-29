@@ -387,6 +387,21 @@ function expansionState(line, index) {
     // legitimised, and the guard's own fixtures pin `"C:\\Users\\me\\notes.md"`
     // as legal, so the pair form is not hypothetical.
     if (state !== 'single' && c === '\\') { k += 1; continue; }
+    // An apostrophe flanked by word characters — `don't`, `it's`, `the plugin's` —
+    // is English, not a shell quote. This mattered only once every fenced block
+    // became a command context: outside a fence the verb list kept prose out, and
+    // inside one there is no such gate, so `# the plugin's root is ${ANCHOR}/x` in
+    // a ```yaml or ```markdown block read as single-quoted and was flagged.
+    //
+    // Safe for real shell too. A quote that actually opens a single-quoted string
+    // is preceded by whitespace or an operator and followed by the content, so it
+    // is never flanked on both sides; and where bash really would treat `don't` as
+    // an opener, everything after it is quoted anyway, so a following anchor is
+    // literal either way and stays flagged. The narrow reading only ever turns a
+    // false positive into a pass — never the reverse.
+    const wordFlanked = c === "'"
+      && /\w/.test(line[k - 1] || '') && /\w/.test(line[k + 1] || '');
+    if (wordFlanked) continue;
     if (state === 'normal') {
       if (c === "'") state = 'single';
       else if (c === '"') state = 'double';
@@ -815,6 +830,28 @@ test('a fenced code block is a command context, whatever the verb', () => {
   // otherwise this rule would flag every correct command in the documentation.
   assert.equal(nonExpandingAnchors(`cp "${ANCHOR}/x.js" /tmp/staged.js`, true).length, 0,
     'a double-quoted anchor expands; a fence must not turn that into a violation');
+
+  // Prose inside a fence must stay clean. Once every fenced block became a command
+  // context there was no verb list keeping English out, and `expansionState` reads
+  // an apostrophe as a shell quote — so `# the plugin's root is ${ANCHOR}/x` in a
+  // ```yaml or ```markdown block reported single-quoted. The exposure was
+  // fence-only: outside one the same lines were clean, because the verb list
+  // filtered them. Direction was fail-closed, but "no over-flagging" was a
+  // property of today's corpus, not of the rule.
+  for (const prose of [
+    `# the plugin's root is ${ANCHOR}/x`,
+    `# don't use ${ANCHOR}/x directly`,
+    `The plugin's root is ${ANCHOR}/x.`,
+    `it's at ${ANCHOR}/x`,
+  ]) {
+    assert.equal(nonExpandingAnchors(prose, true).length, 0,
+      `an English apostrophe is not a shell quote: ${prose}`);
+  }
+  // And the real quoting cases are untouched — the narrow reading only ever turns
+  // a false positive into a pass, because a quote that genuinely opens a string is
+  // never flanked by word characters on both sides.
+  assert.ok(nonExpandingAnchors(`cp '${ANCHOR}/x.js' /tmp/y`, true).length > 0,
+    'a genuinely single-quoted anchor must still be flagged inside a fence');
 
   // No language is exempt by info string, and that is deliberate. An earlier
   // version exempted `python`, `js`, `diff`, `markdown` and more — the same
