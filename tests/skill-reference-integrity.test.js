@@ -421,27 +421,36 @@ function inlineCodeSpans(line) {
 // FENCED blocks, and a line inside one carries no backticks of its own — so the
 // span test finds nothing there and the code fell back to the verb list it was
 // meant to replace. Measured before fixing: a fenced
-// `cp '${CLAUDE_PLUGIN_ROOT}/scripts/x.js' /tmp/staged.js` was flagged by no
-// layer at all, in this repo and in two siblings.
+// `cp '${CLAUDE_PLUGIN_ROOT}/<a shipped script>' /tmp/staged.js` was flagged by
+// no layer at all, here and in two sibling repos.
 //
-// The fence's info string is markdown's own declaration of what the block holds,
-// so reading it is asking the document rather than guessing. The list below is of
-// languages whose quoting rules are NOT shell's, and it is deliberately the
-// fail-closed direction: an unlabelled or unfamiliar fence counts as a command
-// block, so an unknown language over-flags — which blocks a documentation edit
-// instead of hiding a missed detection.
-const NON_SHELL_FENCE = /^(?:json5?|jsonc|ya?ml|toml|ini|md|markdown|te?xt|diff|patch|[mc]?[jt]sx?|python|py|dot|mermaid|http)$/i;
+// There is deliberately NO list of languages exempted by info string. A first
+// version had one, and it was the same defect one level down: exempting `python`,
+// `js`, `diff` or `markdown` asserts "an anchor is safe here", and in every one of
+// those an anchor inside single quotes is exactly as literal — and as
+// workspace-relative — as it is in shell. What decides is not the language but
+// whether anything expands the anchor, and `expansionState` already answers that:
+// shell double quotes expand, everything else leaves it literal. Removing the list
+// produced zero new violations across the shipped documents of three repos.
 
 function fencedCommandLines(body) {
   const inside = new Set();
-  let openInfo = null;
+  let open = null;                       // the marker that opened the block
   body.split('\n').forEach((line, i) => {
-    const m = /^[ \t]*(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+-]*)/.exec(line);
+    const m = /^[ \t]*(`{3,}|~{3,})/.exec(line);
     if (m) {
-      openInfo = openInfo === null ? m[2].toLowerCase() : null;
+      const ch = m[1][0];
+      const len = m[1].length;
+      // CommonMark closes a fence only on the SAME marker character, at least as
+      // long as the one that opened it. Toggling on anything fence-shaped inverts
+      // the state for the whole rest of the document — and wrapping a ```bash
+      // example inside a ````markdown block is the standard way to document
+      // fenced blocks, which these repos do.
+      if (open === null) open = { ch, len };
+      else if (ch === open.ch && len >= open.len) open = null;
       return;
     }
-    if (openInfo !== null && !NON_SHELL_FENCE.test(openInfo)) inside.add(i);
+    if (open !== null) inside.add(i);
   });
   return inside;
 }
@@ -741,6 +750,17 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
       if (!fs.existsSync(dest)) fs.writeFileSync(dest, '{"SHADOW":"must never be attached"}\n');
     }
 
+    // Excluding directory landings is safe only while no shipped directory is a
+    // Node LOAD_AS_DIRECTORY target. `<dir>/index.js` or `<dir>/package.json#main`
+    // would make a planted DIRECTORY reachable again — the same resolution path
+    // the pinned version-read exemption documents as arbitrary code execution —
+    // and nothing else would notice, because `isFile()` would keep skipping it.
+    assert.deepEqual(
+      [...PLUGIN_FILES].filter((k) => /(^|\/)(index\.[cm]?js|package\.json)$/.test(k)).sort(),
+      [],
+      'a shipped directory just became loadable by name — the isFile() landing '
+      + 'filter now hides a reachable shadow, and must be revisited');
+
     const landed = [];
     for (const file of markdownFiles()) {
       const body = fs.readFileSync(file, 'utf8');
@@ -791,26 +811,43 @@ test('a fenced code block is a command context, whatever the verb', () => {
   assert.ok(nonExpandingAnchors(cmd, true).length > 0,
     'inside a fence the same line is a command and the anchor is literal');
 
-  // The fence classifier itself, so `inFence` is derived and not just declared.
-  const body = [
-    'prose', '```bash', cmd, '```', 'prose',
-    '```json', `{"p": "${ANCHOR}/x.js"}`, '```',
-    '```', cmd, '```',
-  ].join('\n');
-  const fenced = fencedCommandLines(body);
-  assert.ok(fenced.has(2), 'a line in a ```bash block is a command line');
-  assert.ok(!fenced.has(0) && !fenced.has(4), 'prose outside any fence is not');
-  assert.ok(!fenced.has(6),
-    'a ```json block is not a shell context — its quoting rules are not shell\'s');
-  assert.ok(fenced.has(9),
-    'an unlabelled fence counts as a command block: unknown must over-flag, not under-flag');
-  assert.ok(![1, 3, 5, 7, 8, 10].some((n) => fenced.has(n)),
-    'the fence markers themselves are not content lines');
-
   // Double quotes DO expand, so the same line must stay clean inside a fence —
   // otherwise this rule would flag every correct command in the documentation.
   assert.equal(nonExpandingAnchors(`cp "${ANCHOR}/x.js" /tmp/staged.js`, true).length, 0,
     'a double-quoted anchor expands; a fence must not turn that into a violation');
+
+  // No language is exempt by info string, and that is deliberate. An earlier
+  // version exempted `python`, `js`, `diff`, `markdown` and more — the same
+  // enumeration defect one level down, because a single-quoted anchor is exactly
+  // as literal in each of them. What decides is expansion, not language.
+  for (const info of ['bash', '', 'python', 'js', 'diff', 'markdown', 'json']) {
+    const body = ['prose', '```' + info, cmd, '```'].join('\n');
+    assert.ok(fencedCommandLines(body).has(2),
+      `a line inside a \`\`\`${info || '(unlabelled)'} block is a command line`);
+  }
+
+  // Fence marker parity, per CommonMark: a fence closes only on the SAME marker
+  // character, at least as long as the one that opened it. Toggling on anything
+  // fence-shaped inverts the state for the entire rest of the document, and
+  // wrapping a ```bash example in a ````markdown block is the standard way to
+  // document fenced blocks — which these repos do.
+  const wrapped = ['````markdown', '```bash', cmd, '```', '````', 'prose'].join('\n');
+  assert.ok(fencedCommandLines(wrapped).has(2),
+    'a shorter inner fence must not close a longer outer one');
+  assert.ok(!fencedCommandLines(wrapped).has(5),
+    'and the outer fence must still close, or the rest of the file inverts');
+
+  const tilde = ['```bash', '~~~', cmd, '```', 'prose'].join('\n');
+  assert.ok(fencedCommandLines(tilde).has(2),
+    'a tilde run must not close a backtick fence');
+  assert.ok(!fencedCommandLines(tilde).has(4),
+    'the matching backtick fence must still close it');
+
+  // And the ordinary case still works, so the parity rule did not break closing.
+  const plain = ['prose', '```bash', cmd, '```', 'prose'].join('\n');
+  const f = fencedCommandLines(plain);
+  assert.ok(f.has(2) && !f.has(0) && !f.has(4), 'a plain fenced block opens and closes');
+  assert.ok(![1, 3].some((n) => f.has(n)), 'the fence markers are not content lines');
 });
 
 test('an anchor the shell will not expand counts as unanchored', () => {
@@ -1348,6 +1385,14 @@ test('the plugin file index and the tokens looked up in it use one spelling', ()
   const dir = nestedTarget.slice(0, nestedTarget.lastIndexOf('/'));
   const base = nestedTarget.slice(nestedTarget.lastIndexOf('/') + 1);
   const winRelative = (from, to) => path.relative(from, to).split('/').join('\\');
+  // This pin is vacuous unless the DIRECT branch misses. `resolvesInPlugin`
+  // strips the leading `./` and looks the bare basename up first; if a file of
+  // that name sits at the repo root it returns there and the source-relative
+  // branch — the thing being pinned — never runs, while the assertion still sees
+  // `true`. Deriving the target from the shipped set protects against the target
+  // MOVING, which fails loudly; it does nothing about this, which fails silently.
+  assert.equal(winKeys.has(base), false,
+    `a root-level ${base} would make the next assertion vacuous`);
   assert.equal(
     resolvesInPlugin(`./${base}`, path.join(ROOT, dir, 'sibling.md'), winKeys, winRelative),
     true,
