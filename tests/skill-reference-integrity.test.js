@@ -455,6 +455,42 @@ function fencedCommandLines(body) {
   return inside;
 }
 
+// The clause comment has promised "single quotes and quoted heredocs" since it was
+// written, but only the first half was ever implemented. A quoted delimiter makes
+// the whole body literal, and each body line carries no quotes of its own, so the
+// quote-state reading returns `normal` and the anchor went unflagged. Checked
+// against a real shell:
+//
+//   cat <<'EOF' … ${ANCHOR}/x.js … EOF     literal   → flag
+//   cat <<"EOF" … ${ANCHOR}/x.js … EOF     literal   → flag
+//   cat <<\EOF  … ${ANCHOR}/x.js … EOF     literal   → flag
+//   cat <<-'EOF' … ${ANCHOR}/x.js … EOF    literal   → flag
+//   cat <<EOF   … ${ANCHOR}/x.js … EOF     EXPANDS   → clean
+//
+// An opener whose delimiter never appears again is not a heredoc — that is not
+// valid shell — so it is ignored rather than swallowing the rest of the document.
+// Without that, a stray `a << b` in prose would flag everything below it.
+const HEREDOC_OPEN = /<<-?[ \t]*(?:'([^']+)'|"([^"]+)"|\\([A-Za-z_]\w*)|([A-Za-z_]\w*))(?!<)/;
+
+function quotedHeredocLines(body) {
+  const literal = new Set();
+  const lines = body.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = HEREDOC_OPEN.exec(lines[i]);
+    if (!m) continue;
+    const delim = m[1] || m[2] || m[3] || m[4];
+    const quoted = Boolean(m[1] || m[2] || m[3]);
+    let end = -1;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (lines[j].trim() === delim) { end = j; break; }
+    }
+    if (end === -1) continue;                     // never terminated → not a heredoc
+    if (quoted) for (let j = i + 1; j < end; j += 1) literal.add(j);
+    i = end;
+  }
+  return literal;
+}
+
 
 // `${...}` only interpolates in a JS *template literal*. In a quoted string it
 // is inert, and a specifier that does not start with ./ ../ or / is a bare
@@ -476,7 +512,7 @@ const JSON_YAML_VALUE = /"[A-Za-z_][A-Za-z0-9_]*"\s*:\s*"[^"]*\$\{CLAUDE_PLUGIN_
 
 // The expansion axis, generalised by language. Each context answers one
 // question: given where this anchor sits, does anything expand it?
-function nonExpandingAnchors(line, inFence = false) {
+function nonExpandingAnchors(line, inFence = false, inQuotedHeredoc = false) {
   const out = [];
   const flag = (why) => out.push({ form: 'non-expanding-anchor', token: '${CLAUDE_PLUGIN_ROOT}', why });
 
@@ -501,6 +537,13 @@ function nonExpandingAnchors(line, inFence = false) {
   // lines leaves each line individually unterminated, so an anchor on the second
   // line is not flagged. It was not flagged by the previous verb-list gate either.
   const parsesAsCommand = expansionState(line, line.length) !== 'single';
+  // 0. quoted heredoc body — the delimiter decides for the whole body, so no
+  // per-line quote state applies. This is the half of the clause comment that
+  // was documented from the start and never implemented.
+  if (inQuotedHeredoc && line.includes('${CLAUDE_PLUGIN_ROOT}')) {
+    flag('quoted heredoc body — the delimiter is quoted, so nothing expands');
+  }
+
   // 1. shell — single quotes and quoted heredocs leave it literal
   let i = line.indexOf('${CLAUDE_PLUGIN_ROOT}');
   while (i !== -1) {
@@ -599,7 +642,7 @@ test('every skill and agent markdown file has balanced code fences', () => {
 });
 
 // Returns violations on a line: {form, token, why}. Empty when the line is clean.
-function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body = '', inFence = false) {
+function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body = '', inFence = false, inQuotedHeredoc = false) {
   const out = [];
   const programmaticAll = new Set();
   if (body && definesPluginRequire(body)) {
@@ -620,7 +663,7 @@ function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body 
   }
   out.push(...bareBasenameHits(line));
   out.push(...denyByDefaultHits(line, sourceFile, body));
-  out.push(...nonExpandingAnchors(line, inFence));
+  out.push(...nonExpandingAnchors(line, inFence, inQuotedHeredoc));
   return out;
 }
 
@@ -653,8 +696,9 @@ test('no read or exec instruction can be shadowed from the target workspace', ()
   for (const file of markdownFiles()) {
     const body = fs.readFileSync(file, 'utf8');
     const fenced = fencedCommandLines(body);
+    const heredoc = quotedHeredocLines(body);
     body.split('\n').forEach((line, i) => {
-      for (const v of shadowableTokens(line, file, body, fenced.has(i))) {
+      for (const v of shadowableTokens(line, file, body, fenced.has(i), heredoc.has(i))) {
         violations.push(`${path.relative(ROOT, file)}:${i + 1}  [${v.form}] ${v.token} — ${v.why}`);
       }
     });
@@ -816,6 +860,45 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
   } finally {
     fs.rmSync(evil, { recursive: true, force: true });
   }
+});
+
+test('a quoted heredoc body is literal, an unquoted one expands', () => {
+  // The clause comment promised "single quotes and quoted heredocs" from the
+  // start; only the first half was implemented. A quoted delimiter makes the whole
+  // body literal, and a body line carries no quotes of its own, so the quote-state
+  // reading returned `normal` and the anchor went unflagged. Every row was checked
+  // against a real shell before being pinned.
+  const ANCHOR = '${CLAUDE_PLUGIN_ROOT}';
+  const payload = `${ANCHOR}/scripts/x.js`;
+  for (const [open, literal] of [
+    [`cat <<'EOF' > /tmp/x`, true],
+    [`cat <<"EOF" > /tmp/x`, true],
+    [`cat <<\\EOF > /tmp/x`, true],
+    [`cat <<-'EOF' > /tmp/x`, true],
+    [`cat <<EOF > /tmp/x`, false],          // unquoted delimiter → bash expands it
+  ]) {
+    const body = [open, payload, 'EOF'].join('\n');
+    const heredoc = quotedHeredocLines(body);
+    assert.equal(heredoc.has(1), literal,
+      `${open} — body ${literal ? 'is literal' : 'expands'}`);
+    assert.equal(nonExpandingAnchors(payload, false, heredoc.has(1)).length > 0, literal,
+      `${open} — anchor must ${literal ? 'flag' : 'stay clean'}`);
+  }
+
+  // An opener whose delimiter never reappears is not a heredoc — that is not valid
+  // shell. Without this, a stray opener in prose swallows every line below it and
+  // flags the rest of the document. The probe must use a QUOTED opener: with an
+  // unquoted one the `quoted` guard suppresses the lines anyway, so the case would
+  // pass whether or not the termination check exists.
+  const stray = [`documented as a heredoc: cat <<'EOF' writes a literal body`,
+    payload, 'more prose'].join('\n');
+  assert.equal(quotedHeredocLines(stray).size, 0,
+    'an unterminated quoted opener must claim no lines');
+
+  // And the terminator ends it: a line after the delimiter is outside the body.
+  const closed = [`cat <<'EOF'`, payload, 'EOF', payload].join('\n');
+  const hd = quotedHeredocLines(closed);
+  assert.ok(hd.has(1) && !hd.has(3), 'the delimiter line closes the body');
 });
 
 test('a fenced code block is a command context, whatever the verb', () => {
