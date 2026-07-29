@@ -211,8 +211,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 7.1.0 with evergreen usage docs', () => {
-    const version = '7.1.0';
+  it('active release metadata is bumped to 7.1.1 with evergreen usage docs', () => {
+    const version = '7.1.1';
     const featureVersion = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -227,15 +227,23 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (7.1.0) — context diet: references/ split and single agent guide.
+    // Current release (7.1.1) — separator normalisation in the plugin-path guard.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.match(changelogCurrent,/Per-skill `references\/` split/);
-    assert.match(changelogCurrent,/`AGENTS\.md` is the single agent guide/);
-    assert.match(changelogKoCurrent,/스킬별 `references\/` 분할/);
-    assert.match(changelogKoCurrent,/`AGENTS\.md`가 단일 에이전트 가이드/);
+    assert.match(changelogCurrent,/Windows-style path spelling no longer escapes the plugin-path guard/);
+    assert.match(changelogKoCurrent,/Windows 방식으로 쓴 경로가 플러그인 경로 가드를 우회할 수 없습니다/);
+    // The prior release (7.1.0) keeps its own context-diet headlines; a patch
+    // release must not absorb them into its own section.
+    assert.match(releaseSection(changelog, '7.1.0'),/Per-skill `references\/` split/);
+    assert.match(releaseSection(changelog, '7.1.0'),/`AGENTS\.md` is the single agent guide/);
+    assert.match(releaseSection(changelogKo, '7.1.0'),/스킬별 `references\/` 분할/);
+    assert.match(releaseSection(changelogKo, '7.1.0'),/`AGENTS\.md`가 단일 에이전트 가이드/);
+    assert.equal(changelogCurrent.includes('Per-skill `references/` split'), false,
+      'CHANGELOG.md 7.1.1 section must not absorb the 7.1.0 context-diet note');
+    assert.equal(changelogKoCurrent.includes('스킬별 `references/` 분할'), false,
+      'CHANGELOG.ko.md 7.1.1 section must not absorb the 7.1.0 context-diet note');
     // The prior release (7.0.0) section keeps its own Spec / methodology-authority
-    // headlines; the 7.1.0 promotion must not clobber or absorb them.
+    // headlines; the 7.1.x promotions must not clobber or absorb them.
     assert.match(releaseSection(changelog, '7.0.0'),/Explicit Spec phase and profile v4/);
     assert.match(releaseSection(changelog, '7.0.0'),/Single methodology authority/);
     assert.match(releaseSection(changelogKo, '7.0.0'),/정식 Spec phase와 profile v4/);

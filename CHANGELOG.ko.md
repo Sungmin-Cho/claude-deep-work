@@ -7,6 +7,17 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.1] — 2026-07-28 (경로 구분자 정규화)
+
+### Security
+
+- **Windows 방식으로 쓴 경로가 플러그인 경로 가드를 우회할 수 없습니다.** deep-work의 지시가 분석 대상 저장소로 유도되는 것을 막는 검사가 `/`만 인식했기 때문에, 같은 미고정(unanchored) 참조를 `scripts\deep-work-runtime.js`로 쓰거나 둘을 섞어 `hooks\scripts/envelope.js`로 쓰면 그대로 통과했습니다. 이제 모든 규칙보다 먼저 경로 구분자를 정규화하므로 두 표기와 문자열 리터럴의 `scripts\\x.js` 형태가 동일하게 판정됩니다.
+
+### Fixed
+
+- **가드 테스트가 Windows에서 더 이상 실패하지 않습니다.** 플러그인 파일 색인은 호스트의 경로 구분자로 키를 만들고 조회하는 경로는 정규화되어 있어서, Windows에서는 둘이 영영 만나지 못하고 `npm test`가 빨갛게 떴습니다. 이제 양쪽이 같은 표기를 쓰며, 이 불일치는 Windows 제보를 기다리지 않고 POSIX CI에서 재현해 검증합니다. `bash`·심볼릭 링크 픽스처는 호스트가 실제로 그 기능을 갖추지 못한 경우에만 건너뜁니다.
+- **릴리스 절차 정정** (아래 7.1.0 항목의 서술은 틀렸습니다): `npm run release:bump`는 marketplace 매니페스트 **두 개를 모두** 쓰고, 둘 다 검증한 뒤에야 쓰기를 시작하며, `docs:write`와 `preflight`까지 스스로 실행합니다. 손으로 동기화할 파일은 없습니다. 에이전트 가이드가 언급하던 "adoption-ledger" 단계도 존재하지 않습니다.
+
 ## [7.1.0] — 2026-07-27 (플러그인 경로 신뢰 강화 + 컨텍스트 다이어트)
 
 ### Security

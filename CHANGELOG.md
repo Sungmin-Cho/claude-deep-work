@@ -7,6 +7,17 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.1] — 2026-07-28 (Separator Normalisation)
+
+### Security
+
+- **A Windows-style path spelling no longer escapes the plugin-path guard.** The check that keeps deep-work's own instructions from being redirected into the repository under analysis only understood `/`, so the same unanchored reference written `scripts\deep-work-runtime.js` — or with the two mixed, `hooks\scripts/envelope.js` — passed silently. Path separators are now canonicalised before any rule sees them, so both spellings, and the escaped `scripts\\x.js` form that a string literal produces, are judged identically.
+
+### Fixed
+
+- **The guard suite no longer fails on Windows.** Its index of plugin files was keyed with the host's path separator while the paths looked up in it were canonicalised, so on Windows the two never matched and `npm test` went red. Both sides now use one spelling, and the mismatch is reproduced from POSIX CI rather than waiting for a Windows report. The `bash` and symlink fixtures are skipped only when the host genuinely lacks the capability.
+- **Release instructions corrected** (the 7.1.0 note below is wrong): `npm run release:bump` writes **both** marketplace manifests, validates both before writing either, and runs `docs:write` and `preflight` itself. No file needs a hand sync. The agent guide also referenced an "adoption-ledger" step that does not exist.
+
 ## [7.1.0] — 2026-07-27 (Plugin-Path Trust Hardening + Context Diet)
 
 ### Security
