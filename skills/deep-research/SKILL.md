@@ -95,7 +95,7 @@ Phase 1 Research 시작 시 외부 플러그인 데이터를 참조한다. 이 �
 
 ### Deep-Memory Brief Context
 
-`.deep-memory/latest-brief.md`가 프로젝트 루트(`git rev-parse --show-toplevel`을 `$WORK_DIR`에서 실행한 결과 — non-git worktree에서는 `$WORK_DIR`의 가장 가까운 ancestor 중 `.git/` 디렉토리가 있는 위치 — R1-I2)에 존재하면 cross-project semantic operational memory를 Research 컨텍스트로 인용한다. **자동 호출 금지** — brief 파일이 이미 materialize 되어 있는 경우(사용자가 명시적으로 `/deep-memory-brief`를 호출한 결과)에만 인용한다. 자세한 spec은 `docs/deep-memory-integration-handoff.md` §2 참조.
+`.deep-memory/latest-brief.md`가 프로젝트 루트(`git rev-parse --show-toplevel`을 `$WORK_DIR`에서 실행한 결과 — non-git worktree에서는 `$WORK_DIR`의 가장 가까운 ancestor 중 `.git/` 디렉토리가 있는 위치 — R1-I2)에 존재하면 cross-project semantic operational memory를 Research 컨텍스트로 인용한다. **자동 호출 금지** — brief 파일이 이미 materialize 되어 있는 경우(사용자가 명시적으로 `/deep-memory-brief`를 호출한 결과)에만 인용한다.
 
 처리 순서:
 
@@ -112,7 +112,7 @@ Phase 1 Research 시작 시 외부 플러그인 데이터를 참조한다. 이 �
 **Privacy 불변식**:
 - 본 skill은 `/deep-memory-brief`를 **호출하지 않는다**. 오직 이미 존재하는 brief 파일을 읽기만 한다.
 - 본 skill은 `.deep-memory/` 하위에 **쓰지 않는다**. brief 파일은 read-only.
-- 인용 후 feedback hook(memory 평가)은 향후 Phase 4+ PR에서 양쪽 동시 도입 — 현재 PR은 spec만 명시 (`docs/deep-memory-integration-handoff.md` §4).
+- 인용 후 feedback hook(memory 평가)은 향후 Phase 4+ PR에서 양쪽 동시 도입 — 현재 PR은 spec만 명시.
 
 # Section 2: Phase 실행
 

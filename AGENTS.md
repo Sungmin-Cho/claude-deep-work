@@ -8,7 +8,10 @@ Read the version, never hardcode it: `jq -r .version ${CLAUDE_PLUGIN_ROOT}/.clau
 Release history lives in `CHANGELOG.md` / `CHANGELOG.ko.md`; README owns what the
 plugin is and how to use it.
 
-> 📄 Documentation in this repo follows `docs/DOCS_RULE.md` (local maintainer guide).
+> 📄 Doc maintenance follows `docs/DOCS_RULE.md` — a maintainer rulebook that is
+> gitignored and ships with nothing. It exists only in a maintainer's own checkout;
+> never try to open it at runtime, because the only place that path can resolve in an
+> installed plugin is the project being analysed.
 
 ## Runtime surfaces
 
