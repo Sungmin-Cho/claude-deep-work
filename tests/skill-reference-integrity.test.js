@@ -433,10 +433,11 @@ function inlineCodeSpans(line) {
 // shell double quotes expand, everything else leaves it literal. Removing the list
 // produced zero new violations across the shipped documents of three repos.
 
-function fencedCommandLines(body) {
-  const inside = new Set();
-  let open = null;                       // the marker that opened the block
-  body.split('\n').forEach((line, i) => {
+function fenceBlocks(body) {
+  const id = [];
+  let open = null;
+  let n = 0;
+  body.split('\n').forEach((line) => {
     const m = /^[ \t]*(`{3,}|~{3,})/.exec(line);
     if (m) {
       const ch = m[1][0];
@@ -446,12 +447,19 @@ function fencedCommandLines(body) {
       // the state for the whole rest of the document — and wrapping a ```bash
       // example inside a ````markdown block is the standard way to document
       // fenced blocks, which these repos do.
-      if (open === null) open = { ch, len };
-      else if (ch === open.ch && len >= open.len) open = null;
+      if (open === null) { open = { ch, len }; n += 1; } else if (ch === open.ch && len >= open.len) open = null;
+      id.push(null);                       // the marker line is not content
       return;
     }
-    if (open !== null) inside.add(i);
+    id.push(open === null ? null : n);
   });
+  return id;
+}
+
+function fencedCommandLines(body) {
+  const id = fenceBlocks(body);
+  const inside = new Set();
+  id.forEach((block, i) => { if (block !== null) inside.add(i); });
   return inside;
 }
 
@@ -475,14 +483,25 @@ const HEREDOC_OPEN = /<<-?[ \t]*(?:'([^']+)'|"([^"]+)"|\\([A-Za-z_]\w*)|([A-Za-z
 function quotedHeredocLines(body) {
   const literal = new Set();
   const lines = body.split('\n');
+  const block = fenceBlocks(body);
   for (let i = 0; i < lines.length; i += 1) {
-    const m = HEREDOC_OPEN.exec(lines[i]);
+    if (block[i] === null) continue;              // a heredoc outside a fenced block
+    const m = HEREDOC_OPEN.exec(lines[i]);        // is prose describing one
     if (!m) continue;
     const delim = m[1] || m[2] || m[3] || m[4];
     const quoted = Boolean(m[1] || m[2] || m[3]);
+    const dashed = /<<-/.test(lines[i]);
+    const indent = /^[ \t]*/.exec(lines[i])[0];
     let end = -1;
-    for (let j = i + 1; j < lines.length; j += 1) {
-      if (lines[j].trim() === delim) { end = j; break; }
+    for (let j = i + 1; j < lines.length && block[j] === block[i]; j += 1) {
+      // The terminator must sit at the opener's own indentation. Bash closes only
+      // at column 0 and `<<-` strips leading TABS alone, so accepting any
+      // indentation ends the body early and leaves everything after it unmarked —
+      // fail-open. Matching the opener is what a dedented run does, which is how
+      // these documents present commands: deep-work's real heredoc sits three
+      // spaces deep inside a numbered list, opener and terminator alike.
+      const line = dashed ? lines[j].replace(/^\t+/, indent) : lines[j];
+      if (line === `${indent}${delim}`) { end = j; break; }
     }
     if (end === -1) continue;                     // never terminated → not a heredoc
     if (quoted) for (let j = i + 1; j < end; j += 1) literal.add(j);
@@ -870,6 +889,8 @@ test('a quoted heredoc body is literal, an unquoted one expands', () => {
   // against a real shell before being pinned.
   const ANCHOR = '${CLAUDE_PLUGIN_ROOT}';
   const payload = `${ANCHOR}/scripts/x.js`;
+  const fenced = (...lines) => ['```bash', ...lines, '```'].join('\n');
+
   for (const [open, literal] of [
     [`cat <<'EOF' > /tmp/x`, true],
     [`cat <<"EOF" > /tmp/x`, true],
@@ -877,28 +898,50 @@ test('a quoted heredoc body is literal, an unquoted one expands', () => {
     [`cat <<-'EOF' > /tmp/x`, true],
     [`cat <<EOF > /tmp/x`, false],          // unquoted delimiter → bash expands it
   ]) {
-    const body = [open, payload, 'EOF'].join('\n');
-    const heredoc = quotedHeredocLines(body);
-    assert.equal(heredoc.has(1), literal,
+    const heredoc = quotedHeredocLines(fenced(open, payload, 'EOF'));
+    assert.equal(heredoc.has(2), literal,
       `${open} — body ${literal ? 'is literal' : 'expands'}`);
-    assert.equal(nonExpandingAnchors(payload, false, heredoc.has(1)).length > 0, literal,
+    assert.equal(nonExpandingAnchors(payload, false, heredoc.has(2)).length > 0, literal,
       `${open} — anchor must ${literal ? 'flag' : 'stay clean'}`);
   }
 
+  // The terminator must sit at the OPENER's indentation. Bash closes only at
+  // column 0, so accepting any indentation ends the body early and leaves the
+  // lines after it unmarked — fail-open. Matching the opener is what a dedented
+  // run does, which is how these documents present commands: this repo's real
+  // heredoc sits three spaces deep inside a numbered list, opener and terminator
+  // alike, and must still close.
+  const listed = quotedHeredocLines(fenced(`   cat <<'EOF'`, `   ${payload}`, '   EOF', '   after'));
+  assert.ok(listed.has(2) && !listed.has(4),
+    'a heredoc indented as a list item closes at its own indentation');
+  const mismatched = quotedHeredocLines(
+    fenced(`cat <<'EOF'`, 'BODY-ONE', '   EOF', payload, 'EOF'));
+  assert.ok(mismatched.has(4),
+    'an indented terminator does not close a column-0 heredoc — bash agrees, and '
+    + 'ending the body there would leave this anchor unmarked');
+
+  // Opener and terminator must be in the SAME fenced block. Without that a stray
+  // delimiter anywhere later in the document pairs with the opener and marks all
+  // the prose between them as a literal body.
+  const split = ['```bash', `cat <<'EOF'`, '```', `prose ${payload}`, '```text', 'EOF', '```'];
+  assert.equal(quotedHeredocLines(split.join('\n')).size, 0,
+    'an opener cannot pair with a delimiter in a different fenced block');
+  assert.equal(quotedHeredocLines([`cat <<'EOF'`, payload, 'EOF'].join('\n')).size, 0,
+    'a heredoc written outside any fenced block is prose describing one');
+
   // An opener whose delimiter never reappears is not a heredoc — that is not valid
-  // shell. Without this, a stray opener in prose swallows every line below it and
-  // flags the rest of the document. The probe must use a QUOTED opener: with an
-  // unquoted one the `quoted` guard suppresses the lines anyway, so the case would
-  // pass whether or not the termination check exists.
-  const stray = [`documented as a heredoc: cat <<'EOF' writes a literal body`,
-    payload, 'more prose'].join('\n');
+  // shell. Without this, a stray opener in prose swallows every line below it. The
+  // probe must use a QUOTED opener: with an unquoted one the `quoted` guard
+  // suppresses the lines anyway, so the case would pass whether or not the
+  // termination check exists.
+  const stray = fenced(`documented as a heredoc: cat <<'EOF' writes a literal body`,
+    payload, 'more prose');
   assert.equal(quotedHeredocLines(stray).size, 0,
     'an unterminated quoted opener must claim no lines');
 
   // And the terminator ends it: a line after the delimiter is outside the body.
-  const closed = [`cat <<'EOF'`, payload, 'EOF', payload].join('\n');
-  const hd = quotedHeredocLines(closed);
-  assert.ok(hd.has(1) && !hd.has(3), 'the delimiter line closes the body');
+  const closed = quotedHeredocLines(fenced(`cat <<'EOF'`, payload, 'EOF', payload));
+  assert.ok(closed.has(2) && !closed.has(4), 'the delimiter line closes the body');
 });
 
 test('a fenced code block is a command context, whatever the verb', () => {
