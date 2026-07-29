@@ -1282,26 +1282,27 @@ const IGNORED_DIRS = (() => {
     .filter((line) => line && !line.startsWith('#') && !line.startsWith('!') && line.endsWith('/'))
     .map((line) => line.replace(/\/$/, ''));
 })();
-// Two sources, unioned, because neither alone is right.
+// Three arms, each with a stated authority, and no list of variable names.
 //
-// (1) Ask the code. A directory the runtime joins onto a project/repo/cwd root is
-//     written INTO the analysed project by this plugin — that is the contract, in
-//     the only place that cannot drift from behaviour. It is what catches `.claude`
-//     here, which no naming convention would have.
-// (2) Ask the convention. `.deep-*` is the suite's name for a plugin's output root,
-//     and this covers a SIBLING's root — which this repo's runtime never builds, but
-//     which a document may correctly tell an agent to read in the project.
-//
-// A join onto something *plugin*-shaped is excluded: that is a path inside the
-// installed plugin, not the workspace, and carving it out would be a real hole.
-function runtimeWorkspaceDirs(dirs) {
+// (1) ASK THE CODE — a directory this plugin WRITES into a project is its own output
+//     root. Writing is the discriminator, not joining: deep-work's release gate joins
+//     `docs` onto `stateCapability.projectRoot` and only READS it, because `docs/`
+//     belongs to whatever project is being analysed. An earlier version of this probe
+//     matched any join and classified `docs/` as an output root — the rule silencing
+//     the exact class it exists for. A variable-name allowlist was then tried to
+//     separate them and is what this replaces: it admitted 0 of 8 call sites in a
+//     sibling repo, where the project root is simply called `root`.
+// (2) ASK THE CONVENTION — `.deep-*` is the suite's name for a plugin output root.
+//     This covers a SIBLING's root, which this plugin never writes but a document may
+//     correctly tell an agent to read in the project.
+// (3) ASK THE HOST — `.claude` is Claude Code's own per-project directory. It is not
+//     any one plugin's, it always lives in the analysed project, and several plugins
+//     reference it. One named host fact, not an open list.
+function pluginWrittenDirs(dirs) {
+  const WRITE = /(mkdirSync|writeFileSync|appendFileSync|createWriteStream|rmSync|cpSync|renameSync)/;
   const found = new Set();
-  const roots = [];
-  for (const d of ['runtime', 'scripts', 'hooks', 'lib']) {
-    const p = path.join(ROOT, d);
-    if (fs.existsSync(p)) roots.push(p);
-  }
   const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) { walk(p); continue; }
@@ -1309,35 +1310,22 @@ function runtimeWorkspaceDirs(dirs) {
       const body = fs.readFileSync(p, 'utf8');
       for (const d of dirs) {
         if (found.has(d)) continue;
-        const re = new RegExp(
-          String.raw`\b(?:join|resolve)\s*\(\s*([A-Za-z_$][\w$.]*)\s*,\s*['"\`]`
-          + d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`['"\`]`,
-          'g',
-        );
+        const re = new RegExp(`['"\`]${d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"\`]`, 'g');
         let m;
         while ((m = re.exec(body))) {
-          // The variable has to name the ANALYSED project specifically. A bare
-          // `root` or `main` is ambiguous — deep-work's release gate reads
-          // `join(root, 'docs', 'DOCS_RULE.md')` from its OWN repo, and accepting
-          // that shape classified `docs/` as a workspace output, silencing the very
-          // class this rule exists for. Name-shape cannot tell two roots apart, so
-          // only the unambiguous spellings count.
-          if (/plugin/i.test(m[1])) continue;
-          if (/(project|workspace|target)(root|dir|path)?$|^cwd$/i.test(m[1].split('.').pop())) {
-            found.add(d);
-            break;
-          }
+          if (WRITE.test(body.slice(Math.max(0, m.index - 260), m.index + 260))) { found.add(d); break; }
         }
       }
     }
   };
-  roots.forEach(walk);
+  ['runtime', 'scripts', 'hooks', 'lib'].forEach((s) => walk(path.join(ROOT, s)));
   return found;
 }
 
 const WORKSPACE_OUTPUT_DIRS = new Set([
+  ...pluginWrittenDirs(IGNORED_DIRS),
   ...IGNORED_DIRS.filter((d) => d.startsWith('.deep-')),
-  ...runtimeWorkspaceDirs(IGNORED_DIRS),
+  ...IGNORED_DIRS.filter((d) => d === '.claude'),
 ]);
 const MAINTAINER_ONLY_DIRS = IGNORED_DIRS
   .filter((d) => !WORKSPACE_OUTPUT_DIRS.has(d) && d !== 'node_modules');
@@ -1387,13 +1375,14 @@ test('the workspace-output split is derived from the convention, and is two-way'
   assert.ok(WORKSPACE_OUTPUT_DIRS.size > 0,
     'no output root was recognised — then the split is doing nothing and every '
     + 'project-relative reference this plugin makes is about to be flagged');
-  // The probe's failure mode, pinned. `docs/` is read by a maintainer-time release
-  // gate from THIS repo's root; classifying it as a workspace output would silence
-  // the rule for the exact class it exists for. That is what an ambiguous `root`
-  // variable did before the name set was narrowed.
+  // The probe's failure mode, pinned. `docs/` IS joined onto a project root in this
+  // family — deep-work's release gate reads `docs/DOCS_RULE.md` from the project it
+  // is releasing — so a probe that keys on *joining* classifies it as an output root
+  // and silences the rule for the exact class it exists for. Writing is what
+  // separates them: nothing in this family ever writes `docs/`.
   assert.ok(!WORKSPACE_OUTPUT_DIRS.has('docs'),
-    'docs is read from this repo, not written into the analysed project — a probe '
-    + 'that classes it as an output root has silenced the rule');
+    'docs is read, never written — a probe that classes it as an output root has '
+    + 'silenced the rule');
   assert.ok(MAINTAINER_ONLY_DIRS.length < IGNORED_DIRS.length,
     'nothing was split off — the rule is unchanged, which is not what its comment claims');
 });
