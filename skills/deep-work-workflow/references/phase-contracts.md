@@ -147,5 +147,5 @@ For detailed guidance, see [Testing Guide](../../shared/references/testing-guide
 
 ### Phase 6: Integrate (skippable)
 
-Phase 5 Test 완료 후 옵션으로 호출되는 "다음 단계 추천 루프". 설치된 `deep-review`/`deep-docs`/`deep-wiki`/`deep-dashboard`/`deep-evolve` 플러그인의 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면, 사용자가 선택·실행하거나 skip·finish한다. `--skip-integrate`로 건너뛸 수 있고, `/deep-integrate`로 명시적 재진입도 가능하다. 자세한 UX/데이터 계약은 `docs/superpowers/specs/2026-04-18-phase5-integrate-design.md` 참조.
+Phase 5 Test 완료 후 옵션으로 호출되는 "다음 단계 추천 루프". 설치된 `deep-review`/`deep-docs`/`deep-wiki`/`deep-dashboard`/`deep-evolve` 플러그인의 아티팩트를 읽어 AI가 최대 3개의 다음 단계를 추천하면, 사용자가 선택·실행하거나 skip·finish한다. `--skip-integrate`로 건너뛸 수 있고, `/deep-integrate`로 명시적 재진입도 가능하다. 자세한 UX/데이터 계약은참조.
 

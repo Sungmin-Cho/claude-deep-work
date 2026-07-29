@@ -1255,6 +1255,189 @@ test('a planted node_modules shadow cannot hijack a plugin require', () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Maintainer-only paths named in shipped documents.
+//
+// A gitignored directory does not exist in an installed plugin, so a path under
+// one can only ever resolve against the ANALYSED PROJECT. Naming it in a shipped
+// instruction hands that instruction to the project under analysis — the same
+// substitution the anchoring rules exist to prevent, arriving by a route
+// deny-by-default cannot see, because the path resolves nowhere in the index.
+//
+// This repo had no such rule. A cross-repo sweep planted
+// `See `docs/UNDECLARED_RULES.md` for the rest.` in four sibling guards: two
+// flagged it, this one did not. `docs/` is gitignored here, so the class is real
+// and was simply unguarded.
+//
+// Not every gitignored directory qualifies. `.deep-*` is the suite's naming
+// convention for a plugin's workspace output root, and for those, resolving
+// against the analysed project is the CONTRACT rather than the defect — including
+// a SIBLING's root, since telling an agent to read `.deep-review/…` in the project
+// is a correct reference. The split asks that convention instead of guessing, and
+// is asserted in both directions below.
+const IGNORED_DIRS = (() => {
+  const body = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
+  return body.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#') && !line.startsWith('!') && line.endsWith('/'))
+    .map((line) => line.replace(/\/$/, ''));
+})();
+// Two sources, unioned, because neither alone is right.
+//
+// (1) Ask the code. A directory the runtime joins onto a project/repo/cwd root is
+//     written INTO the analysed project by this plugin — that is the contract, in
+//     the only place that cannot drift from behaviour. It is what catches `.claude`
+//     here, which no naming convention would have.
+// (2) Ask the convention. `.deep-*` is the suite's name for a plugin's output root,
+//     and this covers a SIBLING's root — which this repo's runtime never builds, but
+//     which a document may correctly tell an agent to read in the project.
+//
+// A join onto something *plugin*-shaped is excluded: that is a path inside the
+// installed plugin, not the workspace, and carving it out would be a real hole.
+function runtimeWorkspaceDirs(dirs) {
+  const found = new Set();
+  const roots = [];
+  for (const d of ['runtime', 'scripts', 'hooks', 'lib']) {
+    const p = path.join(ROOT, d);
+    if (fs.existsSync(p)) roots.push(p);
+  }
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.[cm]?js$/.test(e.name) || /\.test\.[cm]?js$/.test(e.name)) continue;
+      const body = fs.readFileSync(p, 'utf8');
+      for (const d of dirs) {
+        if (found.has(d)) continue;
+        const re = new RegExp(
+          String.raw`\b(?:join|resolve)\s*\(\s*([A-Za-z_$][\w$.]*)\s*,\s*['"\`]`
+          + d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + String.raw`['"\`]`,
+          'g',
+        );
+        let m;
+        while ((m = re.exec(body))) {
+          // The variable has to name the ANALYSED project specifically. A bare
+          // `root` or `main` is ambiguous — deep-work's release gate reads
+          // `join(root, 'docs', 'DOCS_RULE.md')` from its OWN repo, and accepting
+          // that shape classified `docs/` as a workspace output, silencing the very
+          // class this rule exists for. Name-shape cannot tell two roots apart, so
+          // only the unambiguous spellings count.
+          if (/plugin/i.test(m[1])) continue;
+          if (/(project|workspace|target)(root|dir|path)?$|^cwd$/i.test(m[1].split('.').pop())) {
+            found.add(d);
+            break;
+          }
+        }
+      }
+    }
+  };
+  roots.forEach(walk);
+  return found;
+}
+
+const WORKSPACE_OUTPUT_DIRS = new Set([
+  ...IGNORED_DIRS.filter((d) => d.startsWith('.deep-')),
+  ...runtimeWorkspaceDirs(IGNORED_DIRS),
+]);
+const MAINTAINER_ONLY_DIRS = IGNORED_DIRS
+  .filter((d) => !WORKSPACE_OUTPUT_DIRS.has(d) && d !== 'node_modules');
+
+// Declared exceptions: a maintainer-only path a document may name, and the clauses
+// that earn the exception. The declaration is not a waiver — the test below makes
+// the naming document carry each clause, so an entry here without the sentence is
+// a failure, not a bypass.
+const NON_SHIPPED_DECLARED = new Map([
+  ['docs/DOCS_RULE.md', [
+    /ships with nothing/,
+    /never try to open it at runtime/,
+    /only place that path can resolve in an installed plugin is the project being analysed/,
+  ]],
+]);
+
+test('a path the plugin never ships carries the sentence that makes it safe', () => {
+  const missing = [];
+  for (const [declared, clauses] of NON_SHIPPED_DECLARED) {
+    for (const file of markdownFiles()) {
+      // Whitespace-normalised, blockquote markers dropped: a caveat's meaning does
+      // not depend on where it wraps, and a test that breaks on rewrapping teaches
+      // people to rewrap rather than to keep the sentence.
+      const body = fs.readFileSync(file, 'utf8')
+        .replace(/\n\s*>?\s*/g, ' ')
+        .replace(/\s+/g, ' ');
+      if (!body.includes(declared)) continue;
+      for (const clause of clauses) {
+        if (!clause.test(body)) {
+          missing.push(`${path.relative(ROOT, file)} names ${declared} but is missing: ${clause.source}`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(missing, [],
+    'a document names a path that ships with nothing, without the caveat that keeps a '
+    + `reader from opening it in the analysed project:\n  ${missing.join('\n  ')}`);
+});
+
+test('the workspace-output split is derived from the convention, and is two-way', () => {
+  assert.ok(IGNORED_DIRS.length > 0, '.gitignore yielded no ignored directories');
+  assert.ok(MAINTAINER_ONLY_DIRS.includes('docs'),
+    'docs must be swept — it is the class this rule exists for');
+  for (const dir of MAINTAINER_ONLY_DIRS) {
+    assert.ok(!dir.startsWith('.deep-'), `${dir} is an output root but is swept`);
+  }
+  assert.ok(WORKSPACE_OUTPUT_DIRS.size > 0,
+    'no output root was recognised — then the split is doing nothing and every '
+    + 'project-relative reference this plugin makes is about to be flagged');
+  // The probe's failure mode, pinned. `docs/` is read by a maintainer-time release
+  // gate from THIS repo's root; classifying it as a workspace output would silence
+  // the rule for the exact class it exists for. That is what an ambiguous `root`
+  // variable did before the name set was narrowed.
+  assert.ok(!WORKSPACE_OUTPUT_DIRS.has('docs'),
+    'docs is read from this repo, not written into the analysed project — a probe '
+    + 'that classes it as an output root has silenced the rule');
+  assert.ok(MAINTAINER_ONLY_DIRS.length < IGNORED_DIRS.length,
+    'nothing was split off — the rule is unchanged, which is not what its comment claims');
+});
+
+test('no undeclared path under a maintainer-only directory is named', () => {
+  // Lexical over raw lines, never consulting the resolver: that is what makes it
+  // immune to any index blind spot, and why both separators are spelled out —
+  // `normalizePath` never reaches here, so with `/` alone the backslash spelling
+  // walks straight past.
+  //
+  // Negative lookbehind rather than a prefix list. Enumerating the characters that
+  // may precede a path makes every character nobody thought of a bypass:
+  // `**docs/X.md**` and `[docs/Y.md](…)` are ordinary markdown and slip past a
+  // space/backtick/quote/paren list.
+  const escaped = MAINTAINER_ONLY_DIRS.map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp(String.raw`(?<![A-Za-z0-9._\\/-])((?:${escaped})[\\/][A-Za-z0-9._\\/-]+)`, 'g');
+
+  // Both spellings and both prefix shapes, pinned on the axis rather than left to
+  // whatever the corpus happens to contain today.
+  for (const probe of ['See `docs/backlog.md` for the rest.', 'See `docs\\backlog.md` too.',
+    '**docs/bold.md** matters', '[docs/link.md](x) matters']) {
+    re.lastIndex = 0;
+    assert.ok(re.exec(probe), `the sweep must see: ${probe}`);
+  }
+  re.lastIndex = 0;
+  assert.equal(re.exec('nodocs/notapath.md is mid-token'), null,
+    'a match must not start mid-token');
+
+  const violations = [];
+  for (const file of markdownFiles()) {
+    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(line))) {
+        if (NON_SHIPPED_DECLARED.has(m[1])) continue;   // earned by the caveat test above
+        violations.push(`${path.relative(ROOT, file)}:${i + 1}  ${m[1]}`);
+      }
+    });
+  }
+  assert.deepEqual(violations, [],
+    'a path under a maintainer-only directory is named in a shipped document; it '
+    + 'resolves only against the analysed project:\n  ' + violations.join('\n  '));
+});
+
 test('markdown link destinations are never environment variables', () => {
   // The mirror image of the anchor rule. Markdown does not interpolate, so an
   // anchored link destination is a literal broken URL. r8 declared link targets
