@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const ALWAYS_LOADED = ['AGENTS.md', 'CLAUDE.md'];
@@ -162,21 +163,51 @@ const FORMS = [
 // rather than a switch that can turn the rule off.
 const repoKey = (from, to, relative = path.relative) => normalizePath(relative(from, to));
 
-const PLUGIN_FILES = (() => {
+// `toKey` is the same kind of seam as repoKey's `relative`: it defaults to the
+// production derivation and turns nothing off, but it lets a test build the index
+// the way a Windows host spells it and then drive the real lookup against it. That
+// is what makes both sides of the comparison behaviourally decidable from a POSIX
+// runner — a source-text assertion can only pin the spelling of the call.
+// The index must be what the plugin SHIPS, and the package already declares that
+// — `package.json#files` is what npm packs, so it is the authority rather than a
+// second list kept in this file. The previous `skip` set enumerated eight
+// directory names to walk past and missed `.deep-review`, `.deep-loop`,
+// `.deep-docs`, `.deep-memory` and `.serena`, all gitignored: 348 of 673 keys came
+// from directories absent in a clean clone, plus an untracked scratch `PLAN.md`.
+// So what deny-by-default could see differed between a maintainer's checkout and
+// CI — with CI on the lax side. Intersecting tracked files with the shipped
+// prefixes removes the whole class instead of extending the list.
+//
+// `docs/` and `tests/` fall out of this by themselves: `npm pack --dry-run` packs
+// zero entries from either. They are maintainer-only, so a reference into them is
+// not a runtime read an analysed workspace could shadow.
+function shippedPrefixes() {
+  const declared = require(path.join(ROOT, 'package.json')).files;
+  assert.ok(Array.isArray(declared) && declared.length,
+    'package.json#files is the shipped-set authority — the index has no source without it');
+  return declared.map((f) => normalizePath(f).replace(/\/$/, ''));
+}
+
+function trackedFiles() {
+  const out = execFileSync('git', ['-C', ROOT, 'ls-files', '-z'], { encoding: 'utf8' });
+  return out.split('\0').filter(Boolean);
+}
+
+function buildPluginFiles({
+  toKey = (p) => repoKey(ROOT, p),
+  tracked = trackedFiles(),
+  prefixes = shippedPrefixes(),
+} = {}) {
   const rel = new Set();
-  const skip = new Set(['node_modules', '.git', '.claude', '.deep-work', 'docs',
-    'tests', '.deep-suite-cache', '.bootstrap-prep']);
-  const walk = (d) => {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      if (skip.has(e.name)) continue;
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else rel.add(repoKey(ROOT, p));
-    }
-  };
-  walk(ROOT);
+  for (const gitPath of tracked) {
+    const key = normalizePath(gitPath);
+    if (!prefixes.some((p) => key === p || key.startsWith(`${p}/`))) continue;
+    rel.add(normalizePath(toKey(path.join(ROOT, gitPath))));
+  }
   return rel;
-})();
+}
+
+const PLUGIN_FILES = buildPluginFiles();
 
 // The only permitted exceptions, each with the reason it is safe.
 const ALLOWLIST = new Map([
@@ -204,12 +235,12 @@ const ROOT_METADATA = new Set(['package.json', 'plugin.json', 'assumptions.json'
 // normalizePath's own run-collapsing reachable.
 const PATH_TOKEN = /[A-Za-z0-9_.@${}<>-]+(?:[\\/]+[A-Za-z0-9_.@{}|*-]+)+|[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,6}\b/g;
 
-function resolvesInPlugin(token, sourceFile) {
+function resolvesInPlugin(token, sourceFile, files = PLUGIN_FILES, relative = path.relative) {
   const clean = normalizePath(token).replace(/^\.\//, '');
-  if (PLUGIN_FILES.has(clean)) return true;
+  if (files.has(clean)) return true;
   try {
-    const fromSource = repoKey(ROOT, path.resolve(path.dirname(sourceFile), normalizePath(token)));
-    if (PLUGIN_FILES.has(fromSource)) return true;
+    const fromSource = repoKey(ROOT, path.resolve(path.dirname(sourceFile), clean), relative);
+    if (files.has(fromSource)) return true;
   } catch { /* unresolvable token — prose */ }
   return false;
 }
@@ -263,13 +294,23 @@ function definesPluginRequire(body) {
     && /escapes root/.test(body);
 }
 
-function denyByDefaultHits(line, sourceFile, body) {
-  const programmatic = new Set();
+// Shared, so the classifier and the malicious-workspace fixture cannot disagree
+// about what counts as anchored. They did: the fixture called the tokeniser
+// without `body`, so it could not apply this exemption, and every documented
+// `pluginRequire("runtime/x.js")` — the SAFE form, per FORM_CASES — was resolved
+// against the evil cwd and reported as a landing.
+function programmaticallyAnchored(line, body) {
+  const out = new Set();
   if (body && definesPluginRequire(body)) {
     PLUGIN_REQUIRE_CALL.lastIndex = 0;
     let pm;
-    while ((pm = PLUGIN_REQUIRE_CALL.exec(line))) programmatic.add(pm[1]);
+    while ((pm = PLUGIN_REQUIRE_CALL.exec(line))) out.add(pm[1]);
   }
+  return out;
+}
+
+function denyByDefaultHits(line, sourceFile, body) {
+  const programmatic = programmaticallyAnchored(line, body);
   const out = [];
   for (const token of scopedTokens(line)) {
     if (ANCHORED_TOKEN.test(token)) continue;          // clause B checks these
@@ -376,6 +417,35 @@ function inlineCodeSpans(line) {
   return spans;
 }
 
+// An inline span was only half the structure. Commands are mostly written in
+// FENCED blocks, and a line inside one carries no backticks of its own — so the
+// span test finds nothing there and the code fell back to the verb list it was
+// meant to replace. Measured before fixing: a fenced
+// `cp '${CLAUDE_PLUGIN_ROOT}/scripts/x.js' /tmp/staged.js` was flagged by no
+// layer at all, in this repo and in two siblings.
+//
+// The fence's info string is markdown's own declaration of what the block holds,
+// so reading it is asking the document rather than guessing. The list below is of
+// languages whose quoting rules are NOT shell's, and it is deliberately the
+// fail-closed direction: an unlabelled or unfamiliar fence counts as a command
+// block, so an unknown language over-flags — which blocks a documentation edit
+// instead of hiding a missed detection.
+const NON_SHELL_FENCE = /^(?:json5?|jsonc|ya?ml|toml|ini|md|markdown|te?xt|diff|patch|[mc]?[jt]sx?|python|py|dot|mermaid|http)$/i;
+
+function fencedCommandLines(body) {
+  const inside = new Set();
+  let openInfo = null;
+  body.split('\n').forEach((line, i) => {
+    const m = /^[ \t]*(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+-]*)/.exec(line);
+    if (m) {
+      openInfo = openInfo === null ? m[2].toLowerCase() : null;
+      return;
+    }
+    if (openInfo !== null && !NON_SHELL_FENCE.test(openInfo)) inside.add(i);
+  });
+  return inside;
+}
+
 
 // `${...}` only interpolates in a JS *template literal*. In a quoted string it
 // is inert, and a specifier that does not start with ./ ../ or / is a bare
@@ -397,18 +467,24 @@ const JSON_YAML_VALUE = /"[A-Za-z_][A-Za-z0-9_]*"\s*:\s*"[^"]*\$\{CLAUDE_PLUGIN_
 
 // The expansion axis, generalised by language. Each context answers one
 // question: given where this anchor sits, does anything expand it?
-function nonExpandingAnchors(line) {
+function nonExpandingAnchors(line, inFence = false) {
   const out = [];
   const flag = (why) => out.push({ form: 'non-expanding-anchor', token: '${CLAUDE_PLUGIN_ROOT}', why });
 
   // 1. shell — single quotes and quoted heredocs leave it literal
   let i = line.indexOf('${CLAUDE_PLUGIN_ROOT}');
   while (i !== -1) {
-    const __span = inlineCodeSpans(line).find(([s, e]) => i >= s && i < e);
-      const __literal = __span
-        ? expansionState(line.slice(__span[0], __span[1]), i - __span[0]) === 'single'
-        : SHELL_COMMAND.test(line) && expansionState(line, i) === 'single';
-      if (__literal) {
+    const span = inlineCodeSpans(line).find(([s, e]) => i >= s && i < e);
+    // Three command contexts, and the answer is their disjunction rather than a
+    // first-match. A span narrows the view to the backticks, which loses any
+    // quote the span sits *inside*: ``node '`${CLAUDE_PLUGIN_ROOT}`/x.js'`` is
+    // single-quoted on the line and unquoted within the span, and evaluating
+    // only the span called it safe. Either reading finding it literal is enough.
+    const literalInSpan = !!span
+      && expansionState(line.slice(span[0], span[1]), i - span[0]) === 'single';
+    const literalOnLine = (inFence || SHELL_COMMAND.test(line))
+      && expansionState(line, i) === 'single';
+    if (literalInSpan || literalOnLine) {
       flag('single-quoted shell — literal, so the path resolves against the workspace');
     }
     i = line.indexOf('${CLAUDE_PLUGIN_ROOT}', i + 1);
@@ -493,7 +569,7 @@ test('every skill and agent markdown file has balanced code fences', () => {
 });
 
 // Returns violations on a line: {form, token, why}. Empty when the line is clean.
-function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body = '') {
+function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body = '', inFence = false) {
   const out = [];
   const programmaticAll = new Set();
   if (body && definesPluginRequire(body)) {
@@ -514,7 +590,7 @@ function shadowableTokens(line, sourceFile = path.join(ROOT, 'AGENTS.md'), body 
   }
   out.push(...bareBasenameHits(line));
   out.push(...denyByDefaultHits(line, sourceFile, body));
-  out.push(...nonExpandingAnchors(line));
+  out.push(...nonExpandingAnchors(line, inFence));
   return out;
 }
 
@@ -522,19 +598,33 @@ test('the always-loaded agent guides are in the scan set', () => {
   // r6 reported these as covered when markdownFiles() still walked only
   // skills/ and agents/. Asserting membership means the coverage claim is
   // checked by the suite rather than by a commit message.
-  const scanned = markdownFiles().map((f) => path.relative(ROOT, f));
+  // Root-level entries in ALWAYS_LOADED have no separator, so a Windows
+  // emulation over them alone cannot fail — it would be a decorative
+  // assertion. The derivation is pinned against a real nested document
+  // instead, which is where the spelling actually diverges. `relative` is a
+  // seam, not a switch: it defaults to the host's and turns nothing off.
+  const scanKeys = (rel = path.relative) =>
+    markdownFiles().map((f) => normalizePath(rel(ROOT, f)));
+  const scanned = scanKeys();
   for (const doc of ALWAYS_LOADED) {
     assert.ok(fs.existsSync(path.join(ROOT, doc)), `${doc} must exist to be scanned`);
     assert.ok(scanned.includes(doc), `${doc} must be in the shadow-guard scan set`);
   }
+  const nested = scanned.find((k) => k.includes('/'));
+  assert.ok(nested,
+    'the scan set must hold a nested document, or the next assertion proves nothing');
+  assert.ok(scanKeys(path.win32.relative).includes(nested),
+    `the Windows spelling of ${nested} must be the same key as the host's — `
+    + 'otherwise every membership check against a slash literal misses there');
 });
 
 test('no read or exec instruction can be shadowed from the target workspace', () => {
   const violations = [];
   for (const file of markdownFiles()) {
     const body = fs.readFileSync(file, 'utf8');
+    const fenced = fencedCommandLines(body);
     body.split('\n').forEach((line, i) => {
-      for (const v of shadowableTokens(line, file, body)) {
+      for (const v of shadowableTokens(line, file, body, fenced.has(i))) {
         violations.push(`${path.relative(ROOT, file)}:${i + 1}  [${v.form}] ${v.token} — ${v.why}`);
       }
     });
@@ -619,24 +709,55 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
   // under test, not an accident of this fixture.
   const evil = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-evil-workspace-'));
   try {
-    for (const name of ['adaptive-review-protocol.md', 'model-routing-guide.md', 'SKILL.md']) {
-      fs.writeFileSync(path.join(evil, name), '# SHADOW — must never be read\n');
+    // Derived, not enumerated. This repo is the one the siblings were ported
+    // from, and it is the only one that kept a hand list — 3 basenames plus 2
+    // specific files against a 300-plus-key index. Measured consequence: five
+    // unsafe spellings (read-verb, direct-exec, module-load, executable-token,
+    // separator-run) planted into AGENTS.md fired the classifier while this
+    // layer — the only one that proves a planted file is actually reached —
+    // stayed silent, because nothing had been planted where they would land.
+    // A hand list covers the paths someone remembered; deriving from the index
+    // makes coverage follow the tree.
+    //
+    // Repo-relative paths only. Planting bare basenames as well was tried and
+    // reverted: a document that merely mentions a shipped basename in prose then
+    // registers as a landing. That shape is handled by detection instead
+    // (BARE_EXEC_BASENAME), where an interpreter is what makes it an instruction.
+    for (const rel of PLUGIN_FILES) {
+      const dest = path.join(evil, rel);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      if (!fs.existsSync(dest)) fs.writeFileSync(dest, '# SHADOW — must never be read\n');
     }
-    fs.mkdirSync(path.join(evil, 'skills', 'deep-integrate', 'schema'), { recursive: true });
-    fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'phase5-record-error.sh'),
-      '#!/bin/sh\necho SHADOW\n');
+    // Two plants the index cannot supply, kept deliberately.
     // The r8 finding: a schema attached to the Phase 5 recommendation prompt.
     // Neither a `.md` read nor a `.js`/`.sh` token, so every earlier form list
     // missed it — which is why the rule is now resolution, not syntax.
-    fs.writeFileSync(path.join(evil, 'skills', 'deep-integrate', 'schema', 'llm-output.json'),
-      '{"SHADOW":"must never be attached"}\n');
+    for (const extra of [
+      path.join('skills', 'deep-integrate', 'schema', 'llm-output.json'),
+      'adaptive-review-protocol.md', // bare basename, the non-vacuity control below
+    ]) {
+      const dest = path.join(evil, extra);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      if (!fs.existsSync(dest)) fs.writeFileSync(dest, '{"SHADOW":"must never be attached"}\n');
+    }
 
     const landed = [];
     for (const file of markdownFiles()) {
-      fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      const body = fs.readFileSync(file, 'utf8');
+      body.split('\n').forEach((line, i) => {
+        // Same exemption the classifier applies. Without `body` this layer
+        // cannot see it, and then every `pluginRequire("runtime/x.js")` — the
+        // form FORM_CASES enumerates as SAFE — reads as a landing.
+        const programmatic = programmaticallyAnchored(line, body);
         for (const token of scopedTokens(line)) {
+          if (programmatic.has(token)) continue;
           const target = resolveAsAgentWould(token, evil);
-          if (target.startsWith(evil + path.sep) && fs.existsSync(target)) {
+          // A landing must be a FILE. Planting every shipped path creates the
+          // directories above it, so `existsSync` alone reports a hit for any
+          // prose that names a shipped directory — `hooks/scripts`, say — where
+          // nothing shadowable was planted at all.
+          if (target.startsWith(evil + path.sep)
+              && fs.existsSync(target) && fs.statSync(target).isFile()) {
             landed.push(`${path.relative(ROOT, file)}:${i + 1}  ${token} → ${target}`);
           }
         }
@@ -654,6 +775,42 @@ test('a malicious workspace cannot shadow any instruction the plugin issues', ()
   } finally {
     fs.rmSync(evil, { recursive: true, force: true });
   }
+});
+
+test('a fenced code block is a command context, whatever the verb', () => {
+  // The gap this pins was live in three repos at once and invisible to every
+  // layer: `inlineCodeSpans` finds only INLINE spans, a line inside a ```bash
+  // block has no backticks of its own, and the fallback was the very verb list
+  // the span rule was introduced to replace. Commands are mostly written in
+  // fenced blocks, so that fallback covered the minority case.
+  const ANCHOR = '${CLAUDE_PLUGIN_ROOT}';
+  const cmd = `cp '${ANCHOR}/x.js' /tmp/staged.js`;   // no backticks, unlisted verb
+
+  assert.equal(nonExpandingAnchors(cmd, false).length, 0,
+    'outside a fence this line is prose to the verb list — that is the gap, stated');
+  assert.ok(nonExpandingAnchors(cmd, true).length > 0,
+    'inside a fence the same line is a command and the anchor is literal');
+
+  // The fence classifier itself, so `inFence` is derived and not just declared.
+  const body = [
+    'prose', '```bash', cmd, '```', 'prose',
+    '```json', `{"p": "${ANCHOR}/x.js"}`, '```',
+    '```', cmd, '```',
+  ].join('\n');
+  const fenced = fencedCommandLines(body);
+  assert.ok(fenced.has(2), 'a line in a ```bash block is a command line');
+  assert.ok(!fenced.has(0) && !fenced.has(4), 'prose outside any fence is not');
+  assert.ok(!fenced.has(6),
+    'a ```json block is not a shell context — its quoting rules are not shell\'s');
+  assert.ok(fenced.has(9),
+    'an unlabelled fence counts as a command block: unknown must over-flag, not under-flag');
+  assert.ok(![1, 3, 5, 7, 8, 10].some((n) => fenced.has(n)),
+    'the fence markers themselves are not content lines');
+
+  // Double quotes DO expand, so the same line must stay clean inside a fence —
+  // otherwise this rule would flag every correct command in the documentation.
+  assert.equal(nonExpandingAnchors(`cp "${ANCHOR}/x.js" /tmp/staged.js`, true).length, 0,
+    'a double-quoted anchor expands; a fence must not turn that into a violation');
 });
 
 test('an anchor the shell will not expand counts as unanchored', () => {
@@ -1164,19 +1321,51 @@ test('the plugin file index and the tokens looked up in it use one spelling', ()
   assert.ok(rebuilt.size > 100,
     `emulation swept only ${rebuilt.size} keys — the index is too small to be real`);
 
-  // The two call sites cannot be told apart behaviourally from a POSIX runner:
-  // path.relative already returns `/` here, so `repoKey(...)` and
-  // `path.relative(...)` produce identical output and no assertion can
-  // distinguish them. The Windows difference is real but undecidable from this
-  // host, so the call sites are pinned structurally instead — the same technique
-  // this file already uses to require the documented pluginRequire helpers to
-  // realpath. Mutating either site back to a raw path.relative fails here.
-  const src = fs.readFileSync(__filename, 'utf8');
-  assert.match(src, /rel\.add\(repoKey\(ROOT, p\)\)/,
-    'the index must be built through repoKey, not a raw path.relative');
-  assert.match(src, /const fromSource = repoKey\(ROOT,/,
-    'the source-relative lookup must go through repoKey too — it is the other '
-    + 'side of the same comparison');
+  // Both call sites, driven behaviourally rather than pinned by source text. A
+  // source-text assertion pins the spelling of a call; it cannot see the
+  // normalisation being removed from inside the function that call names. The
+  // seams make the real thing decidable: build the index the way a Windows host
+  // spells it, then run the production lookup against it.
+  const winKeys = buildPluginFiles({
+    toKey: (p) => path.relative(ROOT, p).split(path.sep).join('\\'),
+  });
+  assert.ok(winKeys.has('scripts/deep-work-runtime.js'),
+    'key generation must normalise, not merely store what the platform produced');
+
+  // Nested source on purpose: from a root-level document `dirname` is ROOT, so the
+  // source-relative branch reproduces the direct branch and would rescue an
+  // un-normalised token, hiding what these assertions claim to pin.
+  const nested = path.join(ROOT, 'skills', 'deep-implement', 'SKILL.md');
+  assert.equal(resolvesInPlugin('scripts/deep-work-runtime.js', nested, winKeys), true,
+    'a slash-shaped lookup must resolve against Windows-shaped keys');
+  assert.equal(resolvesInPlugin('scripts\\deep-work-runtime.js', nested, winKeys), true,
+    'a backslash-shaped lookup must resolve too');
+
+  // The `fromSource` half. On POSIX `path.relative` already returns slashes, so
+  // removing repoKey's normalisation there is a no-op no local mutation can see —
+  // driving the production call with a win32 `relative` is what makes it visible.
+  const nestedTarget = [...winKeys].find((k) => k.includes('/'));
+  const dir = nestedTarget.slice(0, nestedTarget.lastIndexOf('/'));
+  const base = nestedTarget.slice(nestedTarget.lastIndexOf('/') + 1);
+  const winRelative = (from, to) => path.relative(from, to).split('/').join('\\');
+  assert.equal(
+    resolvesInPlugin(`./${base}`, path.join(ROOT, dir, 'sibling.md'), winKeys, winRelative),
+    true,
+    'the source-relative branch must normalise its own result before looking it up');
+
+  // Non-vacuity, with a backslash token on purpose. A slash token makes this pair
+  // decorative — the un-normalised key set misses either way, so it passes however
+  // the token was handled (measured: with the slash spelling, removing the token
+  // normalisation fails nothing). The backslash spelling discriminates.
+  //
+  // It is *dominated* in the current arrangement: the backslash lookup above fails
+  // first on the same mutation, so this line does not execute and adds no detection
+  // today. It is kept as a backstop, because the assertion that dominates it is an
+  // enumeration of spellings — and enumerations get trimmed. Neutralise the spelling
+  // above and remove the token normalisation, and this is what fails.
+  const rawKeys = new Set([...winKeys].map((k) => k.split('/').join('\\')));
+  assert.equal(resolvesInPlugin('scripts\\deep-work-runtime.js', nested, rawKeys), false,
+    'un-normalised keys must not be reachable by an un-normalised token');
 });
 
 test('normalising separators does not promote prose into a path', () => {
