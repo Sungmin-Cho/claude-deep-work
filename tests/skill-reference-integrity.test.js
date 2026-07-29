@@ -1295,9 +1295,15 @@ const IGNORED_DIRS = (() => {
 // (2) ASK THE CONVENTION — `.deep-*` is the suite's name for a plugin output root.
 //     This covers a SIBLING's root, which this plugin never writes but a document may
 //     correctly tell an agent to read in the project.
-// (3) ASK THE HOST — `.claude` is Claude Code's own per-project directory. It is not
-//     any one plugin's, it always lives in the analysed project, and several plugins
-//     reference it. One named host fact, not an open list.
+// (3) ASK THE HOST — a tool's per-project directory. `.claude` is Claude Code's,
+//     `.vscode` and `.idea` are the editors'. None belongs to any plugin, all live in
+//     the analysed project, and a document may correctly name one. This arm IS a small
+//     enumeration and saying so is the point: its growth condition is known — a new
+//     host or editor project directory — and the alternative, treating anything
+//     unproven as a workspace output, is fail-open. `.vscode` and `.idea` were found
+//     missing by a cross-repo sweep, flagged in a sibling that gitignores both.
+const HOST_PROJECT_DIRS = new Set(['.claude', '.vscode', '.idea']);
+
 function pluginWrittenDirs(dirs) {
   const WRITE = /(mkdirSync|writeFileSync|appendFileSync|createWriteStream|rmSync|cpSync|renameSync)/;
   const found = new Set();
@@ -1325,7 +1331,7 @@ function pluginWrittenDirs(dirs) {
 const WORKSPACE_OUTPUT_DIRS = new Set([
   ...pluginWrittenDirs(IGNORED_DIRS),
   ...IGNORED_DIRS.filter((d) => d.startsWith('.deep-')),
-  ...IGNORED_DIRS.filter((d) => d === '.claude'),
+  ...IGNORED_DIRS.filter((d) => HOST_PROJECT_DIRS.has(d)),
 ]);
 const MAINTAINER_ONLY_DIRS = IGNORED_DIRS
   .filter((d) => !WORKSPACE_OUTPUT_DIRS.has(d) && d !== 'node_modules');
