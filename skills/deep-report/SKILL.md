@@ -124,7 +124,7 @@ If timestamps are empty, show "N/A" for that phase.
 
 Write `$WORK_DIR/report.md` with the following structure:
 
-```markdown
+````markdown
 # Deep Work Session Report
 
 ## Session Overview
@@ -345,6 +345,6 @@ If `git_branch` is set in the state file and `current_phase` is `idle`:
 
 제안 커밋 메시지:
   feat: [task_description 기반 자동 생성]
-```
+````
 
 If the user agrees, create the commit. If not, skip.

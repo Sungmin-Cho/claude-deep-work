@@ -651,6 +651,50 @@ function resolveAsAgentWould(token, cwd) {
 const FENCE = /^[ \t]*```/gm;
 
 test('every skill and agent markdown file has balanced code fences', () => {
+  // Parity is a proxy, and it detects neither real failure. `skills/deep-report/SKILL.md`
+  // carried fourteen markers — even, so this sweep passed — while a ```bash with an info
+  // string failed to close the ```markdown template above it, a later bare marker closed
+  // that template instead, and the final block was never closed at all. Half the document
+  // rendered as code. So the parity count stays (it catches a truncating split cheaply)
+  // and CommonMark's own rule is asserted beside it: a closer matches the opener's
+  // character, is at least as long, and carries NO info string.
+  //
+  // CARVE-OUT, deliberate: `fenceRegions()` must NOT be made CommonMark-correct. It
+  // answers a different question — whether a reader copying from a binding to its use
+  // crosses a boundary, because two fenced blocks are two shell invocations — and
+  // marker counting is the right model for that. The two differing readings are not an
+  // inconsistency to tidy away.
+  const openAtEof = (body) => {
+    let open = null;
+    for (const line of body.split('\n')) {
+      const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (!m) continue;
+      const ch = m[1][0];
+      const len = m[1].length;
+      if (open === null) { open = { ch, len }; continue; }
+      if (ch === open.ch && len >= open.len && !m[2].trim()) open = null;
+    }
+    return open !== null;
+  };
+  assert.equal(openAtEof('```js\nx\n```\n'), false, 'a closed block is closed');
+  assert.equal(openAtEof('```js\nx\n'), true, 'a truncated block is open at EOF');
+  // The real shape, not a shorthand for it: an info-string marker cannot close, so the
+  // bare marker meant to end the NESTED block ends the outer one instead, and every
+  // later marker is off by one until the last opens a block nothing closes. A
+  // two-marker fixture does not reproduce this — it just closes the outer early.
+  assert.equal(openAtEof('```markdown\n```bash\nx\n```\nmore\n```\n'), true,
+    'same-length nesting shifts every later marker and leaves the last block open');
+  assert.equal(openAtEof('````markdown\n```bash\nx\n```\nmore\n````\n'), false,
+    'and a longer outer fence nests correctly, which is the fix applied to deep-report');
+
+  const truncated = [];
+  for (const file of markdownFiles()) {
+    if (openAtEof(fs.readFileSync(file, 'utf8'))) truncated.push(path.relative(ROOT, file));
+  }
+  assert.deepEqual(truncated, [],
+    'a code fence is still open at end of file — the rest of the document renders as '
+    + `code:\n  ${truncated.join('\n  ')}`);
+
   const unbalanced = [];
   for (const file of markdownFiles()) {
     const fences = (fs.readFileSync(file, 'utf8').match(FENCE) || []).length;
