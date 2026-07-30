@@ -1509,6 +1509,86 @@ test('the documented pluginRequire helpers realpath their target', () => {
     + `root would be followed:\n  ${missing.join('\n  ')}`);
 });
 
+
+// The accepted spellings are whatever the RUNTIME reads from the environment to
+// find its own root — asked of the code, not listed here. All three repos in this
+// family accept a Claude name and a generic Codex name, and a first version of the
+// rule below assumed a single spelling and reported the generic one as rogue. It was
+// legitimate: `runtime/hook-context.js` reads both, and AGENTS.md says so.
+const ANCHOR_VARS = (() => {
+  const found = new Set();
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.(?:[cm]?js|json)$/.test(e.name)) continue;
+      const body = fs.readFileSync(p, 'utf8');
+      for (const m of body.matchAll(/(?:^|[^A-Za-z0-9_.])env(?:ironment)?\.([A-Z][A-Z0-9_]*_PLUGIN_ROOT|PLUGIN_ROOT)/g)) found.add(m[1]);
+      for (const m of body.matchAll(/process\.env\.([A-Z][A-Z0-9_]*_PLUGIN_ROOT|PLUGIN_ROOT)/g)) found.add(m[1]);
+    }
+  };
+  ['runtime', 'hooks', 'scripts', 'lib'].forEach((s) => walk(path.join(ROOT, s)));
+  return found;
+})();
+test('a variable-rooted path that resolves in the plugin uses the one anchor spelling', () => {
+  // The guard recognises `${CLAUDE_PLUGIN_ROOT}` and flags a BARE `sensors/x.js`,
+  // but any variable root silenced it: `$ANYTHING/sensors/x.js` was clean. So a
+  // second, undefined spelling of the plugin root passed unnoticed — measured live
+  // in this family as `$PLUGIN_DIR/` and `$PLUGIN_ROOT/`, neither of which anything
+  // exports. Unset, they expand to nothing and the command breaks; set by the
+  // analysed project's environment, they resolve wherever that points and `node`
+  // runs it.
+  //
+  // The rule cannot be "no variable roots" — `$WORK_DIR` and `$PROJECT_ROOT` are
+  // legitimate workspace roots and outnumber the anchor here. What separates them is
+  // structural and needs no list of names: **does the tail resolve in the shipped
+  // index?** Measured across every variable-rooted path in the scanned documents:
+  //
+  //   $CLAUDE_PLUGIN_ROOT  181 tails resolve   (the anchor)
+  //   $PLUGIN_DIR            4 resolve, 0 not  (rogue)
+  //   $PLUGIN_ROOT           3 resolve, 0 not  (rogue)
+  //   $WORK_DIR              0 resolve, 179 not
+  //   $PROJECT_ROOT          0 resolve,  16 not
+  //
+  // Zero overlap. A variable whose tail names a shipped file is rooting a path at
+  // this plugin, whatever it is called.
+  // The derivation must find the runtime's own names, or the rule below is comparing
+  // against nothing and every variable root looks rogue.
+  assert.ok(ANCHOR_VARS.size > 0,
+    'no anchor env name was found in the runtime — the rule has no baseline');
+  assert.ok(ANCHOR_VARS.has('CLAUDE_PLUGIN_ROOT'),
+    'the Claude spelling must be among the accepted names');
+  const VAR_ROOTED = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?[\\/]([A-Za-z0-9._\\/-]+)/g;
+  const offenders = [];
+  for (const file of markdownFiles()) {
+    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      VAR_ROOTED.lastIndex = 0;
+      let m;
+      while ((m = VAR_ROOTED.exec(line))) {
+        if (ANCHOR_VARS.has(m[1])) continue;
+        if (!PLUGIN_FILES.has(normalizePath(m[2]))) continue;
+        offenders.push(`${path.relative(ROOT, file)}:${i + 1}  $${m[1]}/${m[2]}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [],
+    'a path rooted at a variable other than the anchor resolves to a shipped file, so '
+    + `that variable is a second spelling of the plugin root:\n  ${offenders.join('\n  ')}`);
+
+  // Non-vacuity, both ways: the rule must fire on a rogue spelling and stay silent on
+  // a workspace root, or it is proving nothing about either.
+  const shipped = [...PLUGIN_FILES].find((k) => k.includes('/'));
+  VAR_ROOTED.lastIndex = 0;
+  const rogue = VAR_ROOTED.exec(`node "$SOME_OTHER_ROOT/${shipped}"`);
+  assert.ok(rogue && !ANCHOR_VARS.has(rogue[1]) && PLUGIN_FILES.has(normalizePath(rogue[2])),
+    'the rule must recognise a rogue spelling of the plugin root');
+  VAR_ROOTED.lastIndex = 0;
+  const workspace = VAR_ROOTED.exec('cat "$WORK_DIR/research/notes.md"');
+  assert.ok(workspace && !PLUGIN_FILES.has(normalizePath(workspace[2])),
+    'a workspace root must stay silent — its tail does not name a shipped file');
+});
+
 test('a backslash separator does not hide a path from the guard', () => {
   // The bypass table from review, used verbatim as the fixture. Measured on the
   // commit before this fix by planting one line at a time into AGENTS.md in a

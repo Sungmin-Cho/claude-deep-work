@@ -52,7 +52,7 @@ Manual computational sensor scanning. Can be used inside or outside deep-work se
 
 Run detection engine:
 ```bash
-node "$PLUGIN_DIR/sensors/detect.js" "$PROJECT_ROOT"
+node "${CLAUDE_PLUGIN_ROOT}/sensors/detect.js" "$PROJECT_ROOT"
 ```
 
 Display detected ecosystems and tool availability. If `--detect` flag, stop here.
@@ -63,12 +63,12 @@ For each detected ecosystem with available tools, run sensors in order:
 
 1. **Linter** (if available and not `--typecheck`/`--coverage` only):
    ```bash
-   node "$PLUGIN_DIR/sensors/run-sensors.js" "<lint_cmd>" "<parser>" "lint" "required" 30
+   node "${CLAUDE_PLUGIN_ROOT}/sensors/run-sensors.js" "<lint_cmd>" "<parser>" "lint" "required" 30
    ```
 
 2. **Type checker** (if available and not `--lint`/`--coverage` only):
    ```bash
-   node "$PLUGIN_DIR/sensors/run-sensors.js" "<typecheck_cmd>" "<parser>" "typecheck" "required" 60
+   node "${CLAUDE_PLUGIN_ROOT}/sensors/run-sensors.js" "<typecheck_cmd>" "<parser>" "typecheck" "required" 60
    ```
 
 3. **Coverage** (if available and not `--lint`/`--typecheck` only):
