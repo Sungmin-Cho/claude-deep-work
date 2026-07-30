@@ -1510,85 +1510,177 @@ test('the documented pluginRequire helpers realpath their target', () => {
 });
 
 
-// The accepted spellings are whatever the RUNTIME reads from the environment to
-// find its own root — asked of the code, not listed here. All three repos in this
-// family accept a Claude name and a generic Codex name, and a first version of the
-// rule below assumed a single spelling and reported the generic one as rogue. It was
-// legitimate: `runtime/hook-context.js` reads both, and AGENTS.md says so.
+// Which variables may root a path at this plugin. NOT a list of names, and NOT
+// derived from what the runtime READS out of the environment — that was the first
+// version's mistake and it was structural about the wrong thing. The runtime
+// reading `env.CURSOR_PLUGIN_ROOT` for host *detection* says nothing about whether
+// a document may spell the anchor that way; deep-memory's runtime reads four names
+// and its contract sanctions two.
+//
+// The question a reader of these documents faces is: **is this variable guaranteed
+// to hold the plugin root at the moment this line runs?** Two things guarantee it,
+// and neither needs a name:
+//
+//   1. The contract document declares the spelling. A name counts only where
+//      AGENTS.md writes it as a VARIABLE REFERENCE in a NON-path position:
+//      `Codex sets ${PLUGIN_ROOT} for the same root` is a sanction; `${X}/lib/a.js`
+//      is a use, and a bare prose mention of the string is neither. Measured, in
+//      that order: a use alone FIRES, a use plus a passing prose mention still
+//      FIRES, and only an added sanction sentence goes silent. So the accept-set
+//      widens by one deliberate edit to the contract and by nothing else.
+//   2. The variable is bound earlier in the same fenced region, from an already
+//      accepted anchor. A local needs no host to set it. This is the real reason
+//      deep-report's `PLUGIN_ROOT="$(cd "${CLAUDE_PLUGIN_ROOT:?…}" && pwd -P)"` is
+//      safe, and the first version accepted those three lines for an unrelated
+//      reason — it would have accepted them just as readily without the binding.
+const CONTRACT_DOC = 'AGENTS.md';
 const ANCHOR_VARS = (() => {
+  const body = fs.readFileSync(path.join(ROOT, CONTRACT_DOC), 'utf8');
   const found = new Set();
-  const walk = (dir) => {
-    if (!fs.existsSync(dir)) return;
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) { walk(p); continue; }
-      if (!/\.(?:[cm]?js|json)$/.test(e.name)) continue;
-      const body = fs.readFileSync(p, 'utf8');
-      for (const m of body.matchAll(/(?:^|[^A-Za-z0-9_.])env(?:ironment)?\.([A-Z][A-Z0-9_]*_PLUGIN_ROOT|PLUGIN_ROOT)/g)) found.add(m[1]);
-      for (const m of body.matchAll(/process\.env\.([A-Z][A-Z0-9_]*_PLUGIN_ROOT|PLUGIN_ROOT)/g)) found.add(m[1]);
-    }
-  };
-  ['runtime', 'hooks', 'scripts', 'lib'].forEach((s) => walk(path.join(ROOT, s)));
+  for (const m of body.matchAll(/\$\{?([A-Z][A-Z0-9_]*_PLUGIN_ROOT|PLUGIN_ROOT)\}?`?(?![A-Za-z0-9_/\\])/g)) {
+    found.add(m[1]);
+  }
   return found;
 })();
-test('a variable-rooted path that resolves in the plugin uses the one anchor spelling', () => {
-  // The guard recognises `${CLAUDE_PLUGIN_ROOT}` and flags a BARE `sensors/x.js`,
+
+// A local binding is `VAR=` (optionally `export VAR=`) whose right-hand side names
+// an accepted anchor, on an earlier line with **no fence marker in between**.
+//
+// Regions are delimited by fence markers, not by `fenceBlocks()`'s CommonMark block
+// ids, and the difference is load-bearing here. `skills/deep-report/SKILL.md` nests
+// a ```bash example inside a ```markdown template using the same fence length, so by
+// CommonMark the outer block ends at the inner opener and the binding lands in a
+// different block from its use — three correct, fail-closed lines would be flagged.
+// The property that actually matters is not which block markdown thinks a line is
+// in; it is whether a reader copying from the binding to the use crosses a boundary,
+// because two fenced blocks are two shell invocations and the second does not
+// inherit the first's variables. Any fence marker between them is that boundary.
+function fenceRegions(body) {
+  let region = 0;
+  return body.split('\n').map((line) => {
+    if (/^[ \t]*(?:`{3,}|~{3,})/.test(line)) { region += 1; return null; }
+    return region;
+  });
+}
+function locallyBound(lines, regions, upTo, name) {
+  const region = regions[upTo];
+  if (region === null) return false;
+  const assign = new RegExp(`(?:^|[;&|]\\s*)(?:export\\s+)?${name}=`);
+  for (let j = 0; j < upTo; j += 1) {
+    if (regions[j] !== region) continue;
+    if (!assign.test(lines[j])) continue;
+    if ([...ANCHOR_VARS].some((a) => lines[j].includes(a))) return true;
+  }
+  return false;
+}
+
+test('a variable-rooted path that resolves in the plugin uses a sanctioned anchor', () => {
+  // The guard recognised `${CLAUDE_PLUGIN_ROOT}` and flagged a BARE `sensors/x.js`,
   // but any variable root silenced it: `$ANYTHING/sensors/x.js` was clean. So a
-  // second, undefined spelling of the plugin root passed unnoticed — measured live
-  // in this family as `$PLUGIN_DIR/` and `$PLUGIN_ROOT/`, neither of which anything
-  // exports. Unset, they expand to nothing and the command breaks; set by the
-  // analysed project's environment, they resolve wherever that points and `node`
-  // runs it.
+  // second spelling of the plugin root passed unnoticed — measured live in this
+  // family as `$PLUGIN_DIR/`, which nothing exports. Unset it expands to nothing;
+  // set by the analysed project's environment it resolves wherever that points,
+  // and `node` runs it.
   //
   // The rule cannot be "no variable roots" — `$WORK_DIR` and `$PROJECT_ROOT` are
-  // legitimate workspace roots and outnumber the anchor here. What separates them is
-  // structural and needs no list of names: **does the tail resolve in the shipped
-  // index?** Measured across every variable-rooted path in the scanned documents:
+  // legitimate workspace roots and outnumber the anchor here. What separates them
+  // needs no list of names: **does the tail resolve in the shipped index?**
+  // Measured across every variable-rooted path in this family's scanned documents
+  // (counts are deep-work's; the shape is the same in deep-evolve and deep-memory):
   //
-  //   $CLAUDE_PLUGIN_ROOT  181 tails resolve   (the anchor)
+  //   $CLAUDE_PLUGIN_ROOT  185 tails resolve   (the anchor)
   //   $PLUGIN_DIR            4 resolve, 0 not  (rogue)
-  //   $PLUGIN_ROOT           3 resolve, 0 not  (rogue)
+  //   $PLUGIN_ROOT           3 resolve, 0 not  (locally bound — see below)
   //   $WORK_DIR              0 resolve, 179 not
   //   $PROJECT_ROOT          0 resolve,  16 not
   //
   // Zero overlap. A variable whose tail names a shipped file is rooting a path at
   // this plugin, whatever it is called.
-  // The derivation must find the runtime's own names, or the rule below is comparing
-  // against nothing and every variable root looks rogue.
-  assert.ok(ANCHOR_VARS.size > 0,
-    'no anchor env name was found in the runtime — the rule has no baseline');
   assert.ok(ANCHOR_VARS.has('CLAUDE_PLUGIN_ROOT'),
-    'the Claude spelling must be among the accepted names');
+    `${CONTRACT_DOC} must name the anchor spelling, or this rule has no baseline`);
+  // What the set EXCLUDES is the half that can rot. A rule asserting only what its
+  // accept-list contains can widen forever and stay green; the first version did
+  // exactly that, and a single added comment was enough to whitelist a new name.
+  for (const rogue of ['PLUGIN_DIR', 'CLAUDE_PLUGIN_DIR', 'SOME_OTHER_ROOT']) {
+    assert.ok(!ANCHOR_VARS.has(rogue),
+      `${rogue} is not an anchor spelling and must never be accepted`);
+  }
+
   const VAR_ROOTED = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?[\\/]([A-Za-z0-9._\\/-]+)/g;
+  // `normalizePath` collapses separators but leaves `.` and `..` alone, so an
+  // exact-string index lookup let `$PLUGIN_DIR/./sensors/detect.js` and
+  // `$PLUGIN_DIR/sensors/../sensors/detect.js` through — the same shipped file by
+  // a spelling the index does not hold. Resolve before looking up.
+  const resolveTail = (t) => normalizePath(t).split('/').reduce((acc, seg) => {
+    if (seg === '.' || seg === '') return acc;
+    if (seg === '..') { acc.pop(); return acc; }
+    acc.push(seg);
+    return acc;
+  }, []).join('/');
+
   const offenders = [];
   for (const file of markdownFiles()) {
-    fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+    const body = fs.readFileSync(file, 'utf8');
+    const lines = body.split('\n');
+    const regions = fenceRegions(body);
+    lines.forEach((line, i) => {
       VAR_ROOTED.lastIndex = 0;
       let m;
       while ((m = VAR_ROOTED.exec(line))) {
         if (ANCHOR_VARS.has(m[1])) continue;
-        if (!PLUGIN_FILES.has(normalizePath(m[2]))) continue;
+        if (locallyBound(lines, regions, i, m[1])) continue;
+        if (!PLUGIN_FILES.has(resolveTail(m[2]))) continue;
         offenders.push(`${path.relative(ROOT, file)}:${i + 1}  $${m[1]}/${m[2]}`);
       }
     });
   }
   assert.deepEqual(offenders, [],
-    'a path rooted at a variable other than the anchor resolves to a shipped file, so '
-    + `that variable is a second spelling of the plugin root:\n  ${offenders.join('\n  ')}`);
+    'a path rooted at a variable that is neither a sanctioned anchor nor bound in '
+    + `the same fenced region resolves to a shipped file:\n  ${offenders.join('\n  ')}`);
 
-  // Non-vacuity, both ways: the rule must fire on a rogue spelling and stay silent on
-  // a workspace root, or it is proving nothing about either.
+  // Non-vacuity, on every axis this rule decides. A control that cannot fire proves
+  // nothing about the case beside it.
   const shipped = [...PLUGIN_FILES].find((k) => k.includes('/'));
-  VAR_ROOTED.lastIndex = 0;
-  const rogue = VAR_ROOTED.exec(`node "$SOME_OTHER_ROOT/${shipped}"`);
-  assert.ok(rogue && !ANCHOR_VARS.has(rogue[1]) && PLUGIN_FILES.has(normalizePath(rogue[2])),
-    'the rule must recognise a rogue spelling of the plugin root');
-  VAR_ROOTED.lastIndex = 0;
-  const workspace = VAR_ROOTED.exec('cat "$WORK_DIR/research/notes.md"');
-  assert.ok(workspace && !PLUGIN_FILES.has(normalizePath(workspace[2])),
+  const hits = (text) => {
+    const out = [];
+    const lines = text.split('\n');
+    const regions = fenceRegions(text);
+    lines.forEach((line, i) => {
+      VAR_ROOTED.lastIndex = 0;
+      let m;
+      while ((m = VAR_ROOTED.exec(line))) {
+        if (ANCHOR_VARS.has(m[1])) continue;
+        if (locallyBound(lines, regions, i, m[1])) continue;
+        if (PLUGIN_FILES.has(resolveTail(m[2]))) out.push(m[1]);
+      }
+    });
+    return out;
+  };
+  assert.deepEqual(hits(`node "$SOME_OTHER_ROOT/${shipped}"`), ['SOME_OTHER_ROOT'],
+    'the rule must fire on a rogue spelling of the plugin root');
+  assert.deepEqual(hits('cat "$WORK_DIR/research/notes.md"'), [],
     'a workspace root must stay silent — its tail does not name a shipped file');
+  assert.deepEqual(hits(`node "\${CLAUDE_PLUGIN_ROOT}/${shipped}"`), [],
+    'the sanctioned anchor must stay silent');
+  // Traversal and `.` spellings of the same shipped file, which the exact-string
+  // lookup used to miss.
+  const dir = shipped.slice(0, shipped.lastIndexOf('/'));
+  const base = shipped.slice(shipped.lastIndexOf('/') + 1);
+  assert.deepEqual(hits(`node "$SOME_OTHER_ROOT/./${shipped}"`), ['SOME_OTHER_ROOT'],
+    'a `.` segment must not hide a shipped tail');
+  assert.deepEqual(hits(`node "$SOME_OTHER_ROOT/${dir}/../${dir}/${base}"`), ['SOME_OTHER_ROOT'],
+    'a `..` round trip must not hide a shipped tail');
+  // Local binding: same line, same block, bound vs unbound.
+  const bound = ['```bash', `X_ROOT="\${CLAUDE_PLUGIN_ROOT}"`, `node "$X_ROOT/${shipped}"`, '```'].join('\n');
+  const unbound = ['```bash', `node "$X_ROOT/${shipped}"`, '```'].join('\n');
+  assert.deepEqual(hits(bound), [], 'a variable bound from the anchor in the same block is safe');
+  assert.deepEqual(hits(unbound), ['X_ROOT'],
+    'the same variable unbound must fire, or the binding arm is accepting everything');
+  const otherBlock = ['```bash', `X_ROOT="\${CLAUDE_PLUGIN_ROOT}"`, '```', '', '```bash',
+    `node "$X_ROOT/${shipped}"`, '```'].join('\n');
+  assert.deepEqual(hits(otherBlock), ['X_ROOT'],
+    'a binding in a different block must not carry over — the reader copies one block');
 });
-
 test('a backslash separator does not hide a path from the guard', () => {
   // The bypass table from review, used verbatim as the fixture. Measured on the
   // commit before this fix by planting one line at a time into AGENTS.md in a
