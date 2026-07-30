@@ -65,7 +65,7 @@ Run mutation tool with budget constraints from registry.json:
 - `max_mutants`: cap mutant count (default 200)
 
 ```bash
-node "$PLUGIN_DIR/sensors/run-sensors.js" "<mutation_cmd>" "<parser>" "mutation" "advisory" <timeout>
+node "${CLAUDE_PLUGIN_ROOT}/sensors/run-sensors.js" "<mutation_cmd>" "<parser>" "mutation" "advisory" <timeout>
 ```
 
 ### Step 4: Analyze Results

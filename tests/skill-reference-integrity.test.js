@@ -651,6 +651,50 @@ function resolveAsAgentWould(token, cwd) {
 const FENCE = /^[ \t]*```/gm;
 
 test('every skill and agent markdown file has balanced code fences', () => {
+  // Parity is a proxy, and it detects neither real failure. `skills/deep-report/SKILL.md`
+  // carried fourteen markers — even, so this sweep passed — while a ```bash with an info
+  // string failed to close the ```markdown template above it, a later bare marker closed
+  // that template instead, and the final block was never closed at all. Half the document
+  // rendered as code. So the parity count stays (it catches a truncating split cheaply)
+  // and CommonMark's own rule is asserted beside it: a closer matches the opener's
+  // character, is at least as long, and carries NO info string.
+  //
+  // CARVE-OUT, deliberate: `fenceRegions()` must NOT be made CommonMark-correct. It
+  // answers a different question — whether a reader copying from a binding to its use
+  // crosses a boundary, because two fenced blocks are two shell invocations — and
+  // marker counting is the right model for that. The two differing readings are not an
+  // inconsistency to tidy away.
+  const openAtEof = (body) => {
+    let open = null;
+    for (const line of body.split('\n')) {
+      const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (!m) continue;
+      const ch = m[1][0];
+      const len = m[1].length;
+      if (open === null) { open = { ch, len }; continue; }
+      if (ch === open.ch && len >= open.len && !m[2].trim()) open = null;
+    }
+    return open !== null;
+  };
+  assert.equal(openAtEof('```js\nx\n```\n'), false, 'a closed block is closed');
+  assert.equal(openAtEof('```js\nx\n'), true, 'a truncated block is open at EOF');
+  // The real shape, not a shorthand for it: an info-string marker cannot close, so the
+  // bare marker meant to end the NESTED block ends the outer one instead, and every
+  // later marker is off by one until the last opens a block nothing closes. A
+  // two-marker fixture does not reproduce this — it just closes the outer early.
+  assert.equal(openAtEof('```markdown\n```bash\nx\n```\nmore\n```\n'), true,
+    'same-length nesting shifts every later marker and leaves the last block open');
+  assert.equal(openAtEof('````markdown\n```bash\nx\n```\nmore\n````\n'), false,
+    'and a longer outer fence nests correctly, which is the fix applied to deep-report');
+
+  const truncated = [];
+  for (const file of markdownFiles()) {
+    if (openAtEof(fs.readFileSync(file, 'utf8'))) truncated.push(path.relative(ROOT, file));
+  }
+  assert.deepEqual(truncated, [],
+    'a code fence is still open at end of file — the rest of the document renders as '
+    + `code:\n  ${truncated.join('\n  ')}`);
+
   const unbalanced = [];
   for (const file of markdownFiles()) {
     const fences = (fs.readFileSync(file, 'utf8').match(FENCE) || []).length;
@@ -1509,6 +1553,249 @@ test('the documented pluginRequire helpers realpath their target', () => {
     + `root would be followed:\n  ${missing.join('\n  ')}`);
 });
 
+
+// Which variables may root a path at this plugin. NOT a list of names, and NOT
+// derived from what the runtime READS out of the environment — that was the first
+// version's mistake and it was structural about the wrong thing. The runtime
+// reading `env.CURSOR_PLUGIN_ROOT` for host *detection* says nothing about whether
+// a document may spell the anchor that way; deep-memory's runtime reads four names
+// and its contract sanctions two.
+//
+// The question a reader of these documents faces is: **is this variable guaranteed
+// to hold the plugin root at the moment this line runs?** Two things guarantee it,
+// and neither needs a name:
+//
+//   1. The spelling is sanctioned. The set is written here, in the security test,
+//      and pinned against the contract document — not scraped out of it. Scraping
+//      matched a syntactic shape and called it a sanction, so the sentence that most
+//      explicitly FORBIDS a spelling was the sentence that permitted it:
+//      `Never use \${ZZZ_PLUGIN_ROOT} — no host in this family sets it.` widened the
+//      accept-set, and so did an HTML comment, which renders as nothing at all. A
+//      shape cannot carry a sentence's meaning. Widening now takes an edit to this
+//      file, which is the gate that should be hardest to pass.
+//   2. The variable is bound earlier in the same fenced region, from an already
+//      accepted anchor. A local needs no host to set it. This is the real reason
+//      deep-report's `PLUGIN_ROOT="$(cd "\${CLAUDE_PLUGIN_ROOT:?…}" && pwd -P)"` is
+//      safe, and the first version accepted those three lines for an unrelated
+//      reason — it would have accepted them just as readily without the binding.
+const CONTRACT_DOC = 'AGENTS.md';
+const ANCHOR_VARS = new Set(['CLAUDE_PLUGIN_ROOT']);
+
+// A local binding is `VAR=` (optionally `export VAR=`) whose RIGHT-HAND SIDE
+// references an accepted anchor, on an earlier line with no fence marker in between.
+//
+// The right-hand side, not the line. Testing the line let a COMMENT do the work:
+//
+//     X_ROOT="$PWD"   # CLAUDE_PLUGIN_ROOT is unset on this host
+//     node "$X_ROOT/<shipped>.js"
+//
+// went silent — a plausible line for someone documenting a non-Claude fallback, which
+// roots the path at the working directory (the analysed project) and then runs a
+// shipped script name from it. That is the whole attack, with the guard quiet. The
+// same slip admitted `X_ROOT="\${CLAUDE_PLUGIN_ROOT_BACKUP}"`, where an accepted name
+// is merely a substring of a variable nothing sets, so the reference is matched with
+// a boundary rather than by `includes`.
+//
+// Regions are delimited by fence markers, not by `fenceBlocks()`'s CommonMark block
+// ids, and the difference is load-bearing here. `skills/deep-report/SKILL.md` nests
+// a ```bash example inside a ```markdown template using the same fence length, so by
+// CommonMark the outer block ends at the inner opener and the binding lands in a
+// different block from its use — three correct, fail-closed lines would be flagged.
+// The property that actually matters is not which block markdown thinks a line is
+// in; it is whether a reader copying from the binding to the use crosses a boundary,
+// because two fenced blocks are two shell invocations and the second does not
+// inherit the first's variables. Any fence marker between them is that boundary.
+//
+// Region 0 is everything before the document's first fence, where no shell runs at
+// all, so a binding there is prose and cannot bind anything. RESIDUAL, stated rather
+// than claimed away: prose sitting BETWEEN two fenced blocks gets a region of its own
+// and can still read as a binding. Closing that needs open/close state, which is
+// exactly what the nesting above makes unreliable here.
+// A marker WITH an info string opens; a bare marker closes. That convention, not
+// CommonMark's same-length matching, is what these documents actually follow — and it
+// is the only reading under which `skills/deep-report/SKILL.md`'s ```bash nested in a
+// ```markdown template puts its own lines inside a block. Depth is clamped at zero, so
+// a document that opens with a bare marker under-counts and its bindings are rejected
+// rather than trusted.
+function fenceRegions(body) {
+  let region = 0;
+  let depth = 0;
+  return body.split('\n').map((line) => {
+    const m = /^[ \t]*(?:`{3,}|~{3,})(.*)$/.exec(line);
+    if (m) {
+      region += 1;
+      depth = m[1].trim() ? depth + 1 : Math.max(0, depth - 1);
+      return null;
+    }
+    return depth > 0 ? region : null;   // prose binds nothing — no shell runs it
+  });
+}
+function bindsAnchor(line, name) {
+  const assign = new RegExp(`(?:^|[;&|]\\s*)(?:export\\s+)?${name}=`);
+  const m = assign.exec(line);
+  if (!m) return false;
+  let rhs = line.slice(m.index + m[0].length);
+  // A trailing unquoted `#` comment is not part of the value. Quotes are tracked so
+  // a `#` inside one stays in the value.
+  let q = null;
+  for (let i = 0; i < rhs.length; i += 1) {
+    const c = rhs[i];
+    if (q) { if (c === q) q = null; continue; }
+    if (c === '"' || c === "'") { q = c; continue; }
+    if (c === '#' && (i === 0 || /\s/.test(rhs[i - 1]))) { rhs = rhs.slice(0, i); break; }
+  }
+  return [...ANCHOR_VARS].some((a) =>
+    new RegExp(`\\$\\{?${a}(?![A-Za-z0-9_])`).test(rhs));
+}
+function locallyBound(lines, regions, upTo, name) {
+  const region = regions[upTo];
+  if (region === null) return false;   // the use is not inside a block
+  for (let j = 0; j < upTo; j += 1) {
+    if (regions[j] !== region) continue;
+    if (bindsAnchor(lines[j], name)) return true;
+  }
+  return false;
+}
+
+test('a variable-rooted path that resolves in the plugin uses a sanctioned anchor', () => {
+  // The guard recognised `${CLAUDE_PLUGIN_ROOT}` and flagged a BARE `sensors/x.js`,
+  // but any variable root silenced it: `$ANYTHING/sensors/x.js` was clean. So a
+  // second spelling of the plugin root passed unnoticed — measured live in this
+  // family as `$PLUGIN_DIR/`, which nothing exports. Unset it expands to nothing;
+  // set by the analysed project's environment it resolves wherever that points,
+  // and `node` runs it.
+  //
+  // The rule cannot be "no variable roots" — `$WORK_DIR` and `$PROJECT_ROOT` are
+  // legitimate workspace roots and outnumber the anchor here. What separates them
+  // needs no list of names: **does the tail resolve in the shipped index?**
+  // Measured across every variable-rooted path in this family's scanned documents
+  // (counts are deep-work's; the shape is the same in deep-evolve and deep-memory):
+  //
+  //   $CLAUDE_PLUGIN_ROOT  185 tails resolve   (the anchor)
+  //   $PLUGIN_DIR            4 resolve, 0 not  (rogue)
+  //   $PLUGIN_ROOT           3 resolve, 0 not  (locally bound — see below)
+  //   $WORK_DIR              0 resolve, 179 not
+  //   $PROJECT_ROOT          0 resolve,  16 not
+  //
+  // Zero overlap. A variable whose tail names a shipped file is rooting a path at
+  // this plugin, whatever it is called.
+  assert.ok(ANCHOR_VARS.has('CLAUDE_PLUGIN_ROOT'),
+    'the Claude spelling is the baseline and must be accepted');
+  // The set lives in this file, so it cannot drift from the contract silently: every
+  // accepted spelling must also be written in the contract document as a variable.
+  // The first version had this backwards — it read the names OUT of the runtime and
+  // justified the width with "AGENTS.md says so", which was true in two sibling repos
+  // and false here.
+  const contract = fs.readFileSync(path.join(ROOT, CONTRACT_DOC), 'utf8');
+  for (const name of ANCHOR_VARS) {
+    assert.match(contract, new RegExp(`\\$\\{?${name}(?![A-Za-z0-9_])`),
+      `${CONTRACT_DOC} must document \${${name}} as an anchor, or the guard accepts `
+      + 'a spelling the contract never sanctioned');
+  }
+  // What the set EXCLUDES is the half that can rot. A rule asserting only what its
+  // accept-list contains can widen forever and stay green; the first version did
+  // exactly that, and a single added comment was enough to whitelist a new name.
+  for (const rogue of ['PLUGIN_DIR', 'CLAUDE_PLUGIN_DIR', 'SOME_OTHER_ROOT']) {
+    assert.ok(!ANCHOR_VARS.has(rogue),
+      `${rogue} is not an anchor spelling and must never be accepted`);
+  }
+
+  const VAR_ROOTED = /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?[\\/]([A-Za-z0-9._\\/-]+)/g;
+  // `normalizePath` collapses separators but leaves `.` and `..` alone, so an
+  // exact-string index lookup let `$PLUGIN_DIR/./sensors/detect.js` and
+  // `$PLUGIN_DIR/sensors/../sensors/detect.js` through — the same shipped file by
+  // a spelling the index does not hold. Resolve before looking up.
+  const resolveTail = (t) => normalizePath(t).split('/').reduce((acc, seg) => {
+    if (seg === '.' || seg === '') return acc;
+    if (seg === '..') { acc.pop(); return acc; }
+    acc.push(seg);
+    return acc;
+  }, []).join('/');
+
+  const offenders = [];
+  for (const file of markdownFiles()) {
+    const body = fs.readFileSync(file, 'utf8');
+    const lines = body.split('\n');
+    const regions = fenceRegions(body);
+    lines.forEach((line, i) => {
+      VAR_ROOTED.lastIndex = 0;
+      let m;
+      while ((m = VAR_ROOTED.exec(line))) {
+        if (ANCHOR_VARS.has(m[1])) continue;
+        if (locallyBound(lines, regions, i, m[1])) continue;
+        if (!PLUGIN_FILES.has(resolveTail(m[2]))) continue;
+        offenders.push(`${path.relative(ROOT, file)}:${i + 1}  $${m[1]}/${m[2]}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [],
+    'a path rooted at a variable that is neither a sanctioned anchor nor bound in '
+    + `the same fenced region resolves to a shipped file:\n  ${offenders.join('\n  ')}`);
+
+  // Non-vacuity, on every axis this rule decides. A control that cannot fire proves
+  // nothing about the case beside it.
+  const shipped = [...PLUGIN_FILES].find((k) => k.includes('/'));
+  const hits = (text) => {
+    const out = [];
+    const lines = text.split('\n');
+    const regions = fenceRegions(text);
+    lines.forEach((line, i) => {
+      VAR_ROOTED.lastIndex = 0;
+      let m;
+      while ((m = VAR_ROOTED.exec(line))) {
+        if (ANCHOR_VARS.has(m[1])) continue;
+        if (locallyBound(lines, regions, i, m[1])) continue;
+        if (PLUGIN_FILES.has(resolveTail(m[2]))) out.push(m[1]);
+      }
+    });
+    return out;
+  };
+  assert.deepEqual(hits(`node "$SOME_OTHER_ROOT/${shipped}"`), ['SOME_OTHER_ROOT'],
+    'the rule must fire on a rogue spelling of the plugin root');
+  assert.deepEqual(hits('cat "$WORK_DIR/research/notes.md"'), [],
+    'a workspace root must stay silent — its tail does not name a shipped file');
+  assert.deepEqual(hits(`node "\${CLAUDE_PLUGIN_ROOT}/${shipped}"`), [],
+    'the sanctioned anchor must stay silent');
+  // Traversal and `.` spellings of the same shipped file, which the exact-string
+  // lookup used to miss.
+  const dir = shipped.slice(0, shipped.lastIndexOf('/'));
+  const base = shipped.slice(shipped.lastIndexOf('/') + 1);
+  assert.deepEqual(hits(`node "$SOME_OTHER_ROOT/./${shipped}"`), ['SOME_OTHER_ROOT'],
+    'a `.` segment must not hide a shipped tail');
+  assert.deepEqual(hits(`node "$SOME_OTHER_ROOT/${dir}/../${dir}/${base}"`), ['SOME_OTHER_ROOT'],
+    'a `..` round trip must not hide a shipped tail');
+  // Local binding: same line, same block, bound vs unbound.
+  const bound = ['```bash', `X_ROOT="\${CLAUDE_PLUGIN_ROOT}"`, `node "$X_ROOT/${shipped}"`, '```'].join('\n');
+  const unbound = ['```bash', `node "$X_ROOT/${shipped}"`, '```'].join('\n');
+  assert.deepEqual(hits(bound), [], 'a variable bound from the anchor in the same block is safe');
+  assert.deepEqual(hits(unbound), ['X_ROOT'],
+    'the same variable unbound must fire, or the binding arm is accepting everything');
+  const otherBlock = ['```bash', `X_ROOT="\${CLAUDE_PLUGIN_ROOT}"`, '```', '', '```bash',
+    `node "$X_ROOT/${shipped}"`, '```'].join('\n');
+  assert.deepEqual(hits(otherBlock), ['X_ROOT'],
+    'a binding in a different block must not carry over — the reader copies one block');
+  // Review found each of these silent, so each gets its own case. Every one is a
+  // complete attack: the path ends up rooted somewhere in the analysed project and a
+  // shipped script name is run from it.
+  const inBlock = (...body) => ['```bash', ...body, '```'].join('\n');
+  assert.deepEqual(
+    hits(inBlock(`X_ROOT="$PWD"   # ${[...ANCHOR_VARS][0]} is unset on this host`,
+      `node "$X_ROOT/${shipped}"`)), ['X_ROOT'],
+    'an anchor named only in a trailing COMMENT must not count as the binding');
+  assert.deepEqual(
+    hits(inBlock(`X_ROOT="\${${[...ANCHOR_VARS][0]}_BACKUP}"`, `node "$X_ROOT/${shipped}"`)),
+    ['X_ROOT'],
+    'an accepted name that is merely a SUBSTRING of the bound variable must not count');
+  assert.deepEqual(
+    hits([`X_ROOT=\${${[...ANCHOR_VARS][0]}} is the convention below.`,
+      `$X_ROOT/${shipped}`].join('\n')), ['X_ROOT'],
+    'a binding written in PROSE binds nothing — no shell runs it');
+  // And the accept-set cannot be widened from the corpus at all: the names live in
+  // this file. A sentence in the contract document that FORBIDS a spelling used to
+  // permit it, because the scraper matched a shape and called it a sanction.
+  assert.ok(!ANCHOR_VARS.has('ZZZ_PLUGIN_ROOT'),
+    'the accept-set is declared here, not scraped from prose');
+});
 test('a backslash separator does not hide a path from the guard', () => {
   // The bypass table from review, used verbatim as the fixture. Measured on the
   // commit before this fix by planting one line at a time into AGENTS.md in a
