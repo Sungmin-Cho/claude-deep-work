@@ -5,6 +5,7 @@ specs/
 plans/
 
 # Dev tooling caches and local-only artifacts (never committed)
+/package-lock.json
 .claude/
 .deep-review/
 .deep-docs/

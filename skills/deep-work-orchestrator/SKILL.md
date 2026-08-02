@@ -136,10 +136,24 @@ router를 직접 우회하는 것은 금지한다.
 
 **2단계 — methodology-authority routing facade:**
 
+현재 host의 `Agent` 도구 사용 가능 여부를 직접 확인한다. Agent tool available인
+Claude Code host는 `claude`, Agent tool unavailable인 Codex host는 `codex`를 선택한다.
+manifest, child process env marker, 이전 session state는 이 판정의 authority가 아니다.
+
+아래 블록을 실행하기 전에 placeholder 전체를 관측한 host의 literal 하나로 치환한다.
+대입과 소비는 반드시 이 한 shell invocation 안에서 함께 실행한다. host를 확정할 수
+없거나 placeholder가 남아 있으면 fail closed로 중단한다.
+
 ```bash
+ROUTING_RUNTIME="<current host: claude or codex>"
+case "$ROUTING_RUNTIME" in
+  claude|codex) ;;
+  *) printf '%s\n' 'ERROR: current host runtime is unresolved' >&2; exit 1 ;;
+esac
 MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
   --root "$PROJECT_ROOT" --task "$TASK_TEXT" \
   --difficulty "${REC_TASK_DIFFICULTY:-}" --pinned "${FLAGS.model_routing:-}" \
+  --runtime "$ROUTING_RUNTIME" \
   --methodology-policy "$METHODOLOGY_AUTHORITY")
 ```
 

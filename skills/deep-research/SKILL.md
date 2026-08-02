@@ -234,13 +234,25 @@ rm -f "$RISK_IN"
 
 3. 성공한 authoritative class로 재라우팅한다. 초기 spawn에서 이미
    Read(`${CLAUDE_PLUGIN_ROOT}/skills/shared/references/model-routing-guide.md#model-routing-state-decode-v612`)를
-   수행했으므로 pin은 `decodedRoutingMeta.pinned`, runtime은 CLI 자동 감지를 사용한다.
+   수행했으므로 pin은 `decodedRoutingMeta.pinned`에서 재사용한다. runtime은 reroute 시점의
+   현재 host `Agent` 도구 사용 가능 여부를 직접 확인해 refresh하며, persisted runtime 재사용은 금지한다.
+   manifest와 child process env marker도 host authority로 사용하지 않는다.
    v1이면 `methodology_policy_json.policy_sha256`를 먼저 검증한다. legacy
    v6.12 shape는 closed fallback parser로 읽어 새 authority로 승격한다. `RISK_OUT`은 새
    authoritative risk와 직전 floor를 결합한 `methodology_authority`를 산출하며,
    이 authority 전체를 router facade에 넘긴다.
 
+   Agent tool available인 Claude Code host는 `claude`, Agent tool unavailable인 Codex
+   host는 `codex`를 선택한다. 아래 블록을 실행하기 전에 placeholder 전체를 그 literal
+   하나로 치환한다. 대입과 소비는 반드시 이 한 shell invocation 안에서 함께 실행하며,
+   host를 확정할 수 없거나 placeholder가 남아 있으면 fail closed로 중단한다.
+
 ```bash
+ROUTING_RUNTIME="<current host: claude or codex>"
+case "$ROUTING_RUNTIME" in
+  claude|codex) ;;
+  *) printf '%s\n' 'ERROR: current host runtime is unresolved' >&2; exit 1 ;;
+esac
 AUTH_CLASS=$(printf '%s' "$RISK_OUT" | node -e \
   'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.risk_profile?.class||"")')
 METHODOLOGY_AUTHORITY=$(printf '%s' "$RISK_OUT" | node -e \
@@ -249,6 +261,7 @@ METHODOLOGY_AUTHORITY=$(printf '%s' "$RISK_OUT" | node -e \
 MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" \
   --root "$PROJECT_ROOT" --task "$TASK_TEXT" --difficulty "${REC_TASK_DIFFICULTY:-}" \
   --pinned "<decodedRoutingMeta.pinned as phase=value CSV>" \
+  --runtime "$ROUTING_RUNTIME" \
   --methodology-policy "$METHODOLOGY_AUTHORITY")
 ```
 
