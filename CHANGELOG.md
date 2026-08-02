@@ -7,6 +7,18 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.2] — 2026-08-03 (Host-Explicit GPT Routing)
+
+### Changed
+
+- **Codex routing follows the GPT-5.6 price-performance frontier without weakening risk floors.** The light, standard, and deep slots remain pinned to GPT-5.6 Luna, Terra, and Sol respectively, while methodology risk and error cost continue to set the minimum tier rather than a price-only formula.
+- **Model routing now binds the actual host explicitly.** The orchestrator and authoritative research reroute derive `claude` versus `codex` from live `Agent` tool availability, pass that runtime to the routing CLI in the same shell invocation, and fail closed when the host cannot be resolved. Persisted runtime and child-process environment markers cannot override the current host.
+
+### Fixed
+
+- **Routing contract tests now reject executable shadow assignments.** Regression mutants cover split fences, comments, indentation, semicolon/logical separators, pipes, background commands, exports, quoting, escapes, and Bash backslash-newline token splicing while preserving valid continued arguments.
+- **Repository-local npm lockfiles stay local.** The root `package-lock.json` is ignored so npm verification does not leak an untracked lockfile into release commits.
+
 ## [7.1.1] — 2026-07-28 (Separator Normalisation)
 
 ### Security

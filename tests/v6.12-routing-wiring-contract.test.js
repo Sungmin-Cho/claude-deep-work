@@ -2,11 +2,160 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+
+function routingCallWindow(skill, anchor) {
+  const anchorIndex = skill.indexOf(anchor);
+  assert.ok(anchorIndex >= 0, `missing routing anchor: ${anchor}`);
+  const callIndex = skill.indexOf('MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js"', anchorIndex);
+  assert.ok(callIndex > anchorIndex, `missing model-routing call after: ${anchor}`);
+  return skill.slice(anchorIndex, callIndex + 700);
+}
+
+function bashFences(block) {
+  return [...block.matchAll(/```bash\n([\s\S]*?)```/g)].map((match) => match[1]);
+}
+
+function unquotedShellSurface(shell) {
+  let surface = '';
+  let quote = null;
+  let escaped = false;
+  let comment = false;
+  for (let index = 0; index < shell.length; index++) {
+    const char = shell[index];
+    if (comment) {
+      if (char === '\n') {
+        comment = false;
+        surface += '\n';
+      } else {
+        surface += ' ';
+      }
+      continue;
+    }
+    if (escaped) {
+      surface += ' ';
+      escaped = false;
+      continue;
+    }
+    if (quote) {
+      if (char === '\\' && quote === '"' && shell[index + 1] === '\n') {
+        index++;
+        continue;
+      }
+      if (char === '\\' && quote === '"') escaped = true;
+      else if (char === quote) quote = null;
+      surface += ' ';
+      continue;
+    }
+    if (char === '\\' && shell[index + 1] === '\n') {
+      index++;
+    } else if (char === '\\') {
+      escaped = true;
+      surface += ' ';
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      surface += ' ';
+    } else if (char === '#' && (index === 0 || /[\s;|&()]/.test(shell[index - 1]))) {
+      comment = true;
+      surface += ' ';
+    } else {
+      surface += char;
+    }
+  }
+  return surface;
+}
+
+function runtimeAssignments(shell) {
+  const surface = unquotedShellSurface(shell);
+  return [...surface.matchAll(/(?:^|\n|;|&&|\|\||\||&)\s*(?:export\s+)?ROUTING_RUNTIME\s*=/g)];
+}
+
+function assertCurrentHostRuntimeWiring(block, surface) {
+  assert.match(block, /Agent[^\n]*(?:도구|tool)[^\n]*(?:available|가용|사용 가능)/,
+    `${surface} must derive the runtime from Agent tool availability`);
+  assert.match(block, /Agent[\s\S]{0,120}?(?:available|가용|사용 가능)[\s\S]{0,80}?claude/i,
+    `${surface} must map Agent availability to claude`);
+  assert.match(block, /Agent[\s\S]{0,180}?(?:unavailable|없|사용 불가)[\s\S]{0,80}?codex/i,
+    `${surface} must map Agent unavailability to codex`);
+
+  const routingFences = bashFences(block)
+    .filter((fence) => fence.includes('scripts/model-routing-cli.js'));
+  assert.equal(routingFences.length, 1,
+    `${surface} must define exactly one executable routing fence`);
+  const routingFence = routingFences[0];
+  const assignments = runtimeAssignments(routingFence);
+  assert.equal(assignments.length, 1,
+    `${surface} must assign the selected runtime exactly once in the routing fence`);
+  assert.match(routingFence, /^ROUTING_RUNTIME="<current host: claude or codex>"$/m,
+    `${surface} must require one host-selected literal assignment`);
+  assert.match(routingFence, /case "\$ROUTING_RUNTIME" in[\s\S]*claude\|codex\)[\s\S]*\*\)[\s\S]*exit 1/,
+    `${surface} must fail closed unless the selected literal is claude or codex`);
+  assert.match(routingFence, /--runtime "\$ROUTING_RUNTIME"/,
+    `${surface} must consume the asserted runtime in the same shell fence`);
+
+  const otherFences = bashFences(block).filter((fence) => fence !== routingFence);
+  assert.ok(otherFences.every((fence) => runtimeAssignments(fence).length === 0),
+    `${surface} must not assign runtime in a separate shell fence`);
+}
+
+test('production routing calls assert the current host runtime explicitly', () => {
+  const orchestrator = routingCallWindow(
+    read('skills/deep-work-orchestrator/SKILL.md'),
+    '**2단계 — methodology-authority routing facade:**',
+  );
+  const research = routingCallWindow(
+    read('skills/deep-research/SKILL.md'),
+    '3. 성공한 authoritative class로 재라우팅한다.',
+  );
+
+  assertCurrentHostRuntimeWiring(orchestrator, 'orchestrator initial routing');
+  assertCurrentHostRuntimeWiring(research, 'research authoritative reroute');
+  assert.match(research, /persisted[^\n]*runtime[^\n]*(?:재사용|reuse)[^\n]*(?:금지|않)/i,
+    'authoritative reroute must refresh the current host instead of reusing persisted runtime');
+});
+
+test('runtime wiring contract rejects unsafe executable and prose-only shapes', () => {
+  const prefix = [
+    'Agent tool available maps to claude.',
+    'Agent tool unavailable maps to codex.',
+  ].join('\n');
+  const call = 'MR_OUT=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/model-routing-cli.js" --runtime "$ROUTING_RUNTIME")';
+  const guard = 'case "$ROUTING_RUNTIME" in\n  claude|codex) ;;\n  *) exit 1 ;;\nesac';
+  const splice = String.fromCharCode(92) + '\n';
+
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="claude"\nROUTING_RUNTIME="codex"\n${call}\n\`\`\``, 'dual assignment'));
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="<current host: claude or codex>"\ncase "$ROUTING_RUNTIME" in\n  claude|codex) ;;\n  *) exit 1 ;;\nesac\n  ROUTING_RUNTIME="codex"\n${call}\n\`\`\``, 'indented dual assignment'));
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="<current host: claude or codex>"\ncase "$ROUTING_RUNTIME" in\n  claude|codex) ;;\n  *) exit 1 ;;\nesac\ntrue | ROUTING_RUNTIME="codex"\n${call}\n\`\`\``, 'pipe-prefixed dual assignment'));
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="<current host: claude or codex>"\ncase "$ROUTING_RUNTIME" in\n  claude|codex) ;;\n  *) exit 1 ;;\nesac\ntrue & ROUTING_RUNTIME="codex"\n${call}\n\`\`\``, 'background-prefixed dual assignment'));
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="<current host: claude or codex>"\n${guard}\nROUTING_${splice}RUNTIME="codex"\n${call}\n\`\`\``, 'spliced-name dual assignment'));
+  assert.doesNotThrow(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="<current host: claude or codex>"\n${guard}\ntrue ${splice}ROUTING_RUNTIME="codex"\n${call}\n\`\`\``, 'continued argument'));
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\nROUTING_RUNTIME="<current host: claude or codex>"\n\`\`\`\n\`\`\`bash\n${call}\n\`\`\``, 'separate fences'));
+  assert.throws(() => assertCurrentHostRuntimeWiring(`${prefix}\n\`\`\`bash\n# ROUTING_RUNTIME="<current host: claude or codex>"\n${call}\n\`\`\``, 'comment-only assignment'));
+});
+
+test('model routing selects the matching Claude and Codex catalogs', () => {
+  const route = (runtime) => JSON.parse(execFileSync(process.execPath, [
+    'scripts/model-routing-cli.js',
+    '--root', '.',
+    '--task', 'runtime wiring contract probe',
+    '--difficulty', 'medium',
+    '--runtime', runtime,
+  ], { cwd: ROOT, encoding: 'utf8' }));
+
+  const claude = route('claude');
+  const codex = route('codex');
+  assert.equal(claude.meta.runtime, 'claude');
+  assert.equal(claude.model_routing.research, 'sonnet');
+  assert.equal(claude.model_routing.test, 'haiku');
+  assert.equal(codex.meta.runtime, 'codex');
+  assert.equal(codex.model_routing.research, 'gpt-5.6-terra');
+  assert.equal(codex.model_routing.test, 'gpt-5.6-luna');
+});
 
 test('orchestrator init wires risk-only -> methodology authority -> routing facade', () => {
   const skill = read('skills/deep-work-orchestrator/SKILL.md');

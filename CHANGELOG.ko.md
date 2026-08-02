@@ -7,6 +7,18 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.2] — 2026-08-03 (호스트 명시형 GPT 라우팅)
+
+### Changed
+
+- **Codex 라우팅이 risk floor를 약화하지 않고 GPT-5.6 가격·성능 프런티어를 따릅니다.** light·standard·deep 슬롯은 각각 GPT-5.6 Luna·Terra·Sol로 유지하며, 가격만의 산식이 아니라 methodology risk와 오류 비용이 최소 tier를 계속 결정합니다.
+- **모델 라우팅이 실제 host를 명시적으로 결속합니다.** orchestrator와 authoritative research reroute가 현재 `Agent` 도구 사용 가능 여부로 `claude`/`codex`를 판정하고 같은 shell invocation에서 routing CLI에 runtime을 전달하며, host를 확정하지 못하면 fail closed로 중단합니다. persisted runtime과 child-process 환경 marker는 현재 host 판정을 덮어쓸 수 없습니다.
+
+### Fixed
+
+- **라우팅 contract 테스트가 실행 가능한 shadow assignment를 거부합니다.** split fence, comment, indentation, semicolon/logical separator, pipe, background command, export, quote, escape, Bash backslash-newline token splicing mutant를 포괄하면서 정상적인 continued argument는 허용합니다.
+- **저장소 로컬 npm lockfile은 로컬에만 남습니다.** npm 검증 과정에서 생긴 루트 `package-lock.json`이 릴리스 commit에 섞이지 않도록 ignore합니다.
+
 ## [7.1.1] — 2026-07-28 (경로 구분자 정규화)
 
 ### Security
