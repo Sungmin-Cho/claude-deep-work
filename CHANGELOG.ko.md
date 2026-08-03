@@ -7,6 +7,13 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.3] — 2026-08-03 (이중 Root Hook Bootstrap)
+
+### Fixed
+
+- **이중 root hook bootstrap**: 등록된 hook은 `CLAUDE_PLUGIN_ROOT`를 먼저 해석하고 `PLUGIN_ROOT`로 fallback한 뒤, POSIX와 Windows에서 byte-identical stdin과 event별 종료 의미로 실행하기 전에 bootstrap 및 adapter target을 canonicalize하고 containment를 검사합니다.
+- PreToolUse guard 실패가 이제 차단됩니다: 0(허용)·2(차단) 이외의 guard 종료 status(예: 손상된 설치의 127)는 도구 호출을 조용히 통과시키는 대신 차단으로 강제되며, 원 status는 stderr에 보고됩니다.
+
 ## [7.1.2] — 2026-08-03 (호스트 명시형 GPT 라우팅)
 
 ### Changed

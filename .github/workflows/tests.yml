@@ -42,6 +42,9 @@ jobs:
       - name: Show bash version (M5.5 #4 — bash 3.2 visibility)
         run: bash --version
 
+      - name: Run dual-root hook bootstrap contract
+        run: node --test hooks/scripts/hook-bootstrap.test.js hooks/scripts/hook-runtime-portability.test.js
+
       - name: Run full Node test suite
         run: npm test
 

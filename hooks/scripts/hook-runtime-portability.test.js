@@ -10,6 +10,40 @@ const { scrubHostEnv } = require('./test-helpers/run-phase-guard.js');
 
 const PLUGIN_ROOT = path.resolve(__dirname, '../..');
 const HOOKS_PATH = path.join(PLUGIN_ROOT, 'hooks', 'hooks.json');
+const BOOTSTRAP_PATH = path.join(__dirname, 'hook-bootstrap.js');
+const STDIN_SENTINEL = Buffer.from('dw-stdin-\x1f-señtinel-딥\n');
+
+const PROGRAM_TEMPLATE = "var e=process.env,c=e.CLAUDE_PLUGIN_ROOT,p=e.PLUGIN_ROOT,r=(c!==undefined&&c!=='')?c:((p!==undefined&&p!=='')?p:'');try{if(!r||r.trim()==='')throw new Error('plugin root env unset or whitespace-only (CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT)');var q=require('path'),f=require('fs'),S=q.sep,w=process.platform==='win32',a=r.charAt(0),b=r.charAt(1),d=r.charAt(2),ok=w?((b===':'&&(d===S||d==='/'))||((a===S||a==='/')&&(b===S||b==='/'))):a==='/';if(!ok)throw new Error('plugin root is not a fully qualified absolute path: '+r);var R=q.resolve(f.realpathSync(r)),B=q.resolve(f.realpathSync(q.join(R,'hooks','scripts','hook-bootstrap.js'))),t=B,g=false;for(;;){var n=q.dirname(t);if(n===t)break;if(n===R){g=true;break}t=n}if(!g)throw new Error('hook-bootstrap.js escapes the plugin root');require(B).main('<MODE>',R)}catch(x){<CATCH-TAIL>}";
+
+const EXACT_CATCH = "console.error('deep-work hook bootstrap: '+(x&&x.message?x.message:x));process.exitCode=1";
+const SENSOR_CATCH = "console.error('deep-work hook bootstrap: '+(x&&x.message?x.message:x));process.exitCode=0";
+const PRE_CATCH = "console.error('deep-work hook bootstrap: '+(x&&x.message?x.message:x));console.log(JSON.stringify({decision:'block',reason:'deep-work hook bootstrap failed: '+(x&&x.message?x.message:x)}));process.exitCode=2";
+
+function programFor(mode) {
+  const catchTail = mode === 'pre-tool-use'
+    ? PRE_CATCH
+    : mode === 'post-tool-sensor' ? SENSOR_CATCH : EXACT_CATCH;
+  return PROGRAM_TEMPLATE
+    .replace('<MODE>', mode)
+    .replace('<CATCH-TAIL>', catchTail);
+}
+
+function expectedCommand(mode, fail) {
+  const program = programFor(mode);
+  if (mode === 'pre-tool-use') {
+    return `if ! command -v node >/dev/null 2>&1; then echo 'deep-work hook bootstrap: node executable not found on PATH' >&2; exit 2; fi; s=0; node -e "${program}" || s=$?; if [ $s -eq 0 ] || [ $s -eq 2 ]; then exit $s; fi; echo 'deep-work hook bootstrap: unexpected guard status '$s' coerced to block' >&2; exit 2`;
+  }
+  return `if command -v node >/dev/null 2>&1; then exec node -e "${program}"; fi; echo 'deep-work hook bootstrap: node executable not found on PATH' >&2; exit ${fail}`;
+}
+
+function expectedCommandWindows(mode, fail) {
+  const program = programFor(mode);
+  const prefix = `$LASTEXITCODE = $null; try { node -e "${program}" } catch { [Console]::Error.WriteLine('deep-work hook bootstrap: node could not be started: ' + $_.Exception.Message) }; if ($null -eq $LASTEXITCODE) { exit ${fail} }`;
+  if (mode === 'pre-tool-use') {
+    return `${prefix}; if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 2) { exit $LASTEXITCODE }; [Console]::Error.WriteLine('deep-work hook bootstrap: unexpected guard status ' + $LASTEXITCODE + ' coerced to block'); exit 2`;
+  }
+  return `${prefix}; exit $LASTEXITCODE`;
+}
 
 function commandHandlers(document) {
   return Object.values(document.hooks)
@@ -18,71 +52,571 @@ function commandHandlers(document) {
     .filter((handler) => handler.type === 'command');
 }
 
-test('every registered hook exposes shell-free POSIX and Windows commands', () => {
-  const document = JSON.parse(fs.readFileSync(HOOKS_PATH, 'utf8'));
-  const handlers = commandHandlers(document);
+function registeredEntries(document = JSON.parse(fs.readFileSync(HOOKS_PATH, 'utf8'))) {
+  return [
+    { mode: 'session-start-update', handler: document.hooks.SessionStart[0].hooks[0], target: 'session-start-adapter.js', args: ['update-check'], fail: 1, timeout: 8 },
+    { mode: 'session-start-sensor', handler: document.hooks.SessionStart[0].hooks[1], target: 'session-start-adapter.js', args: ['sensor-detect'], fail: 1, timeout: 8 },
+    { mode: 'pre-tool-use', handler: document.hooks.PreToolUse[0].hooks[0], target: 'hook-shell-adapter.js', args: ['phase-guard'], fail: 2, timeout: 5 },
+    { mode: 'post-tool-main', handler: document.hooks.PostToolUse[0].hooks[0], target: 'hook-shell-adapter.js', args: ['post-tool'], fail: 1, timeout: 6 },
+    { mode: 'post-tool-sensor', handler: document.hooks.PostToolUse[0].hooks[1], target: 'sensor-trigger.js', args: [], fail: 0, timeout: 3 },
+    { mode: 'stop', handler: document.hooks.Stop[0].hooks[0], target: 'hook-shell-adapter.js', args: ['session-end'], fail: 1, timeout: 5 },
+  ];
+}
 
-  assert.ok(handlers.length > 0);
-  for (const handler of handlers) {
-    assert.equal(typeof handler.command, 'string');
-    assert.equal(typeof handler.commandWindows, 'string');
-    for (const command of [handler.command, handler.commandWindows]) {
-      assert.match(command, /^node "/);
-      assert.doesNotMatch(command, /\b(?:bash|wsl)(?:\.exe)?\b/i);
-      assert.doesNotMatch(command, /\.sh(?:"|\s|$)/i);
-    }
-    assert.match(handler.command, /\$\{CLAUDE_PLUGIN_ROOT\}\//);
-    assert.match(handler.commandWindows, /\$\{CLAUDE_PLUGIN_ROOT\}\\/);
-    assert.match(handler.commandWindows, /; exit \$LASTEXITCODE$/);
-  }
+function extractProgram(field) {
+  const match = /node -e "([^"]+)"/.exec(field);
+  assert.ok(match, `inline node program not found: ${field}`);
+  return match[1];
+}
 
-  assert.equal(document.hooks.PostToolUse.length, 1);
-  assert.match(
-    document.hooks.PostToolUse[0].hooks[0].command,
-    /hook-shell-adapter\.js" post-tool$/,
+function extractedPredicates(field) {
+  const program = extractProgram(field);
+  const fq = /w=process\.platform==='win32',a=([^,]+),b=([^,]+),d=([^,]+),ok=([^;]+);if\(!ok\)/.exec(program);
+  assert.ok(fq, 'fully-qualified predicate not found');
+  const fullyQualified = new Function('r', 'platform', 'sep',
+    `var S=sep,w=platform==='win32',a=${fq[1]},b=${fq[2]},d=${fq[3]};return ${fq[4]};`);
+
+  const walk = /var R=([^,]+),B=([^;]+),t=B,g=false;(for\(;;\)\{.*?\})if\(!g\)/.exec(program);
+  assert.ok(walk, 'containment walk not found');
+  const bExpression = walk[2].replace(
+    /q\.join\(R,'hooks','scripts','hook-bootstrap\.js'\)/,
+    'rawTarget',
   );
+  const makeInside = new Function('pathApi', `
+    return function(rawRoot, rawTarget) {
+      var q=pathApi,f={realpathSync:function(value){return value}},r=rawRoot;
+      var R=${walk[1]},B=${bExpression},t=B,g=false;
+      ${walk[3]}
+      return g;
+    };
+  `);
+  return { fullyQualified, makeInside };
+}
+
+test('manifest commands are exact snapshots of the four canonical templates', () => {
+  const document = JSON.parse(fs.readFileSync(HOOKS_PATH, 'utf8'));
+  const entries = registeredEntries(document);
+
+  assert.equal(document.description,
+    'Phase enforcement, file tracking, update check, and session lifecycle hooks');
+  assert.equal(entries.length, 6);
+  assert.deepEqual(entries.map(({ mode }) => mode), [
+    'session-start-update',
+    'session-start-sensor',
+    'pre-tool-use',
+    'post-tool-main',
+    'post-tool-sensor',
+    'stop',
+  ]);
+  for (const entry of entries) {
+    assert.equal(entry.handler.command, expectedCommand(entry.mode, entry.fail), entry.mode);
+    assert.equal(entry.handler.commandWindows,
+      expectedCommandWindows(entry.mode, entry.fail), entry.mode);
+    assert.equal(entry.handler.timeout, entry.timeout, entry.mode);
+    const program = programFor(entry.mode);
+    assert.doesNotMatch(program, /[$`\\"]/);
+  }
 });
 
-test('every hook command survives a plugin root containing spaces', {
-  skip: process.platform === 'win32' ? 'POSIX command path regression' : false,
-}, (t) => {
-  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'deep work plugin '));
-  t.after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
-
-  const shellScripts = [
-    'hooks/scripts/update-check.sh',
-    'hooks/scripts/phase-guard.sh',
-    'hooks/scripts/file-tracker.sh',
-    'hooks/scripts/phase-transition.sh',
-    'hooks/scripts/session-end.sh',
+test('all 12 shipped fields use predicates equivalent to hook-bootstrap exports', () => {
+  const { isFullyQualified, isStrictlyInside } = require('./hook-bootstrap.js');
+  const fqRows = [
+    ['C:\\', 'win32', '\\', true],
+    ['C:/', 'win32', '\\', true],
+    ['\\\\server\\share', 'win32', '\\', true],
+    ['//server/share', 'win32', '\\', true],
+    ['C:foo', 'win32', '\\', false],
+    ['\\foo', 'win32', '\\', false],
+    ['relative/path', 'win32', '\\', false],
+    ['/opt/plugin', 'linux', '/', true],
+    ['relative/path', 'linux', '/', false],
   ];
-  const nodeScripts = [
-    'hooks/scripts/hook-shell-adapter.js',
-    'hooks/scripts/session-start-adapter.js',
-    'hooks/scripts/sensor-trigger.js',
-    'sensors/detect.js',
+  const insideRows = [
+    [path.posix, '/', '/hooks/scripts/hook-bootstrap.js', true],
+    [path.win32, 'C:\\', 'C:\\hooks\\scripts\\hook-bootstrap.js', true],
+    [path.win32, '\\\\srv\\share', '\\\\srv\\share\\hooks\\scripts\\hook-bootstrap.js', true],
+    [path.win32, '\\\\srv\\share\\', '\\\\srv\\share\\hooks\\scripts\\hook-bootstrap.js', true],
+    [path.win32, '//srv/share', '//srv/share/hooks/scripts/hook-bootstrap.js', true],
+    [path.win32, 'C:\\p\\Root', 'C:\\p\\Root\\..safe\\hook-bootstrap.js', true],
+    [path.win32, 'C:\\p\\Root', 'C:\\p\\root\\evil.js', false],
+    [path.win32, 'C:\\p\\İ', 'C:\\p\\i̇\\evil.js', false],
+    [path.win32, 'C:\\p\\Root', 'C:\\p\\Root-sibling\\evil.js', false],
+    [path.win32, 'C:\\p\\Root', 'C:\\p\\hook-bootstrap.js', false],
+    [path.win32, 'C:\\p\\Root', 'C:\\p\\Sibling\\hook-bootstrap.js', false],
+    [path.win32, 'C:\\p\\Root', 'C:\\p\\..\\hook-bootstrap.js', false],
   ];
-  for (const relativePath of shellScripts) {
-    const target = path.join(fixtureRoot, relativePath);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, '#!/usr/bin/env bash\nexit 0\n');
-  }
-  for (const relativePath of nodeScripts) {
-    const target = path.join(fixtureRoot, relativePath);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    const source = relativePath.endsWith('hook-shell-adapter.js')
-      ? fs.readFileSync(path.join(PLUGIN_ROOT, relativePath), 'utf8')
-      : "'use strict';\nprocess.exitCode = 0;\n";
-    fs.writeFileSync(target, source);
-  }
 
+  for (const { handler } of registeredEntries()) {
+    for (const field of [handler.command, handler.commandWindows]) {
+      const { fullyQualified, makeInside } = extractedPredicates(field);
+      for (const [value, platform, sep, expected] of fqRows) {
+        assert.equal(fullyQualified(value, platform, sep), expected, `${value}: ${field}`);
+        assert.equal(isFullyQualified(value, platform, sep), expected, value);
+      }
+      for (const [pathApi, root, target, expected] of insideRows) {
+        const extractedInside = makeInside(pathApi);
+        assert.equal(extractedInside(root, target), expected, `${root} -> ${target}: ${field}`);
+        assert.equal(
+          isStrictlyInside(pathApi.resolve(root), pathApi.resolve(target), pathApi),
+          expected,
+          `${root} -> ${target}`,
+        );
+      }
+    }
+  }
+});
+
+test('manifest bootstrap tails, registration order, and deny rules stay fail-safe', () => {
   const document = JSON.parse(fs.readFileSync(HOOKS_PATH, 'utf8'));
-  for (const handler of commandHandlers(document)) {
-    const command = handler.command.replaceAll('${CLAUDE_PLUGIN_ROOT}', fixtureRoot);
-    const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' });
-    assert.equal(result.status, 0,
-      `${command}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+  const entries = registeredEntries(document);
+  assert.equal(commandHandlers(document).length, 6);
+  assert.equal(document.hooks.PostToolUse.length, 1);
+  assert.deepEqual(entries.slice(3, 5).map(({ mode }) => mode),
+    ['post-tool-main', 'post-tool-sensor']);
+
+  for (const { mode, handler } of entries) {
+    for (const field of [handler.command, handler.commandWindows]) {
+      assert.doesNotMatch(field, /\$\{(?:CLAUDE_)?PLUGIN_ROOT\}/);
+      assert.doesNotMatch(field, /\b(?:bash|wsl)(?:\.exe)?\b/i);
+      assert.doesNotMatch(field, /\.sh(?:"|\s|$)/i);
+      assert.doesNotMatch(field, /skip|CLAUDECODE|CODEX_HOME/i);
+      assert.match(extractProgram(field), new RegExp(`main\\('${mode}',R\\)`));
+    }
+    assert.match(handler.command, /command -v node/);
+    assert.match(handler.command, /node executable not found on PATH/);
+    assert.match(handler.commandWindows, /^\$LASTEXITCODE = \$null; try \{ node -e /);
+    assert.match(handler.commandWindows, /catch \{ \[Console\]::Error\.WriteLine/);
+    assert.match(handler.commandWindows, /if \(\$null -eq \$LASTEXITCODE\)/);
   }
+
+  const pre = entries.find(({ mode }) => mode === 'pre-tool-use').handler;
+  assert.match(pre.command, /s=0; node -e /);
+  assert.match(pre.command, /\|\| s=\$\?/);
+  assert.match(pre.command, /if \[ \$s -eq 0 \] \|\| \[ \$s -eq 2 \]/);
+  assert.match(pre.commandWindows, /-eq 0 -or \$LASTEXITCODE -eq 2/);
+  for (const { mode, handler } of entries.filter(({ mode }) => mode !== 'pre-tool-use')) {
+    assert.match(handler.command, /then exec node -e /, mode);
+    assert.match(handler.commandWindows, /; exit \$LASTEXITCODE$/, mode);
+  }
+});
+
+module.exports = { expectedCommand, expectedCommandWindows, registeredEntries };
+
+function fixtureAdapterSource() {
+  return `'use strict';
+const fs=require('node:fs'),path=require('node:path');
+const chunks=[];
+process.stdin.on('data',(chunk)=>chunks.push(chunk));
+process.stdin.on('end',()=>{
+  const root=path.resolve(__dirname,'..','..');
+  fs.mkdirSync(path.join(root,'capture'),{recursive:true});
+  fs.writeFileSync(path.join(root,'capture',path.basename(__filename)+'.'+process.pid+'.json'),JSON.stringify({target:path.basename(__filename),argv:process.argv.slice(2),stdin:Buffer.concat(chunks).toString('base64')}));
+  if(process.env.FIXTURE_CHILD_SIGNAL){process.kill(process.pid,process.env.FIXTURE_CHILD_SIGNAL);return}
+  process.exitCode=Number(process.env.FIXTURE_CHILD_EXIT||0);
+});
+process.stdin.resume();
+`;
+}
+
+function populateFixtureRoot(root) {
+  const scripts = path.join(root, 'hooks', 'scripts');
+  fs.mkdirSync(scripts, { recursive: true });
+  fs.mkdirSync(path.join(root, 'capture'), { recursive: true });
+  if (fs.existsSync(BOOTSTRAP_PATH)) {
+    fs.copyFileSync(BOOTSTRAP_PATH, path.join(scripts, 'hook-bootstrap.js'));
+  }
+  for (const target of [
+    'hook-shell-adapter.js',
+    'session-start-adapter.js',
+    'sensor-trigger.js',
+  ]) {
+    fs.writeFileSync(path.join(scripts, target), fixtureAdapterSource());
+  }
+}
+
+function makeFixture(t, prefix = 'deep work 플러그인 ') {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = path.join(base, 'plugin root');
+  populateFixtureRoot(root);
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  return { base, root };
+}
+
+function clearCaptures(root) {
+  const capture = path.join(root, 'capture');
+  fs.rmSync(capture, { recursive: true, force: true });
+  fs.mkdirSync(capture, { recursive: true });
+}
+
+function captures(root) {
+  const capture = path.join(root, 'capture');
+  if (!fs.existsSync(capture)) return [];
+  return fs.readdirSync(capture)
+    .filter((name) => name.endsWith('.json') && name !== 'escaped.json')
+    .map((name) => JSON.parse(fs.readFileSync(path.join(capture, name), 'utf8')));
+}
+
+function runRegistered(entry, { env = {}, input = STDIN_SENTINEL, cwd } = {}) {
+  const isWindows = process.platform === 'win32';
+  return spawnSync(
+    isWindows ? 'powershell.exe' : '/bin/sh',
+    isWindows
+      ? ['-NoProfile', '-NonInteractive', '-Command', entry.handler.commandWindows]
+      : ['-c', entry.handler.command],
+    {
+      cwd,
+      env: scrubHostEnv(env),
+      input,
+      encoding: 'utf8',
+      shell: false,
+    },
+  );
+}
+
+function resultDetail(entry, result) {
+  return `${entry.mode}: status=${result.status} signal=${result.signal || ''}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
+}
+
+function assertSuccessfulCapture(entry, result, root, input = STDIN_SENTINEL) {
+  assert.equal(result.status, 0, resultDetail(entry, result));
+  const observed = captures(root);
+  assert.equal(observed.length, 1, resultDetail(entry, result));
+  assert.equal(observed[0].target, entry.target, entry.mode);
+  assert.deepEqual(observed[0].argv, entry.args, entry.mode);
+  assert.equal(observed[0].stdin, Buffer.from(input).toString('base64'), entry.mode);
+}
+
+function assertEventFailure(entry, result) {
+  assert.equal(result.status, entry.fail, resultDetail(entry, result));
+  assert.match(result.stderr, /deep-work hook bootstrap/, resultDetail(entry, result));
+  if (entry.mode === 'pre-tool-use') {
+    assert.match(result.stdout, /"decision":"block"/, resultDetail(entry, result));
+  }
+  if (entry.mode.startsWith('session-start')) {
+    assert.equal(result.stdout, '', resultDetail(entry, result));
+  }
+}
+
+function writeEscapeModule(target, marker) {
+  fs.writeFileSync(target,
+    `require('node:fs').writeFileSync(${JSON.stringify(marker)},'escaped');module.exports={main:function(){process.exitCode=0}};\n`);
+}
+
+function replaceWithSymlink(linkPath, targetPath) {
+  fs.rmSync(linkPath, { force: true });
+  fs.symlinkSync(targetPath, linkPath);
+}
+
+test('case 0 Windows command quoting canary preserves the node -e payload', {
+  skip: process.platform === 'win32' ? false : 'native PowerShell contract',
+}, () => {
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    `node -e "console.log('dw-canary')"; exit $LASTEXITCODE`,
+  ], { encoding: 'utf8', shell: false });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'dw-canary');
+});
+
+test('case 1 Claude-only root executes all registered entries with byte-identical stdin', (t) => {
+  const fixture = makeFixture(t);
+  for (const entry of registeredEntries()) {
+    clearCaptures(fixture.root);
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { CLAUDE_PLUGIN_ROOT: fixture.root },
+    });
+    assertSuccessfulCapture(entry, result, fixture.root);
+  }
+});
+
+test('case 2 Codex-only root executes all registered entries with byte-identical stdin', (t) => {
+  const fixture = makeFixture(t);
+  const entries = registeredEntries();
+  const pre = entries.find(({ mode }) => mode === 'pre-tool-use');
+  for (const entry of [pre, ...entries.filter(({ mode }) => mode !== 'pre-tool-use')]) {
+    clearCaptures(fixture.root);
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { PLUGIN_ROOT: fixture.root },
+    });
+    assertSuccessfulCapture(entry, result, fixture.root);
+  }
+});
+
+test('case 3 both-different roots give CLAUDE_PLUGIN_ROOT silent precedence', (t) => {
+  const claude = makeFixture(t, 'deep work claude ');
+  const codex = makeFixture(t, 'deep work codex ');
+  for (const entry of registeredEntries()) {
+    clearCaptures(claude.root);
+    clearCaptures(codex.root);
+    const result = runRegistered(entry, {
+      cwd: claude.base,
+      env: {
+        CLAUDE_PLUGIN_ROOT: claude.root,
+        PLUGIN_ROOT: codex.root,
+      },
+    });
+    assertSuccessfulCapture(entry, result, claude.root);
+    assert.equal(captures(codex.root).length, 0, entry.mode);
+  }
+});
+
+test('case 4 neither root fails by event polarity without executing cwd decoys', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-hook-trap-'));
+  const cwd = path.join(base, 'workspace');
+  const marker = path.join(base, 'decoy-ran');
+  fs.mkdirSync(path.join(cwd, 'hooks', 'scripts'), { recursive: true });
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  for (const target of ['hook-bootstrap.js', 'hook-shell-adapter.js', 'session-start-adapter.js', 'sensor-trigger.js']) {
+    fs.writeFileSync(path.join(cwd, 'hooks', 'scripts', target),
+      `require('node:fs').writeFileSync(${JSON.stringify(marker)},'ran');process.exitCode=0;\n`);
+  }
+  for (const entry of registeredEntries()) {
+    fs.rmSync(marker, { force: true });
+    const result = runRegistered(entry, { cwd });
+    assertEventFailure(entry, result);
+    assert.equal(fs.existsSync(marker), false, entry.mode);
+  }
+});
+
+test('case 5 whitespace CLAUDE root does not fall through to valid PLUGIN_ROOT', (t) => {
+  const fixture = makeFixture(t);
+  for (const entry of registeredEntries()) {
+    clearCaptures(fixture.root);
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { CLAUDE_PLUGIN_ROOT: '   ', PLUGIN_ROOT: fixture.root },
+    });
+    assertEventFailure(entry, result);
+    assert.equal(captures(fixture.root).length, 0, entry.mode);
+  }
+});
+
+test('case 6a adapter symlink escape is rejected before outside code executes', {
+  skip: process.platform === 'win32' ? 'symlink fixture is POSIX-only' : false,
+}, (t) => {
+  for (const entry of registeredEntries()) {
+    const fixture = makeFixture(t, `deep work 6a ${entry.mode} `);
+    const outside = path.join(fixture.base, `outside-${entry.target}`);
+    const marker = path.join(fixture.root, 'capture', 'escaped.json');
+    writeEscapeModule(outside, marker);
+    replaceWithSymlink(path.join(fixture.root, 'hooks', 'scripts', entry.target), outside);
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { PLUGIN_ROOT: fixture.root },
+    });
+    assert.equal(result.status, entry.fail, resultDetail(entry, result));
+    assert.equal(fs.existsSync(marker), false, entry.mode);
+  }
+});
+
+test('case 6b inline bootstrap symlink escape is rejected before require', {
+  skip: process.platform === 'win32' ? 'symlink fixture is POSIX-only' : false,
+}, (t) => {
+  for (const entry of registeredEntries()) {
+    const fixture = makeFixture(t, `deep work 6b ${entry.mode} `);
+    const outside = path.join(fixture.base, 'outside-bootstrap.js');
+    const marker = path.join(fixture.root, 'capture', 'escaped.json');
+    writeEscapeModule(outside, marker);
+    replaceWithSymlink(path.join(fixture.root, 'hooks', 'scripts', 'hook-bootstrap.js'), outside);
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { PLUGIN_ROOT: fixture.root },
+    });
+    assert.equal(result.status, entry.fail, resultDetail(entry, result));
+    assert.match(result.stderr, /escapes the plugin root/, resultDetail(entry, result));
+    assert.equal(fs.existsSync(marker), false, entry.mode);
+  }
+});
+
+test('case 6c relocated bootstrap keeps the caller-supplied root identity', {
+  skip: process.platform === 'win32' ? 'symlink fixture is POSIX-only' : false,
+}, (t) => {
+  for (const entry of registeredEntries()) {
+    const fixture = makeFixture(t, `deep work 6c ${entry.mode} `);
+    const fixedBootstrap = path.join(fixture.root, 'hooks', 'scripts', 'hook-bootstrap.js');
+    const relocated = path.join(fixture.root, 'hooks', 'bootstrap.js');
+    fs.copyFileSync(fixedBootstrap, relocated);
+    replaceWithSymlink(fixedBootstrap, '../bootstrap.js');
+
+    const outsideTarget = path.join(fixture.base, 'hooks', 'scripts', entry.target);
+    const marker = path.join(fixture.root, 'capture', 'escaped.json');
+    fs.mkdirSync(path.dirname(outsideTarget), { recursive: true });
+    writeEscapeModule(outsideTarget, marker);
+    clearCaptures(fixture.root);
+
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { PLUGIN_ROOT: fixture.root },
+    });
+    assertSuccessfulCapture(entry, result, fixture.root);
+    assert.equal(fs.existsSync(marker), false, entry.mode);
+  }
+});
+
+test('case 7 child exit 7 preserves exact modes and blocks PreToolUse', (t) => {
+  const fixture = makeFixture(t);
+  for (const entry of registeredEntries()) {
+    clearCaptures(fixture.root);
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { PLUGIN_ROOT: fixture.root, FIXTURE_CHILD_EXIT: '7' },
+    });
+    const expected = entry.mode === 'pre-tool-use' ? 2 : 7;
+    assert.equal(result.status, expected, resultDetail(entry, result));
+    if (entry.mode === 'pre-tool-use') assert.match(result.stderr, /7/);
+  }
+});
+
+test('case 7b polarity sweep maps only PreToolUse statuses 1 and 129 to block', (t) => {
+  const fixture = makeFixture(t);
+  for (const status of [1, 129]) {
+    for (const entry of registeredEntries()) {
+      const result = runRegistered(entry, {
+        cwd: fixture.base,
+        env: { PLUGIN_ROOT: fixture.root, FIXTURE_CHILD_EXIT: String(status) },
+      });
+      const expected = entry.mode === 'pre-tool-use' ? 2 : status;
+      assert.equal(result.status, expected, resultDetail(entry, result));
+      if (entry.mode === 'pre-tool-use') assert.match(result.stderr, new RegExp(String(status)));
+    }
+  }
+});
+
+test('case 8 child SIGKILL is converted to each event failure policy', {
+  skip: process.platform === 'win32' ? 'POSIX signal contract' : false,
+}, (t) => {
+  const fixture = makeFixture(t);
+  for (const entry of registeredEntries()) {
+    const result = runRegistered(entry, {
+      cwd: fixture.base,
+      env: { PLUGIN_ROOT: fixture.root, FIXTURE_CHILD_SIGNAL: 'SIGKILL' },
+    });
+    assert.equal(result.status, entry.fail, resultDetail(entry, result));
+    assert.match(result.stderr, /SIGKILL|signal/i, resultDetail(entry, result));
+  }
+});
+
+test('case 8b PreToolUse shell belt coerces bootstrap SIGKILL status 137 to block', {
+  skip: process.platform === 'win32' ? 'POSIX signal contract' : false,
+}, (t) => {
+  const fixture = makeFixture(t);
+  const bootstrap = path.join(fixture.root, 'hooks', 'scripts', 'hook-bootstrap.js');
+  fs.writeFileSync(bootstrap,
+    "module.exports={main:function(){process.kill(process.pid,'SIGKILL')}};\n");
+  const entry = registeredEntries().find(({ mode }) => mode === 'pre-tool-use');
+  const result = runRegistered(entry, {
+    cwd: fixture.base,
+    env: { PLUGIN_ROOT: fixture.root },
+  });
+  assert.equal(result.status, 2, resultDetail(entry, result));
+  assert.match(result.stderr, /137/, resultDetail(entry, result));
+});
+
+test('case 9 relative and non-qualified roots never execute workspace decoys', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-relative-trap-'));
+  const cwd = path.join(base, 'work');
+  const marker = path.join(base, 'decoy-ran');
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  for (const root of [cwd, base]) {
+    fs.mkdirSync(path.join(root, 'hooks', 'scripts'), { recursive: true });
+    for (const target of ['hook-bootstrap.js', 'hook-shell-adapter.js', 'session-start-adapter.js', 'sensor-trigger.js']) {
+      fs.writeFileSync(path.join(root, 'hooks', 'scripts', target),
+        `require('node:fs').writeFileSync(${JSON.stringify(marker)},'ran');module.exports={main:function(){process.exitCode=0}};\n`);
+    }
+  }
+  for (const badRoot of ['..', '.', 'x/..']) {
+    for (const entry of registeredEntries()) {
+      fs.rmSync(marker, { force: true });
+      const result = runRegistered(entry, {
+        cwd,
+        env: { PLUGIN_ROOT: badRoot },
+      });
+      assert.equal(result.status, entry.fail, resultDetail(entry, result));
+      assert.match(result.stderr, /not a fully qualified/, resultDetail(entry, result));
+      assert.equal(fs.existsSync(marker), false, `${badRoot}: ${entry.mode}`);
+    }
+  }
+});
+
+test('case 10 missing node executable follows each event failure policy', (t) => {
+  const emptyPath = fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-empty-path-'));
+  t.after(() => fs.rmSync(emptyPath, { recursive: true, force: true }));
+  for (const entry of registeredEntries()) {
+    const result = runRegistered(entry, {
+      cwd: emptyPath,
+      env: { PATH: emptyPath, PLUGIN_ROOT: PLUGIN_ROOT },
+    });
+    assert.equal(result.status, entry.fail, resultDetail(entry, result));
+    assert.match(result.stderr, /deep-work hook bootstrap/, resultDetail(entry, result));
+    if (process.platform !== 'win32') {
+      assert.match(result.stderr, /node executable not found/, resultDetail(entry, result));
+    }
+  }
+});
+
+test('case 10b statuses 126 and 127 preserve exact modes and block PreToolUse', (t) => {
+  const fixture = makeFixture(t);
+  for (const status of [126, 127]) {
+    for (const entry of registeredEntries()) {
+      const result = runRegistered(entry, {
+        cwd: fixture.base,
+        env: { PLUGIN_ROOT: fixture.root, FIXTURE_CHILD_EXIT: String(status) },
+      });
+      const expected = entry.mode === 'pre-tool-use' ? 2 : status;
+      assert.equal(result.status, expected, resultDetail(entry, result));
+      if (entry.mode === 'pre-tool-use') assert.match(result.stderr, new RegExp(String(status)));
+    }
+  }
+});
+
+test('case 11 trailing-space root is preserved and its trimmed sibling is ignored', {
+  skip: process.platform === 'win32' ? 'NTFS trailing-space contract is unsupported' : false,
+}, (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'deep-work-trailing-space-'));
+  const realRoot = path.join(base, 'dw ');
+  const sibling = path.join(base, 'dw');
+  populateFixtureRoot(realRoot);
+  populateFixtureRoot(sibling);
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  for (const entry of registeredEntries()) {
+    clearCaptures(realRoot);
+    clearCaptures(sibling);
+    const result = runRegistered(entry, {
+      cwd: base,
+      env: { CLAUDE_PLUGIN_ROOT: realRoot },
+    });
+    assertSuccessfulCapture(entry, result, realRoot);
+    assert.equal(captures(sibling).length, 0, entry.mode);
+  }
+});
+
+test('PostToolUse registered command forwards identical input to both real adapter consumers', (t) => {
+  const fixture = makeFixture(t);
+  const scripts = path.join(fixture.root, 'hooks', 'scripts');
+  fs.copyFileSync(path.join(__dirname, 'hook-shell-adapter.js'),
+    path.join(scripts, 'hook-shell-adapter.js'));
+  fs.writeFileSync(path.join(scripts, 'file-tracker.sh'),
+    '#!/bin/sh\ndd of="$TRACKER_DUMP" status=none\n');
+  fs.writeFileSync(path.join(scripts, 'phase-transition.sh'),
+    '#!/bin/sh\nprintf %s "$CLAUDE_TOOL_INPUT" > "$TRANSITION_DUMP"\n');
+  const trackerDump = path.join(fixture.base, 'tracker.bin');
+  const transitionDump = path.join(fixture.base, 'transition.bin');
+  const entry = registeredEntries().find(({ mode }) => mode === 'post-tool-main');
+  const result = runRegistered(entry, {
+    cwd: fixture.base,
+    env: {
+      PLUGIN_ROOT: fixture.root,
+      TRACKER_DUMP: trackerDump,
+      TRANSITION_DUMP: transitionDump,
+    },
+  });
+  assert.equal(result.status, 0, resultDetail(entry, result));
+  assert.deepEqual(fs.readFileSync(trackerDump), STDIN_SENTINEL);
+  assert.deepEqual(fs.readFileSync(transitionDump), STDIN_SENTINEL);
 });
 
 test('Windows shell adapter converts drive-letter, UNC, and spaced paths for Git Bash', () => {

@@ -211,8 +211,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 7.1.2 with evergreen usage docs', () => {
-    const version = '7.1.2';
+  it('active release metadata is bumped to 7.1.3 with evergreen usage docs', () => {
+    const version = '7.1.3';
     const featureVersion = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -227,13 +227,15 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (7.1.2) — host-explicit GPT routing.
+    // Current release (7.1.3) — dual-root hook bootstrap.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.match(changelogCurrent,/Model routing now binds the actual host explicitly/);
-    assert.match(changelogKoCurrent,/모델 라우팅이 실제 host를 명시적으로 결속합니다/);
-    assert.match(changelogCurrent,/backslash-newline token splicing/);
-    assert.match(changelogKoCurrent,/backslash-newline token splicing/);
+    assert.match(changelogCurrent,/Dual-root hook bootstrap/);
+    assert.match(changelogKoCurrent,/이중 root hook bootstrap/);
+    assert.match(releaseSection(changelog, '7.1.2'),/Model routing now binds the actual host explicitly/);
+    assert.match(releaseSection(changelogKo, '7.1.2'),/모델 라우팅이 실제 host를 명시적으로 결속합니다/);
+    assert.match(releaseSection(changelog, '7.1.2'),/backslash-newline token splicing/);
+    assert.match(releaseSection(changelogKo, '7.1.2'),/backslash-newline token splicing/);
     // Prior patch and feature releases keep their own headlines; this patch
     // release must not absorb them into its own section.
     assert.match(releaseSection(changelog, '7.1.1'),/Windows-style path spelling no longer escapes the plugin-path guard/);
