@@ -355,20 +355,6 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         path==='runtime/platform.test.js'&&
         /const executable = path\.win32\.join\(systemRoot,\s*'System32',\s*'WindowsPowerShell',\s*'v1\.0',\s*'powershell\.exe'\);/m
           .test(source)&&platformName!=='win32')continue;
-    if(first.type==='identifier'&&first.value==='executable'&&
-        call.value==='spawnSync'&&
-        path==='hooks/scripts/hook-runtime-portability.test.js'&&
-        /const systemRoot = environment\.SystemRoot \|\| environment\.WINDIR;/m
-          .test(source)&&
-        /!path\.win32\.isAbsolute\(systemRoot\)/.test(source)&&
-        /const executable = path\.win32\.join\(systemRoot,\s*'System32',\s*'WindowsPowerShell',\s*'v1\.0',\s*'powershell\.exe'\);/m
-          .test(source)&&
-        /path\.win32\.relative\(systemRoot,\s*executable\)/.test(source)&&
-        /exists\(executable\)/.test(source)&&
-        (/\bshell\s*:\s*false\b/.test(invocation)||
-          (/\boptions\s*\)$/.test(invocation)&&
-            /const options = \{[\s\S]*?\bshell\s*:\s*false\b/.test(source)))&&
-        platformName!=='win32')continue;
     if(first.type!=='string'||!/^[A-Za-z0-9._/-]+$/.test(first.value))
       fail('release-launch-dynamic',`${path}:${member?`${member}.`:''}${
         call.value}:${first.value||first.type}`);

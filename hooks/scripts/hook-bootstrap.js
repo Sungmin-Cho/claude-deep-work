@@ -4,42 +4,50 @@ const fs = require('node:fs');
 const path = require('node:path');
 const childProcess = require('node:child_process');
 
+const HOST_TIMEOUT_MARGIN_MS = 250;
+
 const MODES = Object.freeze({
   'session-start-update': Object.freeze({
     rel: Object.freeze(['hooks', 'scripts', 'session-start-adapter.js']),
     args: Object.freeze(['update-check']),
     fail: 1,
     polarity: 'exact',
+    timeoutSeconds: 8,
   }),
   'session-start-sensor': Object.freeze({
     rel: Object.freeze(['hooks', 'scripts', 'session-start-adapter.js']),
     args: Object.freeze(['sensor-detect']),
     fail: 1,
     polarity: 'exact',
+    timeoutSeconds: 8,
   }),
   'pre-tool-use': Object.freeze({
     rel: Object.freeze(['hooks', 'scripts', 'hook-shell-adapter.js']),
     args: Object.freeze(['phase-guard']),
     fail: 2,
     polarity: 'guard',
+    timeoutSeconds: 5,
   }),
   'post-tool-main': Object.freeze({
     rel: Object.freeze(['hooks', 'scripts', 'hook-shell-adapter.js']),
     args: Object.freeze(['post-tool']),
     fail: 1,
     polarity: 'exact',
+    timeoutSeconds: 6,
   }),
   'post-tool-sensor': Object.freeze({
     rel: Object.freeze(['hooks', 'scripts', 'sensor-trigger.js']),
     args: Object.freeze([]),
     fail: 0,
     polarity: 'exact',
+    timeoutSeconds: 3,
   }),
   stop: Object.freeze({
     rel: Object.freeze(['hooks', 'scripts', 'hook-shell-adapter.js']),
     args: Object.freeze(['session-end']),
     fail: 1,
     polarity: 'exact',
+    timeoutSeconds: 5,
   }),
 });
 
@@ -122,6 +130,8 @@ function run(mode, root) {
       {
         stdio: 'inherit',
         shell: false,
+        timeout: (spec.timeoutSeconds * 1000) - HOST_TIMEOUT_MARGIN_MS,
+        killSignal: 'SIGTERM',
         windowsHide: true,
       },
     ) || {};
@@ -133,10 +143,13 @@ function run(mode, root) {
 
   if (typeof result.status !== 'number') {
     if (result.error) {
-      const detail = result.error.message
-        ? `child could not start: ${result.error.message}`
-        : `child could not start: ${String(result.error)}`;
-      return writeFailure(mode, detail, false);
+      const timedOut = result.error.code === 'ETIMEDOUT';
+      const detail = timedOut
+        ? `child exceeded ${(spec.timeoutSeconds * 1000) - HOST_TIMEOUT_MARGIN_MS}ms adapter deadline`
+        : (result.error.message
+          ? `child could not start: ${result.error.message}`
+          : `child could not start: ${String(result.error)}`);
+      return writeFailure(mode, detail, timedOut);
     }
     const detail = result.signal
       ? `child terminated by signal ${result.signal}`

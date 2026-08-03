@@ -12,7 +12,7 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 ### Fixed
 
 - **이중 root hook bootstrap**: 등록된 hook은 `CLAUDE_PLUGIN_ROOT`를 먼저 해석하고 `PLUGIN_ROOT`로 fallback한 뒤, POSIX와 Windows에서 byte-identical stdin과 event별 종료 의미로 실행하기 전에 bootstrap 및 adapter target을 canonicalize하고 containment를 검사합니다.
-- PreToolUse guard 실패가 이제 차단됩니다: 0(허용)·2(차단) 이외의 guard 종료 status(예: 손상된 설치의 127)는 도구 호출을 조용히 통과시키는 대신 차단으로 강제되며, 원 status는 stderr에 보고됩니다. 잘못 설정된 plugin root도 같은 방식으로 차단되며, hook이 보고한 `CLAUDE_PLUGIN_ROOT` 또는 `PLUGIN_ROOT` 값을 바로잡으면 session이 복구됩니다.
+- PreToolUse guard 실패가 이제 차단됩니다: 0(허용)·2(차단) 이외의 guard 종료 status(예: 손상된 설치의 127)는 도구 호출을 조용히 통과시키는 대신 차단으로 강제되며, 원 status는 stderr에 보고됩니다. 잘못 설정된 plugin root도 같은 방식으로 차단되고 복구 안내가 모호하지 않게 표시됩니다. Bootstrap child에는 manifest timeout보다 250 ms 짧은 event별 deadline이 적용되어 host가 bootstrap을 timeout시키기 전에 adapter가 종료됩니다.
 
 ## [7.1.2] — 2026-08-03 (호스트 명시형 GPT 라우팅)
 

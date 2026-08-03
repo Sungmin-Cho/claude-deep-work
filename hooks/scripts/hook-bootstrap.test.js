@@ -125,32 +125,32 @@ test('canonicalIdentities normalizes UNC root spellings and realpath trailing se
   }
 });
 
-test('MODES maps all six manifest modes to the approved targets, args, failures, and polarities', () => {
+test('MODES maps all six manifest modes to targets, args, failures, polarities, and timeouts', () => {
   const { MODES } = loadBootstrap();
   assert.deepEqual(MODES, {
     'session-start-update': {
       rel: ['hooks', 'scripts', 'session-start-adapter.js'],
-      args: ['update-check'], fail: 1, polarity: 'exact',
+      args: ['update-check'], fail: 1, polarity: 'exact', timeoutSeconds: 8,
     },
     'session-start-sensor': {
       rel: ['hooks', 'scripts', 'session-start-adapter.js'],
-      args: ['sensor-detect'], fail: 1, polarity: 'exact',
+      args: ['sensor-detect'], fail: 1, polarity: 'exact', timeoutSeconds: 8,
     },
     'pre-tool-use': {
       rel: ['hooks', 'scripts', 'hook-shell-adapter.js'],
-      args: ['phase-guard'], fail: 2, polarity: 'guard',
+      args: ['phase-guard'], fail: 2, polarity: 'guard', timeoutSeconds: 5,
     },
     'post-tool-main': {
       rel: ['hooks', 'scripts', 'hook-shell-adapter.js'],
-      args: ['post-tool'], fail: 1, polarity: 'exact',
+      args: ['post-tool'], fail: 1, polarity: 'exact', timeoutSeconds: 6,
     },
     'post-tool-sensor': {
       rel: ['hooks', 'scripts', 'sensor-trigger.js'],
-      args: [], fail: 0, polarity: 'exact',
+      args: [], fail: 0, polarity: 'exact', timeoutSeconds: 3,
     },
     stop: {
       rel: ['hooks', 'scripts', 'hook-shell-adapter.js'],
-      args: ['session-end'], fail: 1, polarity: 'exact',
+      args: ['session-end'], fail: 1, polarity: 'exact', timeoutSeconds: 5,
     },
   });
 });
@@ -171,6 +171,8 @@ test('run preserves exact statuses and passes target and args without a shell', 
       assert.deepEqual(args.slice(1), spec.args);
       assert.equal(options.stdio, 'inherit');
       assert.equal(options.shell, false);
+      assert.equal(options.timeout, (spec.timeoutSeconds * 1000) - 250);
+      assert.equal(options.killSignal, 'SIGTERM');
       assert.equal(options.windowsHide, true);
     }
   }
@@ -257,6 +259,46 @@ test('spawn errors report PreToolUse block JSON while started-child signals avoi
     if (mode === 'pre-tool-use') assert.match(captured.stdout, /"decision":"block"/);
     else assert.equal(captured.stdout, '');
   }
+
+  const timedOut = Object.assign(new Error('spawnSync timed out'), { code: 'ETIMEDOUT' });
+  const timeoutFailure = captureWrites(() => withSpawnResult(
+    { status: null, signal: 'SIGTERM', error: timedOut },
+    () => run('pre-tool-use', fixture.root),
+  ).value);
+  assert.equal(timeoutFailure.value, 2);
+  assert.match(timeoutFailure.stderr, /4750ms adapter deadline/);
+  assert.equal(timeoutFailure.stdout, '');
+
+  const thrown = captureWrites(() => withSpawnResult(
+    () => { throw new Error('spawn threw'); },
+    () => run('pre-tool-use', fixture.root),
+  ).value);
+  assert.equal(thrown.value, 2);
+  assert.match(thrown.stderr, /child could not start: spawn threw/);
+  assert.match(thrown.stdout, /"decision":"block"/);
+});
+
+test('adapter child is terminated before the manifest timeout expires', (t) => {
+  const { run } = loadBootstrap();
+  const fixture = makePluginRoot(t);
+  const pidPath = path.join(fixture.base, 'adapter.pid');
+  const target = path.join(fixture.root, 'hooks', 'scripts', 'sensor-trigger.js');
+  fs.writeFileSync(target, [
+    "'use strict';",
+    "const fs=require('node:fs');",
+    `fs.writeFileSync(${JSON.stringify(pidPath)},String(process.pid));`,
+    'setInterval(()=>{},1000);',
+    '',
+  ].join('\n'));
+
+  const startedAt = Date.now();
+  const captured = captureWrites(() => run('post-tool-sensor', fixture.root));
+  const elapsed = Date.now() - startedAt;
+  assert.equal(captured.value, 0);
+  assert.match(captured.stderr, /2750ms adapter deadline/);
+  assert.ok(elapsed >= 2_500 && elapsed < 4_000, `elapsed=${elapsed}`);
+  const pid = Number(fs.readFileSync(pidPath, 'utf8'));
+  assert.throws(() => process.kill(pid, 0), /ESRCH|no such process/i);
 });
 
 test('main coerces invalid statuses to each event failure status and preserves boundaries', (t) => {

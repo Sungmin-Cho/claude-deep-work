@@ -172,32 +172,6 @@ test('health runtime dynamic carrier requires closed-environment validation',()=
       '  void checked.executable;'))),/release-launch-dynamic/);
 });
 
-test('Windows hook portability launcher requires the verified SystemRoot shape',()=>{
-  const source=[
-    "const fs=require('node:fs');",
-    "const path=require('node:path');",
-    "const {spawnSync}=require('node:child_process');",
-    'function launch(environment){',
-    '  const systemRoot = environment.SystemRoot || environment.WINDIR;',
-    "  if (!systemRoot || !path.win32.isAbsolute(systemRoot)) throw new Error('bad root');",
-    "  const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');",
-    '  const relative=path.win32.relative(systemRoot, executable);',
-    "  if(relative.startsWith('..'))throw new Error('escape');",
-    "  const exists=(candidate)=>fs.existsSync(candidate);",
-    "  if(!exists(executable))throw new Error('missing');",
-    '  return spawnSync(executable,[],{shell:false});',
-    '}',
-  ].join('\n');
-  assert.doesNotThrow(()=>scanner.scanLaunchSites(
-    'hooks/scripts/hook-runtime-portability.test.js',Buffer.from(source),
-    {platformName:'linux'}));
-  assert.throws(()=>scanner.scanLaunchSites(
-    'hooks/scripts/hook-runtime-portability.test.js',Buffer.from(source.replace(
-      'path.win32.relative(systemRoot, executable)',
-      "path.win32.relative('C:\\\\Other', executable)")),{platformName:'linux'}),
-  /release-launch-dynamic/);
-});
-
 test('source scanner git reader requires identity revalidation',()=>{
   const authenticated=[
     "const childProcess=require('node:child_process');",

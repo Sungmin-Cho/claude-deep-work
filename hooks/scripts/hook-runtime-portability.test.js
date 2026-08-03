@@ -13,7 +13,7 @@ const HOOKS_PATH = path.join(PLUGIN_ROOT, 'hooks', 'hooks.json');
 const BOOTSTRAP_PATH = path.join(__dirname, 'hook-bootstrap.js');
 const STDIN_SENTINEL = Buffer.from('dw-stdin-\x1f-señtinel-딥\n');
 
-const PROGRAM_TEMPLATE = "var e=process.env,c=e.CLAUDE_PLUGIN_ROOT,p=e.PLUGIN_ROOT,v=(c!==undefined&&c!=='')?'CLAUDE_PLUGIN_ROOT':((p!==undefined&&p!=='')?'PLUGIN_ROOT':'CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT'),r=v==='CLAUDE_PLUGIN_ROOT'?c:(v==='PLUGIN_ROOT'?p:'');try{if(!r||r.trim()==='')throw new Error('plugin root env unset or whitespace-only (CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT)');var q=require('path'),f=require('fs'),S=q.sep,w=process.platform==='win32',a=r.charAt(0),b=r.charAt(1),d=r.charAt(2),ok=w?((b===':'&&(d===S||d==='/'))||((a===S||a==='/')&&(b===S||b==='/'))):a==='/';if(!ok)throw new Error('plugin root is not a fully qualified absolute path: '+r);var R=q.resolve(f.realpathSync(r)),B=q.resolve(f.realpathSync(q.join(R,'hooks','scripts','hook-bootstrap.js'))),t=B,g=false;for(;;){var n=q.dirname(t);if(n===t)break;if(n===R){g=true;break}t=n}if(!g)throw new Error('hook-bootstrap.js escapes the plugin root');require(B).main('<MODE>',R)}catch(x){var m=x&&x.message?x.message:String(x),h='plugin root '+v+'='+JSON.stringify(r)+' could not be used; correct '+v+' to restore this session: '+m;<CATCH-TAIL>}";
+const PROGRAM_TEMPLATE = "var e=process.env,c=e.CLAUDE_PLUGIN_ROOT,p=e.PLUGIN_ROOT,v=(c!==undefined&&c!=='')?'CLAUDE_PLUGIN_ROOT':((p!==undefined&&p!=='')?'PLUGIN_ROOT':'neither CLAUDE_PLUGIN_ROOT nor PLUGIN_ROOT'),r=v==='CLAUDE_PLUGIN_ROOT'?c:(v==='PLUGIN_ROOT'?p:'');try{if(!r||r.trim()==='')throw new Error('plugin root env unset or whitespace-only (CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT)');var q=require('path'),f=require('fs'),S=q.sep,w=process.platform==='win32',a=r.charAt(0),b=r.charAt(1),d=r.charAt(2),ok=w?((b===':'&&(d===S||d==='/'))||((a===S||a==='/')&&(b===S||b==='/'))):a==='/';if(!ok)throw new Error('plugin root is not a fully qualified absolute path: '+r);var R=q.resolve(f.realpathSync(r)),B=q.resolve(f.realpathSync(q.join(R,'hooks','scripts','hook-bootstrap.js'))),t=B,g=false;for(;;){var n=q.dirname(t);if(n===t)break;if(n===R){g=true;break}t=n}if(!g)throw new Error('hook-bootstrap.js escapes the plugin root');require(B).main('<MODE>',R)}catch(x){var m=x&&x.message?x.message:String(x),h='plugin root source '+v+' with value '+JSON.stringify(r)+' could not be used; set CLAUDE_PLUGIN_ROOT or PLUGIN_ROOT to restore this session: '+m;<CATCH-TAIL>}";
 
 const EXACT_CATCH = "console.error('deep-work hook bootstrap: '+h);process.exitCode=1";
 const SENSOR_CATCH = "console.error('deep-work hook bootstrap: '+h);process.exitCode=0";
@@ -96,6 +96,7 @@ function extractedPredicates(field) {
 test('manifest commands are exact snapshots of the four canonical templates', () => {
   const document = JSON.parse(fs.readFileSync(HOOKS_PATH, 'utf8'));
   const entries = registeredEntries(document);
+  const { MODES } = require('./hook-bootstrap.js');
 
   assert.equal(document.description,
     'Phase enforcement, file tracking, update check, and session lifecycle hooks');
@@ -113,6 +114,8 @@ test('manifest commands are exact snapshots of the four canonical templates', ()
     assert.equal(entry.handler.commandWindows,
       expectedCommandWindows(entry.mode, entry.fail), entry.mode);
     assert.equal(entry.handler.timeout, entry.timeout, entry.mode);
+    assert.equal(MODES[entry.mode].timeoutSeconds, entry.handler.timeout,
+      `${entry.mode}: bootstrap timeout must match manifest timeout`);
     const program = programFor(entry.mode);
     assert.doesNotMatch(program, /[$`\\"]/);
   }
@@ -262,15 +265,17 @@ function resolveWindowsPowerShell(environment = process.env, exists = fs.existsS
     throw new Error('SystemRoot must be an absolute Windows path');
   }
   const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  const relative = path.win32.relative(systemRoot, executable);
-  if (path.win32.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${path.win32.sep}`)) {
-    throw new Error('PowerShell executable escapes SystemRoot');
-  }
   if (!exists(executable)) throw new Error(`PowerShell executable not found: ${executable}`);
   return executable;
 }
 
-function runRegistered(entry, { env = {}, input = STDIN_SENTINEL, cwd } = {}) {
+function runRegistered(entry, {
+  env = {},
+  input = STDIN_SENTINEL,
+  cwd,
+  platform = process.platform,
+  launcher = spawnSync,
+} = {}) {
   const options = {
     cwd,
     env: scrubHostEnv(env),
@@ -278,13 +283,13 @@ function runRegistered(entry, { env = {}, input = STDIN_SENTINEL, cwd } = {}) {
     encoding: 'utf8',
     shell: false,
   };
-  if (process.platform === 'win32') {
-    const executable = resolveWindowsPowerShell();
-    return spawnSync(executable,
+  if (platform === 'win32') {
+    const executable = resolveWindowsPowerShell(options.env);
+    return launcher(executable,
       ['-NoProfile', '-NonInteractive', '-Command', entry.handler.commandWindows],
       options);
   }
-  return spawnSync('/bin/sh', ['-c', entry.handler.command], options);
+  return launcher('/bin/sh', ['-c', entry.handler.command], options);
 }
 
 function resultDetail(entry, result) {
@@ -324,13 +329,11 @@ function replaceWithSymlink(linkPath, targetPath) {
 test('case 0 Windows command quoting canary preserves the node -e payload', {
   skip: process.platform === 'win32' ? false : 'native PowerShell contract',
 }, () => {
-  const executable = resolveWindowsPowerShell();
-  const result = spawnSync(executable, [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `node -e "console.log('dw-canary')"; exit $LASTEXITCODE`,
-  ], { encoding: 'utf8', shell: false });
+  const result = runRegistered({
+    handler: {
+      commandWindows: `node -e "console.log('dw-canary')"; exit $LASTEXITCODE`,
+    },
+  }, { input: '' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), 'dw-canary');
 });
@@ -346,6 +349,34 @@ test('Windows launcher is verified under SystemRoot independently of the child P
     /absolute Windows path/);
   assert.throws(() => resolveWindowsPowerShell({ SystemRoot: systemRoot }, () => false),
     /not found/);
+});
+
+test('runRegistered resolves the Windows launcher from the child environment on POSIX', () => {
+  const childSystemRoot = 'D:\\ChildWindows';
+  const parentSystemRoot = process.env.SystemRoot;
+  const originalExists = fs.existsSync;
+  const calls = [];
+  process.env.SystemRoot = 'C:\\ParentWindows';
+  fs.existsSync = () => true;
+  try {
+    const result = runRegistered({ handler: { commandWindows: 'exit 0' } }, {
+      env: { SystemRoot: childSystemRoot, PATH: 'D:\\empty' },
+      platform: 'win32',
+      launcher: (...args) => {
+        calls.push(args);
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    });
+    assert.equal(result.status, 0);
+  } finally {
+    fs.existsSync = originalExists;
+    if (parentSystemRoot === undefined) delete process.env.SystemRoot;
+    else process.env.SystemRoot = parentSystemRoot;
+  }
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0],
+    'D:\\ChildWindows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  assert.equal(calls[0][2].env.SystemRoot, childSystemRoot);
 });
 
 test('case 1 Claude-only root executes all registered entries with byte-identical stdin', (t) => {
@@ -406,6 +437,8 @@ test('case 4 neither root fails by event polarity without executing cwd decoys',
     fs.rmSync(marker, { force: true });
     const result = runRegistered(entry, { cwd });
     assertEventFailure(entry, result);
+    assert.match(result.stderr, /neither CLAUDE_PLUGIN_ROOT nor PLUGIN_ROOT/);
+    assert.match(result.stderr, /set CLAUDE_PLUGIN_ROOT or PLUGIN_ROOT/);
     assert.equal(fs.existsSync(marker), false, entry.mode);
   }
 });
@@ -432,9 +465,9 @@ test('case 5b stale CLAUDE root reports the selected variable, value, and recove
     env: { CLAUDE_PLUGIN_ROOT: staleRoot, PLUGIN_ROOT: fixture.root },
   });
   assert.equal(result.status, 2, resultDetail(entry, result));
-  assert.match(result.stderr, /plugin root CLAUDE_PLUGIN_ROOT=/);
+  assert.match(result.stderr, /plugin root source CLAUDE_PLUGIN_ROOT with value /);
   assert.ok(result.stderr.includes(JSON.stringify(staleRoot)), resultDetail(entry, result));
-  assert.match(result.stderr, /correct CLAUDE_PLUGIN_ROOT to restore this session/);
+  assert.match(result.stderr, /set CLAUDE_PLUGIN_ROOT or PLUGIN_ROOT to restore this session/);
   assert.match(result.stdout, /CLAUDE_PLUGIN_ROOT/);
   assert.equal(captures(fixture.root).length, 0);
 });
