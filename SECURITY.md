@@ -19,9 +19,10 @@ disclosure timeline with you.
 ## Scope
 
 deep-work runs hooks inside the Claude Code / Codex plugin runtime that **execute
-shell commands** — `phase-guard.sh` (Phase Guard / Worktree Guard), `file-tracker.sh`,
-`phase-transition.sh`, `sensor-trigger.js`, and `session-end.sh`. Before enabling
-the plugin, review `hooks/hooks.json` and the scripts under `hooks/scripts/`.
+shell commands** — `hook-bootstrap.js`, `phase-guard.sh` (Phase Guard / Worktree
+Guard), `file-tracker.sh`, `phase-transition.sh`, `sensor-trigger.js`, and
+`session-end.sh`. Before enabling the plugin, review `hooks/hooks.json` and the
+scripts under `hooks/scripts/`.
 
 The Phase Guard enforces a dangerous-command denylist (e.g. `curl | sh`,
 `rm -rf` on protected paths, `npm publish`, destructive `kubectl`/SQL,

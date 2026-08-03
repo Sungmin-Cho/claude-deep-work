@@ -63,6 +63,15 @@ function isStrictlyInside(canonicalRoot, canonicalTarget, pathApi = path) {
   }
 }
 
+function canonicalIdentities(rawRoot, rawTarget, {
+  pathApi = path,
+  realpathSync = fs.realpathSync,
+} = {}) {
+  const canonicalRoot = pathApi.resolve(realpathSync(String(rawRoot)));
+  const canonicalTarget = pathApi.resolve(realpathSync(String(rawTarget)));
+  return { canonicalRoot, canonicalTarget };
+}
+
 function writeFailure(mode, detail, childStarted) {
   const spec = MODES[mode];
   const message = `deep-work hook bootstrap: ${detail}`;
@@ -86,12 +95,18 @@ function run(mode, root) {
     if (root === undefined || root === null || String(root) === '') {
       throw new Error('plugin root argument is required');
     }
-    const recanonicalizedRoot = path.resolve(fs.realpathSync(String(root)));
-    if (recanonicalizedRoot !== String(root)) {
+    if (!isFullyQualified(root)) {
+      throw new Error(`plugin root is not a fully qualified absolute path: ${root}`);
+    }
+    const identities = canonicalIdentities(
+      root,
+      path.resolve(String(root), ...spec.rel),
+    );
+    if (identities.canonicalRoot !== String(root)) {
       throw new Error('plugin root identity changed between bootstrap stages');
     }
     canonicalRoot = String(root);
-    canonicalTarget = path.resolve(fs.realpathSync(path.resolve(canonicalRoot, ...spec.rel)));
+    canonicalTarget = identities.canonicalTarget;
     if (!isStrictlyInside(canonicalRoot, canonicalTarget, path)) {
       throw new Error(`${path.basename(canonicalTarget)} escapes the plugin root`);
     }
@@ -113,15 +128,19 @@ function run(mode, root) {
   } catch (error) {
     return writeFailure(mode,
       `child could not start: ${error && error.message ? error.message : String(error)}`,
-      true);
+      false);
   }
 
   if (typeof result.status !== 'number') {
-    const detail = result.error && result.error.message
-      ? `child could not start: ${result.error.message}`
-      : result.signal
-        ? `child terminated by signal ${result.signal}`
-        : 'child returned no exit status';
+    if (result.error) {
+      const detail = result.error.message
+        ? `child could not start: ${result.error.message}`
+        : `child could not start: ${String(result.error)}`;
+      return writeFailure(mode, detail, false);
+    }
+    const detail = result.signal
+      ? `child terminated by signal ${result.signal}`
+      : 'child returned no exit status';
     return writeFailure(mode, detail, true);
   }
 
@@ -147,4 +166,11 @@ function main(mode, root) {
 
 if (require.main === module) main(process.argv[2], process.argv[3]);
 
-module.exports = { MODES, isFullyQualified, isStrictlyInside, run, main };
+module.exports = {
+  MODES,
+  canonicalIdentities,
+  isFullyQualified,
+  isStrictlyInside,
+  run,
+  main,
+};

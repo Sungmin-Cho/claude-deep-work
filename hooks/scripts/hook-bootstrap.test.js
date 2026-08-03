@@ -100,6 +100,31 @@ test('isStrictlyInside uses exact ancestor identity on POSIX and win32 paths', (
   }
 });
 
+test('canonicalIdentities normalizes UNC root spellings and realpath trailing separators', () => {
+  const { canonicalIdentities } = loadBootstrap();
+  const canonicalRoot = '\\\\server\\share\\';
+  const canonicalTarget = '\\\\server\\share\\hooks\\scripts\\hook-bootstrap.js';
+  for (const rootResult of [
+    '\\\\server\\share',
+    '\\\\server\\share\\',
+    '//server/share',
+    '//server/share/',
+  ]) {
+    for (const targetResult of [canonicalTarget, `${canonicalTarget}\\`]) {
+      const values = new Map([
+        ['root-input', rootResult],
+        ['target-input', targetResult],
+      ]);
+      const actual = canonicalIdentities('root-input', 'target-input', {
+        pathApi: path.win32,
+        realpathSync: (value) => values.get(value),
+      });
+      assert.deepEqual(actual, { canonicalRoot, canonicalTarget },
+        `${rootResult} -> ${targetResult}`);
+    }
+  }
+});
+
 test('MODES maps all six manifest modes to the approved targets, args, failures, and polarities', () => {
   const { MODES } = loadBootstrap();
   assert.deepEqual(MODES, {
@@ -176,6 +201,11 @@ test('run rejects missing or changed root identity and never derives it from __d
   assert.match(missing.stderr, /root.*required/i);
   assert.match(missing.stdout, /"decision":"block"/);
 
+  const relative = captureWrites(() => run('pre-tool-use', 'hooks'));
+  assert.equal(relative.value, 2);
+  assert.match(relative.stderr, /not a fully qualified absolute path/);
+  assert.match(relative.stdout, /"decision":"block"/);
+
   const changed = captureWrites(() => run('pre-tool-use', alias));
   assert.equal(changed.value, 2);
   assert.match(changed.stderr, /identity/i);
@@ -197,7 +227,7 @@ test('run rejects target escapes without starting the child', (t) => {
   assert.equal(observed.calls.length, 0);
 });
 
-test('spawn errors and signals follow event failure modes without duplicate PreToolUse JSON', (t) => {
+test('spawn errors report PreToolUse block JSON while started-child signals avoid duplicates', (t) => {
   const { run } = loadBootstrap();
   const fixture = makePluginRoot(t);
   const rows = [
@@ -208,10 +238,7 @@ test('spawn errors and signals follow event failure modes without duplicate PreT
     ['session-start-sensor', 1],
     ['stop', 1],
   ];
-  for (const result of [
-    { status: null, signal: 'SIGTERM' },
-    { status: null, signal: null, error: new Error('spawn broke') },
-  ]) {
+  for (const result of [{ status: null, signal: 'SIGTERM' }]) {
     for (const [mode, expected] of rows) {
       const captured = captureWrites(() => withSpawnResult(result,
         () => run(mode, fixture.root)).value);
@@ -219,6 +246,16 @@ test('spawn errors and signals follow event failure modes without duplicate PreT
       assert.match(captured.stderr, /deep-work hook bootstrap/);
       if (mode === 'pre-tool-use') assert.equal(captured.stdout, '');
     }
+  }
+  for (const [mode, expected] of rows) {
+    const captured = captureWrites(() => withSpawnResult(
+      { status: null, signal: null, error: new Error('spawn broke') },
+      () => run(mode, fixture.root),
+    ).value);
+    assert.equal(captured.value, expected, mode);
+    assert.match(captured.stderr, /child could not start: spawn broke/);
+    if (mode === 'pre-tool-use') assert.match(captured.stdout, /"decision":"block"/);
+    else assert.equal(captured.stdout, '');
   }
 });
 
@@ -250,5 +287,6 @@ test('source uses only built-in requires and never derives the security root fro
   assert.doesNotMatch(source, /require\(['"]\.{1,2}\//);
   assert.doesNotMatch(source, /__dirname/);
   assert.doesNotMatch(source, /realpathSync\.native/);
-  assert.match(source, /recanonicalizedRoot !== String\(root\)/);
+  assert.match(source, /identities\.canonicalRoot !== String\(root\)/);
+  assert.match(source, /if \(!isFullyQualified\(root\)\)/);
 });
