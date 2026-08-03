@@ -410,11 +410,12 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         plannerShellIndex=plannerInfo?tokenSequenceIndex(tokens,
           plannerInfo.openIndex+1,plannerInfo.closeIndex,
           ['shell',':','false']):-1;
-      // Like every scanLaunchSites admission, this pins only the first argument:
-      // mutable plan.args remains consumed (-Command script on Windows).
-      // plan.options.env is mutable, but resolveWindowsPowerShell bounds the
-      // executable to absolute SystemRoot plus a fixed, existing suffix.
-      // Redefinition of that resolver is blocked below by a shape-based join pin.
+      // This admission pins the first-argument expression; mutable plan.args remains
+      // consumed (-Command script on Windows), and mutable plan.options.env can select
+      // SystemRoot. The portability suite owns the resolver's use of child SystemRoot
+      // plus its isAbsolute and exists guards; within the resolver, this gate pins only
+      // the join line in place. Neither detects redefinition or shadowing itself;
+      // behaviour-preserving redefinitions go unnoticed by both.
       if(platformName!=='win32'&&carrierInfo&&planIndex>=0&&
           plannerInfo&&plannerShellIndex>=0&&
           /^spawnSync\(\s*resolveWindowsPowerShell\(plan\.options\.env\)\s*,\s*plan\.args\s*,\s*\{\s*\.\.\.plan\.options\s*,\s*shell: false\s*\}\s*\)$/.test(invocation)&&
