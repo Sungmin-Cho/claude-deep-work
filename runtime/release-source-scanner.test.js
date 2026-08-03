@@ -153,6 +153,97 @@ test('recursive scripts fail closed on cycles, missing targets, and dynamic root
   }}),/release-launch-dynamic/);
 });
 
+test('launch scanning follows declaration, default-parameter, module-member, and known-module destructuring aliases to a fixpoint',()=>{
+  const sources=[
+    [
+      "const {spawnSync}=require('node:child_process');",
+      'const launcher=spawnSync;',
+      "launcher(process.env.EVIL,['whatever'],{shell:false});",
+    ].join('\n'),
+    [
+      "const {spawnSync}=require('node:child_process');",
+      'function run({launcher=spawnSync}={}){',
+      '  const first=launcher;',
+      '  const second=first;',
+      "  return second(process.env.EVIL,['whatever'],{shell:false});",
+      '}',
+    ].join('\n'),
+    [
+      "const childProcess=require('node:child_process');",
+      'const launcher=childProcess.spawnSync;',
+      "launcher(process.env.EVIL,['whatever'],{shell:false});",
+    ].join('\n'),
+    [
+      "const childProcess=require('node:child_process');",
+      'function run({launcher=childProcess.spawnSync}={}){',
+      "  return launcher(process.env.EVIL,['whatever'],{shell:false});",
+      '}',
+    ].join('\n'),
+    [
+      "const childProcess=require('node:child_process');",
+      'const {spawnSync: aka}=childProcess;',
+      'const launcher=aka;',
+      "launcher(process.env.EVIL,['whatever'],{shell:false});",
+    ].join('\n'),
+  ];
+  for(const source of sources){
+    assert.throws(()=>scanner.scanLaunchSites(
+      'runtime/alias-fixture.js',Buffer.from(source)),
+    /release-launch-dynamic/);
+  }
+  const callResultIsNotAnAlias=[
+    "const {spawnSync}=require('node:child_process');",
+    "const result=spawnSync('/bin/sh',['-c','true'],{shell:false});",
+    'const records=result.records;',
+    'const terminal=records.at(-1);',
+    'terminal(template);',
+  ].join('\n');
+  assert.deepEqual(scanner.scanLaunchSites(
+    'runtime/call-result-fixture.js',Buffer.from(callResultIsNotAnAlias))
+    .required_tools,['sh']);
+  const memberCallResultIsNotAnAlias=[
+    "const childProcess=require('node:child_process');",
+    "const result=childProcess.spawnSync('/bin/sh',['-c','true'],{shell:false});",
+    'const records=result.records;',
+    'const terminal=records.at(-1);',
+    'terminal(template);',
+  ].join('\n');
+  assert.deepEqual(scanner.scanLaunchSites(
+    'runtime/member-call-result-fixture.js',
+    Buffer.from(memberCallResultIsNotAnAlias)).required_tools,['sh']);
+});
+
+test('portability Windows planner admission is exact and preserves the sh inventory',()=>{
+  const source=fs.readFileSync(path.resolve(__dirname,'../hooks/scripts/',
+    'hook-runtime-portability.test.js'),'utf8');
+  const scan=(value,platformName='darwin')=>scanner.scanLaunchSites(
+    'hooks/scripts/hook-runtime-portability.test.js',Buffer.from(value),
+    {platformName});
+  const launch=scan(source);
+  assert.equal(launch.required_tools.includes('sh'),true);
+  assert.doesNotMatch(source,/\blauncher\s*=/);
+  assert.doesNotMatch(source,/const executable = plan\.executable/);
+  assert.throws(()=>scan(source,'win32'),/release-launch-dynamic/);
+
+  const mutants=[
+    source.replace('resolveWindowsPowerShell(plan.options.env)',
+      'resolveWindowsPowerShell(process.env)'),
+    source.replace('resolveWindowsPowerShell(plan.options.env), plan.args',
+      'resolveWindowsPowerShell(plan.options.env), []'),
+    source.replace('{ ...plan.options, shell: false }',
+      '{ ...plan.options, shell: true }'),
+    source.replace('function runRegistered(entry, options = {})',
+      'function runAnything(entry, options = {})'),
+    source.replace('executable: resolveWindowsPowerShell(options.env)',
+      'executable: resolveWindowsPowerShell(process.env)'),
+    source.replace('    shell: false,','    shell: true,'),
+  ];
+  for(const mutant of mutants){
+    assert.notEqual(mutant,source,'mutant replacement must apply');
+    assert.throws(()=>scan(mutant),/release-launch-dynamic/);
+  }
+});
+
 test('health runtime dynamic carrier requires closed-environment validation',()=>{
   const authenticated=[
     "const {spawnSync}=require('node:child_process');",

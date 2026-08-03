@@ -32,9 +32,12 @@ const DEFAULT_PHASE_GUARD = path.resolve(__dirname, '..', 'phase-guard.sh');
 // file-tracker.sh, phase-transition.sh), and the "env unset" contract of the
 // stdin-fallback/contract tests breaks if they leak from the host shell.
 // Tool-INPUT vars are phase-transition.sh's env-first input source — a host
-// leak there would shadow the file-tracker cache path under test. Update this
-// list AND the comment block above when a consumer of a host-leakable env var
-// is added or removed — a stale list silently weakens isolation.
+// leak there would shadow the file-tracker cache path under test. Plugin-root
+// vars are consumed by the registered hook bootstrap; scrubbing both keeps
+// Claude-only, Codex-only, and neither-root matrix cases independent of the
+// developer or CI host. Update this list AND the comment block above when a
+// consumer of a host-leakable env var is added or removed — a stale list
+// silently weakens isolation.
 const HOST_LEAK_VARS = [
   'DEEP_WORK_SESSION_ID',
   'DEEP_WORK_ROOT',
@@ -43,6 +46,8 @@ const HOST_LEAK_VARS = [
   'CLAUDE_TOOL_NAME',
   'CLAUDE_TOOL_USE_INPUT',
   'CLAUDE_TOOL_INPUT',
+  'CLAUDE_PLUGIN_ROOT',
+  'PLUGIN_ROOT',
 ];
 
 /**
