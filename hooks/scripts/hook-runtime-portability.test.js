@@ -302,10 +302,10 @@ function planLaunch(entry, {
 function runRegistered(entry, options = {}) {
   const plan = planLaunch(entry, options);
   if (plan.platform === 'win32') {
-    const executable = plan.executable;
-    return spawnSync(executable, plan.args, plan.options);
+    return spawnSync(resolveWindowsPowerShell(plan.options.env), plan.args,
+      { ...plan.options, shell: false });
   }
-  return spawnSync('/bin/sh', plan.args, plan.options);
+  return spawnSync('/bin/sh', plan.args, { ...plan.options, shell: false });
 }
 
 function resultDetail(entry, result) {

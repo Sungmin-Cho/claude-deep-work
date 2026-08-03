@@ -265,9 +265,23 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   for(const match of source.matchAll(
     /(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g))
     moduleBindings.add(match[1]);
-  // Follow identifier and child_process module-member aliases to a fixpoint.
-  // This deliberately does not claim completeness: array/IIFE carriers,
-  // cross-module aliases, and re-export chains remain residual bypasses.
+  for(const match of source.matchAll(
+    /(?:const|let|var)\s*\{([^}]+)\}\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\b/g)){
+    if(!moduleBindings.has(match[2]))continue;
+    for(const item of match[1].split(',')){
+      const parts=item.trim().split(/\s*:\s*/);
+      if(kinds.has(parts[0])){
+        const binding=parts[1]||parts[0];
+        directBindings.add(binding);bindingKinds.set(binding,parts[0]);
+      }
+    }
+  }
+  // Follows exactly these carriers to a fixpoint: identifier and child_process
+  // module-member aliases in declaration/default-parameter position, plus
+  // declaration destructuring from a literal require or known module binding.
+  // Every other carrier is outside the model; measured residual examples are
+  // property/object stores, reassignment, array/IIFE and cross-module carriers,
+  // and re-export chains.
   for(let changed=true;changed;){
     changed=false;
     for(let index=0;index<tokens.length-2;index++){
@@ -384,14 +398,11 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     }
     if(path==='hooks/scripts/hook-runtime-portability.test.js'&&
         call.value==='spawnSync'&&first.type==='identifier'&&
-        first.value==='executable'){
+        first.value==='resolveWindowsPowerShell'){
       const carrierInfo=enclosingNamedFunction(source,tokens,index,'runRegistered'),
         planIndex=carrierInfo?tokenSequenceIndex(tokens,
           carrierInfo.openIndex+1,index,
           ['const','plan','=','planLaunch','(','entry',',','options',')']):-1,
-        executableIndex=carrierInfo?tokenSequenceIndex(tokens,
-          carrierInfo.openIndex+1,index,
-          ['const','executable','=','plan','.','executable']):-1,
         plannerResolveIndex=tokenSequenceIndex(tokens,0,tokens.length,
           ['executable',':','resolveWindowsPowerShell','(','options','.','env',')']),
         plannerInfo=plannerResolveIndex>=0?
@@ -399,9 +410,14 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         plannerShellIndex=plannerInfo?tokenSequenceIndex(tokens,
           plannerInfo.openIndex+1,plannerInfo.closeIndex,
           ['shell',':','false']):-1;
+      // Like every scanLaunchSites admission, this pins only the first argument:
+      // mutable plan.args remains consumed (-Command script on Windows).
+      // plan.options.env is mutable, but resolveWindowsPowerShell bounds the
+      // executable to absolute SystemRoot plus a fixed, existing suffix.
+      // Redefinition of that resolver is blocked below by a shape-based join pin.
       if(platformName!=='win32'&&carrierInfo&&planIndex>=0&&
-          executableIndex>planIndex&&plannerInfo&&plannerShellIndex>=0&&
-          /^spawnSync\(\s*executable\s*,\s*plan\.args\s*,\s*plan\.options\s*\)$/.test(invocation)&&
+          plannerInfo&&plannerShellIndex>=0&&
+          /^spawnSync\(\s*resolveWindowsPowerShell\(plan\.options\.env\)\s*,\s*plan\.args\s*,\s*\{\s*\.\.\.plan\.options\s*,\s*shell: false\s*\}\s*\)$/.test(invocation)&&
           /const executable = path\.win32\.join\(systemRoot,\s*'System32',\s*'WindowsPowerShell',\s*'v1\.0',\s*'powershell\.exe'\);/m
             .test(source))continue;
     }

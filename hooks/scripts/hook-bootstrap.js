@@ -145,6 +145,7 @@ function run(mode, root) {
         timeout: spec.timeoutSeconds * 1000,
         killSignal: 'SIGTERM',
         windowsHide: true,
+        // Detachment also removes the adapter from the host process-group signal reach.
         detached: process.platform !== 'win32',
       },
     ) || {};

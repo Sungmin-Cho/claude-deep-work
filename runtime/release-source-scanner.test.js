@@ -153,7 +153,7 @@ test('recursive scripts fail closed on cycles, missing targets, and dynamic root
   }}),/release-launch-dynamic/);
 });
 
-test('launch scanning follows declaration, default-parameter, and module-member aliases to a fixpoint',()=>{
+test('launch scanning follows declaration, default-parameter, module-member, and known-module destructuring aliases to a fixpoint',()=>{
   const sources=[
     [
       "const {spawnSync}=require('node:child_process');",
@@ -178,6 +178,12 @@ test('launch scanning follows declaration, default-parameter, and module-member 
       'function run({launcher=childProcess.spawnSync}={}){',
       "  return launcher(process.env.EVIL,['whatever'],{shell:false});",
       '}',
+    ].join('\n'),
+    [
+      "const childProcess=require('node:child_process');",
+      'const {spawnSync: aka}=childProcess;',
+      'const launcher=aka;',
+      "launcher(process.env.EVIL,['whatever'],{shell:false});",
     ].join('\n'),
   ];
   for(const source of sources){
@@ -216,13 +222,16 @@ test('portability Windows planner admission is exact and preserves the sh invent
   const launch=scan(source);
   assert.equal(launch.required_tools.includes('sh'),true);
   assert.doesNotMatch(source,/\blauncher\s*=/);
+  assert.doesNotMatch(source,/const executable = plan\.executable/);
   assert.throws(()=>scan(source,'win32'),/release-launch-dynamic/);
 
   const mutants=[
-    source.replace('const executable = plan.executable;',
-      'const executable = options.executable;'),
-    source.replace('spawnSync(executable, plan.args, plan.options)',
-      'spawnSync(executable, [], plan.options)'),
+    source.replace('resolveWindowsPowerShell(plan.options.env)',
+      'resolveWindowsPowerShell(process.env)'),
+    source.replace('resolveWindowsPowerShell(plan.options.env), plan.args',
+      'resolveWindowsPowerShell(plan.options.env), []'),
+    source.replace('{ ...plan.options, shell: false }',
+      '{ ...plan.options, shell: true }'),
     source.replace('function runRegistered(entry, options = {})',
       'function runAnything(entry, options = {})'),
     source.replace('executable: resolveWindowsPowerShell(options.env)',
