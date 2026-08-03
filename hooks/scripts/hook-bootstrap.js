@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const childProcess = require('node:child_process');
 
-const HOST_TIMEOUT_MARGIN_MS = 250;
+const HOST_TIMEOUT_HEADROOM_SECONDS = 1;
 
 const MODES = Object.freeze({
   'session-start-update': Object.freeze({
@@ -93,6 +93,18 @@ function writeFailure(mode, detail, childStarted) {
   return spec ? spec.fail : 2;
 }
 
+function killPosixProcessGroupAfterAbnormalExit(result) {
+  const timedOut = result && result.error && result.error.code === 'ETIMEDOUT';
+  const signaled = result && typeof result.signal === 'string' && result.signal !== '';
+  if (!timedOut && !signaled) return;
+  // Windows spawnSync has no job-object/tree termination, while detached would
+  // open a new console. Without the out-of-scope taskkill tool, descendants can
+  // survive and operators may observe writes continuing after the hook returns.
+  if (process.platform === 'win32'
+      || !Number.isInteger(result.pid) || result.pid <= 0) return;
+  try { process.kill(-result.pid, 'SIGKILL'); } catch {}
+}
+
 function run(mode, root) {
   const spec = MODES[mode];
   if (!spec) return writeFailure(mode, `unknown mode: ${mode || '<missing>'}`, false);
@@ -130,9 +142,10 @@ function run(mode, root) {
       {
         stdio: 'inherit',
         shell: false,
-        timeout: (spec.timeoutSeconds * 1000) - HOST_TIMEOUT_MARGIN_MS,
+        timeout: spec.timeoutSeconds * 1000,
         killSignal: 'SIGTERM',
         windowsHide: true,
+        detached: process.platform !== 'win32',
       },
     ) || {};
   } catch (error) {
@@ -141,11 +154,13 @@ function run(mode, root) {
       false);
   }
 
+  killPosixProcessGroupAfterAbnormalExit(result);
+
   if (typeof result.status !== 'number') {
     if (result.error) {
       const timedOut = result.error.code === 'ETIMEDOUT';
       const detail = timedOut
-        ? `child exceeded ${(spec.timeoutSeconds * 1000) - HOST_TIMEOUT_MARGIN_MS}ms adapter deadline`
+        ? `child exceeded ${spec.timeoutSeconds * 1000}ms adapter deadline`
         : (result.error.message
           ? `child could not start: ${result.error.message}`
           : `child could not start: ${String(result.error)}`);
@@ -180,6 +195,7 @@ function main(mode, root) {
 if (require.main === module) main(process.argv[2], process.argv[3]);
 
 module.exports = {
+  HOST_TIMEOUT_HEADROOM_SECONDS,
   MODES,
   canonicalIdentities,
   isFullyQualified,

@@ -96,7 +96,7 @@ function extractedPredicates(field) {
 test('manifest commands are exact snapshots of the four canonical templates', () => {
   const document = JSON.parse(fs.readFileSync(HOOKS_PATH, 'utf8'));
   const entries = registeredEntries(document);
-  const { MODES } = require('./hook-bootstrap.js');
+  const { MODES, HOST_TIMEOUT_HEADROOM_SECONDS } = require('./hook-bootstrap.js');
 
   assert.equal(document.description,
     'Phase enforcement, file tracking, update check, and session lifecycle hooks');
@@ -113,9 +113,10 @@ test('manifest commands are exact snapshots of the four canonical templates', ()
     assert.equal(entry.handler.command, expectedCommand(entry.mode, entry.fail), entry.mode);
     assert.equal(entry.handler.commandWindows,
       expectedCommandWindows(entry.mode, entry.fail), entry.mode);
-    assert.equal(entry.handler.timeout, entry.timeout, entry.mode);
-    assert.equal(MODES[entry.mode].timeoutSeconds, entry.handler.timeout,
-      `${entry.mode}: bootstrap timeout must match manifest timeout`);
+    assert.equal(entry.handler.timeout, entry.timeout + 1, entry.mode);
+    assert.equal(MODES[entry.mode].timeoutSeconds + HOST_TIMEOUT_HEADROOM_SECONDS,
+      entry.handler.timeout,
+      `${entry.mode}: manifest timeout must preserve adapter budget plus host headroom`);
     const program = programFor(entry.mode);
     assert.doesNotMatch(program, /[$`\\"]/);
   }
@@ -269,12 +270,11 @@ function resolveWindowsPowerShell(environment = process.env, exists = fs.existsS
   return executable;
 }
 
-function runRegistered(entry, {
+function planLaunch(entry, {
   env = {},
   input = STDIN_SENTINEL,
   cwd,
   platform = process.platform,
-  launcher = spawnSync,
 } = {}) {
   const options = {
     cwd,
@@ -284,12 +284,28 @@ function runRegistered(entry, {
     shell: false,
   };
   if (platform === 'win32') {
-    const executable = resolveWindowsPowerShell(options.env);
-    return launcher(executable,
-      ['-NoProfile', '-NonInteractive', '-Command', entry.handler.commandWindows],
-      options);
+    return {
+      platform,
+      executable: resolveWindowsPowerShell(options.env),
+      args: ['-NoProfile', '-NonInteractive', '-Command', entry.handler.commandWindows],
+      options,
+    };
   }
-  return launcher('/bin/sh', ['-c', entry.handler.command], options);
+  return {
+    platform,
+    executable: '/bin/sh',
+    args: ['-c', entry.handler.command],
+    options,
+  };
+}
+
+function runRegistered(entry, options = {}) {
+  const plan = planLaunch(entry, options);
+  if (plan.platform === 'win32') {
+    const executable = plan.executable;
+    return spawnSync(executable, plan.args, plan.options);
+  }
+  return spawnSync('/bin/sh', plan.args, plan.options);
 }
 
 function resultDetail(entry, result) {
@@ -351,32 +367,26 @@ test('Windows launcher is verified under SystemRoot independently of the child P
     /not found/);
 });
 
-test('runRegistered resolves the Windows launcher from the child environment on POSIX', () => {
+test('planLaunch resolves the Windows executable from the child environment on POSIX', () => {
   const childSystemRoot = 'D:\\ChildWindows';
   const parentSystemRoot = process.env.SystemRoot;
   const originalExists = fs.existsSync;
-  const calls = [];
   process.env.SystemRoot = 'C:\\ParentWindows';
   fs.existsSync = () => true;
+  let plan;
   try {
-    const result = runRegistered({ handler: { commandWindows: 'exit 0' } }, {
+    plan = planLaunch({ handler: { commandWindows: 'exit 0' } }, {
       env: { SystemRoot: childSystemRoot, PATH: 'D:\\empty' },
       platform: 'win32',
-      launcher: (...args) => {
-        calls.push(args);
-        return { status: 0, stdout: '', stderr: '' };
-      },
     });
-    assert.equal(result.status, 0);
   } finally {
     fs.existsSync = originalExists;
     if (parentSystemRoot === undefined) delete process.env.SystemRoot;
     else process.env.SystemRoot = parentSystemRoot;
   }
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0],
+  assert.equal(plan.executable,
     'D:\\ChildWindows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
-  assert.equal(calls[0][2].env.SystemRoot, childSystemRoot);
+  assert.equal(plan.options.env.SystemRoot, childSystemRoot);
 });
 
 test('case 1 Claude-only root executes all registered entries with byte-identical stdin', (t) => {

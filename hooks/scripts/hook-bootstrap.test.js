@@ -60,6 +60,20 @@ function withSpawnResult(result, fn) {
   }
 }
 
+function assertProcessGone(pid, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      assert.match(String(error && error.message), /ESRCH|no such process/i);
+      return;
+    }
+    if (Date.now() >= deadline) assert.fail(`process ${pid} still exists`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+}
+
 test('isFullyQualified reproduces POSIX, drive, and UNC qualification rules', () => {
   const { isFullyQualified } = loadBootstrap();
   const rows = [
@@ -171,9 +185,10 @@ test('run preserves exact statuses and passes target and args without a shell', 
       assert.deepEqual(args.slice(1), spec.args);
       assert.equal(options.stdio, 'inherit');
       assert.equal(options.shell, false);
-      assert.equal(options.timeout, (spec.timeoutSeconds * 1000) - 250);
+      assert.equal(options.timeout, spec.timeoutSeconds * 1000);
       assert.equal(options.killSignal, 'SIGTERM');
       assert.equal(options.windowsHide, true);
+      assert.equal(options.detached, process.platform !== 'win32');
     }
   }
 });
@@ -266,7 +281,7 @@ test('spawn errors report PreToolUse block JSON while started-child signals avoi
     () => run('pre-tool-use', fixture.root),
   ).value);
   assert.equal(timeoutFailure.value, 2);
-  assert.match(timeoutFailure.stderr, /4750ms adapter deadline/);
+  assert.match(timeoutFailure.stderr, /5000ms adapter deadline/);
   assert.equal(timeoutFailure.stdout, '');
 
   const thrown = captureWrites(() => withSpawnResult(
@@ -278,7 +293,7 @@ test('spawn errors report PreToolUse block JSON while started-child signals avoi
   assert.match(thrown.stdout, /"decision":"block"/);
 });
 
-test('adapter child is terminated before the manifest timeout expires', (t) => {
+test('adapter child is terminated at its documented adapter deadline', (t) => {
   const { run } = loadBootstrap();
   const fixture = makePluginRoot(t);
   const pidPath = path.join(fixture.base, 'adapter.pid');
@@ -295,10 +310,61 @@ test('adapter child is terminated before the manifest timeout expires', (t) => {
   const captured = captureWrites(() => run('post-tool-sensor', fixture.root));
   const elapsed = Date.now() - startedAt;
   assert.equal(captured.value, 0);
-  assert.match(captured.stderr, /2750ms adapter deadline/);
-  assert.ok(elapsed >= 2_500 && elapsed < 4_000, `elapsed=${elapsed}`);
+  assert.match(captured.stderr, /3000ms adapter deadline/);
+  assert.ok(elapsed >= 2_750 && elapsed < 4_250, `elapsed=${elapsed}`);
   const pid = Number(fs.readFileSync(pidPath, 'utf8'));
   assert.throws(() => process.kill(pid, 0), /ESRCH|no such process/i);
+});
+
+test('adapter completing 200ms inside its documented budget is not truncated', (t) => {
+  const { run } = loadBootstrap();
+  const fixture = makePluginRoot(t);
+  const markerPath = path.join(fixture.base, 'completed.marker');
+  const target = path.join(fixture.root, 'hooks', 'scripts', 'sensor-trigger.js');
+  fs.writeFileSync(target, [
+    "'use strict';",
+    "const fs=require('node:fs');",
+    'setTimeout(()=>{',
+    `  fs.writeFileSync(${JSON.stringify(markerPath)},'complete');`,
+    '  process.exit(23);',
+    '},2800);',
+    '',
+  ].join('\n'));
+
+  const captured = captureWrites(() => run('post-tool-sensor', fixture.root));
+  assert.equal(captured.value, 23);
+  assert.equal(fs.readFileSync(markerPath, 'utf8'), 'complete');
+});
+
+test('adapter deadline kills its hanging POSIX grandchild process', {
+  skip: process.platform === 'win32' ? 'POSIX process-group contract' : false,
+}, (t) => {
+  const { run } = loadBootstrap();
+  let grandchildPid;
+  t.after(() => {
+    if (!Number.isInteger(grandchildPid)) return;
+    try { process.kill(grandchildPid, 'SIGKILL'); } catch {}
+  });
+  const fixture = makePluginRoot(t);
+  const grandchildPidPath = path.join(fixture.base, 'grandchild.pid');
+  const target = path.join(fixture.root, 'hooks', 'scripts', 'sensor-trigger.js');
+  fs.writeFileSync(target, [
+    "'use strict';",
+    "const {spawnSync}=require('node:child_process');",
+    'spawnSync(process.execPath,[\'-e\',',
+    `  ${JSON.stringify([
+      "const fs=require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(grandchildPidPath)},String(process.pid));`,
+      'setInterval(()=>{},1000);',
+    ].join('\n'))}],`,
+    "  {stdio:'inherit',shell:false});",
+    '',
+  ].join('\n'));
+  const captured = captureWrites(() => run('post-tool-sensor', fixture.root));
+  assert.equal(captured.value, 0);
+  assert.match(captured.stderr, /3000ms adapter deadline/);
+  grandchildPid = Number(fs.readFileSync(grandchildPidPath, 'utf8'));
+  assertProcessGone(grandchildPid);
 });
 
 test('main coerces invalid statuses to each event failure status and preserves boundaries', (t) => {

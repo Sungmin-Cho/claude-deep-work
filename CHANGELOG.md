@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Dual-root hook bootstrap**: Registered hooks now resolve `CLAUDE_PLUGIN_ROOT` first and fall back to `PLUGIN_ROOT`, then canonicalize and contain-check the bootstrap and adapter targets before executing them with byte-identical stdin and event-specific exit semantics on POSIX and Windows.
-- PreToolUse guard failures now block: any guard exit status other than 0 (allow) or 2 (block) — e.g. a broken install exiting 127 — is coerced to a block instead of silently letting the tool call through; the original status is reported on stderr. A misconfigured plugin root blocks the same way, with an unambiguous recovery message. Bootstrap children now also receive an event-specific deadline 250 ms shorter than the manifest timeout so the adapter is terminated before the host times out the bootstrap.
+- PreToolUse guard failures now block: any guard exit status other than 0 (allow) or 2 (block) — e.g. a broken install exiting 127 — is coerced to a block instead of silently letting the tool call through; the original status is reported on stderr. A misconfigured plugin root blocks the same way, with an unambiguous recovery message. Hook manifest timeouts now include one second of host-reporting headroom (9/9/6/7/4/6 seconds), while adapter deadlines retain their full pre-bootstrap effective budgets (8/8/5/6/3/5 seconds). Timed-out POSIX adapters run in a dedicated process group whose remaining descendants are killed; Windows `spawnSync` has no equivalent job-object tree termination, so descendant containment is not claimed there.
 
 ## [7.1.2] — 2026-08-03 (Host-Explicit GPT Routing)
 

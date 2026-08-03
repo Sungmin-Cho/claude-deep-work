@@ -250,21 +250,45 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
     if(error.code==='release-source-js')
       fail('release-source-js',`${path}:${error.message}`);throw error;}
   const kinds=new Set(['spawn','spawnSync','execFile','execFileSync','fork']),
-    directBindings=new Set(),moduleBindings=new Set();
+    directBindings=new Set(),bindingKinds=new Map(),moduleBindings=new Set();
   if(path==='runtime/process-supervisor.js')kinds.add('spawnImpl');
   for(const match of source.matchAll(
     /(?:const|let|var)\s*\{([^}]+)\}\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g)){
     for(const item of match[1].split(',')){
       const parts=item.trim().split(/\s*:\s*/);
-      if(kinds.has(parts[0]))directBindings.add(parts[1]||parts[0]);
+      if(kinds.has(parts[0])){
+        const binding=parts[1]||parts[0];
+        directBindings.add(binding);bindingKinds.set(binding,parts[0]);
+      }
     }
   }
   for(const match of source.matchAll(
     /(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g))
     moduleBindings.add(match[1]);
+  // Follow simple identifier aliases to a fixpoint. This deliberately does not
+  // claim completeness: property/array/IIFE carriers and cross-module aliases
+  // remain outside the scanner's model and must be treated as residual bypasses.
+  for(let changed=true;changed;){
+    changed=false;
+    for(let index=0;index<tokens.length-2;index++){
+      const alias=tokens[index],equals=tokens[index+1],target=tokens[index+2],
+        previous=tokens[index-1]?.value,
+        declaration=['const','let','var'].includes(previous),
+        defaultParameter=['(',',','{','['].includes(previous);
+      if(alias.type!=='identifier'||equals?.value!=='='||
+          target?.type!=='identifier'||
+          tokens[index+3]?.value==='('||
+          (!declaration&&!defaultParameter)||
+          !directBindings.has(target.value)||directBindings.has(alias.value))continue;
+      directBindings.add(alias.value);
+      bindingKinds.set(alias.value,bindingKinds.get(target.value)||target.value);
+      changed=true;
+    }
+  }
   for(let index=0;index<tokens.length-2;index++){
     const call=tokens[index],open=tokens[index+1],first=tokens[index+2];
-    if(call.type!=='identifier'||!kinds.has(call.value)||
+    if(call.type!=='identifier'||
+        (!kinds.has(call.value)&&!directBindings.has(call.value))||
         open.type!=='punct'||open.value!=='(')continue;
     const member=tokens[index-1]?.value==='.'?
       tokens[index-2]?.value:null,direct=directBindings.has(call.value),
@@ -272,9 +296,10 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
       inlineRequire=tokens[index-1]?.value==='.'&&
         tokens[index-2]?.value===')'&&tokens[index-3]?.type==='string'&&
         /^(?:node:)?child_process$/.test(tokens[index-3].value)&&
-        tokens[index-4]?.value==='('&&tokens[index-5]?.value==='require';
+        tokens[index-4]?.value==='('&&tokens[index-5]?.value==='require',
+      callKind=bindingKinds.get(call.value)||call.value;
     if(call.value!=='spawnImpl'&&!direct&&!boundMember&&!inlineRequire)continue;
-    if(call.value==='fork'){activeNode=true;continue;}
+    if(callKind==='fork'){activeNode=true;continue;}
     const invocation=callSourceAt(source,tokens,index);
     const expression=[first,tokens[index+3],tokens[index+4],
       tokens[index+5],tokens[index+6]].filter(Boolean)
@@ -350,6 +375,29 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
         /probe\(\s*['"]codex['"]\s*,\s*safeEnv\s*\)/.test(source)&&
         /probe\(\s*['"]gemini['"]\s*,\s*safeEnv\s*\)/.test(source)){
       optional.add('codex');optional.add('gemini');continue;
+    }
+    if(path==='hooks/scripts/hook-runtime-portability.test.js'&&
+        call.value==='spawnSync'&&first.type==='identifier'&&
+        first.value==='executable'){
+      const carrierInfo=enclosingNamedFunction(source,tokens,index,'runRegistered'),
+        planIndex=carrierInfo?tokenSequenceIndex(tokens,
+          carrierInfo.openIndex+1,index,
+          ['const','plan','=','planLaunch','(','entry',',','options',')']):-1,
+        executableIndex=carrierInfo?tokenSequenceIndex(tokens,
+          carrierInfo.openIndex+1,index,
+          ['const','executable','=','plan','.','executable']):-1,
+        plannerResolveIndex=tokenSequenceIndex(tokens,0,tokens.length,
+          ['executable',':','resolveWindowsPowerShell','(','options','.','env',')']),
+        plannerInfo=plannerResolveIndex>=0?
+          enclosingNamedFunction(source,tokens,plannerResolveIndex,'planLaunch'):null,
+        plannerShellIndex=plannerInfo?tokenSequenceIndex(tokens,
+          plannerInfo.openIndex+1,plannerInfo.closeIndex,
+          ['shell',':','false']):-1;
+      if(platformName!=='win32'&&carrierInfo&&planIndex>=0&&
+          executableIndex>planIndex&&plannerInfo&&plannerShellIndex>=0&&
+          /^spawnSync\(\s*executable\s*,\s*plan\.args\s*,\s*plan\.options\s*\)$/.test(invocation)&&
+          /const executable = path\.win32\.join\(systemRoot,\s*'System32',\s*'WindowsPowerShell',\s*'v1\.0',\s*'powershell\.exe'\);/m
+            .test(source))continue;
     }
     if(first.type==='identifier'&&first.value==='executable'&&
         path==='runtime/platform.test.js'&&
