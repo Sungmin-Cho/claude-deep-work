@@ -265,23 +265,29 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
   for(const match of source.matchAll(
     /(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\(\s*['"](?:node:)?child_process['"]\s*\)/g))
     moduleBindings.add(match[1]);
-  // Follow simple identifier aliases to a fixpoint. This deliberately does not
-  // claim completeness: property/array/IIFE carriers and cross-module aliases
-  // remain outside the scanner's model and must be treated as residual bypasses.
+  // Follow identifier and child_process module-member aliases to a fixpoint.
+  // This deliberately does not claim completeness: array/IIFE carriers,
+  // cross-module aliases, and re-export chains remain residual bypasses.
   for(let changed=true;changed;){
     changed=false;
     for(let index=0;index<tokens.length-2;index++){
       const alias=tokens[index],equals=tokens[index+1],target=tokens[index+2],
         previous=tokens[index-1]?.value,
         declaration=['const','let','var'].includes(previous),
-        defaultParameter=['(',',','{','['].includes(previous);
+        defaultParameter=['(',',','{','['].includes(previous),
+        directAlias=target?.type==='identifier'&&
+          tokens[index+3]?.value!=='('&&directBindings.has(target.value),
+        memberKind=tokens[index+4],
+        memberAlias=target?.type==='identifier'&&
+          moduleBindings.has(target.value)&&tokens[index+3]?.value==='.'&&
+          memberKind?.type==='identifier'&&kinds.has(memberKind.value)&&
+          tokens[index+5]?.value!=='(';
       if(alias.type!=='identifier'||equals?.value!=='='||
-          target?.type!=='identifier'||
-          tokens[index+3]?.value==='('||
           (!declaration&&!defaultParameter)||
-          !directBindings.has(target.value)||directBindings.has(alias.value))continue;
+          (!directAlias&&!memberAlias)||directBindings.has(alias.value))continue;
       directBindings.add(alias.value);
-      bindingKinds.set(alias.value,bindingKinds.get(target.value)||target.value);
+      bindingKinds.set(alias.value,memberAlias?memberKind.value:
+        bindingKinds.get(target.value)||target.value);
       changed=true;
     }
   }

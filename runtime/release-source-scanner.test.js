@@ -153,7 +153,7 @@ test('recursive scripts fail closed on cycles, missing targets, and dynamic root
   }}),/release-launch-dynamic/);
 });
 
-test('launch scanning follows declaration and default-parameter aliases to a fixpoint',()=>{
+test('launch scanning follows declaration, default-parameter, and module-member aliases to a fixpoint',()=>{
   const sources=[
     [
       "const {spawnSync}=require('node:child_process');",
@@ -166,6 +166,17 @@ test('launch scanning follows declaration and default-parameter aliases to a fix
       '  const first=launcher;',
       '  const second=first;',
       "  return second(process.env.EVIL,['whatever'],{shell:false});",
+      '}',
+    ].join('\n'),
+    [
+      "const childProcess=require('node:child_process');",
+      'const launcher=childProcess.spawnSync;',
+      "launcher(process.env.EVIL,['whatever'],{shell:false});",
+    ].join('\n'),
+    [
+      "const childProcess=require('node:child_process');",
+      'function run({launcher=childProcess.spawnSync}={}){',
+      "  return launcher(process.env.EVIL,['whatever'],{shell:false});",
       '}',
     ].join('\n'),
   ];
@@ -184,6 +195,16 @@ test('launch scanning follows declaration and default-parameter aliases to a fix
   assert.deepEqual(scanner.scanLaunchSites(
     'runtime/call-result-fixture.js',Buffer.from(callResultIsNotAnAlias))
     .required_tools,['sh']);
+  const memberCallResultIsNotAnAlias=[
+    "const childProcess=require('node:child_process');",
+    "const result=childProcess.spawnSync('/bin/sh',['-c','true'],{shell:false});",
+    'const records=result.records;',
+    'const terminal=records.at(-1);',
+    'terminal(template);',
+  ].join('\n');
+  assert.deepEqual(scanner.scanLaunchSites(
+    'runtime/member-call-result-fixture.js',
+    Buffer.from(memberCallResultIsNotAnAlias)).required_tools,['sh']);
 });
 
 test('portability Windows planner admission is exact and preserves the sh inventory',()=>{
