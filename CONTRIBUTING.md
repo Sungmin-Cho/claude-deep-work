@@ -11,7 +11,8 @@ git clone https://github.com/Sungmin-Cho/claude-deep-work.git
 cd claude-deep-work
 ```
 
-Node 20+ is required. The plugin's runtime is zero-dependency (Node built-ins +
+Node 22+ is required (`package.json` `engines`). The plugin's runtime is
+zero-dependency (Node built-ins +
 bash hooks); there is no install step for development.
 
 ## Tests
