@@ -7,6 +7,13 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.1.4] — 2026-08-06 (Session-Policy 선행조건 종료)
+
+### Changed
+
+- **Session-policy 선행조건 handoff에 독립 검토된 terminal no-go를 기록했습니다.** 프로젝트가 제어하는 Git 구조는 worktree 밖의 repository-wide authority를 인증할 수 없고, deep-work는 그 신뢰를 제공해야 하는 별도 설치형 repository-authority 및 approval-broker 제품을 소유하지 않습니다. 따라서 기존 inline policy pipeline이 계속 authoritative하며, 실험적 P1 구현과 `scripts/session-policy-cli.js`는 배포하지 않습니다.
+- 재개 계약은 signed broker package와 독립 검증된 OS 설치·enrollment receipt를 요구합니다. 사람의 승인은 진행 권한이지 존재하지 않는 authority의 증거가 아닙니다.
+
 ## [7.1.3] — 2026-08-03 (이중 Root Hook Bootstrap)
 
 ### Fixed
