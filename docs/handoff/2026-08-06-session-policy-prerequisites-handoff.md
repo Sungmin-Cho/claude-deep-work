@@ -245,3 +245,44 @@ WS2 is complete only when all of the following are true:
 - integration has its own explicit human authorization.
 
 Until then, the correct production state is the existing inline pipeline.
+
+## Terminal closure — 2026-08-06
+
+Follow-up run `01KZAKSQ5C4XV7CT66RDADCVY4` tested whether the prerequisite
+program could safely begin in this repository. It ended as an independently
+reviewed no-go, not as a P1-P5 implementation.
+
+The P1 experiment demonstrated that a project capability cannot authenticate a
+repository-wide authority outside its own worktree. A project under analysis can
+fabricate a fully reciprocal `.git` / `gitdir` / `commondir` layout, so structural
+Git consistency cannot authorize writes to an external common directory. The
+same review also required transactional compare-and-swap plus immutable terminal
+evidence anchoring; local row/receipt files alone cannot reject a coordinated
+rewrite.
+
+The corrected design therefore requires independently installed products:
+
+- a repository-authority service that enrolls member worktrees outside project
+  state and atomically owns admission rows and append-only transition anchors;
+- an approval broker that owns human-presence, signing, rotation, revocation,
+  and one-time risk-lowering lifecycle state.
+
+The exact corrected design received a fresh independent review with Critical 0
+and Warning 0. Execution remained blocked because no broker source/package owner,
+signed service identity, release trust root, OS installation/enrollment, or
+provider receipt exists, and the user confirmed that deep-work does not own those
+broker products. This repository must not invent their protocols or trust keys.
+
+Consequences:
+
+- keep the existing inline session-policy pipeline authoritative;
+- do not merge the experimental P1 implementation;
+- do not add `scripts/session-policy-cli.js`;
+- treat user approval as permission to act, never as substitute evidence for an
+  absent external authority;
+- start a new run only after both signed broker packages and their independently
+  verified installation/enrollment receipts exist.
+
+This closure supersedes the handoff's invitation to begin P1 in isolation. The
+technical requirements remain useful as a future consumer contract, but the
+provider boundary must exist first.

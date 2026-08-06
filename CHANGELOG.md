@@ -7,6 +7,13 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.4] — 2026-08-06 (Session-Policy Prerequisite Closure)
+
+### Changed
+
+- **The session-policy prerequisite handoff now records its terminal reviewed no-go.** A project-controlled Git layout cannot authenticate repository-wide authority outside the worktree, and deep-work does not own the separately installed repository-authority and approval-broker products required to provide that trust. The existing inline policy pipeline therefore remains authoritative; the experimental P1 implementation and `scripts/session-policy-cli.js` are not shipped.
+- The restart contract now requires signed broker packages plus independently verified OS installation and enrollment receipts. Human approval remains permission to proceed, not evidence that an absent authority exists.
+
 ## [7.1.3] — 2026-08-03 (Dual-Root Hook Bootstrap)
 
 ### Fixed
