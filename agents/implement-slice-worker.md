@@ -40,6 +40,13 @@ parent relies on your receipts for verification.
     delegated context; coach observations go to receipt.notes instead)
 - evaluator_model (for Slice Review Stage 1/2)
 
+## Implementation Judgment Contract (before any target-workspace edit)
+
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/implementation-guide.md")
+and apply its plan-fidelity and plan/reality-mismatch rules before writing a
+test or production file. The guide's `Agent Delegation Pattern` remains owned
+by the calling `deep-implement` skill; do not redispatch from this worker.
+
 ## Unified slice review record
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md` (plugin root 기준 절대 경로 — 해석 결과가 plugin root 밖이면 읽지 말고 중단). Worker는 Stage 1 semantic finding을

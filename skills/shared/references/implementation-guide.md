@@ -6,9 +6,13 @@ The Implementation phase is about **mechanical execution** of the approved plan.
 
 ## Implementation Methodology
 
-### Core Principle: Boring is Good
+### Core Principle: Plan Fidelity Preserves Evidence
 
-The best implementation phase is a boring one. No surprises, no creativity, no "while I'm here" improvements. Just faithful execution of the plan.
+The approved plan defines the behavior that the acceptance contract and slice receipts
+verify. Implementing against that plan keeps the evidence attached to the change that was
+actually approved. When implementation reveals a worthwhile improvement outside those
+boundaries, preserve the idea in `Issues Encountered` for a later plan cycle instead of
+silently changing the target of verification.
 
 ### Step-by-Step Execution
 
@@ -24,7 +28,11 @@ SLICE-003: path/to/file.ts — Adding UserService class
 Always read the target file before modifying it. Things may have changed since the research phase.
 
 #### 3. Implement
-Make the change exactly as described in the plan. If the plan says "add a method called `authenticate`", add exactly that — don't rename it to `verifyCredentials` because you think it's better.
+Treat names and public shapes specified by the plan as contract terms. If the plan says
+"add a method called `authenticate`", keep that name because acceptance checks and receipt
+evidence are bound to the approved interface. If repository facts make the term invalid or
+unsafe, classify the mismatch by contract impact below rather than silently substituting a
+different interface.
 
 #### 4. Verify
 Run applicable checks:
@@ -45,12 +53,24 @@ Brief status update:
 SLICE-003 완료: UserService 클래스 추가됨
 ```
 
-## Error Handling Protocol
+## Handling Plan/Reality Mismatches
 
-### When Something Doesn't Work as Planned
+### Decide by Contract Impact
 
-1. **Stop immediately** — don't try to hack around it
-2. **Document the issue** in `$WORK_DIR/plan.md`:
+When something does not work as planned, first decide whether the response changes the
+acceptance contract, public interface, scope, or verification evidence.
+
+- A local mismatch that **does not change those approved boundaries** may be adapted in
+  place. Record the observed difference and the adaptation in `$WORK_DIR/plan.md`, run the
+  applicable checks, and continue. Typical examples are a repository-local import path,
+  formatting needed to match nearby code, or a private-name collision whose resolution
+  leaves the approved behavior and evidence unchanged.
+- A mismatch that **does change an approved boundary** requires a new decision. Stop the
+  affected slice, document the issue, explain the impact to the user, and wait for approval
+  or a replan before changing the contract.
+
+Use this issue format for either path:
+
    ```markdown
    ## Issues Encountered
 
@@ -61,22 +81,15 @@ SLICE-003 완료: UserService 클래스 추가됨
    - **Possible causes**: [analysis]
    - **Suggested fix**: [if obvious]
    ```
-3. **Inform the user** — explain what happened and ask for guidance
-4. **Wait** — do not proceed until the user decides how to handle it
 
-### When NOT to Improvise
+Some findings remain mechanism-bound regardless of how local they look:
 
-- The planned approach doesn't work → **Ask the user**
 - You notice a bug in unrelated code → **Note it in Issues, don't fix it**
-- You think of a better way to do something → **Note it in Issues, follow the plan**
 - A dependency is missing → **Report it, don't install it without asking**
 - Tests are failing → **Report the failures, don't modify tests without plan approval**
 
-### When It's OK to Adapt
-
-- Minor syntax adjustments (import paths slightly different)
-- Whitespace/formatting to match file conventions
-- Variable names adjusted to avoid conflicts with existing code (document the change)
+Improvement ideas are not discarded: record them in Issues and route them through the next
+plan cycle so their scope and evidence can be approved deliberately.
 
 ## Rollback Procedures
 
@@ -120,7 +133,7 @@ For testing phase details, see [Testing Guide](testing-guide.md).
 ## Quality Criteria
 
 A good implementation:
-- Follows the plan exactly — no additions, no omissions
+- Matches the approved plan at contract boundaries; local adaptations are documented and verified
 - Each task is verified before moving to the next
 - Issues are documented, not silently worked around
 - The user is kept informed throughout

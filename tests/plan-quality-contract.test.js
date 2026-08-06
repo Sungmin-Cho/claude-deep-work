@@ -42,6 +42,75 @@ test('planning references reject vague task checklists', () => {
   assert.doesNotMatch(implementationGuide, /Task \d+\/\d+/);
 });
 
+test('implementation guidance uses contract-impact judgment without weakening safeguards', () => {
+  const implementationGuide = readRepoFile('skills/shared/references/implementation-guide.md');
+  const deepImplement = readRepoFile('skills/deep-implement/SKILL.md');
+  const sliceWorker = readRepoFile('agents/implement-slice-worker.md');
+  const agentGuide = readRepoFile('AGENTS.md');
+
+  assert.ok(implementationGuide.includes('### Core Principle: Plan Fidelity Preserves Evidence'));
+  assert.ok(implementationGuide.includes('acceptance contract and slice receipts'));
+  assert.match(
+    implementationGuide,
+    /changes the\s+acceptance contract, public interface, scope, or verification evidence/,
+  );
+  assert.ok(implementationGuide.includes('does not change those approved boundaries'));
+
+  for (const obsoleteRule of [
+    'No surprises, no creativity',
+    "don't rename it to `verifyCredentials` because you think it's better",
+    '**Stop immediately**',
+    '**Wait** — do not proceed until the user decides how to handle it',
+    '### When NOT to Improvise',
+    '### When It\'s OK to Adapt',
+    'Follows the plan exactly — no additions, no omissions',
+  ]) {
+    assert.ok(!implementationGuide.includes(obsoleteRule), `obsolete rule remains: ${obsoleteRule}`);
+  }
+
+  for (const safeguard of [
+    "bug in unrelated code",
+    "don't install it without asking",
+    "don't modify tests without plan approval",
+    '## Agent Delegation Pattern (v3.1.0)',
+  ]) {
+    assert.ok(implementationGuide.includes(safeguard), `mechanism safeguard missing: ${safeguard}`);
+  }
+
+  const preExecutionGuideRead =
+    'Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/implementation-guide.md")';
+  assert.ok(deepImplement.includes(preExecutionGuideRead));
+  assert.ok(
+    deepImplement.indexOf(preExecutionGuideRead) < deepImplement.indexOf('## First Action'),
+    'implementation judgment must be loaded before the first edit',
+  );
+  assert.ok(!deepImplement.includes('Follow the plan EXACTLY. Do not deviate.'));
+  assert.match(
+    deepImplement,
+    /acceptance contract, public interface, scope, or verification evidence/,
+  );
+  assert.match(deepImplement, /local adaptation[\s\S]*document[\s\S]*verify/i);
+
+  assert.ok(sliceWorker.includes(preExecutionGuideRead));
+  assert.ok(
+    sliceWorker.indexOf(preExecutionGuideRead) < sliceWorker.indexOf('# TDD Protocol'),
+    'delegated implementation judgment must be loaded before the first edit',
+  );
+  assert.match(
+    agentGuide,
+    /run that worker's own protocol inline in the calling skill/,
+    'Codex must retain the no-Agent inline worker fallback',
+  );
+  assert.ok(deepImplement.includes('**TDD mandatory**'));
+  assert.ok(deepImplement.includes('**Do NOT modify files outside the active slice\'s scope**'));
+  assert.ok(deepImplement.includes('verify-delegated-receipt.sh'));
+  assert.match(deepImplement, /pass해야 Phase Review Gate에 도달/);
+  assert.ok(sliceWorker.includes('# TDD Protocol (prompt-embedded — hook not applied)'));
+  assert.ok(sliceWorker.includes('DO NOT modify files outside the union'));
+  assert.ok(sliceWorker.includes('parent relies on your receipts for verification'));
+  assert.ok(sliceWorker.includes('do not redispatch from this worker'));
+});
+
 test('plan templates expose worker handoff and verification plan', () => {
   const existingTemplate = readRepoFile('skills/shared/templates/plan-template-existing.md');
   const zeroBaseTemplate = readRepoFile('skills/shared/templates/plan-template-zerobase.md');
