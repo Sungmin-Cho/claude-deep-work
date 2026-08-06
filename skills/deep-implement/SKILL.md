@@ -74,6 +74,11 @@ Section 1 전체 완료 후, Section 2 First Action 진입 **전에** 실행 모
 
 # Section 2: Phase 실행
 
+## Implementation Judgment Contract
+
+첫 편집 전에 다음 근거 계약을 읽고, 계획 충실도와 현실 불일치를 그 기준으로 판단한다:
+Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/implementation-guide.md")
+
 ## First Action (즉시 실행 — 건너뛰기 금지)
 
 Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 silent하게 끝난 뒤 **즉시** 다음 메시지를 출력한다:
@@ -97,7 +102,8 @@ Section 1 state 로드, Plan 파싱, Resume Detection, 완료-marker 감지가 s
 
 ## Critical Constraints
 
-- **Follow the plan EXACTLY. Do not deviate.**
+- **Preserve plan fidelity: do not change the acceptance contract, public interface, scope, or verification evidence without approval.**
+- **A local adaptation within the active slice may proceed only when it does not change those approved boundaries; document and verify it. If a mismatch changes a boundary, stop the affected slice for approval or replanning.**
 - **TDD mandatory** (strict/coaching): failing test → production code → refactor
 - **Do NOT add features not in the plan**
 - **Do NOT modify files outside the active slice's scope**
@@ -417,7 +423,7 @@ Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/phase-review-gate.md") — 
 - Document: 구현된 코드 전체 (git diff)
 - Self-review: 계획 충실도, 크로스 슬라이스 일관성, 미구현 항목
 
-상세: Read("${CLAUDE_PLUGIN_ROOT}/skills/shared/references/implementation-guide.md")
+상세 판단 기준은 Section 2 진입 전에 로드한 implementation guide를 따른다.
 
 # Section 3: 완료
 
