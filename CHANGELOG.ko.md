@@ -7,6 +7,12 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.3.0] — 2026-08-24 (Router-Shadow fingerprint 보존)
+
+### Added
+
+- **Router-shadow identity가 `decision_fingerprint`와 `request_sha256`을 optional로 보존합니다.** 성공한 parsed route JSON은 두 필드를 `shadow.identity`에 복사하고, 구 라우터 출력과 내부/실패 경로는 `null`을 기록합니다. 필드는 optional이라 identity triple만 아는 구 소비처가 깨지지 않습니다. `input_hash`는 계속 `sha256(JSON.stringify(request))`이며 개명하지 않고, `dispatch_authorized`와 shadow 권위는 그대로이며, 이 플러그인은 여전히 RouteObservationV1을 emit하지 않습니다. 회귀 커버리지는 `scripts/router-shadow.test.js`에 있습니다.
+
 ## [7.2.3] — 2026-08-20 (세션 종료 모델 추출)
 
 ### Fixed

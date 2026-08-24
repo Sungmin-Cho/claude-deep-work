@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -335,4 +336,146 @@ test('orchestrator and research invoke router-shadow immediately after model-rou
     assert.ok(!/current_phase|model_routing_json/.test(between),
       `${name} must invoke shadow immediately after the CLI, before state write`);
   }
+});
+
+function expectedInputHash(request) {
+  return crypto.createHash('sha256').update(JSON.stringify(request ?? null)).digest('hex');
+}
+
+test('parsed route copies optional decision_fingerprint and request_sha256 into identity', () => {
+  const request = sampleRequest();
+  const fingerprint = 'dfp-' + '9'.repeat(32);
+  const requestSha = '1'.repeat(64);
+  const result = recordRouterShadow({
+    mrOut: { model_routing: { implement: 'sonnet' }, meta: {}, warnings: [] },
+    request,
+    env: {},
+    invoke: mockInvoke({
+      exit: 0,
+      stdout: JSON.stringify({
+        route_schema_version: 1,
+        router_plugin_version: '1.2.0',
+        policy_sha256: 'a'.repeat(64),
+        decision_fingerprint: fingerprint,
+        request_sha256: requestSha,
+        selected_model: 'sonnet',
+        selected_effort: 'HIGH',
+        risk_band: 'MEDIUM',
+        review: { reviewers: [] },
+      }),
+      stderr: '',
+      processState: 'exited',
+    }),
+  });
+  assert.equal(result.shadow.identity.decision_fingerprint, fingerprint);
+  assert.equal(result.shadow.identity.request_sha256, requestSha);
+  assert.equal(result.shadow.identity.route_schema_version, 1);
+  assert.equal(result.shadow.identity.router_plugin_version, '1.2.0');
+  assert.equal(result.shadow.dispatch_authorized, true);
+  assert.equal(result.shadow.input_hash, expectedInputHash(request));
+});
+
+test('legacy router output without fingerprint fields yields null identity fields', () => {
+  const request = sampleRequest();
+  const result = recordRouterShadow({
+    mrOut: { model_routing: { implement: 'sonnet' }, meta: {}, warnings: [] },
+    request,
+    env: {},
+    invoke: mockInvoke({
+      exit: 0,
+      stdout: JSON.stringify({
+        route_schema_version: 1,
+        router_plugin_version: '1.0.0',
+        policy_sha256: 'c'.repeat(64),
+        selected_model: 'sonnet',
+        selected_effort: 'HIGH',
+        risk_band: 'MEDIUM',
+        review: { reviewers: [] },
+      }),
+      stderr: '',
+      processState: 'exited',
+    }),
+  });
+  assert.equal(result.shadow.identity.decision_fingerprint, null);
+  assert.equal(result.shadow.identity.request_sha256, null);
+  assert.equal(result.shadow.identity.route_schema_version, 1);
+  assert.equal(result.shadow.identity.router_plugin_version, '1.0.0');
+  assert.equal(result.shadow.identity.policy_sha256, 'c'.repeat(64));
+  assert.equal(result.shadow.dispatch_authorized, true);
+  assert.equal(result.shadow.input_hash, expectedInputHash(request));
+});
+
+test('internal failure identity fingerprint fields are null', () => {
+  const request = sampleRequest();
+  const result = recordRouterShadow({
+    mrOut: { model_routing: { implement: 'main' }, meta: { error: true }, warnings: ['x'] },
+    request,
+    env: {},
+    invoke: () => { throw new Error('spawn exploded'); },
+  });
+  assert.equal(result.shadow.status, 'internal');
+  assert.equal(result.shadow.dispatch_authorized, false);
+  assert.equal(result.shadow.identity.decision_fingerprint, null);
+  assert.equal(result.shadow.identity.request_sha256, null);
+  assert.equal(result.shadow.identity.route_schema_version, null);
+  assert.equal(result.shadow.identity.router_plugin_version, null);
+  assert.equal(result.shadow.identity.policy_sha256, null);
+  assert.equal(result.shadow.input_hash, expectedInputHash(request));
+});
+
+test('input_hash stays sha256 of JSON.stringify(request) across parsed, legacy, and failure', () => {
+  const request = sampleRequest();
+  const expected = expectedInputHash(request);
+  const parsed = recordRouterShadow({
+    mrOut: { model_routing: { implement: 'sonnet' }, meta: {}, warnings: [] },
+    request,
+    env: {},
+    invoke: mockInvoke({
+      exit: 0,
+      stdout: JSON.stringify({
+        route_schema_version: 1,
+        router_plugin_version: '1.2.0',
+        policy_sha256: 'a'.repeat(64),
+        decision_fingerprint: 'dfp-' + '8'.repeat(32),
+        request_sha256: '2'.repeat(64),
+        selected_model: 'sonnet',
+        selected_effort: 'HIGH',
+        risk_band: 'MEDIUM',
+        review: { reviewers: [] },
+      }),
+      stderr: '',
+      processState: 'exited',
+    }),
+  });
+  const legacy = recordRouterShadow({
+    mrOut: { model_routing: { implement: 'sonnet' }, meta: {}, warnings: [] },
+    request,
+    env: {},
+    invoke: mockInvoke({
+      exit: 0,
+      stdout: JSON.stringify({
+        route_schema_version: 1,
+        router_plugin_version: '1.0.0',
+        policy_sha256: 'c'.repeat(64),
+        selected_model: 'sonnet',
+        selected_effort: 'HIGH',
+        risk_band: 'MEDIUM',
+        review: { reviewers: [] },
+      }),
+      stderr: '',
+      processState: 'exited',
+    }),
+  });
+  const failed = recordRouterShadow({
+    mrOut: { model_routing: { implement: 'main' }, meta: {}, warnings: [] },
+    request,
+    env: {},
+    invoke: () => { throw new Error('hash invariant'); },
+  });
+  assert.equal(parsed.shadow.input_hash, expected);
+  assert.equal(legacy.shadow.input_hash, expected);
+  assert.equal(failed.shadow.input_hash, expected);
+  assert.equal(parsed.shadow.input_hash, legacy.shadow.input_hash);
+  assert.equal(legacy.shadow.input_hash, failed.shadow.input_hash);
+  assert.notEqual(parsed.shadow.identity.request_sha256, parsed.shadow.input_hash);
 });
