@@ -7,6 +7,12 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.3.0] — 2026-08-24 (Router-Shadow Fingerprint Preservation)
+
+### Added
+
+- **Router-shadow identity now optionally preserves `decision_fingerprint` and `request_sha256`.** Successful parsed route JSON copies those fields onto `shadow.identity`; legacy router output and the internal/failure path record `null`. The fields stay optional so historical readers that only know the identity triple keep working. `input_hash` remains `sha256(JSON.stringify(request))` and is not renamed; `dispatch_authorized` and shadow authority are unchanged; this plugin still does not emit RouteObservationV1. Regression coverage lives in `scripts/router-shadow.test.js`.
+
 ## [7.2.3] — 2026-08-20 (Session-End Model Extraction)
 
 ### Fixed

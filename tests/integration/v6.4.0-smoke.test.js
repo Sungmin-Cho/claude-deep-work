@@ -211,8 +211,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 7.2.3 with evergreen usage docs', () => {
-    const version = '7.2.3';
+  it('active release metadata is bumped to 7.3.0 with evergreen usage docs', () => {
+    const version = '7.3.0';
     const featureVersion = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -227,15 +227,29 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (7.2.3) — session-end model extraction.
+    // Current release (7.3.0) — router-shadow fingerprint preservation.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.match(changelogCurrent,/session-end/);
-    assert.match(changelogKoCurrent,/session-end/);
-    assert.ok(changelogCurrent.includes('hooks/scripts/session-end-model-extract.test.js'),
-      'CHANGELOG.md 7.2.3 section must cite the model-extraction regression test');
-    assert.ok(changelogKoCurrent.includes('hooks/scripts/session-end-model-extract.test.js'),
-      'CHANGELOG.ko.md 7.2.3 section must cite the model-extraction regression test');
+    assert.match(changelogCurrent,/decision_fingerprint/);
+    assert.match(changelogCurrent,/request_sha256/);
+    assert.match(changelogKoCurrent,/decision_fingerprint/);
+    assert.match(changelogKoCurrent,/request_sha256/);
+    assert.ok(changelogCurrent.includes('scripts/router-shadow.test.js'),
+      'CHANGELOG.md 7.3.0 section must cite the router-shadow regression test');
+    assert.ok(changelogKoCurrent.includes('scripts/router-shadow.test.js'),
+      'CHANGELOG.ko.md 7.3.0 section must cite the router-shadow regression test');
+    // The prior release (7.2.3) keeps its own session-end headline; this minor
+    // release must not absorb it.
+    assert.match(releaseSection(changelog, '7.2.3'),/session-end/);
+    assert.match(releaseSection(changelogKo, '7.2.3'),/session-end/);
+    assert.ok(releaseSection(changelog, '7.2.3').includes('hooks/scripts/session-end-model-extract.test.js'),
+      'CHANGELOG.md 7.2.3 section must retain the model-extraction regression test');
+    assert.ok(releaseSection(changelogKo, '7.2.3').includes('hooks/scripts/session-end-model-extract.test.js'),
+      'CHANGELOG.ko.md 7.2.3 section must retain the model-extraction regression test');
+    assert.equal(changelogCurrent.includes('session-end'), false,
+      'CHANGELOG.md 7.3.0 section must not absorb the 7.2.3 session-end note');
+    assert.equal(changelogKoCurrent.includes('session-end'), false,
+      'CHANGELOG.ko.md 7.3.0 section must not absorb the 7.2.3 session-end note');
     // The prior release (7.2.1) keeps its own hook-cache headline; this patch
     // release must not absorb it.
     assert.match(releaseSection(changelog, '7.2.1'),/PostToolUse handoff cache no longer leaves one file per tool call/);
