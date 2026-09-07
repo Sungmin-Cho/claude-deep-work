@@ -1964,12 +1964,19 @@ function reporterLocation(location,{root,testPath}){
     try{candidate=fileURLToPath(rawUrl);}catch{fail('bootstrap-first-red-tap');}
     if(pathToFileURL(candidate).href!==rawUrl)fail('bootstrap-first-red-tap');
   }
-  if(!path.isAbsolute(candidate)||path.normalize(candidate)!==candidate)
+  // Node TAP YAML on Windows quotes paths as 'C:\\Users\\...' (single-quoted,
+  // so backslashes stay doubled). POSIX still rejects unnormalized '..' forms.
+  if(process.platform==='win32'){
+    candidate=path.normalize(candidate);
+    if(!path.isAbsolute(candidate))fail('bootstrap-first-red-tap');
+  }else if(!path.isAbsolute(candidate)||path.normalize(candidate)!==candidate){
     fail('bootstrap-first-red-tap');
+  }
   const expected=fs.realpathSync(path.join(root,...testPath.split('/')));
   let actual;
   try{actual=fs.realpathSync(candidate);}catch{fail('bootstrap-first-red-tap');}
-  if(actual!==expected||path.resolve(candidate)!==expected)fail('bootstrap-first-red-tap');
+  if(actual!==expected||process.platform!=='win32'&&path.resolve(candidate)!==expected)
+    fail('bootstrap-first-red-tap');
   return {line:Number(match[2]),column:Number(match[3])};
 }
 function tapEventFrom({fields,forms,keys,testName,root,testPath,diagnosticOverride=null,

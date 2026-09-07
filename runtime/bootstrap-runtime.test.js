@@ -2150,6 +2150,17 @@ node26Test('public first-RED rejects every closed process, TAP, scope, environme
     });
   });
 
+test('reporterLocation accepts Windows TAP YAML doubled backslashes',{
+  skip:process.platform!=='win32'?'native Windows TAP locations':false,
+},()=>{
+  const file=path.join(__dirname,'bootstrap-runtime.test.js');
+  const doubled=`${file.replaceAll('\\','\\\\')}:4:1`;
+  const loc=bootstrapRuntime.nodeTapPrimitives.reporterLocation(doubled,{
+    root:path.resolve(__dirname,'..'),testPath:'runtime/bootstrap-runtime.test.js'});
+  assert.equal(loc.line,4);
+  assert.equal(loc.column,1);
+});
+
 test('first-RED keeps closed child env and binds Windows supervisor control separately',()=>{
   const source=fs.readFileSync(path.join(__dirname,'bootstrap-runtime.js'),'utf8');
   assert.match(source,/buildSupervisorControl\(\)/);
