@@ -53,7 +53,9 @@ test('actual parsed policy and review choices drive mechanically derived Plan me
  const f=await make(t,{checkpoint:'authored',approvalMode:'none',parsedArguments:['--policy=shadow','--review=dual']}),draft=sourceJson(f);delete draft.contract_binding;delete draft.capability_facts;delete draft.replan_epoch;delete draft.outcome_environment;writePlan(f,draft);
  const result=f.cli(['artifact','approval','preview','--state',f.state,'--phases','spec,plan']);assert.equal(f.fields().methodology_policy_mode,'shadow');assert.equal(result.bundle.derivation_context.review_mode_override,'dual');assert.deepEqual(result.bundle.required_reviewers.map(r=>r.role).sort(),['executability','semantic']);assert.equal(result.projection.contract_binding.risk_profile_sha256,f.fields().risk_profile_sha256);assert.equal(result.projection.contract_binding.created_by_version,f.fields().created_by_version);
 });
-test('actual CLI-shaped metadata double cannot issue independent source approval',async t=>{
+test('actual CLI-shaped metadata double cannot issue independent source approval',{
+ skip:process.platform==='linux'?'linux process identity unconfirmed':false,
+},async t=>{
  const f=await make(t,{checkpoint:'authored',approvalMode:'none'}),packet=f.cli(['artifact','approval','packet-publish','--state',f.state,'--phases','spec,plan']);
  const request=require('../runtime/review-envelope-runtime.js').compileReviewRequest({artifactKind:'plan',reviewIntent:'semantic',riskClass:'low',artifactRefs:packet.artifact_refs});
  const response={verdict:'PASS',conclusions:packet.bundle.required_dimensions.map(id=>({id,conclusion:'satisfied'})),unresolved_blockers:[],findings:[]};

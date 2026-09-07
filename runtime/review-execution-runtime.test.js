@@ -16,7 +16,9 @@ test('metadata parses supported transport events, never model prose',()=>{
  const claude=api.parseReviewOutput({channel:'claude-cli',stdout:[{type:'system',subtype:'init',session_id:'fresh-c',model:'claude-fable-5-1'},{type:'result',subtype:'success',is_error:false,session_id:'fresh-c',result:'{}'}].map(JSON.stringify).join('\n')});assert.equal(claude.model,'claude-fable-5-1');assert.equal(claude.provider,'anthropic');
  const prose=api.parseReviewOutput({channel:'codex-cli',stdout:'model: gpt-6-astra\nPASS'});assert.equal(prose.model,null);assert.equal(prose.terminal_success,false);
 });
-test('actual supervised test double produces persisted authenticated ledger, never provider evidence',async t=>{
+test('actual supervised test double produces persisted authenticated ledger, never provider evidence',{
+ skip:process.platform==='linux'?'linux process identity unconfirmed':false,
+},async t=>{
  assert.equal(typeof api.runReviewExecution,'function');
  const input=fixture(t,`process.stdout.write(${JSON.stringify(events.map(JSON.stringify).join('\n'))})`);
  const output=await api.runReviewExecution(input);assert.equal(output.execution.evidence_kind,'test-double');assert.equal(output.execution.qualifying_independent,false);

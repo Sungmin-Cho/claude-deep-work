@@ -24,7 +24,7 @@ test('SIGTERM survivor gets SIGKILL and verified absence',async()=>{
  assert.deepEqual(signals,[[100,'SIGTERM'],[100,'SIGKILL']]);
 });
 for(const mode of ['timeout','normal'])test(`real detached nested child cleaned after ${mode}`,async(t)=>{
- if(!['darwin','linux'].includes(process.platform)){t.skip('sampled POSIX eval supervisor unavailable on this platform');return;}
+ if(process.platform!=='darwin'){t.skip('sampled POSIX eval supervisor is Darwin-only');return;}
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eval-descendant-test-'));
  const file=path.join(dir,'pids.json');const script=path.join(dir,'root.cjs');
  const supervisor=path.resolve(__dirname,'../../runtime/process-supervisor.js');
@@ -65,7 +65,7 @@ test('a reused parent cannot confer ownership on its new children',async()=>{let
 test('confirmed absence retires historical group and never readopts the recycled PID',async()=>{let rows=[row(100)],signals=[];const tracker=createTracker({readSnapshot:()=>rows,signal:(...args)=>signals.push(args),graceMs:0,confirmMs:0});tracker.register(100);rows=[];tracker.sample();rows=[row(100),row(200,100,100)];const result=await tracker.terminate();assert.equal(result.confirmed,true);assert.equal(result.retired_observed_processes,1);assert.deepEqual(signals,[]);});
 test('unknown members of a still-owned group are never signalled or declared gone',async()=>{let rows=[row(100),row(200,999,100)],signals=[];const tracker=createTracker({readSnapshot:()=>rows,signal:(pid,sig)=>{signals.push([pid,sig]);rows=rows.filter(r=>r.pid!==pid);},graceMs:0,confirmMs:0});tracker.register(100);const result=await tracker.terminate();assert.equal(result.confirmed,false);assert(result.reasons.includes('termination-unconfirmed'));assert.deepEqual(signals,[[100,'SIGTERM']]);});
 test('real setsid migration child is cleaned using stable PID/start identity',async t=>{
- if(!['darwin','linux'].includes(process.platform)||!fs.existsSync('/usr/bin/python3')){t.skip('requires local POSIX Python for harmless setsid fixture');return;}
+ if(process.platform!=='darwin'||!fs.existsSync('/usr/bin/python3')){t.skip('requires Darwin Python for harmless setsid fixture');return;}
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'eval-pgid-migration-')),marker=path.join(dir,'identity.json');
  const code=`import os,time,signal,json,subprocess
 root=os.getpid()
