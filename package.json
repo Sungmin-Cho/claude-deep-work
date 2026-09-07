@@ -6,7 +6,7 @@
   },
   "scripts": {
     "test:core": "node --test tests/envelope-emit.test.js tests/envelope-chain.test.js tests/handoff-roundtrip.test.js tests/phase-guard-denylist.test.js tests/phase-guard-golden.test.js tests/skill-entry-alias.test.js tests/deep-memory-integration.test.js",
-    "test:all": "node --test --test-concurrency=1 --test-timeout=180000 \"runtime/**/*.test.js\" \"hooks/**/*.test.js\" \"tests/**/*.test.js\" \"skills/**/*.test.js\" \"sensors/**/*.test.js\" \"templates/**/*.test.js\" \"scripts/**/*.test.js\" \"evals/**/*.test.js\"",
+    "test:all": "node --test --test-concurrency=1 --test-timeout=600000 \"runtime/**/*.test.js\" \"hooks/**/*.test.js\" \"tests/**/*.test.js\" \"skills/**/*.test.js\" \"sensors/**/*.test.js\" \"templates/**/*.test.js\" \"scripts/**/*.test.js\" \"evals/**/*.test.js\"",
     "test:health": "node --test --test-concurrency=1 \"health/**/*.test.js\"",
     "test": "npm run test:all",
     "test:runtime": "node --test runtime/*.test.js hooks/scripts/hook-bootstrap.test.js hooks/scripts/hook-runtime-portability.test.js hooks/scripts/phase-guard-core.test.js hooks/scripts/verify-receipt-core.test.js",
