@@ -12,6 +12,13 @@ source "$SCRIPT_DIR/utils.sh"
 # ─── 프로젝트 루트 & 상태 파일 ──────────────────────────────
 
 init_deep_work_state
+# Runtime producers own authority and receipt mutations for governed sessions.
+if [[ -f "$STATE_FILE" ]]; then
+  _GOVERNED_VERSION="$(read_frontmatter_field "$STATE_FILE" "created_by_version")"
+  if [[ "$_GOVERNED_VERSION" =~ ^([0-9]+)\. ]] && (( BASH_REMATCH[1] >= 7 )); then
+    exit 0
+  fi
+fi
 STATE_FILE_NORM="$(normalize_path "$STATE_FILE")"
 
 # ─── Read stdin & cache FIRST (before any phase-based early exit) ──────

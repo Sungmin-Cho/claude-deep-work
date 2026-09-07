@@ -17,6 +17,22 @@ function setup() {
   return {root, projectCapability};
 }
 
+test('review execution requires process evidence before terminal publication and replays once', async (t) => {
+  const {root, projectCapability} = setup();
+  t.after(() => fs.rmSync(root, {recursive:true, force:true}));
+  const operation = await beginOperation({projectCapability, sessionId:'s-aaaaaaaa',
+    kind:'review-execution-run-v1', preconditions:{request_sha256:'a'.repeat(64)}});
+  await assert.rejects(() => recordOperationStage(operation, 'result-published'), /operation-stage-order/);
+  await assert.rejects(() => completeOperation(operation, {verdict:'PASS'}), /operation-incomplete/);
+  await recordOperationStage(operation, 'process-completed', {owned:{exit_status:0}});
+  await assert.rejects(() => completeOperation(operation, {verdict:'PASS'}), /operation-incomplete/);
+  await recordOperationStage(operation, 'result-published', {owned:{result_sha256:'b'.repeat(64)}});
+  const result = {review_sha256:'b'.repeat(64)};
+  const terminal = await completeOperation(operation, result, {retainJournal:true});
+  assert.deepEqual(await completeOperation(operation, result, {retainJournal:true}), terminal);
+  assert.deepEqual((await resumeOperation({projectCapability, operationId:operation.operationId})).result, result);
+});
+
 test('closed operation enum includes every Task 2 side effect', () => {
   for (const kind of ['fork-create','cleanup-remove','registry-own','phase-checkpoint',
     'verification-run','sensor-run','test-retry','debug-complete','report-commit']) {

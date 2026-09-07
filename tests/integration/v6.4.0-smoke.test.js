@@ -182,16 +182,14 @@ describe('v6.4.0 integration — verify-delegated-receipt', () => {
 });
 
 describe('v6.4.0 integration — Health Engine command contracts', () => {
-  it('deep-research Phase 1 instructions connect topology, fitness, health_report, and baseline state', () => {
-    const skill = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'deep-research', 'SKILL.md'), 'utf8');
-
-    assert.match(skill, /Health Engine Preflight/);
-    assert.match(skill, /templates\/topology-detector\.js/);
-    assert.match(skill, /health\/fitness\/fitness-generator\.js/);
-    assert.match(skill, /health\/health-check\.js/);
-    assert.match(skill, /health_report/);
-    assert.match(skill, /fitness_baseline/);
-    assert.match(skill, /unresolved_required_issues/);
+  it('optional health operations retain their actual dispatcher contracts', () => {
+    const {ROUTE_CONTRACTS}=require('../../scripts/deep-work-route-contracts.js');
+    for(const route of ['topology detect','health fitness-proposal','health check','health research-state'])
+      assert.ok(ROUTE_CONTRACTS.has(route),route);
+    const state=ROUTE_CONTRACTS.get('health research-state');
+    assert.ok(JSON.stringify(state).includes('health_report'));
+    assert.ok(JSON.stringify(state).includes('fitness_baseline'));
+    assert.ok(JSON.stringify(state).includes('unresolved_required_issues'));
   });
 
   it('status and receipt commands read the actual health_report schema', () => {
@@ -211,8 +209,8 @@ describe('v6.4.0 integration — Health Engine command contracts', () => {
 });
 
 describe('release metadata', () => {
-  it('active release metadata is bumped to 7.3.0 with evergreen usage docs', () => {
-    const version = '7.3.0';
+  it('active release metadata is bumped to 7.4.0 with evergreen usage docs', () => {
+    const version = '7.4.0';
     const featureVersion = '6.9.0';
     const root = path.join(__dirname, '..', '..');
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -227,17 +225,16 @@ describe('release metadata', () => {
     assert.equal(claudePlugin.version, version);
     assert.equal(codexPlugin.version, version);
 
-    // Current release (7.3.0) — router-shadow fingerprint preservation.
     const changelogCurrent = releaseSection(changelog, version);
     const changelogKoCurrent = releaseSection(changelogKo, version);
-    assert.match(changelogCurrent,/decision_fingerprint/);
-    assert.match(changelogCurrent,/request_sha256/);
-    assert.match(changelogKoCurrent,/decision_fingerprint/);
-    assert.match(changelogKoCurrent,/request_sha256/);
-    assert.ok(changelogCurrent.includes('scripts/router-shadow.test.js'),
-      'CHANGELOG.md 7.3.0 section must cite the router-shadow regression test');
-    assert.ok(changelogKoCurrent.includes('scripts/router-shadow.test.js'),
-      'CHANGELOG.ko.md 7.3.0 section must cite the router-shadow regression test');
+    assert.match(changelogCurrent,/Schema3/);
+    assert.match(changelogCurrent,/outcome verification/);
+    assert.match(changelogKoCurrent,/결과 검증/);
+    for(const text of [changelog,changelogKo]){
+      const prior=releaseSection(text,'7.3.0');
+      assert.match(prior,/decision_fingerprint/);assert.match(prior,/request_sha256/);
+      assert.ok(prior.includes('scripts/router-shadow.test.js'));
+    }
     // The prior release (7.2.3) keeps its own session-end headline; this minor
     // release must not absorb it.
     assert.match(releaseSection(changelog, '7.2.3'),/session-end/);

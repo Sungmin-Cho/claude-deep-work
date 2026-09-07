@@ -134,6 +134,12 @@ const INPUT_PRODUCER_KINDS=Object.freeze({
 });
 
 function validateCoverage(row){
+  // Current Spec producers distinguish no obligation from measured coverage.
+  // Keep that explicit null observation; retain historical ratio1 inputs unchanged.
+  if(exactKeys(row,['total','covered','uncovered_ids','ratio','not_applicable_reason'])&&
+      row.total===0&&row.covered===0&&row.ratio===null&&
+      Array.isArray(row.uncovered_ids)&&row.uncovered_ids.length===0&&
+      typeof row.not_applicable_reason==='string'&&row.not_applicable_reason.trim())return row;
   if(!exactKeys(row,['total','covered','uncovered_ids','ratio'])||
       !Number.isSafeInteger(row.total)||row.total<0||
       !Number.isSafeInteger(row.covered)||row.covered<0||row.covered>row.total||
@@ -248,8 +254,8 @@ function computeBlockingCodes(checkerId,facts){
   switch(checkerId){
   case 'spec-gate-v1':
     if(!facts.pass)blockers.push('spec-invalid');
-    if(facts.requirement_coverage.ratio!==1)blockers.push('required-uncovered');
-    if(facts.failure_matrix_coverage.ratio!==1)blockers.push('failure-uncovered');break;
+    if(facts.requirement_coverage.covered!==facts.requirement_coverage.total)blockers.push('required-uncovered');
+    if(facts.failure_matrix_coverage.covered!==facts.failure_matrix_coverage.total)blockers.push('failure-uncovered');break;
   case 'changed-js-syntax-v1': {
     const expected=facts.changed_paths.filter((value)=>
       /\.(?:cjs|mjs|js|jsx|ts|tsx)$/.test(value));
@@ -498,9 +504,9 @@ function loadPlan(planCapability,plan){
   transaction.revalidateSessionFile(planCapability);
   let current;try{current=JSON.parse(transaction.readSessionFile(planCapability));}
   catch{fail('gate-plan');}
-  if(canonical(current)!==canonical(plan)||current.contract_binding?.mode!=='strict-spec')
+  if(canonical(current)!==canonical(plan)||!['strict-spec','execution-spec'].includes(current.contract_binding?.mode))
     fail('gate-plan');
-  const authority=planRuntime.compileImmutablePlanAuthorityV2(current);
+  const authority=planRuntime.compileImmutablePlanAuthority(current);
   if(authority.plan_authority_sha256!==current.plan_authority_sha256)
     fail('gate-plan');
   return current;
@@ -593,7 +599,7 @@ async function authenticateInputRefs({stateCapability,plan,checkerId,inputRefs})
           ref.producer_operation_id!==fields.spec_approval_operation_id||
           producer.kind!=='phase-approval'||
           !exactKeys(result,['status','statePath','stateSha256',
-            'patchSha256'])||result.status!=='completed'||
+            'patchSha256',...(plan.schema_version===3?['artifact_approval']:[])])||result.status!=='completed'||
           result.statePath!==stateCapability.path||
           !DIGEST.test(result.stateSha256||'')||
           !DIGEST.test(result.patchSha256||'')||
@@ -1089,7 +1095,7 @@ async function publishCommandGateResult({stateCapability,planCapability,plan,
 }
 function gateRefSortKey(ref){return `${ref.gate_id}\0${ref.checker_id}\0${
   ref.operation_id}`;}
-async function authenticateGateResultRefs({stateCapability,plan,verificationPlanSha256,
+function authenticateGateResultRefs({stateCapability,plan,verificationPlanSha256,
   refs}={}){
   if(!Array.isArray(refs)||refs.length===0||
       refs.some((ref)=>{try{validateGateResultRef(ref);return false;}catch{return true;}})||
@@ -1100,9 +1106,9 @@ async function authenticateGateResultRefs({stateCapability,plan,verificationPlan
   const project=transaction.projectCapabilityFor(stateCapability);
   const sid=transaction.sessionIdFromState(stateCapability),authenticated=[];
   for(const ref of refs){
-    const receipt=await journal.resumeOperation({projectCapability:project,
+    const receipt=journal.lookupCompletedOperation({projectCapability:project,
       operationId:ref.operation_id,sessionId:sid,kind:'release-gate-result'});
-    const terminal=receipt.result;
+    if(!receipt)fail('release-verification-gates');const terminal=receipt.result;
     if(receipt.stage!=='completed-ledger'||receipt.resultSha256!==
         ref.ledger_result_sha256||!exactKeys(terminal,['checker_id','gate_ids',
           'input_refs','result_path','result_sha256','status'])||
@@ -1148,6 +1154,7 @@ async function authenticateFunctionalReceiptRefs({stateCapability,plan,refs}={})
   const fields=frontmatter.parseFrontmatter(
     fs.readFileSync(stateCapability.path,'utf8')).fields;
   for(const ref of refs){
+    if(plan.schema_version===3){const authenticated=require('./completion-receipt-runtime.js').authenticateSlicePublication({stateCapability,plan,sliceId:ref.slice_id});if(authenticated.receipt.receipt_sha256!==ref.receipt_sha256||authenticated.ref.producer_operation_id!==ref.completion_operation_id)fail('release-verification-functional');continue;}
     const relative=`.deep-work/${sid}/receipts/${ref.slice_id}.json`;
     const raw=readCanonical(path.join(stateCapability.projectRoot,
       ...relative.split('/')),'release-verification-functional');
@@ -1260,7 +1267,7 @@ async function publishReleaseVerificationReceipt({stateCapability,planCapability
     const fields=frontmatter.parseFrontmatter(
       fs.readFileSync(stateCapability.path,'utf8')).fields;
     if(typeof fields.work_dir!=='string')fail('release-verification-state');
-    const receiptPath=path.join(root,...fields.work_dir.split('/'),'receipts',
+    const receiptPath=path.join(root,...planRuntime.receiptStorePaths(fields,plan).internalDir.split('/'),
       `${sliceId}.json`);
     const locks=releaseReceiptTargetLocks({root,planPath:planCapability.path,
       receiptPath});
@@ -1306,7 +1313,7 @@ async function publishReleaseVerificationReceipt({stateCapability,planCapability
     functional_receipts:functional,completion_operation_id:id,
     receipt_sha256:null};
   receipt.receipt_sha256=releaseReceiptDigest(receipt);
-  const relative=`.deep-work/${sid}/receipts/${sliceId}.json`;
+  const relative=`${planRuntime.receiptStorePaths(fields,current).internalDir}/${sliceId}.json`;
   const existing=await journal.resumeOperation({projectCapability:project,
     operationId:id,sessionId:sid,kind:'release-verification-complete'}).catch(
       (error)=>{if(error.code==='operation-not-found')return null;throw error;});
@@ -1322,8 +1329,8 @@ async function publishReleaseVerificationReceipt({stateCapability,planCapability
     if(canonical(stored)!==canonical(receipt))fail('release-verification-adoption');
     validateReleaseCompletionLedger(existing,{sliceId,receiptRelative:relative,
       receipt,operationId:id});
-    return{...existing.result,operation_id:id,
-      operation_receipt:existing,adopted:true};
+    const publication=current.schema_version===3?await require('./completion-receipt-runtime.js').publishSliceM3({stateCapability,planCapability,plan:current,sliceId,seam}):null;
+    return{...existing.result,operation_id:id,operation_receipt:existing,adopted:true,...(publication?{publication}:{})};
   }
   const pending=existing?.status==='pending';
   if(!pending&&slice.checked!==false)fail('release-verification-state');
@@ -1336,8 +1343,8 @@ async function publishReleaseVerificationReceipt({stateCapability,planCapability
   let stages=new Set(operationJournal.stages.map((row)=>row.stage));
   const updated=structuredClone(current);
   updated.slices=updated.slices.map((row)=>row.id===sliceId?
-    {...row,checked:true}:row);
-  if(planRuntime.compileImmutablePlanAuthorityV2(updated).plan_authority_sha256!==
+    {...row,checked:current.schema_version===3?row.checked:true}:row);
+  if(planRuntime.compileImmutablePlanAuthority(updated).plan_authority_sha256!==
       current.plan_authority_sha256)fail('release-verification-plan');
   const receiptPath=path.join(stateCapability.projectRoot,...relative.split('/'));
   if(!stages.has('receipt-published')){
@@ -1370,11 +1377,11 @@ async function publishReleaseVerificationReceipt({stateCapability,planCapability
   const stateBefore=fs.readFileSync(stateCapability.path,'utf8');
   const stateAfter=frontmatter.updateFrontmatterText(stateBefore,{
     release_verification_receipt_sha256:receipt.receipt_sha256,
-    release_verification_operation_id:id,test_passed:true});
+    release_verification_operation_id:id,...(current.schema_version===3?{}:{test_passed:true})});
   const currentStateFields=frontmatter.parseFrontmatter(stateBefore).fields;
   const stateAlreadyCommitted=currentStateFields.release_verification_receipt_sha256===
       receipt.receipt_sha256&&currentStateFields.release_verification_operation_id===id&&
-    currentStateFields.test_passed===true;
+    (current.schema_version===3||currentStateFields.test_passed===true);
   let finalStateBytes=Buffer.from(stateBefore);
   if(stages.has('progress-committed')){
     if(!stateAlreadyCommitted)fail('release-verification-recovery');
@@ -1391,8 +1398,8 @@ async function publishReleaseVerificationReceipt({stateCapability,planCapability
     receipt_sha256:receipt.receipt_sha256,
     post_state_sha256:journal.sha256(finalStateBytes)};
   const operationReceipt=await journal.completeOperation(operation,result);
-  return{...result,operation_id:id,operation_receipt:operationReceipt,
-    adopted:pending};
+  const publication=current.schema_version===3?await require('./completion-receipt-runtime.js').publishSliceM3({stateCapability,planCapability,plan:updated,sliceId,seam}):null;
+  return{...result,operation_id:id,operation_receipt:operationReceipt,adopted:pending,...(publication?{publication}:{})};
 }
 
 module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
@@ -1409,4 +1416,4 @@ module.exports={RELEASE_GATE_CATALOG,DETERMINISTIC_GATE_MAPPING,
   buildReleaseVerificationCompletionPreconditions,
   releaseVerificationOperationId,
   releaseReceiptTargetLocks,
-  publishReleaseVerificationReceipt,semanticDigest,legacyV7SurfaceViolations};
+  authenticateGateResultRefs,publishReleaseVerificationReceipt,semanticDigest,legacyV7SurfaceViolations};

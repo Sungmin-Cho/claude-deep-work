@@ -35,10 +35,10 @@ test('pinned 형식 오류 항목은 경고 + 무시 (전체 거부 아님)', ()
   assert.ok(r.warnings.some((w) => /bogus/.test(w)));
 });
 
-test('fallback 경로: DEEP_WORK_MR_CLI_TEST_THROW=1이면 exit 0 + all-main fallback JSON', () => {
+test('malformed catalog JSON yields visible all-main error fallback', () => {
   const out = execFileSync(process.execPath, [CLI, '--root', path.join(__dirname, '..'), '--task', 't',
-    '--runtime', 'claude'],
-    { encoding: 'utf8', env: { ...process.env, DEEP_WORK_MR_CLI_TEST_THROW: '1' } });
+    '--runtime', 'claude','--catalog-override','{invalid'],
+    { encoding: 'utf8' });
   // (a) exit code 0 — execFileSync가 던지지 않고 여기까지 도달함으로써 확인됨
   // (b) stdout이 유효 JSON 한 줄
   const lines = out.split('\n').filter((l) => l.length > 0);
@@ -53,13 +53,13 @@ test('fallback 경로: DEEP_WORK_MR_CLI_TEST_THROW=1이면 exit 0 + all-main fal
     assert.strictEqual(r.meta.tiers[p], 'main');
   }
   // (d) warnings에 cli-error: test-throw 포함
-  assert.ok(r.warnings.some((w) => w === 'cli-error: test-throw'));
+  assert.ok(r.warnings.some((w) => /cli-error:/.test(w)));
 });
 
-test('bad-json 경로: DEEP_WORK_MR_CLI_TEST_BAD_JSON=1이면 exit 0 + JSON.stringify throw → fallback JSON', () => {
+test('malformed authority JSON yields visible error fallback', () => {
   const out = execFileSync(process.execPath, [CLI, '--root', path.join(__dirname, '..'), '--task', 't',
-    '--runtime', 'claude'],
-    { encoding: 'utf8', env: { ...process.env, DEEP_WORK_MR_CLI_TEST_BAD_JSON: '1' } });
+    '--runtime', 'claude','--methodology-policy','{invalid'],
+    { encoding: 'utf8' });
   // (a) exit code 0 — execFileSync가 던지지 않고 여기까지 도달함으로써 확인됨
   // (b) stdout이 유효 JSON 한 줄
   const lines = out.split('\n').filter((l) => l.length > 0);

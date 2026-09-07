@@ -2,7 +2,8 @@
 
 const TIERS = Object.freeze(['light', 'standard', 'deep']);
 const MAIN = 'main';
-const CATALOG_VERSION = 1;
+const CATALOG_VERSION = 2;
+const EXPLICIT_MODELS=Object.freeze({codex:Object.freeze(['gpt-6-astra'])});
 // codex 슬롯은 로컬 catalog와 OpenAI의 2026-07-30 GPT-5.6 price-performance 지침에 따라 pin됨.
 // (~/.codex/models_cache.json, fetched_at 2026-08-02T07:47Z, client_version 0.146.0) 근거:
 // visibility:"list"(비-hidden/비-deprecated) 상위 3개 모델을 priority 오름차순 + description으로 매핑
@@ -15,8 +16,7 @@ const DEFAULT_CATALOG = Object.freeze({
   codex: Object.freeze({ light: 'gpt-5.6-luna', standard: 'gpt-5.6-terra', deep: 'gpt-5.6-sol', main: MAIN }),
 });
 
-// 프로필 model_catalog: override는 여기서 모듈 레벨로 지원되나, CLI/프로필 파서의
-// end-to-end 배선은 v1 미배선 — 향후 확장(설계 §3.2, impl-review L-1).
+// Overrides are shared with the public CLI --catalog-override input.
 function mergeCatalog(override) {
   const merged = {};
   for (const runtime of Object.keys(DEFAULT_CATALOG)) {
@@ -46,7 +46,7 @@ function resolveTier(tier, runtime, catalog = DEFAULT_CATALOG) {
 
 function concreteModelsFor(runtime, catalog = DEFAULT_CATALOG) {
   const layer = catalog[runtime] || {};
-  return TIERS.map((t) => layer[t]).filter((v) => typeof v === 'string' && v && v !== MAIN);
+  return [...new Set([...TIERS.map((t) => layer[t]),...(EXPLICIT_MODELS[runtime]||[])])].filter((v) => typeof v === 'string' && v && v !== MAIN);
 }
 
 function allConcreteModels(catalog = DEFAULT_CATALOG) {

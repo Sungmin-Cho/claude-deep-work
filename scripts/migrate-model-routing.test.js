@@ -13,7 +13,7 @@ function makeStateFile(frontmatter) {
 }
 
 describe('migrate-model-routing', () => {
-  it('replaces model_routing.research="main" with "sonnet"', () => {
+  it('preserves explicit main execution across every phase', () => {
     const f = makeStateFile([
       'model_routing:',
       '  research: "main"',
@@ -24,12 +24,12 @@ describe('migrate-model-routing', () => {
     const result = migrateStateFile(f);
     const content = fs.readFileSync(f, 'utf8');
     // research/implement/test → sonnet
-    assert.match(content, /research:\s*"sonnet"/);
-    assert.match(content, /implement:\s*"sonnet"/);
-    assert.match(content, /test:\s*"sonnet"/);
+    assert.match(content, /research:\s*"main"/);
+    assert.match(content, /implement:\s*"main"/);
+    assert.match(content, /test:\s*"main"/);
     // plan preserved
     assert.match(content, /plan:\s*"main"/);
-    assert.equal(result.replaced.sort().join(','), 'implement,research,test');
+    assert.equal(result.replaced.sort().join(','), '');
   });
 
   it('idempotent: second call makes no change', () => {
@@ -72,8 +72,8 @@ describe('migrate-model-routing', () => {
     ].join('\n'));
     const result = migrateStateFile(f);
     const content = fs.readFileSync(f, 'utf8');
-    assert.deepEqual(result.replaced, ['research']);
-    assert.match(content, /research:\s*"sonnet"\s*#/);
+    assert.deepEqual(result.replaced, []);
+    assert.match(content, /research:\s*"main"\s*#/);
     assert.match(content, /plan:\s*"main"\s*#/);  // Plan preserved
   });
 
@@ -88,11 +88,11 @@ describe('migrate-model-routing', () => {
     const result = migrateStateFile(f);
     const content = fs.readFileSync(f, 'utf8');
     // The one inside model_routing is replaced; the one outside is NOT.
-    const insideReplaced = /model_routing:\s*\n\s+research:\s*"sonnet"/.test(content);
+    const insideReplaced = /model_routing:\s*\n\s+research:\s*"main"/.test(content);
     const outsidePreserved = /other_section:\s*\n\s+research:\s*"main"/.test(content);
-    assert.ok(insideReplaced, 'inside model_routing should be migrated');
+    assert.ok(insideReplaced, 'inside model_routing retains explicit main');
     assert.ok(outsidePreserved, 'outside model_routing must be preserved');
-    assert.deepEqual(result.replaced, ['research']);
+    assert.deepEqual(result.replaced, []);
   });
 
   it('handles unquoted "main" (no quotes around value)', () => {
@@ -101,7 +101,7 @@ describe('migrate-model-routing', () => {
       '  research: main',
     ].join('\n'));
     migrateStateFile(f);
-    assert.match(fs.readFileSync(f, 'utf8'), /research:\s*"sonnet"/);
+    assert.match(fs.readFileSync(f, 'utf8'), /research:\s*main/);
   });
 
   it('returns empty result when state file does not exist (W-2.2 guard)', () => {

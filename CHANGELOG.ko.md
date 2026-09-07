@@ -7,6 +7,29 @@ Deep Work 플러그인의 모든 주요 변경 사항을 이 파일에 기록합
 형식은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)을 준수합니다.
 
+## [7.4.0] — 2026-09-07 (목표 완수와 모델 판단 보존)
+
+### Added
+
+- Spec/Plan 승인은 런타임이 발행한 검토 근거나 명시적인 사용자 확인 선언을 소비합니다. 같은 소스 묶음의 검토를 두 단계에서 재사용하고, 기계적 메타데이터는 컴파일러가 계산하며, 초안을 다시 열어도 소스와 과거 기록을 보존합니다.
+- 간결한 리뷰 패킷과 결과 요약에서 전체 근거 참조를 유지합니다. 새 Codex 세션의 호스트 기록과 실제 확인한 Fable 5.1 지원으로 리뷰 모델 선택을 보존하며, 모델의 자기 설명을 식별 근거로 삼지 않습니다.
+- Schema3 계획이 functional slice별 strict TDD 또는 결과 검증을 고정합니다. 결과 검증은 최종 소스의 양성 검사·의미 있는 반례·등록형 Node/Python runner·닫힌 환경·인증된 oracle review를 사용하며, 이미 올바른 작업은 별도 소스 관측을 남깁니다.
+- 런타임이 연속 진행·단계별 재개·범위가 정해진 쓰기·환경 준비·park/restore/downgrade 검사를 소유합니다. 새 profile은 현재 모델 인라인과 adaptive 검증을 기본으로 사용하고 명시적 선택은 migration에서 보존합니다.
+- 내부 receipt와 ledger에 묶인 M3 payload1.1 공개를 분리하고 release 집계를 지원합니다. 안정적인 세션/slice 식별자와 journalled Finish 복구가 중단 후에도 완료된 외부 동작과 근거를 보존합니다.
+- Node22.23.2,24.20.0,26.0.0,26.8.1의 정확한 TAP 정책과, 읽는 Node 버전에 의존하지 않는 과거 근거 재인증을 추가합니다.
+
+### Fixed
+
+- Finish는 아직 실행하지 않은 외부 동작의 권한을 다시 확인하고 정확한 재실행 복구와 자신이 시작한 충돌의 취소만 허용합니다. Restore는 변경 전에 reader 호환성·미완료 작업 식별·다른 세션 선택 충돌을 확인합니다.
+- Astra·모델·추론 강도 pin, 실제 사용 가능한 리뷰 transport와 필수 역할을 보존합니다. 관측된 provider identity가 없으면 명시하며 요청 모델명을 실행 증거로 간주하지 않습니다.
+- Spec/governed hook admission과 PostToolUse의 권위 쓰기를 수정합니다. V3 스킬은 실제 공개 producer 경로를 사용하고 phase/receipt flag를 직접 작성하지 않습니다.
+- metric 산술 및 상관·비교 assumption 신호를 수정합니다. Metric2는 미관측값을 null로 유지하고 목표 수용 여부를 분리합니다. 평가 bank는 합성 커버리지 주장 대신 실제 검사와 제한된 smoke 절차를 사용합니다.
+
+### Changed
+
+- 간결한 phase 스킬이 구현 중 판단·계약 내 조정·기존 승인을 보존합니다. 모델 강등, 결과 검증 작업의 가짜 RED, 반복적인 일반 phase 승인을 강제하지 않습니다.
+- 과거 V2/1.0 식별자와 schema를 유지합니다. 새 payload1.1은 동기화된 suite registry를 요구하며, parked V3 기록을 구 reader용으로 재분류하지 않습니다.
+
 ## [7.3.0] — 2026-08-24 (Router-Shadow fingerprint 보존)
 
 ### Added

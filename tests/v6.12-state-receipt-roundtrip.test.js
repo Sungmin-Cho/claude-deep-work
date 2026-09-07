@@ -117,19 +117,10 @@ test('slice receipt optional review remains compatible with the additive evidenc
   assert.deepEqual(extended, { pass: true, errors: [], warnings: [] });
 });
 
-test('deep-finish receipt emitter documents the two §7.3 optional session blocks', () => {
-  const text = fs.readFileSync(path.join(__dirname, '..', 'skills', 'deep-finish', 'SKILL.md'), 'utf8');
-  assert.match(text, /Optional `methodology_policy` and `review_execution` \(v6\.12\.0\)/);
-  assert.match(text, /methodology_policy:[\s\S]*floors_applied/);
-  assert.match(text, /review_execution:[\s\S]*points_summary:[\s\S]*reviewer_failures:[\s\S]*degraded_events:[\s\S]*risk_acceptances:/);
-});
-
-test('both inline and delegated slice writers document optional review evidence', () => {
-  for (const relative of ['skills/deep-implement/SKILL.md', 'agents/implement-slice-worker.md']) {
-    const text = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
-    assert.match(text, /optional `review`/i, relative);
-    assert.match(text, /findings_ref/, relative);
-    assert.match(text, /fallback_used/, relative);
-    assert.match(text, /effort_applied/, relative);
-  }
+test('Finish authored input cannot replace runtime policy, metrics or evidence', () => {
+  const {validateAuthoredPayload}=require('../runtime/session-receipt-runtime.js');
+  assert.deepEqual(validateAuthoredPayload(Buffer.from('{"task_description":"task","x-note":"optional"}')),
+    {task_description:'task','x-note':'optional'});
+  for(const key of ['methodology_policy','review_execution','quality_score','goal_acceptance'])
+    assert.throws(()=>validateAuthoredPayload(Buffer.from(JSON.stringify({[key]:{}}))),/finish-payload-runtime-field/);
 });

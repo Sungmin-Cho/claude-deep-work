@@ -29,32 +29,9 @@ npm test
 
 ## Host differences — subagent dispatch
 
-`agents/*.md` are Claude Code subagents, discovered from the `agents/` directory by
-convention — **neither** `plugin.json` declares an `agents` key, so manifest contents
-do not tell the two hosts apart. Claude Code provides the `Agent` tool; Codex does
-not.
+`agents/*.md` are worker contracts. Discover delegation from the actual native tools or an authenticated available CLI transport; neither a manifest key nor a literal tool name establishes capability. Fresh adaptive execution stays inline with the current model. Preserve explicit mode, model and effort across migration/resume; `main` remains valid.
 
-**Decide on tool availability, not on the manifest.** This rule applies to *every*
-`Agent(...)` dispatch in this plugin, currently five sites: `deep-research`
-§모드 분기 (research workers) · `deep-implement` §2.1/§2.2 (slice workers) ·
-`deep-work-orchestrator` §1-4-2 (session-recommender) · `deep-integrate` §3-2
-(general-purpose recommendation call) · `deep-plan` §Contract Negotiation
-(contract validation).
-
-- The `Agent` tool is available → dispatch as written.
-- It is not → **run that worker's own protocol inline in the calling skill**,
-  reading `${CLAUDE_PLUGIN_ROOT}/agents/<worker>.md` for the contract it would have
-  received. Keep the
-  same inputs, output paths and receipt obligations; only the execution site
-  changes. Where the dispatch is a plain reasoning call with no `agents/` file
-  (deep-integrate §3-2, deep-plan §Contract Negotiation), perform the reasoning
-  inline against the same prompt and schema.
-
-`detectRuntime()` in `${CLAUDE_PLUGIN_ROOT}/scripts/detect-runtime.js` returns `claude` | `codex` |
-`unknown` from `CLAUDECODE` / `CODEX_HOME` markers if a programmatic signal is
-needed, but an agent can answer directly by checking whether it has the tool.
-Never emit a dispatch the host cannot execute, and never silently skip the work
-the worker would have done.
+When delegation is selected and available, pass the worker's exact inputs, scopes and receipt obligations. Otherwise run the same contained `${CLAUDE_PLUGIN_ROOT}/agents/<worker>.md` protocol inline when consistent with the user's request. Do not skip the work or emit an unavailable tool call. A single session has one active slice/write window; parallel patch preparation uses serialized application, or independent sessions/worktrees.
 
 **Plugin files are read *and executed* from the plugin, never from the workspace.**
 Every path this plugin tells you to open or run — `agents/*.md`, `skills/**`
@@ -91,44 +68,19 @@ The guard also rejects `$(...)` in those calls, so resolve `${CLAUDE_PLUGIN_ROOT
 to a literal absolute path **before** composing the command rather than
 substituting inside it.
 
-## Receipt envelope (M3)
+## Execution and receipt authority
 
-`session-receipt.json` and `receipts/SLICE-*.json` are emitted as M3 cross-plugin
-envelopes:
+The runtime is the sole writer of approvals, phase/write state and completion evidence. Skills reason and author source artifacts, then invoke the contained `${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js`. Its `--help` describes exact public routes. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/runtime-execution-spine.md` for the flow.
 
-```
-{
-  "schema_version": "1.0",
-  "envelope": {
-    "producer": "deep-work",
-    "producer_version": "<from ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json>",
-    "artifact_kind": "session-receipt | slice-receipt",
-    "run_id": "<ULID>",
-    "session_id": "<dw-session-id>",
-    "parent_run_id": "<consumed evolve-insights run_id, optional>",
-    "generated_at": "<RFC 3339>",
-    "schema": { "name": "<matches artifact_kind>", "version": "1.0" },
-    "git": { "head": "<sha>", "branch": "<name>", "dirty": false },
-    "provenance": { "source_artifacts": [...], "tool_versions": {...} }
-  },
-  "payload": { /* legacy receipt body — schema_version: "1.0" preserved */ }
-}
-```
+Fresh schema3 plans seal each functional slice's `strict-tdd-v2` or `outcome-v1` basis and bind a Spec. Source-writing documentation/config remains functional slice_kind with non-functional change_kind. Explicit strict-required IDs cannot choose outcomes. Release-verification aggregates select their own reader from the approved slice_kind. Preserve historical schema1/V2 formats, hashes and paths; never relabel them.
 
-Sole writer: `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`, invoked from
-`${CLAUDE_PLUGIN_ROOT}/agents/implement-slice-worker.md` and `${CLAUDE_PLUGIN_ROOT}/skills/deep-finish/SKILL.md` §7-Z.
+V3 raw receipts live in `runtime-receipts/`; public projections in `receipts/`. Runtime producer and publication ledgers bind both. The sole M3 writer is `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wrap-receipt-envelope.js`, called by runtime publication. New envelopes use format schema_version `1.0`, envelope.schema.version `1.1` and payload.schema_version `1.1`; legacy1.0 output remains supported. The three-field identity guard requires expected producer, expected artifact_kind and schema.name===artifact_kind before unwrapping.
 
-**Identity-triplet guard.** Before unwrapping `payload`, every reader verifies
-`producer` equals the expected producer, `artifact_kind` equals the expected kind,
-and `schema.name === artifact_kind`. A mismatch is skipped with a warning, never
-partially consumed. Legacy non-envelope files pass through unmodified
-(forward-compat). The same triplet applies when deep-work reads another plugin's
-envelope — deep-dashboard's harnessability report, deep-evolve's insights.
+New slice completion_basis is strict-tdd-v2, outcome-v1 or release-verification (aggregate only). An outcome/aggregate records TDD as not-applicable with no invented transitions. Each projection binds its raw receipt, producer operation, publication operation, current recovery generation and goal acceptance. Initialize one stable session_m3_run_id; slice parent IDs point to it and Finish reuses it. Missing projection recovers publication, not implementation or external effects.
 
-Changing the `payload` shape requires a matching bump of
-`schemas/payload-registry/deep-work/<artifact_kind>/v<MAJOR.MINOR>.schema.json`
-in deep-suite. Additive changes are forward-compatible; a shape break needs a new
-schema minor.
+New1.1 payloads use the exact plugin emission schemas under `${CLAUDE_PLUGIN_ROOT}/schemas/payload-registry/deep-work/`, promoted to deep-suite's payload registry after merge. Preserve1.0 registry contracts. Metrics are versioned observations; unknown applicable components remain null. Goal acceptance is independent of score.
+
+Finish validates before an authorized effect, records intent/result, then publishes stable M3 before terminal state/registry/pointer. Post-effect failure remains pending and reconciles without duplicate actions. Parking is a non-completion archive/tombstone; restore requires the current reader and current source authority. Internal continuation never grants external permission.
 
 ## Phase-guard denylist
 

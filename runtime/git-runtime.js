@@ -322,9 +322,9 @@ async function deleteBranchExact({projectCapability,sessionId,branch,expectedOid
   if(after?.ok)fail('branch-delete-postcondition');const result={status:'deleted',branch,expectedOid,adopted:false,parentOperationId};return{...result,
     operationId:operation.operationId,operationReceipt:await completeOperation(operation,result)};}
 
-async function finishDiscardWithinOperation({operation,projectCapability,stateCapability,stateFields,force=false,seam,gitRunner}={}){
+async function finishDiscardWithinOperation({operation,projectCapability,stateCapability,stateFields,force=false,seam,gitRunner,beforeEffect}={}){
   if(!operation||operation.kind!=='finish-discard'||operation.sessionId!==stateFields?.session_id&&stateFields?.session_id!==undefined)
-    fail('finish-discard-operation');const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));let pending=await resumeOperation({
+    fail('finish-discard-operation');const execute=gitRunner||((args)=>gitCapability(projectCapability).run(args)),run=async args=>{if(beforeEffect)await beforeEffect({transport:'git',args});return execute(args);};let pending=await resumeOperation({
       projectCapability,operationId:operation.operationId,sessionId:operation.sessionId,kind:'finish-discard'});let inspection=pending.stages?.find(
       (row)=>row.stage==='finish-inspected')?.details?.owned;if(!stateFields?.worktree_enabled||typeof stateFields?.worktree_path!=='string'){
     if(!inspection){inspection={status:'no-managed-worktree',force:Boolean(force)};await recordOperationStage(operation,'finish-inspected',{owned:inspection});}
@@ -402,9 +402,9 @@ async function commitDirtyWorktreeExact({projectCapability,worktreeCapability,se
   const result={status:'committed',commitOid,parent:expectedHead,tree:staged.targetTree,message,manifestSha256:expectedManifest.sha256,
     parentOperationId};return{...result,operationId,operationReceipt:await completeOperation(operation,result)};}
 
-async function finishMergeWithinOperation({operation,projectCapability,stateCapability,stateFields,dirtyResolution='abort',seam,gitRunner}={}){
+async function finishMergeWithinOperation({operation,projectCapability,stateCapability,stateFields,dirtyResolution='abort',seam,gitRunner,beforeEffect}={}){
   if(!operation||operation.kind!=='finish-merge'||!['commit','abort'].includes(dirtyResolution))fail('finish-merge-operation');
-  const run=gitRunner||((args)=>gitCapability(projectCapability).run(args));let pending=await resumeOperation({projectCapability,
+  const execute=gitRunner||((args)=>gitCapability(projectCapability).run(args)),run=async args=>{if(beforeEffect)await beforeEffect({transport:'git',args});return execute(args);};let pending=await resumeOperation({projectCapability,
     operationId:operation.operationId,sessionId:operation.sessionId,kind:'finish-merge'});let inspection=pending.stages?.find(
     (row)=>row.stage==='finish-inspected')?.details?.owned;if(!stateFields?.worktree_enabled||typeof stateFields?.worktree_path!=='string'){
     if(!inspection){inspection={status:'no-managed-worktree',dirtyResolution};await recordOperationStage(operation,'finish-inspected',{owned:inspection});}
@@ -456,8 +456,12 @@ async function finishMergeWithinOperation({operation,projectCapability,stateCapa
   const abortConflict=async(stderr='')=>{let current=await resumeOperation({projectCapability,operationId:operation.operationId,
       sessionId:operation.sessionId,kind:'finish-merge'});if(current.stages?.some((row)=>row.stage==='merge-aborted'))return manual;
     const conflictStatus=String((await stashChecked(run,['status','--porcelain=v1','-z'],'finish-merge-conflict-status')).stdout||'');
-    if(!current.stages?.some((row)=>row.stage==='merge-conflict'))await recordOperationStage(operation,'merge-conflict',{owned:{
-      statusSha256:stashDigest(Buffer.from(conflictStatus)),stderrSha256:stashDigest(Buffer.from(stderr))}});const abortArgs=['merge','--abort'];
+    if(!current.stages?.some((row)=>row.stage==='merge-conflict')){
+      const rollback=beforeEffect?await require('./finish-authority-runtime.js').mergeRollbackSnapshot({stateCapability,projectCapability,gitRunner:run}):null;
+      await recordOperationStage(operation,'merge-conflict',{owned:{
+       statusSha256:stashDigest(Buffer.from(conflictStatus)),stderrSha256:stashDigest(Buffer.from(stderr)),
+       ...(rollback?{rollback_authority:{operation_id:operation.operationId,snapshot:rollback}}:{})}});
+    }const abortArgs=['merge','--abort'];
     const mergeHead=await run(['rev-parse','--verify','MERGE_HEAD']);const headBefore=String((await stashChecked(run,
       ['rev-parse','--verify','HEAD^{commit}'],'finish-merge-abort-head')).stdout).trim();current=await resumeOperation({projectCapability,
       operationId:operation.operationId,sessionId:operation.sessionId,kind:'finish-merge'});const abortIntent=current.stages?.some(
@@ -799,14 +803,15 @@ function parsePrRows(stdout){let rows;try{rows=JSON.parse(stdout||'[]');}catch{f
   if(!Array.isArray(rows))fail('pull-request-json');return rows;}
 
 async function publishPullRequestWithinOperation({operation,projectCapability,stateFields,titleBytes,
-  bodyCapability,bodyBytes,gitRunner,ghRunner,seam}={}){
+  bodyCapability,bodyBytes,gitRunner,ghRunner,seam,beforeEffect}={}){
   if(!operation||operation.kind!=='finish-publish-pr')fail('finish-pr-operation');
   const title=Buffer.from(titleBytes||'').toString('utf8');const body=Buffer.from(bodyBytes||'').toString('utf8');
   if(!title||/[\0\r\n]/.test(title)||Buffer.byteLength(title)>1024||Buffer.byteLength(body)>1048576)
     fail('pull-request-content');
   revalidatePathCapability(bodyCapability,'pull-request-body');
-  const gitRun=gitRunner||((args)=>gitCapability(projectCapability).run(args));
-  const ghRun=ghRunner||((args)=>defaultGhRunner(projectCapability,args));
+  const executeGit=gitRunner||((args)=>gitCapability(projectCapability).run(args)),executeGh=ghRunner||((args)=>defaultGhRunner(projectCapability,args));
+  const gitRun=async args=>{if(beforeEffect)await beforeEffect({transport:'git',args});return executeGit(args);};
+  const ghRun=async args=>{if(beforeEffect)await beforeEffect({transport:'gh',args});return executeGh(args);};
   const checked=async(run,args,code)=>{const result=await run(args);if(!result||result.ok!==true)fail(code,result?.stderr);return result;};
   const remoteUrl=(await checked(gitRun,['remote','get-url','origin'],'remote-origin')).stdout.trim();
   const remote=parseGitHubRemote(remoteUrl);const headOid=(await checked(gitRun,

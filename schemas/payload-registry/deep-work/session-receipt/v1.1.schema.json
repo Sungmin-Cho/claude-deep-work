@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-suite/main/schemas/payload-registry/deep-work/session-receipt/v1.1.schema.json",
+  "title": "deep-work session-receipt payload v1.1",
+  "description": "Runtime authenticated deep-work session-receipt payload v1.1. M3 envelope remains 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": {
+      "description": "Forward-compat extension namespace."
+    }
+  },
+  "required": [
+    "schema_version",
+    "session_id",
+    "started_at",
+    "outcome",
+    "slices",
+    "publication_operation_id",
+    "goal_acceptance",
+    "quality_score",
+    "metric_version",
+    "execution_basis_counts",
+    "effect_facts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1"
+    },
+    "canonical": {
+      "type": "boolean",
+      "description": "True when this receipt is the canonical session-level aggregate (not a slice or replay)."
+    },
+    "derived_from": {
+      "type": "string",
+      "description": "Glob or path describing what the receipt was synthesized from (e.g., 'receipts/SLICE-*.json')."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_description": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "worktree_branch": {
+      "type": "string"
+    },
+    "worktree_base_commit": {
+      "type": "string"
+    },
+    "phase": {
+      "type": "string",
+      "description": "Current/last phase reached (e.g., brainstorm, research, plan, implement, test, integrate)."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "merge",
+        "pr",
+        "keep",
+        "discard",
+        "in-progress"
+      ]
+    },
+    "outcome_ref": {
+      "description": "Optional reference (PR URL, commit SHA, branch) tied to the outcome.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "slices": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "total"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "spike": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "tdd_compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "strict": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "relaxed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "override": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "spike": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "quality_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "quality_breakdown": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "model_usage": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Per-model turn/usage counts (e.g., haiku/sonnet/opus/main)."
+    },
+    "total_estimated_cost": {
+      "description": "Estimated session cost in USD; null when the runtime cannot estimate it.",
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "total_files_changed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_tests": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_tests_passed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "quality_gates": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Named quality gates and their PASS/FAIL verdicts."
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Evaluator model + retry/adjustment bookkeeping."
+    },
+    "contract_compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Sprint-contract counts (total_contracts / contracts_met)."
+    },
+    "deep_work_version": {
+      "type": "string"
+    },
+    "quality_diagnostics": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Informational diagnostic metrics appended in deep-finish Step 2-1 (not part of the core quality score)."
+    },
+    "publication_operation_id": {
+      "type": "string",
+      "pattern": "^op-[0-9a-f]{64}$"
+    },
+    "goal_acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_ids",
+        "accepted_ids",
+        "complete"
+      ],
+      "properties": {
+        "required_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "accepted_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metric_version": {
+      "const": 2
+    },
+    "execution_basis_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strict_tdd_v2",
+        "outcome_v1"
+      ],
+      "properties": {
+        "strict_tdd_v2": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome_v1": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "effect_facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "invoked",
+        "adopted",
+        "state",
+        "reference"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "merge",
+            "publish-pr",
+            "keep",
+            "discard"
+          ]
+        },
+        "invoked": {
+          "type": "boolean"
+        },
+        "adopted": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "not-required",
+            "succeeded",
+            "manual-resolution"
+          ]
+        },
+        "reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

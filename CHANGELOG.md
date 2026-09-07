@@ -7,6 +7,29 @@ All notable changes to the Deep Work plugin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.4.0] — 2026-09-07 (Goal Completion and Model Judgment)
+
+### Added
+
+- Exact Spec/Plan approval consumes runtime-produced review or explicitly declared human evidence. One combined source review can cover both phases; the compiler derives mechanical metadata, and draft reopening preserves source/history.
+- Compact review packets and result summaries retain full evidence refs. Fresh Codex host trace identity and verified Fable 5.1 capability support current reviewer choices without inferring identity from model prose.
+- Schema3 plans seal strict TDD or outcome verification per functional slice. Outcome verification uses final-source positive checks, meaningful counterexamples, registered Node/Python runners, closed environments and authenticated oracle reviews; already-correct work has a distinct source observation.
+- Runtime-owned continuation, phase-aware resume, scoped writes, environment preparation and park/restore/downgrade checks. Fresh profiles preserve the current model inline with adaptive verification; explicit choices survive migration.
+- Separate internal receipts and ledger-bound M3 payload1.1 publication, including release aggregates. Stable session/slice identities and journalled Finish recovery retain completed effects and evidence across interruption.
+- Exact-patch TAP conformance for Node22.23.2,24.20.0,26.0.0 and26.8.1, with historical reauthentication independent of the reader's Node version.
+
+### Fixed
+
+- Finish rechecks authority before unexecuted effects, preserves exact replay, and permits only its authenticated conflict rollback. Restore checks reader compatibility, pending operation identity and selected-session conflicts before mutation.
+- Astra/model/effort pins, available review transports and required review roles. Missing observed provider identity is explicit; a requested model name is not a verified execution identity.
+- Spec/governed hook admission and PostToolUse authority ownership. V3 uses the same public producer path that its skills document; phase and receipt flags are not manually authored.
+- Metric arithmetic and correlated/comparative assumption signals. Metric2 has nullable unknown observations and separate goal acceptance. The evaluation bank replaces synthetic coverage claims with actual checks and a bounded smoke protocol.
+
+### Changed
+
+- Concise phase skills preserve ongoing model reasoning, local adaptations and existing authorization. They no longer force model downgrades, fabricated RED for outcome work or repeated generic phase approvals.
+- Historical V2/1.0 identities and schemas remain supported. New payload1.1 consumers require the synchronized suite registry; parked V3 artifacts are retained rather than relabelled for old readers.
+
 ## [7.3.0] — 2026-08-24 (Router-Shadow Fingerprint Preservation)
 
 ### Added

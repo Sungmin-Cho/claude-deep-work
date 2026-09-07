@@ -881,7 +881,7 @@ function processHook(input) {
   // target + compound-operator gates (M5.5 #7 A1 spec). The two layers
   // overlap deliberately; either alone catches all 7 spec families, both
   // together provide defense-in-depth against bash-side regex bypass.
-  if (['research', 'plan', 'test', 'brainstorm'].includes(phase)) {
+  if (['research', 'spec', 'plan', 'test', 'brainstorm'].includes(phase)) {
     if (toolName === 'Bash') {
       const cmd = toolInput.command || '';
 

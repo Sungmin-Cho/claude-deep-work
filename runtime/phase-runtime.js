@@ -68,8 +68,7 @@ function completePhase({state,stateCapability,phase,result={},at,seam}={}) {
     preconditions:{action:'complete',phase,at,resultSha256:crypto.createHash('sha256').update(canonicalJson(result)).digest('hex')},
     seam,reducer:(fields)=>completePhase({state:fields,phase,result,at})});
   if (!['brainstorm','research','spec','plan','implement'].includes(phase)) fail('phase-complete');
-  const next=clone(state); next[`${phase}_completed_at`]=at; next.phase_review={...(next.phase_review||{}),
-    [phase]:clone(result)}; return next;
+  const next=clone(state); next[`${phase}_completed_at`]=at; next.phase_results_json=canonicalJson({...parseJson(next.phase_results_json,'phase-results'),[phase]:clone(result)}); return next;
 }
 
 function approvePhase({state,stateCapability,phase,artifactSha256,planProjectionSha256=null,
@@ -88,7 +87,7 @@ function approvePhase({state,stateCapability,phase,artifactSha256,planProjection
   const next=clone(state);next[`${phase}_approved`]={artifact_sha256:artifactSha256,at,
     ...(phase==='plan'?{replan_epoch:state.active_replan_epoch_id||null,
       approval_operation_id:approvalOperationId||null}:{})};
-  if(phase==='plan'){next.plan_projection_sha256=planProjectionSha256;next.plan_source_sha256=sourcePlanSha256;
+  if(phase==='plan'){if(state.plan_bound_once!==undefined||verificationCompilerInput?.planProjection?.schema_version===3)next.plan_bound_once=true;next.plan_projection_sha256=planProjectionSha256;next.plan_source_sha256=sourcePlanSha256;
     if(verificationPlanRequired(state)||verificationCompilerInput?.planProjection?.contract_binding?.mode==='strict-spec'){
       const policy=require('./verification-policy-runtime.js');
       if(!verificationCompilerInput)fail('verification-plan-compiler-input');const compiled=policy.compileVerificationPlan(
@@ -121,12 +120,14 @@ function enterSpecSubphase({state,stateCapability,at,seam}={}) {
 }
 
 function approveSpecSubphase({state,stateCapability,specApprovedHash,specContract,specGateResult,
-  specReviewRefSha256,approvalOperationId,at,seam}={}) {
+  specReviewRefSha256,artifactApprovalRef,approvalOperationId,at,seam}={}) {
   if(stateCapability)return journaledStateMutation({stateCapability,kind:'phase-approval',
     preconditions:{phase:'spec',specApprovedHash,
-      specContractSha256:specContract&&require('./contract-runtime.js').specContractDigest(specContract),at},seam,
-    reducer:(fields,context)=>approveSpecSubphase({state:fields,specApprovedHash,specContract,
-      specGateResult,specReviewRefSha256,approvalOperationId:context.operationId,at})});
+      specContractSha256:specContract&&require('./contract-runtime.js').specContractDigest(specContract),at,...(artifactApprovalRef?{artifactApprovalRef}:{})},seam,
+    resultExtras:fields=>artifactApprovalRef?{artifact_approval:JSON.parse(fields.artifact_approval_consumptions_json).spec}:{},
+    reducer:(fields,context)=>{const approval=require('./artifact-approval-runtime.js');const consumed=approval.required(stateCapability)?approval.authenticateApproval({stateCapability,ref:artifactApprovalRef,phase:'spec',atConsumption:true}):null;
+      const next=approveSpecSubphase({state:fields,specApprovedHash,specContract,
+       specGateResult,specReviewRefSha256:consumed?.ref.sha256||specReviewRefSha256,approvalOperationId:context.operationId,at});return{...next,...(consumed?approval.consumedPatch(fields,consumed):{})};}});
   const canonical=state?.current_phase==='spec'&&state.subphase==null;
   const legacy=state?.current_phase==='research'&&state.subphase==='spec';
   if((!canonical&&!legacy)||!/^[0-9a-f]{64}$/.test(specApprovedHash||''))
@@ -436,7 +437,7 @@ async function completeDebug({stateCapability,receiptsDirCapability,sliceId,note
   return{...result,operationId:operation.operationId,operationReceipt};
 }
 async function recordPhaseReview({stateCapability,phase,structuralJsonFile,structuralMdFile,adversarialJsonFile,seam,
-  _locksHeld=false}={}){if(!['brainstorm','research','plan'].includes(phase))fail('phase-review-phase');const structural=
+  _locksHeld=false}={}){if(!['brainstorm','research','spec','plan','implement'].includes(phase))fail('phase-review-phase');const structural=
     readBoundedJson(structuralJsonFile),adversarial=adversarialJsonFile?readBoundedJson(adversarialJsonFile):null;const markdownStat=
     fs.lstatSync(structuralMdFile);if(!markdownStat.isFile()||markdownStat.isSymbolicLink()||markdownStat.size>1_048_576)
     fail('phase-review-input');const markdownBytes=fs.readFileSync(structuralMdFile);if(!markdownBytes.toString('utf8').trim()||

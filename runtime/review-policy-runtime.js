@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { PROFILE_BY_CLASS, EFFORT_CATALOG } = require('./policy-runtime.js');
 const { CLASS_ORDER } = require('./risk-runtime.js');
+const {resolveModelCapability}=require('./model-capabilities.js');
 const { resolveTier } = require('./model-catalog.js');
 
 const ARTIFACT_KINDS = Object.freeze(['document', 'slice-diff', 'cross-slice', 'session-final']);
@@ -29,7 +30,7 @@ const CODEX_REASONING_EFFORT_MAP = Object.freeze({
 
 function mapCodexReasoningEffort(effort, model) {
   if (!Object.hasOwn(CODEX_REASONING_EFFORT_MAP, effort)) return null;
-  const maxSupported = effort === 'max' && typeof model === 'string' && /^gpt-5\.6(?:[-.]|$)/i.test(model);
+  const maxSupported = effort === 'max' && resolveModelCapability({runtime:'codex',model}).supported_efforts.includes('max');
   const effortClamped = effort === 'max' && !maxSupported;
   return {
     requested: effort,
@@ -63,19 +64,27 @@ function roleEffort(profile, role) {
 
 function executabilityChannel(artifactKind, channels) {
   if (channels.codex_cli) return 'codex-cli';
-  if (artifactKind === 'document' && channels.gemini_cli) return 'gemini-cli';
+  if (channels.claude_cli) return 'claude-cli';
+  if (channels.gemini_cli) return 'gemini-cli';
   return 'subagent';
 }
 
 function makeReviewer({ role, tier, required, profile, artifactKind, channels, runtime,
   evaluatorModelOverride }) {
-  const channel = role === 'executability' ? executabilityChannel(artifactKind, channels) : 'subagent';
-  const reviewer = { role, channel, tier, effort: roleEffort(profile, role), required };
+  const channel = role === 'executability' || channels.subagent !== true ? executabilityChannel(artifactKind, channels) : 'subagent';
+  const reviewer = { role, channel, tier, effort: roleEffort(profile, role), required, fresh_session_required:true };
   if (channel === 'subagent' || channel === 'gemini-cli') Object.assign(reviewer, staticEffortMetadata(channel, reviewer.effort));
   if (channel === 'codex-cli') reviewer.model = resolveTier(tier, 'codex').model;
+  else if(channel==='claude-cli')reviewer.model=resolveTier(tier,'claude').model;
   else if (channel === 'subagent') reviewer.model = typeof evaluatorModelOverride === 'string'
       && evaluatorModelOverride ? evaluatorModelOverride : resolveTier(tier, runtime).model;
   else if (typeof evaluatorModelOverride === 'string' && evaluatorModelOverride) reviewer.model = evaluatorModelOverride;
+  const modelRuntime=channel==='codex-cli'?'codex':channel==='claude-cli'?'claude':channel==='gemini-cli'?'gemini':runtime;
+  const capability=resolveModelCapability({runtime:modelRuntime,model:reviewer.model});
+  reviewer.model_status=capability.status;
+  reviewer.unavailable_reason=capability.status!=='recognized'?'model-unverified':
+    ['light','standard','deep'].indexOf(capability.nominal_tier)<['light','standard','deep'].indexOf(tier)?'tier-floor-unmet':null;
+  reviewer.requested_model=evaluatorModelOverride||null;reviewer.effective_model=reviewer.model||null;reviewer.observed_model=null;
   return reviewer;
 }
 
@@ -127,17 +136,17 @@ function compileInternal(options, forceDefault = false) {
     riskClass = maxRisk(riskClass, options.sliceRiskClass);
   }
   const profile = PROFILE_BY_CLASS[riskClass];
-  const channels = options.availableChannels || { subagent: options.runtime === 'claude', codex_cli: false,
+  const channels = options.availableChannels || { subagent: false, codex_cli: false,
     gemini_cli: false, deep_review: false };
   let descriptors = baseDescriptors(riskClass, artifactKind);
   const defaultMode = riskClass === 'high' || riskClass === 'critical' ? 'dual' : 'single';
   const override = options.reviewModeOverride === 'single' || options.reviewModeOverride === 'dual'
     ? options.reviewModeOverride : null;
   const mode = override || defaultMode;
-  if (override) descriptors = applyModeOverride(descriptors, artifactKind, override);
+  if (override && !(override==='single'&&['high','critical'].includes(riskClass))) descriptors = applyModeOverride(descriptors, artifactKind, override);
   const reviewers = descriptors.map((descriptor) => makeReviewer({ ...descriptor, profile, artifactKind,
     channels, runtime: options.runtime, evaluatorModelOverride: options.evaluatorModelOverride }));
-  const unavailable = reviewers.filter((reviewer) => reviewer.channel === 'subagent' && channels.subagent === false)
+  const unavailable = reviewers.filter((reviewer) => (reviewer.channel === 'subagent' && channels.subagent !== true)||reviewer.unavailable_reason)
     .map((reviewer) => reviewer.role);
   return {
     artifact_kind: artifactKind,
@@ -187,7 +196,7 @@ function compileReviewPlan(options = {}) {
     if (options.riskClass === 'high' || options.riskClass === 'critical') return compilationPause(options, error);
     const safeArtifact = ARTIFACT_KINDS.includes(options.artifactKind) ? options.artifactKind : 'document';
     const fallback = compileInternal({ ...options, artifactKind: safeArtifact,
-      availableChannels: { subagent: options.runtime === 'claude', codex_cli: false,
+      availableChannels: { subagent: false, codex_cli: false,
         gemini_cli: false, deep_review: false } }, true);
     fallback.compilation_error = true;
     fallback.degraded_events = [{ type: 'review-plan-compilation-failed', message: error.message }];
@@ -230,7 +239,12 @@ function evaluateReviewExecution(plan = {}, reviewerResults = []) {
   }
   const degradedEvents = decision === 'proceed' ? [] : [{ type: failures.length
     ? 'required-reviewer-failure' : 'human-ack-required', decision, failures }];
-  return { decision, degraded_events: degradedEvents, human_gate: humanGate, reasons };
+  const providers=[...new Set(results.map(result=>result.observed_provider).filter(value=>typeof value==='string'&&value!=='unknown'))].sort();
+  const sessions=results.map(result=>result.observed_session_id);
+  return { decision, degraded_events: degradedEvents, human_gate: humanGate, reasons,
+    provider_diversity:{providers,family_count:providers.length,cross_family:providers.length>1,
+      distinct_sessions:sessions.length>0&&sessions.every(value=>typeof value==='string'&&value)&&new Set(sessions).size===sessions.length,
+      unknown_identity_count:results.filter(result=>!result.observed_provider||result.observed_provider==='unknown'||!result.observed_session_id).length} };
 }
 
 function finishGateAllowed(reviewExecutionJson,context) {
@@ -262,7 +276,7 @@ function finishGateAllowed(reviewExecutionJson,context) {
 }
 
 function defaultProbe(binary, env) {
-  const result = spawnSync(binary, ['--version'], { env, stdio: 'ignore', shell: false });
+  const result = spawnSync(binary, ['--version'], { env, stdio: 'ignore', shell: false, timeout:3000,maxBuffer:65536 });
   return result.status === 0;
 }
 
@@ -280,15 +294,17 @@ function containsDeepReviewManifest(root, fsApi) {
   return false;
 }
 
-function detectReviewChannels({ runtime, env = process.env, probe = defaultProbe, fsApi = fs } = {}) {
+function detectReviewChannels({ runtime, nativeCapability, env = process.env, probe = defaultProbe, fsApi = fs } = {}) {
   const safeEnv = env && typeof env === 'object' ? env : {};
   const home = typeof safeEnv.HOME === 'string' ? safeEnv.HOME : null;
   const deepReview = home ? [path.join(home, '.claude', 'plugins', 'cache'),
     path.join(home, '.claude', 'plugins')].some((root) => containsDeepReviewManifest(root, fsApi)) : false;
+  const available=(binary)=>{try{return probe(binary,safeEnv)===true;}catch{return false;}};
   return {
-    subagent: runtime === 'claude',
-    codex_cli: Boolean(probe('codex', safeEnv)),
-    gemini_cli: Boolean(probe('gemini', safeEnv)),
+    subagent: nativeCapability?.available===true&&nativeCapability?.observed===true,
+    codex_cli: available('codex'),
+    claude_cli: available('claude'),
+    gemini_cli: available('gemini'),
     deep_review: deepReview,
   };
 }

@@ -662,7 +662,8 @@ function normalizedSignalMatchesExpected(observed,expected){
   return true;
 }
 function classifyVerificationObservation({processResult,changedPaths,stdout,stderr,root,testPath,
-  nodePatch,expectedSignal}){
+  nodePatch,expectedSignal,policySha256=BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256}){
+  const portable=policySha256!==BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256;
   let observedClass,reasonCode,event=null,normalizedSignal=null;
   if(processResult.spawnError){observedClass='pre-spawn-rejected';reasonCode='pre-spawn';}
   else if(processResult.timedOut){observedClass='timed-out';reasonCode='timed-out';}
@@ -670,7 +671,7 @@ function classifyVerificationObservation({processResult,changedPaths,stdout,stde
     observedClass='output-overflow';reasonCode='output-overflow';
   }else if(processResult.signal!==null||processResult.exitCode===null){
     observedClass='terminated';reasonCode='terminated';
-  }else if(processResult.exitCode===0){
+  }else if(processResult.exitCode===0&&!portable){
     observedClass='unexpected-pass';reasonCode='unexpected-pass';
   }else if(changedPaths.length!==0){
     observedClass='test-side-effect';reasonCode='governed-path-changed';
@@ -679,7 +680,14 @@ function classifyVerificationObservation({processResult,changedPaths,stdout,stde
   }else{
     try{
       const text=new TextDecoder('utf-8',{fatal:true}).decode(stdout);
-      event=parseNodeTapFailure(text,{root,testPath,nodePatch});
+      if(portable){
+        const policy=require('./node-tap-policy.js').resolveNodeTapPolicy({policySha256,nodeVersion:nodePatch});
+        const parsed=require('./node-tap-parser.js').parseNodeTapDocument(text,{policy,
+          nodeVersion:nodePatch,root,testPath,expectedSignal,
+          expectedOutcome:processResult.exitCode===0?'must-pass':'must-fail'});
+        event=parsed.selectedEvent;
+        if(processResult.exitCode===0){observedClass='unexpected-pass';reasonCode='unexpected-pass';}
+      }else event=parseNodeTapFailure(text,{root,testPath,nodePatch});
     }catch(error){
       observedClass='invalid-output';
       reasonCode=error instanceof TypeError?'invalid-utf8':'invalid-tap';
@@ -706,8 +714,17 @@ function classifyVerificationObservation({processResult,changedPaths,stdout,stde
       semanticDigest('diagnostic-event-v1',event,null):null,
     normalized_signal:normalizedSignal,reason_code:reasonCode};
 }
+function validateVerificationResultForSpec(value,{spec,expectedOutcome='must-fail'}={}){
+  const checked=require('./contract-runtime.js').validateVerificationSpecV2(spec);
+  require('./node-tap-policy.js').assertNodeTapPolicyForSpec(checked,value?.executable_identity?.node_version);
+  if(canonicalText(value.logical_argv)!==canonicalText(checked.args)||
+      canonicalText(value.environment)!==canonicalText(checked.environment))
+    fail('bootstrap-verification-context');
+  return validateBootstrapVerificationResultV2(value,{expectedSignal:checked.red_failure.expected_signal,
+    expectedOutcome,policySha256:checked.executable.supported_patches_sha256});
+}
 function validateBootstrapVerificationResultV2(value,{expectedSignal,
-  expectedOutcome='must-fail'}={}){
+  expectedOutcome='must-fail',policySha256=BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256}={}){
   if(!['must-fail','must-pass'].includes(expectedOutcome))
     fail('bootstrap-verification-outcome');
   const terminalReasons=new Map([
@@ -811,7 +828,9 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal,
       value.process.signal!==null||value.process.timed_out||value.process.output_overflow))||
     (!new Set(['pre-spawn-rejected','timed-out','output-overflow','terminated',
       'unexpected-pass']).has(processClass)&&
-      (!Number.isInteger(value.process.exit_code)||value.process.exit_code===0||
+      (!Number.isInteger(value.process.exit_code)||(value.process.exit_code===0&&
+        !(policySha256!==BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256&&
+          ['invalid-output','test-side-effect'].includes(processClass)))||
         value.process.signal!==null||value.process.timed_out||value.process.output_overflow)))
     fail('bootstrap-verification-process');
   const parsed=classification.diagnostic_event!==null;
@@ -827,7 +846,7 @@ function validateBootstrapVerificationResultV2(value,{expectedSignal,
     spawnError:value.process.spawn_error},changedPaths:value.changed_paths,
     stdout:rawStdout,stderr:rawStderr,root:value.execution_containment.worktree_realpath,
     testPath:value.logical_argv[3],nodePatch:value.executable_identity.node_version,
-    expectedSignal});
+    expectedSignal,policySha256});
   if(canonicalText(replay)!==canonicalText(classification))
     fail('bootstrap-verification-classification');
   if(semanticDigest('verification-result-v2',value,'result_sha256')!==value.result_sha256)
@@ -1953,8 +1972,9 @@ function reporterLocation(location,{root,testPath}){
   if(actual!==expected||path.resolve(candidate)!==expected)fail('bootstrap-first-red-tap');
   return {line:Number(match[2]),column:Number(match[3])};
 }
-function tapEventFrom({fields,forms,keys,testName,root,testPath,diagnosticOverride=null}){
-  const golden=BOOTSTRAP_NODE_TAP_GOLDENS[process.versions.node];
+function tapEventFrom({fields,forms,keys,testName,root,testPath,diagnosticOverride=null,
+  grammar=BOOTSTRAP_NODE_TAP_GOLDENS['26.0.0']}){
+  const golden=grammar;
   const assertionShape=fields.code==='ERR_ASSERTION'||fields.name==='AssertionError';
   const contractShape=fields.code==='ERR_DEEP_WORK_CONTRACT';
   const syntaxShape=fields.name==='SyntaxError'||fields.code==='ERR_INVALID_TYPESCRIPT_SYNTAX';
@@ -2039,7 +2059,7 @@ function parseNodeTapFailure(stdout,{root,testPath,nodePatch=process.versions.no
     summaryStart=wrapperDiagnostic.next;
     exactTapSummary(lines,summaryStart,grammar.topologies.suite_wrapper);
   }
-  return tapEventFrom({...leafFields,testName:leafName,root,testPath});
+  return tapEventFrom({...leafFields,testName:leafName,root,testPath,grammar});
 }
 function classifyExpectedTapSignal(event){
   const classified=classifyTapDiagnostic(event);
@@ -2198,7 +2218,7 @@ async function ensureBootstrapSideEffectReplan({stateCapability,project,sessionI
 }
 function authenticateImmutableBootstrapPlan(plan,failureCode='bootstrap-first-red-plan'){
   let compiled;
-  try{compiled=require('./plan-runtime.js').compileImmutablePlanAuthorityV2(plan);}
+  try{compiled=require('./plan-runtime.js').compileImmutablePlanAuthority(plan);}
   catch{fail(failureCode);}
   if(compiled.plan_authority_sha256!==plan?.plan_authority_sha256)
     fail(failureCode);
@@ -2219,7 +2239,7 @@ function authenticateBootstrapVerificationPlan({plan,verificationPlan,sliceId,sp
     canonicalText(verificationPlan.capability_facts)!==
       canonicalText(plan.capability_facts)||
     canonicalText(verificationPlan.slice_verification_specs?.[sliceId])!==
-      canonicalText({slice_kind:'functional',verification_spec_sha256:specSha256}))
+      canonicalText({slice_kind:'functional',verification_spec_sha256:specSha256,...(plan.schema_version===3?{execution_basis:'strict-tdd-v2',verification_commands:{},oracle_controls_sha256:null}:{})}))
     fail(failureCode);
   return verificationPlan;
 }
@@ -2278,7 +2298,8 @@ function bootstrapFirstRedExecutionContext(bound,spec){
   const identity=executableIdentity(),logicalArgv=spec.args;
   const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${bound.root}`,
     `--allow-fs-write=${fs.realpathSync(ownedTemp)}`,`--require=${environmentGuardPath}`,
-    '--test','--test-isolation=none','--test-reporter=tap','--',spec.args[3]];
+    '--test',require('./node-tap-policy.js').nodeTestIsolationFlag(spec,identity.node_version),
+    '--test-reporter=tap','--',spec.args[3]];
   const environment=structuredClone(spec.environment);
   const containment={provider:'node-permission-v1',node_patch:process.versions.node,
     worktree_realpath:fs.realpathSync(bound.root),owned_temp_realpath:fs.realpathSync(ownedTemp),
@@ -2305,8 +2326,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     bound.receipt.first_red_verification_spec_sha256!==specRaw.sha256||
     bound.marker.first_red_verification_spec_sha256!==specRaw.sha256)
     fail('bootstrap-first-red-spec');
-  const supportedNode=spec.executable.supported_patches_sha256===
-    BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256&&process.versions.node==='26.0.0';
+  const supportedNode=require('./node-tap-policy.js').assertNodeTapPolicyForSpec(spec,process.versions.node).supported;
   const completionReceipt=await journal.resumeOperation({
     projectCapability:transaction.projectCapabilityFor(stateCapability),
     operationId:bound.receipt.completion_operation_id,sessionId:bound.sessionId,
@@ -2356,9 +2376,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
   const existing=await completedOperation(write.project,operationId,bound.sessionId,
     'bootstrap-first-red');
   if(existing?.stage==='completed-ledger'){
-    const existingVerification=validateBootstrapVerificationResultV2(
+    const existingVerification=validateVerificationResultForSpec(
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
-        expectedSignal:spec.red_failure.expected_signal});
+        spec});
     authenticateBootstrapVerificationContext({verification:existingVerification,bound,plan,
       verificationPlan:verificationPlan||{
         plan_sha256:existingVerification.verification_plan_sha256},
@@ -2398,9 +2418,9 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     operation_id:operationId,preconditions,slice:sliceId}};
   let verification;
   if(fs.existsSync(resultPath)){
-    verification=validateBootstrapVerificationResultV2(
+    verification=validateVerificationResultForSpec(
       readJsonArtifact(resultPath,'bootstrap-first-red-result',{canonical:true}).value,{
-        expectedSignal:spec.red_failure.expected_signal});
+        spec});
     authenticateBootstrapVerificationContext({verification,bound,plan,verificationPlan,spec,
       specRawSha256:specRaw.sha256,write,operationId,
       ...executionContext});
@@ -2463,7 +2483,8 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
     const expected=spec.red_failure.expected_signal;
     const classification=classifyVerificationObservation({processResult:ran,
       changedPaths:changed,stdout,stderr,root:bound.root,testPath:spec.args[3],
-      nodePatch:process.versions.node,expectedSignal:expected});
+      nodePatch:process.versions.node,expectedSignal:expected,
+      policySha256:spec.executable.supported_patches_sha256});
     const observedClass=classification.observed_class;
     verification={schema_version:2,session_id:bound.sessionId,slice_id:sliceId,
       plan_authority_sha256:plan.plan_authority_sha256,
@@ -2486,7 +2507,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
       classification,disposition:observedClass==='expected-failure'&&changed.length===0?
         'accepted':'rejected',result_sha256:null};
     verification.result_sha256=semanticDigest('verification-result-v2',verification,'result_sha256');
-    validateBootstrapVerificationResultV2(verification,{expectedSignal:expected});
+    validateVerificationResultForSpec(verification,{spec});
     authenticateBootstrapVerificationContext({verification,bound,plan,verificationPlan,spec,
       specRawSha256:specRaw.sha256,write,operationId,logicalArgv,normalizedArgv,identity,
       environment,containment,supervisor});
@@ -2544,10 +2565,10 @@ async function adoptBootstrapRed({stateCapability,planCapability,plan,sliceId,au
   if(bridge.stage!=='completed-ledger'||bridge.result?.disposition!=='accepted'||
     bridge.result?.slice_id!==sliceId||!DIGEST.test(bridge.resultSha256||''))
     fail('bootstrap-red-adoption-bridge');
-  const verification=validateBootstrapVerificationResultV2(
+  const verification=validateVerificationResultForSpec(
     readJsonArtifact(path.join(bound.root,...bridge.result.result_path.split('/')),
-      'bootstrap-first-red-result',{canonical:true}).value,{expectedSignal:
-        plan.slices.find((row)=>row.id===sliceId).verification_spec.red_failure.expected_signal});
+      'bootstrap-first-red-result',{canonical:true}).value,{spec:
+        plan.slices.find((row)=>row.id===sliceId).verification_spec});
   if(verification.result_sha256!==bridge.result.result_sha256||
     verification.verification_operation_id!==bridgeOperationId)
     fail('bootstrap-red-adoption-bridge');
@@ -2624,10 +2645,10 @@ async function publishBootstrapRedProof({stateCapability,planCapability,plan,sli
     fail('bootstrap-proof-bridge');
   const target=plan.slices?.find((row)=>row.id===sliceId);
   if(!target||target.slice_kind!=='functional')fail('bootstrap-proof-plan');
-  const verification=validateBootstrapVerificationResultV2(
+  const verification=validateVerificationResultForSpec(
     readJsonArtifact(path.join(root,...bridge.result.result_path.split('/')),
       'bootstrap-first-red-result',{canonical:true}).value,
-    {expectedSignal:target.verification_spec.red_failure.expected_signal});
+    {spec:target.verification_spec});
   const stateText=fs.readFileSync(stateCapability.path,'utf8');
   const fields=frontmatter.parseFrontmatter(stateText).fields;
   if(transition.result.verification_result_sha256!==verification.result_sha256||
@@ -2698,12 +2719,14 @@ module.exports={
   BOOTSTRAP_CONTROL_NAMES,BOOTSTRAP_EXECUTION_STAGES,BOOTSTRAP_REJECTION_CODES,
   BOOTSTRAP_VERIFICATION_RESULT_KEYS,BOOTSTRAP_RED_PROOF_KEYS,
   bootstrapManifestSchemaSha256,bootstrapCommandArgvSha256,normalizeNodeTestBootstrapStdout,
+  nodeTapPrimitives:{parseTapDiagnostic,tapEventFrom,reporterLocation},normalizedSignalMatchesExpected,
   parseNodeTapFailure,tapValueDigest,classifyExpectedTapSignal,classifyTapDiagnostic,
   classifyVerificationObservation,executableIdentity,
   classifyBootstrapObservedCommandResult,validateBootstrapObservedCommandResult,
   validateBootstrapFailureArtifact,validateBootstrapManifest,validateBootstrapWitness,
   validateBootstrapAuthorization,validateBootstrapExecutionJournal,
   validateBootstrapExecutionJournalTransition,validateBootstrapVerificationResultV2,
+  validateVerificationResultForSpec,
   validateBootstrapRedProofV1,precomputeBootstrapCompletion,canonicalBootstrapJson,
   BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256,
   validateBootstrapCompletionAuthority,

@@ -176,6 +176,46 @@ function expandSourceArtifactsGlob(globArg, baseCwd) {
     .map((f) => path.join(dir, f));
 }
 
+// The runtime and CLI share one import-safe publication boundary. Runtime callers
+// reserve every varying envelope field in their operation journal before writing.
+function validatePayloadV11(kind,payload) {
+  if (!['slice-receipt','session-receipt'].includes(kind)) throw new Error('receipt-kind');
+  const schema=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../schemas/payload-registry/deep-work',kind,'v1.1.schema.json'),'utf8'));
+  function check(s,v,where) {
+    const bad=()=>{throw new Error(`receipt-payload-schema:${where}`);};
+    if(s.const!==undefined&&JSON.stringify(s.const)!==JSON.stringify(v))bad();
+    if(s.enum&&!s.enum.includes(v))bad();
+    if(s.oneOf){let matches=0;for(const candidate of s.oneOf)try{check(candidate,v,where);matches++;}catch{}if(matches!==1)bad();}
+    const type=v===null?'null':Array.isArray(v)?'array':typeof v;
+    if(s.type){const types=Array.isArray(s.type)?s.type:[s.type];if(!types.some(t=>t===type||t==='integer'&&Number.isSafeInteger(v)))bad();}
+    if(typeof v==='number'&&(!Number.isFinite(v)||s.minimum!==undefined&&v<s.minimum||s.maximum!==undefined&&v>s.maximum))bad();
+    if(typeof v==='string'&&(s.minLength!==undefined&&v.length<s.minLength||s.pattern&&!new RegExp(s.pattern).test(v)||s.format==='date-time'&&(!/^\d{4}-\d\d-\d\dT/.test(v)||!Number.isFinite(Date.parse(v)))))bad();
+    if(Array.isArray(v)){if(s.uniqueItems&&new Set(v.map(x=>JSON.stringify(x))).size!==v.length||s.maxItems!==undefined&&v.length>s.maxItems)bad();if(s.items)v.forEach((x,i)=>check(s.items,x,`${where}[${i}]`));}
+    if(type==='object'){for(const k of s.required||[])if(!Object.hasOwn(v,k))bad();for(const [k,x] of Object.entries(v)){if(s.properties?.[k])check(s.properties[k],x,`${where}.${k}`);else if(Object.keys(s.patternProperties||{}).some(pattern=>new RegExp(pattern).test(k))){}else if(s.additionalProperties===false)bad();}}
+    for(const rule of s.allOf||[]){if(rule.if){let matched=true;try{check(rule.if,v,where);}catch{matched=false;}if(matched&&rule.then)check(rule.then,v,where);}else check(rule,v,where);}
+  }
+  check(schema,payload,'payload');
+  const goal=payload.goal_acceptance;
+  if(goal.accepted_ids.some(id=>!goal.required_ids.includes(id))||goal.complete!==(goal.required_ids.length>0&&goal.required_ids.length===goal.accepted_ids.length))throw new Error('receipt-goal-acceptance');
+  return payload;
+}
+function prepareRuntimeEnvelope(options) {
+  validatePayloadV11(options.artifactKind,options.payload);
+  if(!options.runId||!options.generatedAt||!options.git||!options.producerVersion||!options.sessionId)throw new Error('receipt-publication-unreserved');
+  return env.wrapEnvelope({...options,schemaVersion:'1.1'});
+}
+function publishRuntimeEnvelope({sessionCapability,candidate,wrapped,replaceSha256}) {
+  if(wrapped?.schema_version!=='1.0'||wrapped.envelope?.schema?.version!=='1.1'||wrapped.envelope.producer!=='deep-work'||wrapped.envelope.schema.name!==wrapped.envelope.artifact_kind)throw new Error('receipt-envelope-identity');
+  validatePayloadV11(wrapped.envelope.artifact_kind,wrapped.payload);
+  const transaction=require('../../runtime/transaction-runtime.js');
+  const journal=require('../../runtime/operation-journal.js');
+  const bytes=Buffer.from(journal.canonicalJson(wrapped));
+  const cap=transaction.issueSessionFileCapability({sessionCapability,candidate,allowedBasenames:[path.basename(candidate)],allowMissingLeaf:true,role:'public-m3-receipt'});
+  if(fs.existsSync(candidate)){const prior=transaction.readSessionFile(cap);if(!prior.equals(bytes)){if(!replaceSha256||journal.sha256(prior)!==replaceSha256)throw new Error('receipt-publication-drift');transaction.atomicWriteSessionFile(cap,bytes);}}
+  else transaction.atomicWriteSessionFile(cap,bytes);
+  return {path:path.relative(sessionCapability.projectRoot,candidate).split(path.sep).join('/'),sha256:journal.sha256(bytes),run_id:wrapped.envelope.run_id};
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const required = ['artifact-kind', 'payload-file', 'output'];
@@ -210,6 +250,8 @@ function main() {
     );
     process.exit(2);
   }
+
+  if(payload.schema_version==='1.1') usage('runtime payload 1.1 requires the journalled publication route');
 
   if (args['evidence-state-file']) {
     const statePath=path.resolve(process.cwd(),args['evidence-state-file']);
@@ -363,4 +405,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { expandSourceArtifactsGlob, tryReadEnvelopeRunId, readFrontmatterField };
+module.exports = { expandSourceArtifactsGlob, tryReadEnvelopeRunId, readFrontmatterField, validatePayloadV11, prepareRuntimeEnvelope, publishRuntimeEnvelope };

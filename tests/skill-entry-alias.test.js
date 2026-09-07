@@ -13,7 +13,9 @@ test('deep-work skill alias is the primary skill-only entrypoint', () => {
   const skill = fs.readFileSync(skillPath, 'utf8');
   assert.match(skill, /^name: deep-work$/m);
   assert.match(skill, /^user-invocable: true$/m);
-  assert.match(skill, /Skill\("deep-work-orchestrator", args="\$ARGUMENTS"\)/);
+  const target=skill.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/(skills\/deep-work-orchestrator\/SKILL\.md)/);
+  assert.ok(target, 'alias must name a contained target when native Skill dispatch is unavailable');
+  assert.equal(fs.realpathSync(path.join(repoRoot,target[1])),path.join(repoRoot,target[1]));
 });
 
 test('deep-spec is a discoverable user-invocable skill entrypoint', () => {

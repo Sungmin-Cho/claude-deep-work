@@ -94,7 +94,7 @@ function producerPreimage(record,producerName){const value=structuredClone(recor
 function sealRecord(record,producerName=PRODUCER_BY_KIND[record?.kind]){if(!producerName)fail('protected-evidence-producer');
   const value=structuredClone(record);value.producer_proof={schema_version:1,producer:producerName,kind:value.kind,
     proof_sha256:sha256(canonicalJson(producerPreimage(value,producerName)))};return Object.freeze(value);}
-function validateProducerProof(record){const expected=PRODUCER_BY_KIND[record?.kind],proof=record?.producer_proof;
+function validateProducerProof(record){const expected=record?.runtime_observation_ref?'capture-completion-evidence':record?.review_execution_refs?'capture-global-review-evidence':PRODUCER_BY_KIND[record?.kind],proof=record?.producer_proof;
   return Boolean(expected&&proof?.schema_version===1&&proof.producer===expected&&proof.kind===record.kind&&
     isDigest(proof.proof_sha256)&&proof.proof_sha256===sha256(canonicalJson(producerPreimage(record,expected))));}
 
@@ -134,6 +134,7 @@ async function captureCommandEvidence(input={},deps={}){
 
 function validateVerificationPlan(plan){const result=require('./verification-policy-runtime.js').validateVerificationPlan(plan);
   if(!result.pass)fail(result.errors[0]?.code||'evidence-verification-plan');return structuredClone(plan);}
+function gateInvariantIds(plan,gate){return plan.schema_version===3?sorted((gate?.slice_ids||[]).flatMap(id=>plan.slice_contracts[id]?.invariant_ids||[])):[];}
 function gateFor(plan,gateId,adapter){const checked=validateVerificationPlan(plan),gate=checked.gates.find((row)=>row.id===gateId);
   if(!gate||gate.adapter!==adapter||gate.disposition!=='required')fail('evidence-gate-authority');return{plan:checked,gate};}
 
@@ -142,7 +143,7 @@ function captureContractEvidence(input={}){const {plan,gate}=gateFor(input.verif
     {riskClass:input.specContract?.risk_class,...(input.slices?{slices:input.slices}:{})});
   if(!result.pass||runtime.specContractDigest(input.specContract)!==plan.spec_sha256||input.specContract.spec_id!==plan.spec_id)
     fail('contract-evidence-validation');return sealRecord({schema_version:2,evidence_id:input.evidence_id,gate_id:gate.id,
-      kind:'contract',status:'pass',requirement_ids:sorted(gate.requirement_ids),invariant_ids:sorted(input.invariant_ids||[]),
+      kind:'contract',status:'pass',requirement_ids:sorted(gate.requirement_ids),invariant_ids:plan.schema_version===3?gateInvariantIds(plan,gate):sorted(input.invariant_ids||[]),
       failure_mode_ids:sorted(gate.failure_mode_ids),negative_test_ids:sorted(input.negative_test_ids||[]),
       result:{spec_id:plan.spec_id,spec_sha256:plan.spec_sha256,spec_approved_hash:plan.spec_approved_hash,
         requirement_coverage:result.requirementCoverage,failure_matrix_coverage:result.failureMatrixCoverage},
@@ -252,14 +253,17 @@ function loadArtifact(artifactRoot,record){if(!artifactRoot||!record?.artifact_r
       artifact.kind!=='command'||artifact.result?.redacted_output_sha256!==sha256(canonicalJson(artifact.redacted_output))||
       secretHits(artifact).length)fail('evidence-artifact-authentication');return artifact;}
 
-function validateRecord(record,plan,{artifactRoot}={}){const gate=plan.gates.find((row)=>row.id===record?.gate_id),errors=[];
+function validateRecord(record,plan,{artifactRoot}={}){const completionGate=plan.schema_version===3&&require('./completion-evidence-runtime.js').GATES.has(record?.gate_id);const gate=plan.gates.find((row)=>row.id===record?.gate_id),errors=[];
   if(!/^EVID-[A-Z0-9-]+$/.test(record?.evidence_id||'')||record?.schema_version!==2||record.status!=='pass')
     errors.push({code:'evidence-record'});
-  if(!gate||gate.disposition!=='required'||gateCatalog.recordKindForAdapter(gate.adapter)!==record?.kind||
+  if(!gate||gate.disposition!=='required'||(gateCatalog.recordKindForAdapter(gate.adapter)!==record?.kind&&!(completionGate&&(gate.id==='GATE-targeted-tests'&&record?.kind==='outcome'||['GATE-tdd-red','GATE-tdd-green'].includes(gate.id)&&record?.kind==='strict-verification')))||
       (record?.kind==='adapter'&&record.adapter!==gate?.adapter))errors.push({code:'evidence-record-adapter'});
   if(gate&&(!exact(sorted(record.requirement_ids||[]),sorted(gate.requirement_ids||[]))||
       !exact(sorted(record.failure_mode_ids||[]),sorted(gate.failure_mode_ids||[]))))errors.push({code:'evidence-record-trace'});
+  if(plan.schema_version===3&&gate&&!exact(record?.invariant_ids,gateInvariantIds(plan,gate)))errors.push({code:'evidence-record-invariants'});
   if(!validateProducerProof(record))errors.push({code:'protected-evidence-producer'});
+  if(completionGate||record?.runtime_observation_ref){try{if(!completionGate)fail('completion-evidence-version');require('./completion-evidence-runtime.js').authenticateCompletionEvidence(record,{artifactRoot,verificationPlan:plan});}catch(error){errors.push({code:error.code||'completion-evidence-authority'});}}
+  if(plan.schema_version===3&&record?.kind==='review'){try{require('./global-review-runtime.js').authenticateGlobalReviewEvidence(record,{artifactRoot,verificationPlan:plan});}catch(error){errors.push({code:error.code||'global-review-authority'});}}
   if(record?.redaction?.passed!==true||secretHits(record).length)errors.push({code:'evidence-redaction'});
   if(record?.kind==='command'&&(!Array.isArray(record.redaction?.exact_secret_fingerprints)||
       record.redaction.exact_secret_fingerprints.length>64))errors.push({code:'evidence-redaction-policy'});
@@ -276,7 +280,7 @@ function validateRecord(record,plan,{artifactRoot}={}){const gate=plan.gates.fin
     errors.push({code:'review-evidence-authority'});
   if(record?.kind==='adapter'&&(record.verification_plan_sha256!==plan.plan_sha256||record.spec_sha256!==plan.spec_sha256||
       record.cleanup?.passed!==true||!record.transitions?.includes('complete')))errors.push({code:'adapter-evidence-validation'});
-  if(['sensor','health'].includes(record?.kind)&&(record.verification_plan_sha256!==plan.plan_sha256||
+  if(!record?.runtime_observation_ref&&['sensor','health'].includes(record?.kind)&&(record.verification_plan_sha256!==plan.plan_sha256||
       !/^op-[0-9a-f]{32,64}$/.test(record.operation_id||'')||!isDigest(record.result_sha256)))
     errors.push({code:'runtime-evidence-authority'});return errors;}
 function ratio(total,covered,reason){return total===0?{total:0,covered:0,ratio:null,not_applicable_reason:reason}:
@@ -301,7 +305,7 @@ function buildEvidencePackage(input={}){const plan=validateVerificationPlan(inpu
     risk_snapshot:structuredClone(input.riskSnapshot||{class:plan.risk_class,score:null,triggers:[]}),
     policy_snapshot:structuredClone(input.policySnapshot||{profile:plan.profile,tdd:null,review:null,verification:plan.source_policy_label}),
     contract_trace:structuredClone(input.contractTrace||{slice_id:input.scope?.kind==='slice'?input.scope.id:null,
-      requirements:requirementIds,invariants:[],failure_cases:failureIds}),records,
+      requirements:requirementIds,invariants:plan.schema_version===3?sorted(Object.values(plan.slice_contracts).flatMap(s=>s.invariant_ids)):[],failure_cases:failureIds}),records,
     coverage:{requirements:ratio(requirementIds.length,coveredRequirements.length,'no contract requirements'),
       failure_matrix:ratio(failureIds.length,coveredFailures.length,'risk class has no failure matrix obligation')},
     completeness:{evidence_required_gate_ids:[...required],satisfied_gate_ids:satisfied,missing_gate_ids:missing,
@@ -470,4 +474,4 @@ module.exports={redactEvidenceText,captureCommandEvidence,buildEvidencePackage,v
   validateAdapterPlan,runEvidenceAdapter,captureRuntimeProjectionEvidence,publishAuthenticatedRecord,
   publishRedactedEvidenceArtifactUnderLock,publishContentAddressedEvidencePackage,unionEvidenceRecords,
   loadFinishGateContext,loadCommittedPackage,materializeRecordUnderLock,secretHits,validateProducerProof,
-  invalidatedReceiptEvidenceIds};
+  invalidatedReceiptEvidenceIds,sealCompletionRecord:(record)=>sealRecord(record,'capture-completion-evidence'),sealGlobalReviewRecord:(record)=>sealRecord(record,'capture-global-review-evidence'),gateInvariantIds};

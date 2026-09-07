@@ -324,17 +324,12 @@ test('CLI prints shadow JSON and never a rewritten authority', () => {
   fs.unlinkSync(reqFile);
 });
 
-test('orchestrator and research invoke router-shadow immediately after model-routing-cli', () => {
-  const orch = fs.readFileSync(path.join(ROOT, 'skills/deep-work-orchestrator/SKILL.md'), 'utf8');
-  const research = fs.readFileSync(path.join(ROOT, 'skills/deep-research/SKILL.md'), 'utf8');
-  for (const [name, skill] of [['orchestrator', orch], ['research', research]]) {
-    const cli = skill.indexOf('scripts/model-routing-cli.js');
-    const shadow = skill.indexOf('scripts/router-shadow.js');
-    assert.ok(cli >= 0, `${name} must call model-routing-cli.js`);
-    assert.ok(shadow > cli, `${name} must call router-shadow.js after model-routing-cli.js`);
-    const between = skill.slice(cli, shadow);
-    assert.ok(!/current_phase|model_routing_json/.test(between),
-      `${name} must invoke shadow immediately after the CLI, before state write`);
+test('shadow tooling remains optional to runtime-owned adaptive entries', () => {
+  for (const name of ['deep-work-orchestrator', 'deep-research']) {
+    const skill = fs.readFileSync(path.join(ROOT, 'skills', name, 'SKILL.md'), 'utf8');
+    assert.ok(skill.includes('${CLAUDE_PLUGIN_ROOT}/skills/shared/references/runtime-execution-spine.md'));
+    assert.doesNotMatch(skill, /MR_OUT=|SHADOW_OUT=/,
+      'entry skills must not reconstruct routing authority with shell state writers');
   }
 });
 

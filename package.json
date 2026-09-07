@@ -1,15 +1,17 @@
 {
   "name": "@deep-work/deep-work",
-  "version": "7.3.0",
+  "version": "7.4.0",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "test:core": "node --test tests/envelope-emit.test.js tests/envelope-chain.test.js tests/handoff-roundtrip.test.js tests/phase-guard-denylist.test.js tests/phase-guard-golden.test.js tests/skill-entry-alias.test.js tests/deep-memory-integration.test.js",
-    "test:all": "node --test --test-concurrency=1 \"runtime/**/*.test.js\" \"hooks/**/*.test.js\" \"tests/**/*.test.js\" \"skills/**/*.test.js\" \"sensors/**/*.test.js\" \"templates/**/*.test.js\" \"scripts/**/*.test.js\"",
+    "test:all": "node --test --test-concurrency=1 \"runtime/**/*.test.js\" \"hooks/**/*.test.js\" \"tests/**/*.test.js\" \"skills/**/*.test.js\" \"sensors/**/*.test.js\" \"templates/**/*.test.js\" \"scripts/**/*.test.js\" \"evals/**/*.test.js\"",
     "test:health": "node --test --test-concurrency=1 \"health/**/*.test.js\"",
     "test": "npm run test:all",
-    "test:runtime": "node --test runtime/*.test.js hooks/scripts/hook-bootstrap.test.js hooks/scripts/hook-runtime-portability.test.js hooks/scripts/phase-guard-core.test.js hooks/scripts/verify-receipt-core.test.js"
+    "test:runtime": "node --test runtime/*.test.js hooks/scripts/hook-bootstrap.test.js hooks/scripts/hook-runtime-portability.test.js hooks/scripts/phase-guard-core.test.js hooks/scripts/verify-receipt-core.test.js",
+    "test:eval": "node --test evals/harness/*.test.js",
+    "eval:harness": "node evals/harness/run.js"
   },
   "description": "Deep Work plugin for Claude Code and Codex (cross-platform via 24 command-equivalent skills plus deep-work entry alias) - Evidence-Driven Development Protocol with TDD enforcement, Health Engine (drift detection + fitness functions), worktree isolation, model auto-routing, receipt validation, 6-phase workflow with Phase 5 Integrate",
   "author": "sungmin",
@@ -37,6 +39,11 @@
     "runtime/",
     "README.md",
     "assumptions.json",
-    "templates/"
-  ]
+    "templates/",
+    "schemas/"
+  ],
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  }
 }

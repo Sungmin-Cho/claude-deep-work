@@ -187,3 +187,11 @@ test('test retry uses bounded lock basenames for deep session work paths',async(
     failedSlices:['SLICE-001'],at:'2026-07-13T00:00:00Z'});assert.equal(result.status,undefined);
   assert.equal(result.state.current_phase,'implement');
 });
+
+test('outcome retry binds the actual producer while preserving healthy sibling generation',()=>{
+ const a={schema_version:3,status:'complete',receipt_sha256:'a'.repeat(64),producer_operation_id:'op-'+'b'.repeat(64)},b={schema_version:3,status:'complete',receipt_sha256:'c'.repeat(64),producer_operation_id:'op-'+'d'.repeat(64)};
+ const plan={schema_version:3,slices:[{id:'SLICE-001',slice_kind:'functional',execution_basis:'outcome-v1',checked:true},{id:'SLICE-002',slice_kind:'functional',execution_basis:'outcome-v1',checked:true}]};
+ const result=recordTestRetry({state:{current_phase:'test',test_retry_count:1,receipt_recovery_generation:1,max_test_retries:3,functional_receipt_bindings_json:JSON.stringify({'SLICE-002':{recovery_generation:0,receipt_sha256:b.receipt_sha256,completion_operation_id:b.producer_operation_id}})},plan,receipts:{'SLICE-001':a,'SLICE-002':b},failedSlices:['SLICE-001']});
+ assert.deepEqual(result.invalidatedFunctionalReceipts,[{slice_id:'SLICE-001',receipt_sha256:a.receipt_sha256,completion_operation_id:a.producer_operation_id}]);
+ const bindings=JSON.parse(result.state.functional_receipt_bindings_json);assert.equal(bindings['SLICE-002'].recovery_generation,0);assert.equal(bindings['SLICE-001'].recovery_generation,2);assert.equal(bindings['SLICE-001'].completion_operation_id,null);assert.deepEqual(result.receipts['SLICE-002'],b);
+});

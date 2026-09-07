@@ -1,0 +1,1 @@
+const test=require('node:test');const assert=require('node:assert/strict');const inRange=require('./range.js');test('interior',()=>assert.equal(inRange(5,1,9),true));test('reversed',()=>assert.equal(inRange(5,9,1),false));

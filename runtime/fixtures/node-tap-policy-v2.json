@@ -1,0 +1,204 @@
+{
+  "schema_version": 2,
+  "policy_id": "node-test-tap-portable-v2",
+  "node_patches": [
+    "22.23.2",
+    "24.20.0",
+    "26.0.0",
+    "26.8.1"
+  ],
+  "max_document_bytes": 1048576,
+  "max_nodes": 10000,
+  "max_depth": 32,
+  "leaf_layouts": {
+    "assertion": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "name",
+        "expected",
+        "actual",
+        "operator",
+        "stack"
+      ],
+      "forms": {
+        "error": "literal",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "failureType": "testCodeFailure"
+      }
+    },
+    "contract": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "expected",
+        "actual",
+        "operator",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "failureType": "testCodeFailure"
+      }
+    },
+    "syntax": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "error",
+        "name",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "name": "SyntaxError"
+      }
+    },
+    "import": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "requireStack",
+        "error",
+        "code",
+        "stack"
+      ],
+      "forms": {
+        "requireStack": "indexed-paths",
+        "error": "literal",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test"
+      }
+    },
+    "fixture": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test"
+      }
+    },
+    "collection": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "error",
+        "code",
+        "stack"
+      ],
+      "forms": {
+        "error": "scalar",
+        "stack": "literal"
+      },
+      "constants": {
+        "type": "test",
+        "code": "ERR_TEST_FAILURE"
+      }
+    },
+    "process_failure": {
+      "keys": [
+        "duration_ms",
+        "type",
+        "location",
+        "failureType",
+        "exitCode",
+        "signal",
+        "error",
+        "code"
+      ],
+      "forms": {
+        "error": "scalar"
+      },
+      "constants": {
+        "type": "test",
+        "failureType": "testCodeFailure",
+        "exitCode": 1,
+        "signal": "~",
+        "error": "test failed",
+        "code": "ERR_TEST_FAILURE"
+      }
+    }
+  },
+  "suite_wrapper_layout": {
+    "keys": [
+      "duration_ms",
+      "type",
+      "location",
+      "failureType",
+      "error",
+      "code"
+    ],
+    "forms": {
+      "error": "scalar"
+    },
+    "constants": {
+      "type": "suite",
+      "failureType": "subtestsFailed",
+      "error": "1 subtest failed",
+      "code": "ERR_TEST_FAILURE"
+    }
+  },
+  "isolation_flags": {
+    "22.23.2": "--experimental-test-isolation=none",
+    "24.20.0": "--test-isolation=none",
+    "26.0.0": "--test-isolation=none",
+    "26.8.1": "--test-isolation=none"
+  },
+  "conformance_fixtures": {
+    "22.23.2-deep-assert.stdout": "db10a9fc6dcec06f1a812660c8b61c32825fe505adc537bee9263220690c99a2",
+    "22.23.2-extra-failure.stdout": "42df45fdd1969ed2fc75a4eb2d99b892fc4e8de727cdae221e2700cff18420d4",
+    "22.23.2-green.stdout": "11750d7ad1de7a75b60e77c1c48db2183de9648c4b413968db8c9aa48b6bbf60",
+    "22.23.2-pass-plus-fail.stdout": "4753dabaf1fcaf2c6206444f57831691539e9882736e63c73d4cbb875a110ebc",
+    "22.23.2-suite-pass-fail.stdout": "c980eda01d47ef635d2ab24a06aae4d4c9823152e8a4490e79e81c9deec9fa2e",
+    "24.20.0-deep-assert.stdout": "a0d52c603a7b1c7597df799401f29db93a1dc54ba30d4411e7a965aa986a0e48",
+    "24.20.0-extra-failure.stdout": "b6f4e6c71960bfdd74eda0e07edf0d6ed3b80543f3bcfc1dd12540d589cdccf2",
+    "24.20.0-green.stdout": "7df673807cf9f3aaa612b925006596444d5fe92267bb573a22b480769b119357",
+    "24.20.0-pass-plus-fail.stdout": "0cc1aa4a99ed208d5f66bd3da66ce2d8128e031f3c8614e788dbcb0da84d96a6",
+    "24.20.0-suite-pass-fail.stdout": "84b662608fe6cd4e6e2b48db2b64c80676a357cd08f4b3bcbde67344ef028a7d",
+    "26.0.0-deep-assert.stdout": "20a181027f371c29f8c6387d27eb811d6e9ed721c89600728661d8dfe33a2bf7",
+    "26.0.0-extra-failure.stdout": "f9c3bd8685c3ace7bee4a767324094f7a40d92eeb259a51a86bf2a7dd1a2e330",
+    "26.0.0-green.stdout": "d50814c87a7277e110f227f134c75070b173074590071e3eddf653f822bc85c2",
+    "26.0.0-pass-plus-fail.stdout": "7964c9b446bf797fcf3b0ac11f21cca97e261a1376a1df6a86235110dc6f2814",
+    "26.0.0-suite-pass-fail.stdout": "7b8aedec77cf7db1d85797e7f3038a01b2c0313d787475b641612c94d4a3cad6",
+    "26.8.1-deep-assert.stdout": "51c4e558ada3e947244060b893aef7f908003d0a09adeb7e97c79183d2abc6b5",
+    "26.8.1-extra-failure.stdout": "0db8aa9b7022cc50873a60c9742e6fe8f835a6e034b1384cb21930e32a7e89ca",
+    "26.8.1-green.stdout": "ab3a51fdcb597c54d88ab030c2a0bc27247e3dcdff23ceb045b30d6a99231e49",
+    "26.8.1-pass-plus-fail.stdout": "96185be01e023e9e5755d827ee7c97baa6f1a8dbc3a8d67edb8e99342c080fbb",
+    "26.8.1-suite-pass-fail.stdout": "8bcc5c1305c448f647b4c50483259d95e19887d015cabab7622136e5e926492c"
+  }
+}

@@ -9649,6 +9649,6 @@ test('CI executes the runtime contract on native Windows Node 22', () => {
     'utf8');
   assert.match(workflow, /runtime-windows:/);
   assert.match(workflow, /runs-on:\s*windows-latest/);
-  assert.match(workflow, /node-version:\s*['"]22['"]/);
+  assert.match(workflow, /node-version:\s*['"]22\.23\.2['"]/);
   assert.match(workflow, /run:\s*npm run test:runtime/);
 });

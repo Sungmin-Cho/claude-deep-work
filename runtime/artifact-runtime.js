@@ -64,13 +64,10 @@ async function writeOwnedTemp({sessionCapability,operationId,purpose},bytes){
     kind:'owned-temp',operationId,preconditions:{purpose}});
   const capability=issueOwnedTempCapability({sessionCapability,operationId,purpose,allowMissingLeaf:true});
   const data=Buffer.isBuffer(bytes)?bytes:Buffer.from(bytes);
-  if(fs.existsSync(capability.path)){
-    const current=fs.readFileSync(capability.path);if(Buffer.compare(current,data)!==0)fail('temp-digest');
-    const digest=sha256(current);await recordOperationStage(operation,'written',{owned:{path:capability.path,sha256:digest}});
-    return {status:'adopted',sha256:digest,capability};
-  }
-  atomicWriteFile(capability,data);const digest=sha256(data);await recordOperationStage(operation,'written',{owned:{path:capability.path,sha256:digest}});
-  return {status:'written',sha256:digest,capability};
+  const result=atomicWriteFile(capability,data);
+  const digest=result.sha256;
+  await recordOperationStage(operation,'written',{owned:{path:capability.path,sha256:digest}});
+  return {status:result.adopted?'adopted':'written',sha256:digest,capability};
 }
 async function removeOwnedTemp({sessionCapability,operationId,purpose,expectedSha256}){
   const operation=await beginOperation({projectCapability:projectFor(sessionCapability),sessionId:sessionIdFor(sessionCapability),

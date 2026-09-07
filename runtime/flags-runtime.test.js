@@ -24,9 +24,9 @@ test('--model-routing concrete 어휘 허용 (런타임 매칭은 엔진 몫)', 
   assert.strictEqual(f.model_routing, 'implement=opus');
 });
 
-test('--model-routing 무효 항목은 항목 단위 경고+제외, 유효 항목 유지', () => {
+test('--model-routing unknown pin is preserved with visible verification warning', () => {
   const f = parseFlags(['--model-routing=implement=deep,test=gpt99']);
-  assert.strictEqual(f.model_routing, 'implement=deep');
+  assert.strictEqual(f.model_routing, 'implement=deep,test=gpt99');
   assert.ok(f.warnings.some((w) => /gpt99/.test(w)));
 });
 

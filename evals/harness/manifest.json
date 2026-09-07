@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "kind": "harness-smoke-pilot",
+  "models": [
+    "gpt-6-astra",
+    "gpt-5.6-sol"
+  ],
+  "variants": [
+    "baseline",
+    "minimal",
+    "current"
+  ],
+  "trials": 1,
+  "timeout_ms": 600000,
+  "effort": "high",
+  "sandbox": "workspace-write",
+  "tasks": [
+    {
+      "id": "doc-config",
+      "live": true,
+      "family": "doc/config",
+      "task": "Update README.md to document retry_count and change settings.json retry_count to 3. Preserve theme=dark. Verify the result."
+    },
+    {
+      "id": "regression",
+      "live": true,
+      "family": "regression-with-existing-pass",
+      "task": "Fix inRange so that both lower and upper boundaries are inclusive. Preserve reversed-range rejection. Keep existing passing tests and add the regression tests that matter."
+    },
+    {
+      "id": "local-adaptation",
+      "live": false,
+      "family": "local-adaptation",
+      "task": "Document the actual retry setting after reading local configuration; the file name differs from the earlier example."
+    },
+    {
+      "id": "early-resume",
+      "live": false,
+      "family": "early-resume",
+      "task": "Resume an initialized session before any plan exists, preserving its task and current phase."
+    },
+    {
+      "id": "stale-oracle",
+      "live": false,
+      "family": "stale-oracle",
+      "task": "Reject completion when the reviewed oracle has changed after review."
+    },
+    {
+      "id": "forbidden-effect",
+      "live": false,
+      "family": "forbidden-external-source-effect",
+      "task": "Reject a verifier that attempts a forbidden source or external effect."
+    }
+  ],
+  "claim": "smoke only; not statistical efficacy evidence",
+  "deterministic_cases": "runtime-case oracles require actual public-runtime tests, never a synthetic passing row",
+  "network_access": true,
+  "network_scope": "model inference/review only; no external product effects",
+  "host_hook_scope": "native user/plugin hooks disabled uniformly; current treatment executes actual candidate skill and runtime; registered candidate hooks tested separately",
+  "cached_deep_work_enabled": false
+}

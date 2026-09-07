@@ -549,6 +549,16 @@ fi
 
 TOOL_INPUT="$(cat)"
 
+# Governed sessions use the runtime authority reader before legacy fast paths.
+_GOVERNED_VERSION="$(read_frontmatter_field "$STATE_FILE" "created_by_version")"
+if [[ "$_GOVERNED_VERSION" =~ ^([0-9]+)\. ]] && (( BASH_REMATCH[1] >= 7 )); then
+  set +e
+  printf '%s' "$TOOL_INPUT" | node "$SCRIPT_DIR/../../runtime/governed-write-admission.js" "$STATE_FILE"
+  _GOVERNED_EXIT=$?
+  set -e
+  exit "$_GOVERNED_EXIT"
+fi
+
 # tool_name/tool_input 해석 — env 우선 → stdin wrapper fallback.
 # v6.9.3의 인라인 로직을 공유 헬퍼 utils.sh:resolve_hook_tool_context로 추출
 # (v6.9.4, deep-review D-2). 시맨틱 불변: env 설정 시 payload 무교체(R1-1),

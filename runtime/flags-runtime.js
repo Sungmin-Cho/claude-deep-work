@@ -3,10 +3,10 @@
 const { TIERS, MAIN, allConcreteModels } = require('./model-catalog.js');
 
 function fail(code,message){const error=new Error(`[${code}] ${message||code}`);error.code=code;throw error;}
-const ENUMS=Object.freeze({tdd:new Set(['strict','relaxed','coaching','spike']),
+const ENUMS=Object.freeze({tdd:new Set(['adaptive','strict','relaxed','coaching','spike']),
   team:new Set(['solo','team']),exec:new Set(['inline','delegate'])});
 const RECOMMENDER_ALLOWLIST=/^(haiku|sonnet|opus)$/;const EXEC_ALLOWLIST=/^(inline|delegate)$/;
-const PROFILE_NAME_ALLOWLIST=/^[a-z0-9][a-z0-9_-]{0,30}$/i;const TDD_ALLOWLIST=/^(strict|relaxed|coaching|spike)$/;
+const PROFILE_NAME_ALLOWLIST=/^[a-z0-9][a-z0-9_-]{0,30}$/i;const TDD_ALLOWLIST=/^(adaptive|strict|relaxed|coaching|spike)$/;
 const RESUME_FROM_ALLOWLIST=/^(brainstorm|research|spec|plan|implement|test)$/;const SESSION_ALLOWLIST=/^[\w.-]+$/;
 const POLICY_ALLOWLIST=/^(adaptive|shadow)$/;const RISK_ALLOWLIST=/^(low|medium|high|critical)$/;
 const REVIEW_ALLOWLIST=/^(auto|single|dual)$/;
@@ -16,8 +16,9 @@ function parseModelRoutingValue(raw){const warnings=[];const entries=[];
   const allowed=new Set([...TIERS,MAIN,...allConcreteModels()]);
   for(const entry of String(raw||'').split(',')){
     const m=entry.match(/^([a-z]+)=([A-Za-z0-9._-]+)$/);
-    if(!m||!MODEL_ROUTING_PHASES.has(m[1])||!allowed.has(m[2])){
+    if(!m||!MODEL_ROUTING_PHASES.has(m[1])){
       warnings.push(`--model-routing 항목 '${entry}' 무효 — 무시. 형식: phase=tier|model (공백 불가)`);continue;}
+    if(!allowed.has(m[2]))warnings.push(`model '${m[2]}' requires runtime capability verification; pin preserved`);
     entries.push(`${m[1]}=${m[2]}`);}
   return{entries,warnings};}
 
@@ -26,6 +27,8 @@ function parseDeepWorkFlags(argumentTokens){
   const result={tdd:null,team:null,positionals:[],execution:null};const seen=new Set();
   for(const token of argumentTokens){
     if(token==='--')continue;
+    if(token==='--autonomous'||token==='--interactive-gates'){const mode=token==='--autonomous'?'autonomous':'interactive';
+      if(result.continuation_mode&&result.continuation_mode!==mode)fail('continuation-conflict');result.continuation_mode=mode;continue;}
     if(!token.startsWith('--')){result.positionals.push(token);continue;}
     const match=token.match(/^--(tdd|team|exec)=(.+)$/);
     if(!match)fail('unknown-flag',token);
@@ -40,13 +43,15 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
     skip_research:false,skip_brainstorm:false,skip_review:false,no_branch:false,skip_to_implement:false,
     skip_integrate:false,setup:false,tdd_mode:null,resume_from:null,exec_mode:null,session:null,worktree:null,
     cross_model:false,no_cross_model:false,force_rerun:false,model_routing:null,
-    policy:'adaptive',risk:null,review:'auto',task:'',warnings:[]};const task=[];
+    continuation_mode:null,policy:'adaptive',risk:null,review:'auto',task:'',warnings:[]};const task=[];
   const bools={'--no-ask':'no_ask','--no-recommender':'no_recommender','--setup':'setup','--team':'team',
     '--zero-base':'zero_base','--skip-research':'skip_research','--skip-brainstorm':'skip_brainstorm',
     '--skip-review':'skip_review','--no-branch':'no_branch','--skip-to-implement':'skip_to_implement',
     '--skip-integrate':'skip_integrate','--cross-model':'cross_model','--no-cross-model':'no_cross_model',
     '--force-rerun':'force_rerun'};
-  for(const arg of args){if(arg==='--')continue;if(Object.hasOwn(bools,arg)){flags[bools[arg]]=true;continue;}
+  for(const arg of args){if(arg==='--')continue;
+    if(arg==='--autonomous'||arg==='--interactive-gates'){const mode=arg==='--autonomous'?'autonomous':'interactive';
+      if(flags.continuation_mode&&flags.continuation_mode!==mode)fail('continuation-conflict');flags.continuation_mode=mode;continue;}if(Object.hasOwn(bools,arg)){flags[bools[arg]]=true;continue;}
     if(arg.startsWith('--profile=')){const v=arg.slice(10);if(!v)flags.warnings.push('--profile= 빈 값 — 무시');
       else if(PROFILE_NAME_ALLOWLIST.test(v))flags.profile=v;else flags.warnings.push(`'${v}' 잘못된 프리셋 이름 — 영문/숫자/-/_만 허용 (≤31자), 무시`);}
     else if(arg.startsWith('--tdd=')){const v=arg.slice(6);if(!v)flags.warnings.push('--tdd= 빈 값 — 무시. 허용: strict|relaxed|coaching|spike');
@@ -77,7 +82,10 @@ function parseFlags(args){if(!Array.isArray(args)||args.some((arg)=>typeof arg!=
   }
   flags.task=task.join(' ');if(flags.no_recommender&&flags.recommender){flags.warnings.push('--no-recommender 활성 — --recommender 인자는 무시됨');flags.recommender=null;}
   if(flags.no_ask&&flags.recommender){flags.warnings.push('--no-ask 활성 — recommender는 호출되지 않음');flags.recommender=null;}
-  if(!flags.recommender&&!flags.no_ask&&!flags.no_recommender)flags.recommender='sonnet';return flags;}
+  if(!flags.recommender&&!flags.no_ask&&!flags.no_recommender)flags.recommender='sonnet';
+  const provided=new Set(),named={profile:'profile',recommender:'recommender',tdd:'tdd_mode',exec:'exec_mode','resume-from':'resume_from',session:'session',worktree:'worktree','model-routing':'model_routing',policy:'policy',risk:'risk',review:'review'};
+  for(const arg of args){if(Object.hasOwn(bools,arg))provided.add(bools[arg]);if(['--autonomous','--interactive-gates'].includes(arg))provided.add('continuation_mode');const match=arg.match(/^--([^=]+)=(.+)$/);if(!match||!named[match[1]])continue;const field=named[match[1]];if(flags[field]===match[2]||field==='model_routing'&&parseModelRoutingValue(match[2]).entries.length>0)provided.add(field);}
+  return {...flags,parser_origin:'deep-work-flags-v1',provided_options:[...provided].sort()};}
 module.exports={parseDeepWorkFlags,parseFlags,parseModelRoutingValue,RECOMMENDER_ALLOWLIST,EXEC_ALLOWLIST,
   PROFILE_NAME_ALLOWLIST,TDD_ALLOWLIST,RESUME_FROM_ALLOWLIST,SESSION_ALLOWLIST,WORKTREE_PATH_BLOCKLIST,
   POLICY_ALLOWLIST,RISK_ALLOWLIST,REVIEW_ALLOWLIST};

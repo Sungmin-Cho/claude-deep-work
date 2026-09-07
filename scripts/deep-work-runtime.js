@@ -26,7 +26,7 @@ const rows=[
   grammar('git capability'),
   grammar('git changed',['base'],['paths-json']),
   grammar('temp create',['state','session','purpose'],[],{purpose:['artifact-input','review-prompt','verification-spec','phase-result','gate-results','receipt-payload','pr-title','pr-body','handoff-payload','reason','notes','selection']}),
-  grammar('temp write',['state','session','temp-operation-id','stdin']),
+  grammar('temp write',['state','session','temp-operation-id'],['stdin']),
   grammar('temp remove',['state','session','temp-operation-id','expected-sha256']),
   grammar('session registry read',['project-root']),
   grammar('session registry own',['state','session','path']),
@@ -51,11 +51,29 @@ const rows=[
   grammar('session state migrate-model-routing',['state','session']),
   grammar('session recovery worktree',['state','session']),
   grammar('session finalize',['state','session','finished-at']),
+  grammar('session environment explain',['state','manager'],[],{manager:['npm','uv']}),
+  grammar('session environment prepare',['state','prepared-digest']),
+  grammar('session park',['state','session']),
+  grammar('session restore',['state','session']),
+  grammar('session downgrade-check',['project-root','target-version']),
+  grammar('artifact approval reopen',['state']),
+  grammar('artifact approval preview',['state','phases'],[],{phases:['spec','plan','spec,plan']}),
+  grammar('artifact approval packet-publish',['state','phases'],[],{phases:['spec','plan','spec,plan']}),
+  grammar('artifact approval review-run',['state','packet-ref-json','reviewer-json'],['timeout-ms']),
+  grammar('artifact approval publish',['state','packet-ref-json'],['human-declaration-json','review-execution-refs-json']),
+  grammar('phase continue',['state'],['at']),
+  grammar('review execution run',['state','request-json','prompt-file','reviewer-json','binding-json'],['timeout-ms']),
+  grammar('verification outcome-explain',['state','plan','slice','oracle']),
+  grammar('verification outcome-run',['state','plan','slice','oracle','prepared-digest']),
+  grammar('outcome source observe',['state','plan','slice']),
+  grammar('outcome review publish',['state','plan','slice','positive-refs-json','control-refs-json','review-execution-refs-json']),
+  grammar('implement receipt-publish',['state','plan','slice']),
+  grammar('implement outcome-complete',['state','plan','slice','positive-refs-json','control-refs-json','review-ref-json','source-evidence-json']),
   grammar('phase begin',['state','phase','at'],[],{phase:ACTIVE_PHASES}),
   grammar('phase complete',['state','phase','result-json','at'],[],{phase:ACTIVE_PHASES.slice(0,-1)}),
-  grammar('phase approve',['state','phase','artifact','at'],[],{phase:['research','plan']}),
+  grammar('phase approve',['state','phase','artifact','at'],['approval-ref-json'],{phase:['research','plan']}),
   grammar('phase spec enter',['state','at']),
-  grammar('phase spec approve',['state','artifact','at'],['spec-review-ref-sha256']),
+  grammar('phase spec approve',['state','artifact','at'],['spec-review-ref-sha256','approval-ref-json']),
   grammar('phase advance',['state','from','to','at'],[],{from:ACTIVE_PHASES.slice(0,-1),to:['research','spec','plan','implement','test']}),
   grammar('phase rerun',['state','phase'],['affected-slices-json'],{phase:ACTIVE_PHASES}),
   grammar('phase invalidate-replan',['state','reason','from-risk','to-risk','affected-slices-json','risk-profile-sha256','at'],[],{
@@ -110,6 +128,10 @@ const rows=[
   grammar('bootstrap first-red',['state','plan','authorization','receipt','marker','spec-json','slice','write-receipt']),
   grammar('bootstrap red-adopt',['state','plan','authorization','receipt','marker','slice','bridge-operation-id']),
   grammar('bootstrap proof-publish',['state','plan','slice','transition-operation-id']),
+  grammar('evidence review-run',['state','plan','reviewer-json'],['timeout-ms']),
+  grammar('evidence review-binding',['state','plan'],['format'],{format:['binding','packet']}),
+  grammar('evidence record review-executions',['state','plan','gate-id','evidence-id','review-execution-refs-json']),
+  grammar('evidence record completion',['state','plan','gate-id','evidence-id']),
   grammar('evidence record contract',['state','plan','gate-id','spec','evidence-id']),
   grammar('evidence record review',['state','plan','gate-id','review-plan-json','reports-json','evidence-id']),
   grammar('evidence record receipt',['state','plan','gate-id','receipts-json','verification-result-json','evidence-id']),
@@ -121,7 +143,7 @@ const rows=[
   grammar('mutation record',['state','result-json']),
   grammar('debug enter',['state','slice']),grammar('debug complete',['state','receipts-dir','slice','note-file','verification-json']),
   grammar('debug exit',['state','verification-json']),
-  grammar('phase review record',['state','phase','structural-json','structural-md'],['adversarial-json'],{phase:['brainstorm','research','plan']}),
+  grammar('phase review record',['state','phase','structural-json','structural-md'],['adversarial-json'],{phase:['brainstorm','research','spec','plan','implement']}),
   grammar('artifact publish',['state','kind','input'],['slice','area','iteration'],{kind:['brainstorm','research','research-area','plan','plan-backup','plan-diff','test-results','quality-gates','cross-slice-review','solid-review','insight-report','drift-report','fidelity-score','debug-root-cause'],area:['architecture','patterns','risks','tech-stack','conventions','data-model']}),
   grammar('analysis drift record',['state','report','score-file']),grammar('receipt dashboard',['state']),
   grammar('receipt view',['state','slice']),grammar('receipt export',['state','format'],[],{format:['json','md','ci']}),
@@ -129,7 +151,7 @@ const rows=[
   grammar('git report commit',['state']),
   grammar('slice activate',['state','plan','slice']),grammar('slice spike',['state','slice']),
   grammar('slice reset',['state','plan','receipts-dir','slice']),
-  grammar('slice model',['state','slice','model'],[],{model:['haiku','sonnet','opus','main','auto']}),
+  grammar('slice model',['state','slice','model']),
   grammar('git delegated rollback',['state','receipts-dir','snapshot']),
   grammar('git stash publish',['session','purpose'],['include-untracked'],{purpose:['fork','slice-reset']}),
   grammar('git stash apply',['session','operation-id']),
@@ -232,13 +254,19 @@ function parseDispatcher(argv){
 }
 
 async function dispatch(argv,{cwd=process.cwd(),stdin=''}={}){
+  if(argv.length===1&&argv[0]==='--help')return {routes:DISPATCHER_GRAMMAR.map(({id,required,optional,enums})=>({id,required,optional,enums}))};
   const parsed=parseDispatcher(argv);validateGrammarContract(parsed.entry);const handler=DISPATCHER_HANDLERS.get(parsed.entry.id);
   if(typeof handler!=='function')fail('dispatcher-handler-contract',parsed.entry.id);
   await enforceDispatcherPhase({entry:parsed.entry,f:parsed.flags,cwd});
   return handler({entry:parsed.entry,f:parsed.flags,cwd,stdin});
 }
 
-async function main(){try{const result=await dispatch(process.argv.slice(2));process.stdout.write(`${JSON.stringify(result)}\n`);}
+async function readStdin(){const chunks=[];let bytes=0;for await(const chunk of process.stdin){
+  const value=Buffer.from(chunk);bytes+=value.length;if(bytes>1_048_576)fail('stdin-too-large');chunks.push(value);}
+  return Buffer.concat(chunks);}
+async function main(){try{const argv=process.argv.slice(2);let stdin='';
+  if(!(argv.length===1&&argv[0]==='--help')&&parseDispatcher(argv).flags.stdin===true)stdin=await readStdin();
+  const result=await dispatch(argv,{stdin});process.stdout.write(`${JSON.stringify(result)}\n`);}
   catch(error){process.stderr.write(`${error.message}\n`);process.exitCode=error.validation?1:2;}}
 if(require.main===module)void main();
 module.exports={DISPATCHER_GRAMMAR,PHASE5_DISPATCHER_COMMANDS,DISPATCHER_HANDLERS,DISPATCHER_METADATA,

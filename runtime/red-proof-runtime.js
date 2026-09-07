@@ -44,10 +44,10 @@ function lockedPlan(planCapability,plan){
   transaction.revalidateSessionFile(planCapability);
   let current;try{current=JSON.parse(transaction.readSessionFile(planCapability));}catch{fail('red-plan-json');}
   if(canonical(current)!==canonical(plan))fail('red-plan-changed');
-  let authority;try{authority=planRuntime.compileImmutablePlanAuthorityV2(current);}
+  let authority;try{authority=planRuntime.compileImmutablePlanAuthority(current);}
   catch{fail('red-plan-authority');}
   if(authority.plan_authority_sha256!==current.plan_authority_sha256||
-      current.contract_binding?.mode!=='strict-spec')fail('red-plan-authority');
+      !['strict-spec','execution-spec'].includes(current.contract_binding?.mode))fail('red-plan-authority');
   return current;
 }
 async function acceptedFailingWrite({stateCapability,plan,sliceId,fields}){

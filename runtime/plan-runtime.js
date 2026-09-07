@@ -41,8 +41,9 @@ function parseStoredObject(value, code) {
   fail(code);
 }
 
-function compilePlanProjectionV1({planMarkdown, specContract, sliceRiskState} = {}) {
+function compilePlanProjectionV1({planMarkdown, specContract, sliceRiskState, derivationContext} = {}) {
   if (typeof planMarkdown !== 'string' || !planMarkdown.trim()) fail('plan-source');
+  if(/^## Execution Plan\s*$/m.test(planMarkdown))return compilePlanProjectionV3({planMarkdown,specContract,sliceRiskState,derivationContext});
   const contractRuntime = require('./contract-runtime.js');
   const specResult = contractRuntime.validateSpecContract(specContract, {riskClass:specContract?.risk_class});
   if (!specResult.pass) fail('plan-spec-contract', specResult.errors.map((row)=>row.code).join(','));
@@ -84,6 +85,36 @@ function compilePlanProjectionV1({planMarkdown, specContract, sliceRiskState} = 
   return parsed.capability_facts?{...projection,...compileImmutablePlanAuthorityV2(projection)}:projection;
 }
 
+function compilePlanProjectionV3({planMarkdown,specContract,sliceRiskState,derivationContext}={}) {
+  if(typeof planMarkdown!=='string'||Buffer.byteLength(planMarkdown)>4194304)fail('plan-source');
+  const sections=[...planMarkdown.matchAll(/^## Execution Plan\s*$([\s\S]*?)(?=^## |$(?![\s\S]))/gm)];
+  if(sections.length!==1)fail('execution-plan-source-section');
+  const blocks=[...sections[0][1].matchAll(/^```json\s*\n([\s\S]*?)^```\s*$/gm)];
+  if(blocks.length!==1)fail('execution-plan-source-json');
+  let source;try{source=JSON.parse(blocks[0][1]);}catch{fail('execution-plan-source-json');}
+  if(Object.hasOwn(source,'plan_authority_sha256')||Object.hasOwn(source,'plan_projection_sha256')||
+      Object.hasOwn(source.contract_binding||{},'source_plan_sha256'))fail('execution-plan-source-derived');
+  if(derivationContext)source=require('./plan-source-runtime.js').deriveSource(source,{...derivationContext,specContract}).source;
+  const projection=require('./execution-contract-runtime.js').validateExecutionPlanV3({...source,
+    contract_binding:{...source.contract_binding,source_plan_sha256:sha256(Buffer.from(planMarkdown))}});
+  if(specContract){
+    const contracts=require('./contract-runtime.js');const result=contracts.validateSpecContract(specContract,{riskClass:specContract.risk_class});
+    if(!result.pass||projection.contract_binding.spec_contract.spec_id!==specContract.spec_id||
+      projection.contract_binding.spec_contract.spec_sha256!==contracts.specContractDigest(specContract))fail('plan-spec-contract');
+    for(const slice of projection.slices)for(const [key,index]of [['requirements','requirements'],['invariants','invariants'],['failure_modes','failureModes']])
+      if(slice.contract[key].some(id=>!result.index[index].has(id)))fail('plan-spec-execution');
+    const gateCatalog=require('./verification-gate-catalog.js').CATALOG_V3;
+    const declaredGates=[...(specContract.requirements||[]),...(specContract.failure_matrix||[])].flatMap(r=>r.evidence_gate_ids||[]);
+    declaredGates.push(...(specContract.negative_tests||[]).map(r=>r.gate_id));
+    if(declaredGates.some(id=>!Object.hasOwn(gateCatalog,id)))fail('plan-spec-gate');
+    const covered=new Set(projection.slices.flatMap(s=>s.contract.requirements));
+    if([...result.index.requirements].some(id=>!covered.has(id)))fail('plan-spec-execution');
+  }
+  if(sliceRiskState){const risk=parseStoredObject(sliceRiskState,'plan-slice-risk');
+    for(const slice of projection.slices)if(canonicalJson(risk[slice.id])!==canonicalJson(slice.contract.risk))fail('plan-slice-risk');}
+  return projection;
+}
+
 function publishPlanProjectionV1({planCapability, projection} = {}) {
   if (!planCapability || !projection) fail('plan-publish-input');
   const checked = validatePlanScopeV1(projection);
@@ -121,6 +152,8 @@ function validatePaths(values, label) {
 }
 
 function validatePlanScopeV1(input) {
+  if(input?.schema_version===3)return require('./execution-contract-runtime.js').validateExecutionPlanV3(input);
+  if(input?.contract_binding?.mode==='execution-spec'||Object.hasOwn(input||{},'execution_policy')||input?.slices?.some(s=>Object.hasOwn(s||{},'execution_basis')))fail('execution-legacy-injection');
   if (!input || ![1,2].includes(input.schema_version) || !Array.isArray(input.slices) || !input.slices.length) {
     fail('plan-scope-schema', 'plan scope must contain version-1 slices');
   }
@@ -299,5 +332,9 @@ module.exports = {
   implementProgressComplete,
   compilePlanProjectionV1,
   compileImmutablePlanAuthorityV2,
+  compilePlanProjectionV3,
+  compileImmutablePlanAuthority: (...args)=>require('./execution-contract-runtime.js').compileImmutablePlanAuthority(...args),
+  resolvePlanExecution: (...args)=>require('./execution-contract-runtime.js').resolvePlanExecution(...args),
+  receiptStorePaths: (...args)=>require('./execution-contract-runtime.js').receiptStorePaths(...args),
   publishPlanProjectionV1,
 };

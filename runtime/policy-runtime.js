@@ -45,7 +45,8 @@ function exactKeys(value,keys){return value&&typeof value==='object'&&!Array.isA
 function maxTier(a,b){return TIERS.indexOf(a)>=TIERS.indexOf(b)?a:b;}
 
 function compileMethodologyAuthority({riskProfile,difficulty=null,mode='adaptive',
-  floorBaseline={}}={}){
+  floorBaseline={},executionBasis}={}){
+  if(executionBasis!==undefined&&executionBasis!=='per-slice-v1')throw Object.assign(new Error('[execution-policy] unsupported basis'),{code:'execution-policy'});
   const cls=riskProfile&&CLASS_ORDER.includes(riskProfile.class)?riskProfile.class:'medium';
   const profile=PROFILE_BY_CLASS[cls],recommended=TIER_CATALOG[profile];
   const floors={};
@@ -61,13 +62,15 @@ function compileMethodologyAuthority({riskProfile,difficulty=null,mode='adaptive
       efforts:{...EFFORT_CATALOG[profile]}},
     review_policy:REVIEW_POLICY[profile],
     verification_policy:VERIFICATION_POLICY[profile],floors_effective:floors};
+  if(executionBasis!==undefined)authority.execution_basis=executionBasis;
   authority.policy_sha256=digest(authority);return authority;
 }
 
 function validateMethodologyAuthority(value){
   const keys=['schema_version','authority','mode','risk_class','profile','difficulty',
     'role_routing','review_policy','verification_policy','floors_effective','policy_sha256'];
-  const valid=exactKeys(value,keys)&&value.schema_version===1&&
+  if(Object.hasOwn(value||{},'execution_basis'))keys.push('execution_basis');
+  const valid=exactKeys(value,keys)&&(!Object.hasOwn(value,'execution_basis')||value.execution_basis==='per-slice-v1')&&value.schema_version===1&&
     value.authority==='methodology-policy-v1'&&['adaptive','shadow'].includes(value.mode)&&
     CLASS_ORDER.includes(value.risk_class)&&value.profile===PROFILE_BY_CLASS[value.risk_class]&&
     exactKeys(value.role_routing,['tiers','efforts'])&&

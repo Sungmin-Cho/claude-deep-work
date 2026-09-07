@@ -531,7 +531,7 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
   if(!_locksHeld){
     const workFields=transaction.readState(stateCapability);
     if(typeof workFields.work_dir!=='string')fail('functional-completion-state');
-    const receiptPath=path.join(root,...workFields.work_dir.split('/'),'receipts',
+    const receiptPath=path.join(root,...planRuntime.receiptStorePaths(workFields,plan).internalDir.split('/'),
       `${sliceId}.json`);
     const targets=buildFunctionalReceiptTargetLocks({root,targets:
       [planCapability.path,receiptPath],rank:transaction.RANKS.target,
@@ -551,13 +551,13 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
   let current;try{current=JSON.parse(transaction.readSessionFile(planCapability));}
   catch{fail('functional-completion-plan');}
   if(canonicalJson(current)!==canonicalJson(plan)||
-      current.contract_binding?.mode!=='strict-spec')
+      !['strict-spec','execution-spec'].includes(current.contract_binding?.mode))
     fail('functional-completion-plan');
-  const authority=planRuntime.compileImmutablePlanAuthorityV2(current);
+  const authority=planRuntime.compileImmutablePlanAuthority(current);
   if(authority.plan_authority_sha256!==current.plan_authority_sha256)
     fail('functional-completion-plan');
   const target=current.slices?.find((row)=>row.id===sliceId);
-  if(!target||target.slice_kind!=='functional')fail('functional-completion-slice');
+  if(!target||target.slice_kind!=='functional'||current.schema_version===3&&target.execution_basis!=='strict-tdd-v2')fail('functional-completion-slice');
   const stateText=fs.readFileSync(stateCapability.path,'utf8');
   const fields=frontmatter.parseFrontmatter(stateText).fields;
   const recoveryGeneration=recoveryGenerationFromFields(fields);
@@ -612,7 +612,7 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
   const completed=await journal.resumeOperation({projectCapability:project,
     operationId,sessionId:sid,kind:'functional-slice-complete-v2'})
     .catch((error)=>{if(error.code==='operation-not-found')return null;throw error;});
-  const receiptRelative=`.deep-work/${sid}/receipts/${sliceId}.json`;
+  const receiptRelative=`${planRuntime.receiptStorePaths(fields,current).internalDir}/${sliceId}.json`;
   const receiptPath=path.join(root,...receiptRelative.split('/'));
   if(completed?.stage==='completed-ledger'){
     const storedRaw=readCanonical(receiptPath,
@@ -630,8 +630,8 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
       fail('functional-completion-ledger');
     const result=validateFunctionalCompletionLedger(completed,{sessionId:sid,
       sliceId,receiptRelative,receipt,code:'functional-completion-ledger'});
-    return{...result,operation_id:operationId,operation_receipt:completed,
-      adopted:true};
+    const publication=current.schema_version===3?await require('./completion-receipt-runtime.js').publishSliceM3({stateCapability,planCapability,plan:current,sliceId,seam}):null;
+    return{...result,operation_id:operationId,operation_receipt:completed,adopted:true,...(publication?{publication}:{})};
   }
   const preconditions={session_id:sid,slice_id:sliceId,
     plan_authority_sha256:current.plan_authority_sha256,
@@ -682,7 +682,7 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
   await journal.recordOperationStage(operation,'receipt-published',{owned:{
     receiptPath:receiptRelative,receiptSha256:receipt.receipt_sha256}});
   const nextPlan=structuredClone(current);
-  nextPlan.slices.find((row)=>row.id===sliceId).checked=true;
+  if(current.schema_version!==3)nextPlan.slices.find((row)=>row.id===sliceId).checked=true;
   const planBytes=Buffer.from(canonicalJson(nextPlan));
   if(!transaction.readSessionFile(planCapability).equals(planBytes)){
     seam?.('before-plan-write',{operationId});
@@ -692,8 +692,8 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
   const currentState=fs.readFileSync(stateCapability.path,'utf8');
   const currentFields=frontmatter.parseFrontmatter(currentState).fields;
   const afterState=frontmatter.updateFrontmatterText(currentState,{
-    active_slice:null,tdd_state:'PENDING',accepted_write_operation_id:null,
-    accepted_write_receipt_sha256:null,accepted_write_class:null,
+    active_slice:current.schema_version===3?currentFields.active_slice:null,tdd_state:current.schema_version===3?currentFields.tdd_state:'PENDING',accepted_write_operation_id:current.schema_version===3?currentFields.accepted_write_operation_id:null,
+    accepted_write_receipt_sha256:current.schema_version===3?currentFields.accepted_write_receipt_sha256:null,accepted_write_class:current.schema_version===3?currentFields.accepted_write_class:null,
     functional_receipt_sha256:receipt.receipt_sha256,
     functional_completion_operation_id:operationId,
     functional_receipt_bindings_json:serializeFunctionalReceiptBindings({
@@ -712,8 +712,8 @@ async function publishFunctionalSliceReceiptV2({stateCapability,planCapability,p
     receipt_sha256:receipt.receipt_sha256,
     post_state_sha256:sha256(Buffer.from(afterState))};
   const operationReceipt=await journal.completeOperation(operation,result);
-  return{...result,operation_id:operationId,operation_receipt:operationReceipt,
-    adopted:false};
+  const publication=current.schema_version===3?await require('./completion-receipt-runtime.js').publishSliceM3({stateCapability,planCapability,plan:nextPlan,sliceId,seam}):null;
+  return{...result,operation_id:operationId,operation_receipt:operationReceipt,adopted:false,...(publication?{publication}:{})};
 }
 
 module.exports={validateVerificationResultRefV1,validateSensorResultRefV1,

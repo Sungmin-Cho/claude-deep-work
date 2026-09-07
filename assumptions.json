@@ -6,11 +6,23 @@
       "component": "phase-guard.sh",
       "hypothesis": "Blocking code edits during non-implement phases improves final code quality",
       "evidence_signals": {
-        "supporting": ["test_pass_rate_with_guard > test_pass_rate_without", "quality_score_with_guard > quality_score_without"],
-        "weakening": ["high_override_rate", "zero_rework_after_override", "model_passes_all_tests_first_try", "quality_score_without_guard >= quality_score_with_guard"]
+        "supporting": [
+          "test_pass_rate_with_guard > test_pass_rate_without",
+          "quality_score_with_guard > quality_score_without"
+        ],
+        "weakening": [
+          "high_override_rate",
+          "zero_rework_after_override",
+          "model_passes_all_tests_first_try",
+          "quality_score_without_guard >= quality_score_with_guard"
+        ]
       },
       "current_enforcement": "block",
-      "adjustable_levels": ["block", "warn", "off"],
+      "adjustable_levels": [
+        "block",
+        "warn",
+        "off"
+      ],
       "minimum_sessions_for_evaluation": 5
     },
     {
@@ -18,11 +30,25 @@
       "component": "phase-guard-core.js",
       "hypothesis": "Requiring RED-GREEN-REFACTOR cycle produces fewer bugs than implement-then-test",
       "evidence_signals": {
-        "supporting": ["bugs_caught_in_red_phase > 0", "rework_count_strict < rework_count_relaxed", "quality_score_strict > quality_score_relaxed"],
-        "weakening": ["override_rate > 50%", "zero_bugs_caught_in_red", "relaxed_mode_same_quality", "quality_score_relaxed >= quality_score_strict"]
+        "supporting": [
+          "bugs_caught_in_red_phase > 0",
+          "rework_count_strict < rework_count_relaxed",
+          "quality_score_strict > quality_score_relaxed"
+        ],
+        "weakening": [
+          "override_rate > 50%",
+          "zero_bugs_caught_in_red",
+          "relaxed_mode_same_quality",
+          "quality_score_relaxed >= quality_score_strict"
+        ]
       },
       "current_enforcement": "strict",
-      "adjustable_levels": ["strict", "coaching", "relaxed", "off"],
+      "adjustable_levels": [
+        "strict",
+        "coaching",
+        "relaxed",
+        "off"
+      ],
       "minimum_sessions_for_evaluation": 10,
       "_rationale_for_10": "TDD has higher variance (strict/coaching/relaxed/spike modes) — needs more data points for meaningful comparison"
     },
@@ -31,11 +57,22 @@
       "component": "deep-research.md",
       "hypothesis": "Exhaustive codebase analysis before planning prevents architectural mistakes",
       "evidence_signals": {
-        "supporting": ["plan_review_score_with_research > plan_review_score_without", "quality_score_with_research > quality_score_without"],
-        "weakening": ["research_findings_not_referenced_in_plan", "plan_score_high_despite_shallow_research", "quality_score_skip_research >= quality_score_with_research"]
+        "supporting": [
+          "plan_review_score_with_research > plan_review_score_without",
+          "quality_score_with_research > quality_score_without"
+        ],
+        "weakening": [
+          "research_findings_not_referenced_in_plan",
+          "plan_score_high_despite_shallow_research",
+          "quality_score_skip_research >= quality_score_with_research"
+        ]
       },
       "current_enforcement": "required",
-      "adjustable_levels": ["required", "recommended", "optional"],
+      "adjustable_levels": [
+        "required",
+        "recommended",
+        "optional"
+      ],
       "minimum_sessions_for_evaluation": 5
     },
     {
@@ -43,11 +80,23 @@
       "component": "review-gate.md",
       "hypothesis": "Multi-model adversarial review catches defects that single-model review misses",
       "evidence_signals": {
-        "supporting": ["cross_model_found_unique_issues > 0", "plan_revision_after_cross_review", "quality_score_with_cross_review > quality_score_without"],
-        "weakening": ["cross_model_agrees_with_claude_always", "zero_actionable_findings", "quality_score_without_cross_review >= quality_score_with_cross_review"]
+        "supporting": [
+          "cross_model_found_unique_issues > 0",
+          "plan_revision_after_cross_review",
+          "quality_score_with_cross_review > quality_score_without"
+        ],
+        "weakening": [
+          "cross_model_agrees_with_claude_always",
+          "zero_actionable_findings",
+          "quality_score_without_cross_review >= quality_score_with_cross_review"
+        ]
       },
       "current_enforcement": "optional",
-      "adjustable_levels": ["required", "optional", "off"],
+      "adjustable_levels": [
+        "required",
+        "optional",
+        "off"
+      ],
       "minimum_sessions_for_evaluation": 5
     },
     {
@@ -55,11 +104,22 @@
       "component": "file-tracker.sh",
       "hypothesis": "Structured JSON receipts provide verification evidence that model self-reports cannot",
       "evidence_signals": {
-        "supporting": ["receipt_data_contradicts_model_claim", "test_phase_catches_receipt_gap", "quality_score_with_receipts > quality_score_without"],
-        "weakening": ["receipts_always_match_model_claims", "receipt_data_never_referenced_in_test_phase", "quality_score_without_receipts >= quality_score_with_receipts"]
+        "supporting": [
+          "receipt_data_contradicts_model_claim",
+          "test_phase_catches_receipt_gap",
+          "quality_score_with_receipts > quality_score_without"
+        ],
+        "weakening": [
+          "receipts_always_match_model_claims",
+          "receipt_data_never_referenced_in_test_phase",
+          "quality_score_without_receipts >= quality_score_with_receipts"
+        ]
       },
       "current_enforcement": "required",
-      "adjustable_levels": ["required", "optional"],
+      "adjustable_levels": [
+        "required",
+        "optional"
+      ],
       "minimum_sessions_for_evaluation": 10,
       "_rationale_for_10": "Receipt utility is binary (used or not) — needs more sessions to distinguish signal from noise"
     },
@@ -68,12 +128,30 @@
       "component": "deep-plan.md, deep-test.md",
       "hypothesis": "Current evaluator model catches issues effectively relative to its cost",
       "evidence_signals": {
-        "supporting": ["evaluator_found_real_issues", "no_missed_issues_in_test_phase", "quality_score_higher_with_stronger_evaluator"],
-        "weakening": ["evaluator_zero_findings_consistently", "missed_issues_caught_in_test", "quality_score_same_regardless_of_evaluator"]
+        "supporting": [
+          "evaluator_found_real_issues",
+          "no_missed_issues_in_test_phase",
+          "quality_score_higher_with_stronger_evaluator"
+        ],
+        "weakening": [
+          "evaluator_zero_findings_consistently",
+          "missed_issues_caught_in_test",
+          "quality_score_same_regardless_of_evaluator"
+        ]
       },
       "current_enforcement": "sonnet",
-      "adjustable_levels": ["opus", "sonnet", "haiku"],
+      "adjustable_levels": [
+        "opus",
+        "sonnet",
+        "haiku"
+      ],
       "minimum_sessions_for_evaluation": 5
     }
-  ]
+  ],
+  "evidence_policy": {
+    "comparative_claims": "matched-task-model-environment-metric-v2",
+    "unmapped_signals": "visible-unavailable",
+    "automatic_changes": "comparative-evidence-required",
+    "statistical_unit": "one-independent-session"
+  }
 }

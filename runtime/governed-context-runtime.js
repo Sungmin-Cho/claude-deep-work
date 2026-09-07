@@ -244,7 +244,7 @@ function readBoundedJson(file,code,max=4_194_304){
   return value;
 }
 function authenticateEmbeddedFunctionalReceipts({checked,plan,workDir,
-  project,sessionId,fields}={}){
+  project,sessionId,fields,stateCapability}={}){
   const expected=(plan.slices||[]).filter((row)=>row.slice_kind==='functional')
     .map((row)=>row.id).sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
   const refs=checked?.functional_receipts;
@@ -253,6 +253,7 @@ function authenticateEmbeddedFunctionalReceipts({checked,plan,workDir,
   const runtime=require('./functional-receipt-runtime.js');
   for(const ref of refs){
     const slice=plan.slices.find((row)=>row.id===ref.slice_id);
+    if(plan.schema_version===3){const authenticated=require('./completion-receipt-runtime.js').authenticateSlicePublication({stateCapability,plan,sliceId:ref.slice_id});if(!slice.checked||authenticated.receipt.receipt_sha256!==ref.receipt_sha256||authenticated.ref.producer_operation_id!==ref.completion_operation_id)fail('governed-release-functional');continue;}
     const relative=`.deep-work/${sessionId}/receipts/${ref.slice_id}.json`;
     const file=path.join(workDir,'receipts',`${ref.slice_id}.json`);
     const receipt=runtime.validateFunctionalSliceReceiptV2(
@@ -292,6 +293,15 @@ function receiptProjection(workDir,plan,replanActive,stateCapability,fields){
   const project=transaction.projectCapabilityFor(stateCapability);
   const sessionId=transaction.sessionIdFromState(stateCapability);
   for(const slice of plan.slices||[]){
+    if(plan.schema_version===3){
+      let status='pending',receiptSha256=null;
+      const floor=require('./functional-receipt-runtime.js').recoveryInvalidationFloor({projectCapability:project,sessionId,sliceId:slice.id});
+      if(!slice.checked&&floor>0){incomplete=true;rows.push({slice_id:slice.id,slice_kind:slice.slice_kind,status:'invalidated',receipt_sha256:null});continue;}
+      try{const authenticated=require('./completion-receipt-runtime.js').authenticateSlicePublication({stateCapability,plan,sliceId:slice.id});receiptSha256=authenticated.receipt.receipt_sha256;status=slice.checked===true?'complete':'pending';if(status!=='complete')incomplete=true;}
+      catch(error){if(error.code==='ENOENT'||error.code==='completion-producer'){status='pending';incomplete=true;}else{status='unknown';unknown=true;}}
+      if(replanActive&&status!=='pending')status='invalidated';
+      rows.push({slice_id:slice.id,slice_kind:slice.slice_kind,status,receipt_sha256:receiptSha256});continue;
+    }
     const file=path.join(workDir,'receipts',`${slice.id}.json`);
     let status='pending',receiptSha256=null;
     if(fs.existsSync(file)){
@@ -375,7 +385,7 @@ function receiptProjection(workDir,plan,replanActive,stateCapability,fields){
           }
           const checked=releaseRuntime.normalizeReleaseVerificationReceipt(value);
           authenticateEmbeddedFunctionalReceipts({checked,plan,workDir,
-            project,sessionId,fields});
+            project,sessionId,fields,stateCapability});
           const expectedOperationId=releaseRuntime.releaseVerificationOperationId({
             sessionId,sliceId:slice.id,current:plan,fields,
             gateResults:checked.gate_results,
@@ -437,7 +447,7 @@ function loadGovernedContext({stateCapability}={}){
   if(fs.existsSync(planPath)){
     try{
       plan=readBoundedCanonical(planPath,'governed-plan');
-      const compiled=require('./plan-runtime.js').compileImmutablePlanAuthorityV2(plan);
+      const compiled=require('./plan-runtime.js').compileImmutablePlanAuthority(plan);
       if(compiled.plan_authority_sha256!==plan.plan_authority_sha256)
         fail('governed-plan-authority');
       planIdentity={status:activeReplan?'invalidated':'current',
@@ -553,7 +563,7 @@ function loadGovernedContext({stateCapability}={}){
             `invalid-acceptance:${id}`)])};
     }catch{warnings.push('projection-input-missing');}
   }else warnings.push('projection-input-missing');
-  const findingLoaded=awaitFindingProjection({stateCapability,plan,fields,workDir});
+  const findingLoaded=awaitFindingProjection({stateCapability,plan,fields,workDir,verificationPlan});
   const findings=findingLoaded.projection;
   warnings.push(...findingLoaded.warnings);
   const receipts=plan?receiptProjection(workDir,plan,activeReplan,
@@ -577,12 +587,15 @@ function loadGovernedContext({stateCapability}={}){
 }
 
 function awaitFindingProjection(input){
-  return require('./finding-ref-runtime.js').loadFindingProjection(input);
+  let legacy;try{legacy=require('./finding-ref-runtime.js').loadFindingProjection(input);}
+  catch{legacy={projection:{status:'unknown',points:[]},warnings:['finding-ref-invalid']};}
+  return input.plan?.schema_version===3?require('./global-findings-runtime.js').loadV3FindingProjection({...input,legacy}):legacy;
 }
 function journalDigest(value){
   return require('./operation-journal.js').sha256(canonicalJson(value));
 }
 function validateSessionAuthority({stateCapability}={}){
+  const early=require('./workflow-runtime.js').earlySessionAuthority({stateCapability});if(early)return early;
   const loaded=loadGovernedContext({stateCapability});
   const fields=require('./frontmatter.js').parseFrontmatter(
     fs.readFileSync(stateCapability.path,'utf8')).fields;
@@ -591,6 +604,7 @@ function validateSessionAuthority({stateCapability}={}){
   const major=Number((created.match(/^(\d+)\./)||[])[1]||0);
   if(major<7)return{governed:false,status:'legacy',
     projection_sha256:loaded.sha256};
+  if(loaded.plan?.schema_version===3&&fields.replan_required!==true)require('./workflow-runtime.js').loadExecutionContext({stateCapability});
   const replanActive=loaded.projection.replan.status==='active'||
     loaded.projection.replan.status==='completing';
   if(loaded.projection.warnings.includes('authority-drift')||

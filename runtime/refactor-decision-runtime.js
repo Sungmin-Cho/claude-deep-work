@@ -78,9 +78,9 @@ function loadPlan(planCapability,plan){
   let current;try{current=JSON.parse(transaction.readSessionFile(planCapability));}
   catch{fail('no-refactor-decision-plan');}
   if(canonical(current)!==canonical(plan)||
-      current.contract_binding?.mode!=='strict-spec')
+      !['strict-spec','execution-spec'].includes(current.contract_binding?.mode))
     fail('no-refactor-decision-plan');
-  const authority=planRuntime.compileImmutablePlanAuthorityV2(current);
+  const authority=planRuntime.compileImmutablePlanAuthority(current);
   if(authority.plan_authority_sha256!==current.plan_authority_sha256)
     fail('no-refactor-decision-plan');
   return current;

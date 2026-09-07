@@ -345,15 +345,15 @@ function parseInlineObject(raw, path) {
   return out;
 }
 
-function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplete=false,
+function validateCapabilityFactsV1(value,{requirementIds,sliceIds,requireComplete=false,allowEmpty=false,
   expectedBackwardCompat,expectedMigration,expectedRequirementIds,expectedSliceIds}={}) {
   const keys=['schema_version','authority','destructive','external_action','has_backward_compat','has_migration',
     'host_dependent','source_requirement_ids','source_slice_ids','facts_sha256'];
   if(!exactKeyBoolean(value,keys)||value.schema_version!==1||value.authority!=='reviewed-plan'||
       ['destructive','external_action','has_backward_compat','has_migration','host_dependent']
         .some((key)=>typeof value[key]!=='boolean')||value.destructive||value.external_action||
-      !Array.isArray(value.source_requirement_ids)||!value.source_requirement_ids.length||
-      !Array.isArray(value.source_slice_ids)||!value.source_slice_ids.length||
+      !Array.isArray(value.source_requirement_ids)||!allowEmpty&&!value.source_requirement_ids.length||
+      !Array.isArray(value.source_slice_ids)||!allowEmpty&&!value.source_slice_ids.length||
       canonicalJson(value.source_requirement_ids)!==canonicalJson(byteSort(value.source_requirement_ids))||
       canonicalJson(value.source_slice_ids)!==canonicalJson(byteSort(value.source_slice_ids))||
       new Set(value.source_requirement_ids).size!==value.source_requirement_ids.length||
