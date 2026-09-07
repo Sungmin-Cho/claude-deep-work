@@ -44,6 +44,7 @@ const rows={
 
 const CATALOG=Object.freeze(Object.fromEntries(Object.entries(rows).map(([id,[adapter,enforcement_point,evidence_required]])=>
   [id,Object.freeze({id,kind:adapter,adapter,enforcement_point,evidence_required})])));
+const CATALOG_V3=Object.freeze({...CATALOG,...Object.fromEntries(['GATE-outcome-verification','GATE-outcome-oracle-controls'].map(id=>[id,Object.freeze({id,kind:'outcome',adapter:'outcome',enforcement_point:'test',evidence_required:true})]))});
 const CATALOG_IDS=Object.freeze(ordered(Object.keys(CATALOG)));
 const LEAN=['GATE-receipt-completeness','GATE-plan-alignment','GATE-tdd-red','GATE-tdd-green',
   'GATE-targeted-tests','GATE-impacted-lint-typecheck','GATE-single-review'];
@@ -93,8 +94,31 @@ function validateCatalogRows({profile,capabilityFacts,requirementIds,failureMode
     errors.push({code:'verification-plan-evidence-required'});
   return{pass:errors.length===0,errors,expected,required,evidenceRequired};}
 
-function recordKindForAdapter(adapter){if(['fault','recovery','host-smoke'].includes(adapter))return'adapter';
-  if(['command','contract','receipt','review','sensor','health'].includes(adapter))return adapter;return null;}
+// The historical catalog and rows above remain byte-for-byte selected for V1/V2.
+function expectedExecutionGateRows({profile,capabilityFacts,sliceContracts}={}) {
+  const slices=Object.entries(sliceContracts||{});
+  const req=ordered(slices.flatMap(([,s])=>s.requirement_ids));
+  const fm=ordered(slices.flatMap(([,s])=>s.failure_mode_ids));
+  const base=expectedGateRows({profile,capabilityFacts,requirementIds:req,failureModeIds:fm});
+  const idsFor=basis=>slices.filter(([,s])=>s.execution_basis===basis).map(([id])=>id);
+  const strict=idsFor('strict-tdd-v2'),outcome=idsFor('outcome-v1');
+  const select=(ids,key)=>ordered(slices.filter(([id])=>ids.includes(id)).flatMap(([,s])=>s[key]));
+  const rows=base.map(row=>{
+    const tdd=['GATE-tdd-red','GATE-tdd-green'].includes(row.id);
+    return {...row,slice_ids:ordered(tdd?strict:slices.map(([id])=>id)),
+      ...(tdd?{requirement_ids:select(strict,'requirement_ids'),
+        disposition:strict.length?'required':'not-applicable',
+        reason:strict.length?'strict slice basis requires TDD evidence':'no strict slices'}:{})};
+  });
+  for(const id of ['GATE-outcome-verification','GATE-outcome-oracle-controls'])rows.push({...CATALOG_V3[id],
+    slice_ids:ordered(outcome),disposition:outcome.length?'required':'not-applicable',
+    requirement_ids:select(outcome,'requirement_ids'),failure_mode_ids:select(outcome,'failure_mode_ids'),
+    reason:outcome.length?'outcome slice basis requires positive and counterexample evidence':'no outcome slices'});
+  return rows.sort((a,b)=>Buffer.compare(Buffer.from(a.id),Buffer.from(b.id)));
+}
 
-module.exports={CATALOG,CATALOG_IDS,REQUIRED_BY_PROFILE,CAPABILITY_KEYS,normalizeCapabilityFacts,
-  gateRequirementFor,expectedGateRows,validateCatalogRows,recordKindForAdapter,ordered};
+function recordKindForAdapter(adapter){if(['fault','recovery','host-smoke'].includes(adapter))return'adapter';
+  if(['command','contract','receipt','review','sensor','health','outcome'].includes(adapter))return adapter;return null;}
+
+module.exports={CATALOG,CATALOG_V3,CATALOG_IDS,REQUIRED_BY_PROFILE,CAPABILITY_KEYS,normalizeCapabilityFacts,
+  gateRequirementFor,expectedGateRows,expectedExecutionGateRows,validateCatalogRows,recordKindForAdapter,ordered};

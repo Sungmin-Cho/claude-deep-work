@@ -1,80 +1,23 @@
 ---
 name: deep-spec
-description: "Author the executable spec contract for a deep-work session. Invoked through /deep-spec, $deep-work:deep-spec, or orchestrator dispatch."
+description: "Use when authoring or reviewing a deep-work executable goal contract, /deep-spec or $deep-work:deep-spec."
 user-invocable: true
 ---
 
-# deep-spec
+# Author the executable goal contract
 
-The `medium|high|critical` risk classes make this workflow mandatory. Low risk
-may opt in.
+Resolve the plugin root to a literal absolute path. Before reading or running any plugin file, resolve its real path and require containment in that root. All `${CLAUDE_PLUGIN_ROOT}` paths below mean that verified root.
 
-> [!IMPORTANT]
-> Do not echo this skill body or its template. Perform the workflow and report
-> only the gate result, artifact path, and actionable blockers.
+Resolve `--session=ID` from `$ARGUMENTS`; otherwise run `node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" session context`. Read the returned state path and its `work_dir`; never guess a work directory or change the active pointer to another session. Validate with `session authority validate --state "$STATE_FILE"`. Use the runtime's phase-aware result: a legitimate pre-plan session does not require a plan that has not been created.
 
-## Section 1: Load authoritative state
+Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/runtime-execution-spine.md`. The runtime owns phase, approval, write, review and receipt mutations. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js" --help` for exact current route arguments; consume returned IDs/digests rather than inventing them.
 
-1. Resolve the session from `--session=ID`, otherwise from the active entry in
-   `.claude/deep-work-sessions.json`.
-2. Read `.claude/deep-work.{SESSION_ID}.md` and resolve `$WORK_DIR` from its
-   `work_dir` field (default `deep-work`). Read `$WORK_DIR/research.md`.
-3. Require canonical `current_phase: spec`, or accept the legacy
-   `current_phase: research` plus `subphase: spec` representation. New
-   transitions always persist the canonical explicit phase.
-4. Decode the authoritative scalar `risk_profile_json` and
-   `methodology_policy_json`. `medium|high|critical` is mandatory and any
-   missing/corrupt admission input fails closed. A `low` session may opt out.
-5. On resume, read an existing `$WORK_DIR/spec.md` and the state fields
-   `spec_approved_hash`, `spec_contract_json`, and `spec_gate_result_json`.
-   Never trust those summaries until they match the current spec.md bytes.
+Read the task, relevant research and `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/spec-template.md`. Write `$WORK_DIR/spec.md` with concrete observable requirements and acceptance conditions. Low risk may use empty inapplicable invariant/failure/negative-test arrays; do not manufacture a failing test for a documentation edit. Medium+ and High/Critical retain their validated coverage requirements.
 
-Do not implement source code and do not create `requirements.json`,
-`failure-matrix.json`, or any other spec output.
+Choose evidence gates matching the planned basis: strict RED/GREEN for strict requirements, outcome positive/control gates for outcome requirements. Keep non-goals, compatibility and material unresolved questions explicit.
 
-## Section 2: Author and review the executable spec
+For the normal automated flow, draft plan.md alongside the Spec now. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/planning-guide.md` and its contained plan template. Omit mechanical metadata that the runtime derives from this Spec and current session. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/review-approval-workflow.md` and follow its combined Spec+Plan preview, independent review and approval sequence. Preview catches contract errors before spending a review call; it is not approval.
 
-Announce: "Spec 단계를 시작합니다. research.md를 실행 가능한 계약으로 고정합니다."
+Consume the runtime-produced approval ref with `phase spec approve --state "$STATE_FILE" --artifact "$WORK_DIR/spec.md" --at "$NOW" --approval-ref-json "$APPROVAL_REF"`. An exact unchanged combined review can also authorize the later Plan approval; do not run it twice. An explicitly selected human-gates policy requires actual exact artifact confirmation, never an invented declaration.
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/templates/spec-template.md` and write exactly one
-   `$WORK_DIR/spec.md`. Preserve the required heading order and exactly one
-   fenced `json spec-contract` block.
-2. Replace every template marker. An unresolved marker (`PENDING`, `TBD`,
-   `TODO`, `FIXME`, `PLACEHOLDER`, bracket placeholder) or an unresolved
-   blocking Open Question is a gate failure.
-3. Derive requirements, invariants, failure modes, negative tests, evidence
-   gates, compatibility, and non-goals from the approved research and explicit
-   user constraints. The JSON contract is normative; prose must not contradict
-   it.
-4. Run:
-
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/validate-spec-contract.js" --spec "$WORK_DIR/spec.md" --risk-class "$RISK_CLASS"`
-
-   Require exit 0 and one stdout JSON object with `pass:true`. Medium+ requires
-   contract requirement coverage `1`; High/Critical additionally requires a
-   non-empty failure matrix with coverage `1`.
-5. Submit `spec.md` through the existing document review workflow. Resolve all
-   blocking findings, rerun the validator after every edit, and obtain final
-   document approval for the exact current bytes.
-
-## Section 3: Fresh approval and return
-
-After validator PASS and document review approval:
-
-1. Compute SHA-256 over the current spec.md bytes. This whole-file digest is
-   `spec_approved_hash`; it is distinct from the canonical contract
-   `spec_sha256` returned by the validator.
-2. Request the runtime `phase spec approve` route with the current artifact
-   capability, `spec_approved_hash`, validated contract, and Spec Gate result.
-   The skill does not directly mutate state.
-3. If the current spec.md bytes differ from the reviewed bytes, reject the stale
-   approval, keep `current_phase: spec`, then repeat
-   validation and document review. Fail closed for Medium+.
-4. Return control to the orchestrator only after the runtime persists
-   `spec_completed_at`, `spec_approved_hash`, `spec_contract_json`, and
-   `spec_gate_result_json`. The Spec Exit Gate advances the explicit phase to
-   Plan. A legacy session clears `subphase` during its compatibility transition.
-
-On resume, a byte-identical approved artifact may re-display the gate result.
-Any edit invalidates approval. Plan-bound validation later rechecks the same
-whole-file freshness together with contract, risk, and plan binding digests.
+Call `phase continue --state "$STATE_FILE"` after approval under existing authorization. Report the artifact and any concrete unresolved goal decision.

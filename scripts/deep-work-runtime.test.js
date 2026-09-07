@@ -47,6 +47,16 @@ const { executeReviewProcess } = require('../runtime/dispatcher-routes.js');
 const { ROUTE_CONTRACTS } = require('./deep-work-route-contracts.js');
 
 const ROUTE_TIMESTAMP = '2026-07-13T00:00:00Z';
+// These six new routes deliberately receive non-authoritative fixtures. Their
+// exact domain rejections prove route invocation without authorizing a provider.
+const NEW_AUTHORITY_ROUTE_REJECTIONS = new Map([
+  ['artifact approval reopen','artifact-approval-reopen-version'],
+  ['artifact approval preview','artifact-approval-session-authority'],
+  ['artifact approval packet-publish','artifact-approval-session-authority'],
+  ['artifact approval review-run','outcome-ref-authority'],
+  ['artifact approval publish','outcome-ref-authority'],
+  ['evidence review-run','execution-plan-schema'],
+]);
 
 test('bootstrap routes expose closed dispatcher grammar and route-contract metadata',()=>{
   const rows=[
@@ -326,8 +336,16 @@ async function semanticFixture(entry, index) {
     bootstrapMarker:path.join(workDir,'bootstrap-marker.json'),
     bootstrapWriteReceipt:path.join(workDir,'bootstrap-write-receipt.json'),
     finding:path.join(workDir,'reviews','research-round1-findings.json'),
+    packet:path.join(workDir,'source-packet.json'),packetRef:path.join(workDir,'source-packet-ref.json'),
+    reviewer:path.join(workDir,'selected-reviewer.json'),
   };
   fs.writeFileSync(files.task, 'semantic route');
+  writeJson(files.packet, {fixture:'untrusted source packet'});
+  writeJson(files.packetRef, {path:path.relative(root,files.packet).split(path.sep).join('/'),
+    sha256:crypto.createHash('sha256').update(fs.readFileSync(files.packet)).digest('hex'),
+    producer_operation_id:`op-${'f'.repeat(64)}`});
+  writeJson(files.reviewer, {role:'semantic',tier:'standard',channel:'codex-cli',model:'main'});
+  if(entry.id==='evidence review-run')fs.writeFileSync(plan,canonicalJson(planValue));
   writeJson(files.defaults, {}); writeJson(files.profileJson, {}); writeJson(files.flags, {});
   writeJson(files.result, {result:'recorded',status:'completed'}); writeJson(files.affected, ['SLICE-001']);
   writeJson(files.assignment, {schema_version:1,clusters:[{id:'C1',slices:['SLICE-001']}]});
@@ -369,6 +387,7 @@ async function semanticFixture(entry, index) {
     await artifactRuntime.writeOwnedTemp({sessionCapability,operationId:created.operationId,purpose},bytes);
     temps.set(purpose, created.path); return created.path;
   }
+  if(entry.id.startsWith('session environment')){writeJson(path.join(root,'package.json'),{name:'fixture',version:'1.0.0'});writeJson(path.join(root,'package-lock.json'),{lockfileVersion:3,packages:{}});}
   return {root,session,state,workDir,receipts,plan,files,temp};
 }
 
@@ -376,6 +395,11 @@ async function semanticArgv(entry, fx) {
   const phase = entry.id === 'phase approve' ? 'research' : entry.id === 'phase review record' ? 'brainstorm'
     : entry.allowedPhases[0] === 'standalone' ? 'implement' : entry.allowedPhases[0];
   const values = {
+    phases:'spec,plan','packet-ref-json':fx.files.packetRef,
+    manager:'npm','prepared-digest':'a'.repeat(64),'target-version':'7.3.0',oracle:'ORACLE-001',
+    'request-json':fx.files.structural,'reviewer-json':NEW_AUTHORITY_ROUTE_REJECTIONS.has(entry.id)?fx.files.reviewer:fx.files.structural,'binding-json':fx.files.structural,
+    'positive-refs-json':fx.files.structural,'control-refs-json':fx.files.structural,'review-execution-refs-json':fx.files.structural,
+    'review-ref-json':fx.files.structural,'source-evidence-json':fx.files.structural,
     session:fx.session,parent:fx.session,base:'HEAD','paths-json':fx.files.changed,state:fx.state,
     purpose:entry.id === 'git stash publish' ? 'fork' : 'receipt-payload','temp-operation-id':`op-${'1'.repeat(64)}`,
     'expected-sha256':'a'.repeat(64),'project-root':fx.root,path:'src/a.js',at:ROUTE_TIMESTAMP,
@@ -485,7 +509,14 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['session cleanup remove',[5,10,20,30,40,50]],['session cache-clear',[10,70]],
     ['session initialize',[]],['session state migrate-schema',[50]],['session execution set',[50]],
     ['session state migrate-model-routing',[50]],['session recovery worktree',[5,10,50]],
-    ['session finalize',[10,20,30,40,50]],['phase begin',[10,20,50]],['phase complete',[10,20,50]],
+    ['session finalize',[10,20,30,40,50]],
+    ['session environment explain',[10,20,30,40,50]],['session environment prepare',[10,20,30,40,50]],
+    ['session park',[10,20,30,40,50]],['session restore',[10,20,30,40,50]],['session downgrade-check',[10,20,30,40,50]],
+    ['artifact approval reopen',[10,20,50]],['artifact approval preview',[]],
+    ['artifact approval packet-publish',[10,20,50]],['artifact approval review-run',[10,20,50]],
+    ['artifact approval publish',[10,20,50]],
+    ['phase continue',[10,20,50]],['review execution run',[10,20,50]],['verification outcome-explain',[10,20,50]],
+    ['verification outcome-run',[10,20,50]],['outcome source observe',[10,20,50]],['outcome review publish',[10,20,50]],['implement receipt-publish',[10,20,50]],['implement outcome-complete',[10,20,50]],['phase begin',[10,20,50]],['phase complete',[10,20,50]],
     ['phase approve',[10,20,50,70]],['phase spec enter',[10,20,50]],['phase spec approve',[10,20,50]],
     ['phase advance',[10,20,50]],['phase rerun',[10,20,50]],['phase invalidate-replan',[10,20,50]],
     ['replan discovery publish',[10,20,50,70]],['replan discovery dispatch',[10,20,50,70]],
@@ -513,7 +544,7 @@ test('all route lock ranks match the global repository to target hierarchy',()=>
     ['bootstrap failure-publish',[10,20,50,70]],['bootstrap abort',[10,20,50,70]],
     ['bootstrap finalize',[10,20,50,70]],['bootstrap first-red',[10,20,50,70]],
     ['bootstrap red-adopt',[10,20,50,70]],['bootstrap proof-publish',[10,20,50,70]],
-    ['evidence record contract',[10,20,50,70]],['evidence record review',[10,20,50,70]],
+    ['evidence review-run',[10,20,50]],['evidence review-binding',[10,20,50]],['evidence record review-executions',[10,20,50,70]],['evidence record completion',[10,20,50,70]],['evidence record contract',[10,20,50,70]],['evidence record review',[10,20,50,70]],
     ['evidence record receipt',[10,20,50,70]],
     ['test pass',[10,20,50,70]],['test retry',[10,20,50,70]],['test exhaust',[10,20,50,70]],
     ['mutation round begin',[10,20,50,70]],['mutation round end',[10,20,50,70]],
@@ -896,32 +927,39 @@ test('finish keep resumes result publication from its journal without rereading 
     fs.readFileSync(result.resultPath,'utf8'));assert.equal(payload.proof,'journal');assert.equal(payload.finish_outcome,'keep');
 });
 
-test('all 118 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
-  assert.equal(DISPATCHER_GRAMMAR.length, 118);
+test('all 140 grammar rows cross the parser and invoke their typed route semantics', async (t) => {
+  assert.equal(DISPATCHER_GRAMMAR.length, 140);
   const outcomes = [];
   for (let index = 0; index < DISPATCHER_GRAMMAR.length; index += 1) {
     const entry = DISPATCHER_GRAMMAR[index];
-    await t.test(entry.id, async () => {
+    await t.test(entry.id, async (routeTest) => {
       const fx = await semanticFixture(entry, index);
       const argv = await semanticArgv(entry, fx);
       assert.equal(parseDispatcher(argv).entry.id, entry.id);
+      const providerGuard=['artifact approval review-run','evidence review-run'].includes(entry.id)
+        ? routeTest.mock.method(require('../runtime/review-execution-runtime.js'),'runReviewExecution',()=>{
+          throw Object.assign(new Error('live provider forbidden in route inventory'),{code:'test-live-provider-forbidden'});
+        }) : null;
       try {
         const value = await dispatch(argv, {cwd:fx.root,stdin:'semantic stdin'});
         assert.notEqual(value, undefined);
+        assert.equal(NEW_AUTHORITY_ROUTE_REJECTIONS.has(entry.id),false,`${entry.id}: untrusted fixture was accepted`);
         outcomes.push({id:entry.id,status:'completed'});
       } catch (error) {
         assert.equal(typeof error.code, 'string', `${entry.id}: untyped error ${error.stack}`);
         assert.equal(error instanceof TypeError, false, `${entry.id}: ${error.stack}`);
         assert.equal(['ENOENT','ENOTDIR','EISDIR'].includes(error.code), false,
           `${entry.id}: stopped at an unprepared filesystem boundary: ${error.stack}`);
+        if(NEW_AUTHORITY_ROUTE_REJECTIONS.has(entry.id))assert.equal(error.code,NEW_AUTHORITY_ROUTE_REJECTIONS.get(entry.id),entry.id);
         outcomes.push({id:entry.id,status:'typed-rejection',code:error.code});
       } finally {
         fs.rmSync(fx.root, {recursive:true,force:true});
+        if(providerGuard)assert.equal(providerGuard.mock.callCount(),0,`${entry.id}: provider boundary reached`);
       }
     });
   }
   assert.deepEqual(outcomes.map((row) => row.id), DISPATCHER_GRAMMAR.map((entry) => entry.id));
-  assert.equal(outcomes.length, 118);
+  assert.equal(outcomes.length, 140);
 });
 
 test('CLI prints one JSON value and uses validation exit 1', () => {
@@ -932,4 +970,28 @@ test('CLI prints one JSON value and uses validation exit 1', () => {
   const bad = spawnSync(process.execPath, [cli,'unknown'], {encoding:'utf8'});
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout, '');
+});
+
+
+test('source approval review-run dispatches an authenticated packet only to the intercepted provider boundary',async t=>{
+  const fixture=await require('../tests/helpers/public-workflow-fixtures.js').createPublicWorkflowFixture(t,
+    {checkpoint:'authored',approvalMode:'none'});
+  const packet=fixture.cli(['artifact','approval','packet-publish','--state',fixture.state,'--phases','spec,plan']);
+  const packetRef=writeJson(path.join(fixture.workDir,'route-packet-ref.json'),packet.ref);
+  const required=packet.bundle.required_reviewers[0];
+  const reviewer=writeJson(path.join(fixture.workDir,'route-reviewer.json'),
+    {...required,channel:'codex-cli',model:'main'});
+  const producer=t.mock.method(require('../runtime/review-execution-runtime.js'),'runReviewExecution',async args=>{
+    assert.equal(args.binding.authority,'artifact-source-review-v1');
+    assert.deepEqual(args.binding.packet_ref,packet.ref);
+    assert.equal(args.binding.bundle_sha256,packet.bundle.bundle_sha256);
+    assert.deepEqual(args.request.artifact_refs,[...packet.artifact_refs].sort((a,b)=>Buffer.compare(Buffer.from(a.path),Buffer.from(b.path))));
+    assert.equal(args.timeoutMs,1000);
+    assert.equal(args.prompt,packet.review_prompt);
+    throw Object.assign(new Error('test stops before provider transport'),{code:'test-provider-boundary-only'});
+  });
+  await assert.rejects(()=>dispatch(['artifact','approval','review-run','--state',fixture.state,
+    '--packet-ref-json',packetRef,'--reviewer-json',reviewer,'--timeout-ms','1000'],{cwd:fixture.root}),
+    {code:'test-provider-boundary-only'});
+  assert.equal(producer.mock.callCount(),1);
 });

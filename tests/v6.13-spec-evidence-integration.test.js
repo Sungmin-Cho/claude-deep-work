@@ -11,19 +11,19 @@ test('release blocker finds zero raw secret bytes across persistent surfaces',as
   const ref=runtime.publishRedactedEvidenceArtifactUnderLock({projectRoot:root,record});const bytes=fs.readFileSync(path.join(root,ref.artifact_ref),'utf8');
   assert.doesNotMatch(bytes,new RegExp(secret));assert.match(bytes,/<REDACTED:exact-secret>/);
 });
-test('1923 canonical logical rows are generated and behaviorally executed',()=>{const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,
-  'fixtures/v6.13-evidence/matrix-manifest.json'),'utf8')),entries=Object.entries(manifest.axes),rows=[];
-  for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++)for(const left of entries[i][1])for(const right of entries[j][1])
-    rows.push({kind:'pairwise',facts:{[entries[i][0]]:left,[entries[j][0]]:right}});
-  for(const [family,count] of Object.entries(manifest.named_rows))for(let index=0;index<count;index+=1)
-    rows.push({kind:family,index,expected:'blocked'});assert.equal(rows.length,1923);
-  const invalid=new Set(['duplicate-id','dangling-id','placeholder','empty-high-matrix','zero','partial','duplicate-evidence',
-    'dangling-link','missing-binding','duplicate-binding','override','mismatch','missing-field','malformed-list','foreign',
-    'schema-mismatch','digest-mismatch','missing','unknown','stale-identity','stale-base','trace-mismatch','redaction-fail',
-    'crash','unexpected-pass','timeout','overflow','drift','step-fail','cleanup-fail','required-unavailable']);let executed=0;
-  for(const row of rows){let decision;if(row.kind==='pairwise'){const values=Object.values(row.facts);decision={allowed:!values.some((value)=>
-      invalid.has(value)),reasons:values.filter((value)=>invalid.has(value))};assert.equal(decision.allowed,decision.reasons.length===0);}
-    else{const profile=row.kind==='high_omission'?'strict':'critical',compiled=JSON.parse(JSON.stringify(plan));
-      compiled.profile=profile;decision={allowed:false,reasons:[`${row.kind}-${row.index}`]};assert.equal(decision.allowed,false);}
-    executed+=1;}assert.equal(executed,1923);
+test('verification plan rejects concrete authority, gate and coverage corruption',()=>{
+  const {validateVerificationPlan}=require('../runtime/verification-policy-runtime.js');
+  assert.equal(validateVerificationPlan(plan).pass,true);
+  const mutations=[
+    ['stale digest', p=>{p.plan_sha256='0'.repeat(64);} ],
+    ['unknown gate', p=>{p.gates[0].id='GATE-invented';}],
+    ['missing required gate', p=>{p.required_gate_ids.pop();}],
+    ['duplicate gate', p=>{p.gates.push(structuredClone(p.gates[0]));}],
+    ['wrong risk authority', p=>{p.risk_profile_sha256='f'.repeat(64);}],
+    ['missing evidence gate', p=>{p.evidence_required_gate_ids.pop();}],
+    ['wrong schema type', p=>{p.schema_version='2';}],
+    ['unbound requirement', p=>{p.gates[0].requirement_ids=['REQ-FOREIGN'];}],
+  ];
+  for(const [name,mutate] of mutations){const candidate=structuredClone(plan);mutate(candidate);
+    assert.equal(validateVerificationPlan(candidate).pass,false,name);}
 });

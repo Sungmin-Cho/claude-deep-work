@@ -6,6 +6,8 @@ plans/
 
 # Dev tooling caches and local-only artifacts (never committed)
 /package-lock.json
+/node_modules/
+/.deep-work/
 .claude/
 .deep-review/
 .deep-docs/

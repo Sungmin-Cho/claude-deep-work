@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { TIERS, MAIN, resolveTier, mergeCatalog, concreteModelsFor, CATALOG_VERSION } = require('./model-catalog.js');
+const {resolveModelCapability}=require('./model-capabilities.js');
 const { PROFILE_BY_CLASS, EFFORT_CATALOG, TIER_CATALOG,
   validateMethodologyAuthority } = require('./policy-runtime.js');
 
@@ -210,10 +211,12 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
   const appliedPinned = {};
   const floorOverriddenByPin = {};
   const routing = {};
+  const modelIdentity = {};
   const runtimeConcrete = new Set(concreteModelsFor(runtime, catalog));
   for (const phase of PHASES) {
     const pin = pinned && typeof pinned === 'object' ? pinned[phase] : undefined;
     if (pin !== undefined) {
+      if(resolveModelCapability({runtime,model:pin,catalogOverride}).status==='foreign')throw new Error(`foreign-model: ${pin} on ${runtime}`);
       if (phase === 'brainstorm' || phase === 'plan') {
         warnings.push(`--model-routing: '${phase}'은 main 고정 — '${pin}' 무시`);
       } else if (TIERS.includes(pin) || pin === MAIN) {
@@ -221,7 +224,11 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
       } else if (runtimeConcrete.has(pin)) {
         routing[phase] = pin; appliedPinned[phase] = pin;
       } else {
-        warnings.push(`--model-routing: '${pin}'은 ${runtime} 런타임의 모델/tier가 아님 — '${phase}' 자동값 사용`);
+        const capability=resolveModelCapability({runtime,model:pin,catalogOverride});
+        if(capability.status==='foreign')throw new Error(`foreign-model: ${pin} on ${runtime}`);
+        if(typeof pin!=='string'||! /^[A-Za-z0-9._-]+$/.test(pin))throw new Error('invalid-model');
+        routing[phase]=pin;appliedPinned[phase]=pin;
+        if(capability.status==='unverified')warnings.push(`model '${pin}' unverified; explicit pin preserved`);
       }
       let pinTier = TIERS.includes(pin) ? pin : null;
       if (!pinTier && runtimeConcrete.has(pin)) {
@@ -237,8 +244,10 @@ function decideModelRouting({ signals = {}, taskText = '', difficulty = null, ru
       if (warning) warnings.push(warning);
     }
   }
+  for(const phase of PHASES){const capability=resolveModelCapability({runtime,model:routing[phase],catalogOverride});
+    modelIdentity[phase]={requested_model:appliedPinned[phase]||null,effective_model:routing[phase],observed_model:null,status:capability.status,nominal_tier:capability.nominal_tier};}
   if(authority){tiers.spec=MAIN;routing.spec=MAIN;}
-  const meta = { tiers, scale: base.scale, signals_summary: { tracked_files: signals.tracked_files ?? null,
+  const meta = { model_identity:modelIdentity, tiers, scale: base.scale, signals_summary: { tracked_files: signals.tracked_files ?? null,
       loc_estimate: signals.loc_estimate ?? null, languages: signals.languages ?? null },
     difficulty: DIFFICULTY.includes(difficulty) ? difficulty : null, reasons: base.reasons,
     runtime, catalog_version: CATALOG_VERSION, pinned: appliedPinned,

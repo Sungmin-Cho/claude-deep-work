@@ -883,7 +883,9 @@ function candidatePackageRoots(nodeExecutable, platformValue, fsApi) {
   ];
   const parts = nodeExecutable.split(/[\\/]/);
   const cellar = parts.lastIndexOf('Cellar');
-  if (platformValue === 'darwin' && cellar >= 0 && parts[cellar + 1] === 'node' &&
+  const brewFormula = parts[cellar + 1] === 'node' ||
+    /^node@[0-9]+(?![\s\S])/.test(parts[cellar + 1] || '') && parts.length === cellar + 5;
+  if (platformValue === 'darwin' && cellar >= 0 && brewFormula &&
       parts.at(-2) === 'bin' && parts.at(-1) === 'node') {
     const prefix = parts.slice(0, cellar).join(path.sep) || path.sep;
     candidates.push({candidate:path.join(prefix, 'lib', 'node_modules'), prefix});
@@ -1118,7 +1120,7 @@ function resolveNodePackageBin(capability, request) {
     }
   }
   const resolved = packageBinFromRoots(meta.roots, request, meta.fsApi,
-    new Set(['npm','@openai/codex','@google/gemini-cli']), meta.platform);
+    new Set(['npm','@openai/codex','@google/gemini-cli','@anthropic-ai/claude-code']), meta.platform);
   return resolved.native
     ? {executable:resolved.target, argv:[...request.args]}
     : {executable:meta.executable, argv:[resolved.target, ...request.args]};
@@ -1204,7 +1206,22 @@ function atomicWriteWithFs(targetCapability, data, options = {}, fsApi = fs) {
         currentOwner = readBounded(meta.ownerPath, CLAIM_TICKET_MAX_FILE_BYTES, fsApi,
           'owned-temp-foreign');
       }
-      catch (cause) { fail('owned-temp-foreign', 'pre-existing temp has no same-operation owner', {cause}); }
+      catch (cause) {
+        if (cause.code === 'ENOENT' && meta.state.value === 'reserved'
+            && matchingOwnedTempReservation(targetCapability, fsApi)) {
+          const current = fsApi.readFileSync(targetCapability.path);
+          if (!current.equals(bytes)) {
+            fail('owned-temp-content-conflict', 'reserved temp bytes do not match this write');
+          }
+          writeExclusiveSidecar(meta.ownerPath, ownerBytes, fsApi);
+          fsyncDirectory(path.dirname(meta.ownerPath), fsApi);
+          meta.state.value = 'written';
+          meta.state.digest = digest;
+          meta.physical = inspectPhysical(meta.physical.rootPath, targetCapability.path, false, fsApi);
+          return {written:false, adopted:true, sha256:digest};
+        }
+        fail('owned-temp-foreign', 'pre-existing temp has no same-operation owner', {cause});
+      }
       if (!sameBytes(currentOwner, ownerBytes)) {
         fail('owned-temp-foreign', 'pre-existing temp owner does not match this operation');
       }
@@ -2401,6 +2418,16 @@ function writeExclusive(file, bytes, fsApi, mode = 0o600) {
     fsApi.writeFileSync(fd, bytes);
     fsApi.fsyncSync(fd);
   } finally { fsApi.closeSync(fd); }
+}
+
+function matchingOwnedTempReservation(targetCapability, fsApi) {
+  const reservation = path.join(path.dirname(targetCapability.path), 'reservation.json');
+  try {
+    const bytes = readBounded(reservation, 4096, fsApi, 'owned-temp-foreign');
+    const row = JSON.parse(bytes.toString('utf8'));
+    return row && row.version === 1 && row.sessionId === targetCapability.sessionId
+      && row.operationId === targetCapability.operationId && row.purpose === targetCapability.purpose;
+  } catch { return false; }
 }
 
 function writeExclusiveSidecar(file, bytes, fsApi, mode = 0o600) {

@@ -15,6 +15,16 @@ function fakeTaskkill(exitCode = 0) {
   return child;
 }
 
+test('Windows supervisor keeps host SystemRoot when the child env is closed', {
+  skip:process.platform!=='win32'?'native Windows supervisor':false,
+}, async () => {
+  const result = await runSupervisedProcess({executable:process.execPath,
+    args:['-e',"process.stdout.write('closed-child')"]},
+    {env:{PATH:process.env.PATH||''}, timeoutMs:8000, maxOutputBytes:128});
+  assert.equal(result.ok, true);
+  assert.equal(result.stdout, 'closed-child');
+});
+
 test('closed Windows stream supervisor pins the exact helper bytes', () => {
   const helper = fs.readFileSync(path.join(__dirname, 'windows-stream-inventory.ps1'));
   const supervisor = fs.readFileSync(path.join(__dirname, 'process-supervisor.js'), 'utf8');

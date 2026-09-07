@@ -46,9 +46,9 @@ function writeExclusive(file,value,code){
 function loadPlan(planCapability,plan){
   transaction.revalidateSessionFile(planCapability);let current;
   try{current=JSON.parse(transaction.readSessionFile(planCapability));}catch{fail('verification-v2-plan-json');}
-  if(canonical(current)!==canonical(plan)||current.contract_binding?.mode!=='strict-spec')
+  if(canonical(current)!==canonical(plan)||!['strict-spec','execution-spec'].includes(current.contract_binding?.mode))
     fail('verification-v2-plan');
-  let authority;try{authority=planRuntime.compileImmutablePlanAuthorityV2(current);}
+  let authority;try{authority=planRuntime.compileImmutablePlanAuthority(current);}
   catch{fail('verification-v2-plan-authority');}
   if(authority.plan_authority_sha256!==current.plan_authority_sha256)
     fail('verification-v2-plan-authority');
@@ -85,7 +85,7 @@ async function acceptedWrite({stateCapability,plan,sliceId,fields,expectedOutcom
   const field=CLASS_FIELD[receipt.writeClass];
   const authority=receipt.authority;
   const allPlanFiles=new Set(plan.slices.flatMap((row)=>row.files||[]));
-  const historicalAuthorityValid=explicitOperationId&&expectedOutcome!=='must-fail'&&
+  const historicalAuthorityValid=(explicitOperationId&&expectedOutcome!=='must-fail'||plan.schema_version===3&&receipt.executionPlanAuthoritySha256===plan.plan_authority_sha256)&&
     field&&authority&&
     authority.schema_version===1&&authority.plan_sha256===receipt.planSha256&&
     authority.slice_id===sliceId&&authority.write_class===receipt.writeClass&&
@@ -135,25 +135,26 @@ function buildSupervisorControl({platformName=process.platform,environment=proce
       mode:decimal(taskkillStat.mode),size:decimal(taskkillStat.size),
       mtime_ns:statNanos(taskkillStat)}}};
 }
-function executionContext(root,sessionId,sliceId,spec,writeOperationId){
+function executionContext(root,sessionId,sliceId,spec,writeOperationId,recorded=null){
   const tempKey=semanticDigest('verification-owned-temp-v1',{
     session_id:sessionId,slice_id:sliceId,write_operation_id:writeOperationId,
     verification_spec_sha256:journal.sha256(canonical(spec))});
   const ownedTemp=path.join(root,'.claude',
     `deep-work.${sessionId}.verification-temp.${tempKey}`);
-  const identity=bootstrap.executableIdentity(),logicalArgv=structuredClone(spec.args);
+  const identity=recorded?.executable_identity||bootstrap.executableIdentity(),logicalArgv=structuredClone(spec.args);
   const realRoot=fs.realpathSync(root),realTemp=path.join(realRoot,
     path.relative(root,ownedTemp));
   const normalizedArgv=['--no-warnings','--permission',`--allow-fs-read=${realRoot}`,
-    `--allow-fs-write=${realTemp}`,'--test','--test-isolation=none',
+    `--allow-fs-write=${realTemp}`,'--test',
+    require('./node-tap-policy.js').nodeTestIsolationFlag(spec,identity.node_version),
     '--test-reporter=tap','--',spec.args[3]];
   const environment=structuredClone(spec.environment);
-  const containment={provider:'node-permission-v1',node_patch:process.versions.node,
+  const containment={provider:'node-permission-v1',node_patch:identity.node_version,
     worktree_realpath:realRoot,owned_temp_realpath:realTemp,
     logical_argv_sha256:bootstrap.bootstrapCommandArgvSha256(logicalArgv),
     effective_argv_sha256:bootstrap.bootstrapCommandArgvSha256(normalizedArgv),
     denied_capabilities:['child-process','native-addon','wasi','worker']};
-  const supervisor=buildSupervisorControl();
+  const supervisor=recorded?.supervisor_control||buildSupervisorControl();
   return{ownedTemp,identity,logicalArgv,normalizedArgv,environment,containment,supervisor};
 }
 function prepareOwnedTemp(ownedTemp){
@@ -217,8 +218,9 @@ async function runVerificationV2({stateCapability,planCapability,plan,sliceId,
   if(!/^SLICE-\d{3}$/.test(sliceId||''))fail('verification-v2-slice');
   const current=loadPlan(planCapability,plan);
   const target=current.slices?.find((row)=>row.id===sliceId);
-  if(!target||target.slice_kind!=='functional')fail('verification-v2-slice');
+  if(!target||target.slice_kind!=='functional'||current.schema_version===3&&target.execution_basis!=='strict-tdd-v2')fail('verification-v2-slice');
   const spec=require('./contract-runtime.js').validateVerificationSpecV2(target.verification_spec);
+  require('./node-tap-policy.js').assertNodeTapPolicyForSpec(spec,process.versions.node);
   const specSha256=journal.sha256(canonical(spec));
   if(specSha256!==target.verification_spec_sha256)fail('verification-v2-spec');
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
@@ -288,8 +290,7 @@ async function runVerificationV2({stateCapability,planCapability,plan,sliceId,
   await journal.recordOperationStage(operation,'pre-manifest-published',{owned:{
     path:preRef.path,sha256:preRef.sha256}});
   let ran;
-  if(spec.executable.supported_patches_sha256===
-      bootstrap.BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256&&process.versions.node==='26.0.0'){
+  if(require('./node-tap-policy.js').assertNodeTapPolicyForSpec(spec,context.identity.node_version).supported){
     try{ran=await runSupervisedProcess({executable:context.identity.path,
       args:context.normalizedArgv},{cwd:stateCapability.projectRoot,
       timeoutMs:spec.timeout_ms,maxOutputBytes:spec.max_output_bytes,
@@ -321,7 +322,8 @@ async function runVerificationV2({stateCapability,planCapability,plan,sliceId,
   const classification=bootstrap.classifyVerificationObservation({processResult:ran,
     changedPaths:changed,stdout,stderr,root:stateCapability.projectRoot,
     testPath:spec.args[3],nodePatch:process.versions.node,
-    expectedSignal:spec.red_failure.expected_signal});
+    expectedSignal:spec.red_failure.expected_signal,
+    policySha256:spec.executable.supported_patches_sha256});
   const verification={schema_version:2,session_id:preconditions.session_id,slice_id:sliceId,
     plan_authority_sha256:current.plan_authority_sha256,
     spec_sha256:current.contract_binding.spec_contract.spec_sha256,
@@ -347,8 +349,7 @@ async function runVerificationV2({stateCapability,planCapability,plan,sliceId,
       'accepted':'rejected',result_sha256:null};
   verification.result_sha256=semanticDigest('verification-result-v2',verification,
     'result_sha256');
-  bootstrap.validateBootstrapVerificationResultV2(verification,{
-    expectedSignal:spec.red_failure.expected_signal,expectedOutcome});
+  bootstrap.validateVerificationResultForSpec(verification,{spec,expectedOutcome});
   writeExclusive(resultPath,verification,'verification-v2-result');
   await journal.recordOperationStage(operation,'result-published',{owned:{
     resultPath:resultRelative,resultSha256:verification.result_sha256}});
@@ -378,19 +379,17 @@ async function authenticateVerificationV2({stateCapability,planCapability,plan,s
       !['must-fail','must-pass'].includes(expectedOutcome))
     fail('verification-v2-identity');
   const current=loadPlan(planCapability,plan),target=current.slices?.find((row)=>row.id===sliceId);
-  if(!target||target.slice_kind!=='functional')fail('verification-v2-slice');
+  if(!target||target.slice_kind!=='functional'||current.schema_version===3&&target.execution_basis!=='strict-tdd-v2')fail('verification-v2-slice');
   const spec=require('./contract-runtime.js').validateVerificationSpecV2(target.verification_spec);
   const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
   const resultPath=path.join(stateCapability.projectRoot,'.claude',
     `deep-work.${sid(stateCapability)}.verification.${operationIdValue}.json`);
-  const verification=bootstrap.validateBootstrapVerificationResultV2(
-    readCanonical(resultPath,'verification-v2-result').value,{
-      expectedSignal:spec.red_failure.expected_signal,
-      expectedOutcome});
+  const verification=bootstrap.validateVerificationResultForSpec(
+    readCanonical(resultPath,'verification-v2-result').value,{spec,expectedOutcome});
   const write=await acceptedWrite({stateCapability,plan:current,sliceId,fields,
     expectedOutcome,operationId:verification.write_operation_id});
   const context=executionContext(stateCapability.projectRoot,sid(stateCapability),sliceId,spec,
-    write.operationId);
+    write.operationId,verification);
   if(verification.result_sha256!==resultSha256||
       verification.plan_authority_sha256!==current.plan_authority_sha256||
       verification.spec_sha256!==current.contract_binding.spec_contract.spec_sha256||
@@ -437,7 +436,8 @@ async function authenticateVerificationV2({stateCapability,planCapability,plan,s
     spawnError:verification.process.spawn_error},changedPaths:verification.changed_paths,
     stdout,stderr,root:stateCapability.projectRoot,testPath:spec.args[3],
     nodePatch:verification.executable_identity.node_version,
-    expectedSignal:spec.red_failure.expected_signal});
+    expectedSignal:spec.red_failure.expected_signal,
+    policySha256:spec.executable.supported_patches_sha256});
   if(canonical(replay)!==canonical(verification.classification))
     fail('verification-v2-classification');
   const receipt=await journal.resumeOperation({projectCapability:project(stateCapability),

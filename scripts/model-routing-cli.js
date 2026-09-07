@@ -48,7 +48,7 @@ process.on('uncaughtException', (e) => {
 function parseArgs(argv) {
   const out = { root: process.cwd(), task: '', difficulty: null, runtime: null, pinnedRaw: '',
     riskClassRaw: null, policyModeRaw: null, floorBaselineRaw: null,
-    methodologyPolicyRaw:null };
+    catalogOverrideRaw:null,methodologyPolicyRaw:null };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--root') out.root = argv[++i] || out.root;
@@ -59,6 +59,7 @@ function parseArgs(argv) {
     else if (a === '--risk-class') out.riskClassRaw = argv[++i] || '';
     else if (a === '--policy-mode') out.policyModeRaw = argv[++i] || '';
     else if (a === '--floor-baseline') out.floorBaselineRaw = argv[++i] || '';
+    else if (a === '--catalog-override') out.catalogOverrideRaw=argv[++i]||'';
     else if (a === '--methodology-policy') out.methodologyPolicyRaw=argv[++i]||'';
   }
   return out;
@@ -111,8 +112,6 @@ function main() {
     const { collectCodebaseSignals, decideModelRouting } = require('../runtime/model-routing-runtime.js');
     const { detectRuntime } = require('./detect-runtime.js');
 
-    // test-only hook: fallback(catch) 경로를 실제로 exercise하기 위한 테스트 전용 훅.
-    if (process.env.DEEP_WORK_MR_CLI_TEST_THROW === '1') throw new Error('test-throw');
 
     const args = parseArgs(process.argv.slice(2));
     const runtime = args.runtime || detectRuntime(process.env);
@@ -126,9 +125,8 @@ function main() {
       catch{throw new Error('methodology-policy JSON invalid');}
     }
     const decision = decideModelRouting({ signals, taskText: args.task,
-      difficulty: args.difficulty, runtime, pinned,methodologyPolicy,...policyArgs });
+      difficulty: args.difficulty, runtime, pinned,catalogOverride:args.catalogOverrideRaw===null?null:JSON.parse(args.catalogOverrideRaw),methodologyPolicy,...policyArgs });
     decision.warnings = [...warnings, ...decision.warnings];
-    if (process.env.DEEP_WORK_MR_CLI_TEST_BAD_JSON === '1') decision.meta.cycle = decision; // test-only: JSON.stringify throw 유도
     process.stdout.write(JSON.stringify(decision));
     alreadyEmitted = true;
   } catch (e) {

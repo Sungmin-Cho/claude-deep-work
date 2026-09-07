@@ -66,6 +66,7 @@ function main() {
     }
     try {
       const content = fs.readFileSync(stateFile, 'utf-8');
+      if(Number(readField(content,'created_by_version').split('.')[0])>=7)return;
       const phase = readField(content, 'current_phase');
       const tddState = readField(content, 'tdd_state');
       const sensorPending = readField(content, 'sensor_pending');

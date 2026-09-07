@@ -12,14 +12,22 @@ jobs:
   runtime-windows:
     runs-on: windows-latest
     name: runtime contract (windows-latest)
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.2'
+          check-latest: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.3'
+
+      - name: Install validation tooling
+        run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Run native Windows runtime contract
         run: npm run test:runtime
@@ -31,13 +39,22 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     name: tests (${{ matrix.os }})
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.2'
+          check-latest: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.3'
+
+      - name: Install validation tooling
+        run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Show bash version (M5.5 #4 — bash 3.2 visibility)
         run: bash --version
@@ -68,3 +85,31 @@ jobs:
           echo "running shellcheck on $count files"
           find hooks/scripts -type f -name '*.sh' -print0 \
             | xargs -0 shellcheck --severity=warning --external-sources
+
+  strict-portability:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.23.2', '24.20.0', '26.0.0', '26.8.1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.3'
+      - name: Verify exact runtime and install validation tooling
+        env:
+          EXPECTED_NODE: ${{ matrix.node }}
+        run: |
+          node -e "if(process.versions.node!==process.env.EXPECTED_NODE)process.exit(1)"
+          npm install --ignore-scripts --no-audit --no-fund
+      - name: Strict policy conformance
+        run: node --test runtime/node-tap-parser.test.js
+      - name: Actual strict proof and GREEN flow
+        run: node --test --test-name-pattern='portable (strict|bootstrap)' runtime/red-proof-runtime.test.js runtime/bootstrap-runtime.test.js
+      - name: Public strict and mixed receipt spine
+        run: node --test tests/public-execution-spine.test.js

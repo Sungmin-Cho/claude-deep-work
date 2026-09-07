@@ -65,3 +65,7 @@ test('concreteModelsFor/allConcreteModels는 null 제외', () => {
   assert.ok(allConcreteModels().includes('sonnet'));
   assert.ok(!allConcreteModels().includes(null));
 });
+test('Astra is an explicit Codex catalog pin without replacing Sol deep default',()=>{
+  assert.ok(concreteModelsFor('codex').includes('gpt-6-astra'));
+  assert.equal(DEFAULT_CATALOG.codex.deep,'gpt-5.6-sol');
+});

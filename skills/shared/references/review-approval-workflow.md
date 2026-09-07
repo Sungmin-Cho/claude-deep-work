@@ -1,53 +1,20 @@
-# Review + Approval Workflow Shim
+# Review and approval continuity
 
-> v6.12: 실행 계약은 adaptive-review-protocol.md + review-policy-runtime.js가 정본
+Review establishes evidence about an exact artifact. User authorization determines which actions may proceed. Generic task authorization is not a claim that the user personally reviewed unseen Spec or Plan bytes.
 
-Research/Plan 자동 리뷰는 phase skill의 단일 unified review 진입점에서 이미 완료된다.
-이 문서는 리뷰를 다시 실행하지 않으며 사용자 승인 UX와 integrity hash만 소유한다.
+For an automated fresh session, draft both spec.md and plan.md while at Spec. Keep the plan task-specific; the source compiler derives mechanical bindings and default metadata. One independent review can cover Spec adequacy and Plan conformance together. Use these public routes through the contained `node "${CLAUDE_PLUGIN_ROOT}/scripts/deep-work-runtime.js"`:
 
-## Step 4: 1차 승인 요청 (수정 항목)
+1. `artifact approval preview --state "$STATE_FILE" --phases spec,plan` validates the draft without publishing approval or executing source. Correct concrete contract errors before dispatch.
+2. `artifact approval packet-publish --state "$STATE_FILE" --phases spec,plan` returns a sealed packet and required reviewer roles/tiers. Save its returned ref as JSON; do not reconstruct hashes.
+3. Select an available independent reviewer at each required tier, honoring explicit model pins. `artifact approval review-run --state "$STATE_FILE" --packet-ref-json "$PACKET_REF" --reviewer-json "$REVIEWER" --timeout-ms 300000` derives the exact request, prompt and binding. Collect its returned execution refs. Terminal execution alone does not mean review PASS.
+4. `artifact approval publish --state "$STATE_FILE" --packet-ref-json "$PACKET_REF" --review-execution-refs-json "$REVIEW_REFS"` authenticates current artifacts and actual qualifying reviews. Save the returned approval ref as JSON.
+5. `phase spec approve --state "$STATE_FILE" --artifact "$WORK_DIR/spec.md" --at "$NOW" --approval-ref-json "$APPROVAL_REF"`, then `phase continue --state "$STATE_FILE"`.
+6. `phase approve --state "$STATE_FILE" --phase plan --artifact "$WORK_DIR/plan.md" --at "$NOW" --approval-ref-json "$APPROVAL_REF"`, then `phase continue --state "$STATE_FILE"`.
 
-`review_execution_json`의 execution decision과 canonical finding verdict를 읽어 사용자에게
-제시한다. pause/needs-human/BLOCK은 승인 UX로 우회하지 않고 adaptive protocol로 반환한다.
+The same unchanged qualifying combined approval ref is consumed once per named phase. Source, task, policy or derivation-context changes require fresh evidence. Runtime progress changes after Plan approval do not require another identical source review. If draft Plan changes after Spec consumption, use `artifact approval reopen --state "$STATE_FILE"` while still at Spec/Plan, then review and approve the corrected bundle. This preserves historical receipts and source while clearing stale current approvals. After implementation begins, use authenticated replan instead. A standalone Spec or Plan review may use its single named phase when a combined bundle is not ready.
 
-```text
-반영 제안:
-1. <finding ID> — <main disposition 근거>
+Resolve material findings against source and acceptance conditions, correcting supported issues within the authorized task and explaining disagreements with evidence. Preserve failed/unavailable attempts. Never write approval flags, simulated human declarations or completion evidence to bypass review. Test fixtures explicitly labelled simulated are not live review evidence.
 
-반영하지 않는 항목:
-- <finding ID> — <reject/defer 근거>
+Honor explicit-gates: that policy requires the user's exact artifact confirmation through the host-declared human route, whose identity is not authenticated by this plugin. Otherwise use independent review under existing authorization. Reuse-exact-review accepts the qualifying independent route. Do not ask the user for generic approval at every phase.
 
-1) 전체 승인
-2) 선택 승인
-3) 추가 설명 요청
-```
-
-## Step 5: 수정 적용
-
-- 사용자가 승인한 finding만 작성자(main)가 research.md/plan.md에 반영한다.
-- reviewer가 artifact를 직접 수정하지 않는다.
-- 수정이 review round 안에 있으면 adaptive protocol round 2의 open finding ID + 수정 diff
-  재검증 계약을 따른다.
-- 수정 요약과 finding disposition을 표시한다.
-
-## Step 6: 2차 승인 요청 (최종 확인 + 다음 phase)
-
-```text
-수정 완료. 최종 문서를 확인해주세요.
-1) 문서 최종 승인
-2) 추가 수정 요청
-3) 이 phase 재실행
-```
-
-- 승인: `*_approved: true`, `*_approved_at`, `*_approved_hash`를 기록한다. hash는 승인
-  시점 `sha256(${WORK_DIR}/{research,plan}.md)`다.
-- 추가 수정: Step 5로 돌아간다.
-- 재실행: phase skill을 `--force-rerun`으로 호출하기 전에 기존 `*_approved`,
-  `*_approved_at`, `*_approved_hash`를 모두 clear한다.
-
-`*_completed_at`/`*_complete`는 phase skill marker이고 approval marker가 아니다. resume은
-현재 파일 hash와 `*_approved_hash`를 비교해 불일치하면 approval을 invalidate하고 unified
-review와 이 승인 UX를 다시 실행한다.
-
-승인은 문서 내용 확인이고 Orchestrator Exit Gate는 phase 전환 확인이다. 승인 시
-`current_phase`를 바꾸지 않으며 Exit Gate의 “진행” 선택만 phase를 전환한다.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/shared/references/adaptive-review-protocol.md` for execution, transport recovery and evidence-bound reuse. The runtime's `--help` is authoritative for exact current flags.

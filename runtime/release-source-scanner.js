@@ -101,10 +101,11 @@ function scanPackageScripts(files,document){
       const target=words[2];visit(target);outgoing.push({
         kind:'package-script',path:`package.json#scripts.${target}`});
     }else if(words[0]==='node'&&words[1]==='--test'){
-      const targetWords=words.slice(2).filter((word)=>
-        !word.startsWith('--test-concurrency='));
+      const allowedFlag=(word)=>word.startsWith('--test-concurrency=')||
+        word.startsWith('--test-timeout=');
+      const targetWords=words.slice(2).filter((word)=>!allowedFlag(word));
       if(targetWords.length===0||words.slice(2).some((word)=>
-        word.startsWith('-')&&!word.startsWith('--test-concurrency=')))
+        word.startsWith('-')&&!allowedFlag(word)))
         fail('release-package-script');
       for(const target of expandTargets(targetWords,files)){
         nodeTargets.add(target);outgoing.push({kind:'node-entry',path:target});
@@ -333,6 +334,36 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
             expression.startsWith(value))||
         call.value==='spawn'&&
           expression.startsWith('message.spec.executable')))continue;
+    if(path==='evals/harness/process.js'&&call.value==='spawn'&&
+        expression.startsWith('executable')&&
+        /spawnImpl:\(executable,args,spawnOptions\)=>\{child=cp\.spawn\(executable,args,spawnOptions\)/.test(source))
+      continue;
+    if((path==='evals/harness/process.js'||path==='evals/harness/process.test.js')&&
+        call.value==='execFileSync'&&first.type==='string'&&first.value==='/bin/ps')
+      continue;
+    if(path==='evals/harness/process.test.js'&&call.value==='original'&&
+        first.type==='identifier'&&first.value==='file'&&
+        /cp\.execFileSync=\(file,\.\.\.args\)=>\{if\(file==='\/bin\/ps'\)throw/.test(source.replace(/\s+/g,'')))
+      continue;
+    if(path==='evals/harness/cohort-seal.js'&&call.value==='spawnSync'&&
+        expression.startsWith('file.path')&&
+        /typeof executable!=='string'\|\|!path\.isAbsolute\(executable\)/.test(source)&&
+        /cp\.spawnSync\(file\.path,\['--version'\]/.test(source))
+      continue;
+    if(path==='runtime/outcome-oracle-runtime.js'&&call.value==='spawnSync'&&
+        expression.startsWith('executable')&&
+        /if\(spec\.executable\.kind==='node'\)executable=fs\.realpathSync\(process\.execPath\);/.test(source)&&
+        /spawnSync\(executable,\['--version'\]/.test(source))
+      continue;
+    if(path==='runtime/red-proof-runtime.test.js'&&
+        expression.startsWith('reader.path')&&
+        /for\(const reader of readers\)\{/.test(source)&&
+        /execFileSync\(reader\.path,\['--version'\]/.test(source)&&
+        /spawnSync\(reader\.path,\['-e',script/.test(source))
+      continue;
+    if(path==='tests/outcome-supervision-repair.test.js'&&call.value==='spawn'&&
+        /spawnImpl:\(\.\.\.args\)=>cp\.spawn\(\.\.\.args\)/.test(source))
+      continue;
     if(path==='runtime/health-runtime.js'&&call.value==='spawnSync'&&
         expression.startsWith('checked.executable')){
       const validations=[...source.matchAll(
@@ -391,10 +422,17 @@ function scanLaunchSites(path,bytes,{platformName=process.platform}={}){
       required.add('git');continue;
     }
     if(first.type==='identifier'&&first.value==='binary'&&
-        path==='runtime/review-policy-runtime.js'&&
-        /probe\(\s*['"]codex['"]\s*,\s*safeEnv\s*\)/.test(source)&&
-        /probe\(\s*['"]gemini['"]\s*,\s*safeEnv\s*\)/.test(source)){
-      optional.add('codex');optional.add('gemini');continue;
+        path==='runtime/review-policy-runtime.js'){
+      if(/probe\(\s*['"]codex['"]\s*,\s*safeEnv\s*\)/.test(source)&&
+          /probe\(\s*['"]gemini['"]\s*,\s*safeEnv\s*\)/.test(source)){
+        optional.add('codex');optional.add('gemini');continue;
+      }
+      if(/function defaultProbe\(binary, env\) \{/.test(source)&&
+          /available\('codex'\)/.test(source)&&
+          /available\('claude'\)/.test(source)&&
+          /available\('gemini'\)/.test(source)){
+        optional.add('claude');optional.add('codex');optional.add('gemini');continue;
+      }
     }
     if(first.type==='string'&&first.value==='python3'&&
         (path==='scripts/router-shadow.js'||

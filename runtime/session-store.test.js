@@ -43,7 +43,7 @@ function gitFixture(){const root=fs.mkdtempSync(path.join(os.tmpdir(),'dw-sessio
 test('new and migrated session state normalize the spec subphase contract', async () => {
   const state=buildSessionState({sessionId:'s-aaaaaaaa',task:'spec state',repositoryContext:{
     repositoryMode:'current-branch',branch:'main',headOid:'a'.repeat(40)}});
-  assert.equal(state.created_by_version,'7.0.0');assert.equal(state.subphase,null);
+  assert.equal(state.created_by_version,require('../.claude-plugin/plugin.json').version);assert.equal(state.subphase,null);
   assert.equal(state.spec_policy_required,null);assert.equal(state.spec_approved_hash,null);
   assert.equal(state.spec_contract_json,null);assert.equal(state.spec_gate_result_json,null);
 
@@ -204,4 +204,16 @@ test('non-Git current-branch startup records a zero-Git repository context',asyn
   try{const result=await prepareSessionRepository({projectCapability,sessionId:'s-33333333',mode:'current-branch',task:'none'});
     assert.equal(result.repositoryContext.noRepository,true);assert.equal(result.repositoryContext.headOid,null);
   }finally{process.env.PATH=old;}
+});
+
+test('Finish uses the journal-observed finalization time and rejects caller timestamps',async()=>{
+  const {root,projectCapability}=fixture(),sessionId='s-aaaaaaaa',state=path.join(root,'.claude',`deep-work.${sessionId}.md`);
+  fs.writeFileSync(state,'---\nsession_id: s-aaaaaaaa\nwork_dir: .deep-work/s-aaaaaaaa\ncurrent_phase: test\n---\n');
+  fs.writeFileSync(path.join(root,'.claude','deep-work-sessions.json'),JSON.stringify({version:1,shared_files:[],sessions:{[sessionId]:{pid:process.pid,task_description:'time',work_dir:'.deep-work/s-aaaaaaaa',current_phase:'test',file_ownership:[],last_activity:'2026-09-06T00:00:00Z'}}}));
+  const operation=await beginOperation({projectCapability,sessionId,kind:'finish-keep',preconditions:{fixture:'timestamp'}}),cap=()=>issueProjectStateCapability(root,state,{role:'session-state'}),finishedAt='2026-09-06T01:02:03.456Z';
+  await assert.rejects(()=>finalizeWithinFinishOperation({operation,sessionId,stateCapability:cap(),outcome:'keep',finishedAt}),/finalization-time/);
+  await require('./operation-journal.js').recordOperationStage(operation,'finalize-gate-checked',{owned:{allowed:true,finishedAt}});
+  const result=await finalizeWithinFinishOperation({operation,sessionId,stateCapability:cap(),outcome:'keep',finishedAt});
+  assert.equal(result.finishedAt,finishedAt);assert.equal(parseFrontmatter(fs.readFileSync(state,'utf8')).fields.finished_at,finishedAt);
+  const replay=await finalizeWithinFinishOperation({operation,sessionId,stateCapability:cap(),outcome:'keep',finishedAt});assert.equal(replay.finishedAt,finishedAt);
 });

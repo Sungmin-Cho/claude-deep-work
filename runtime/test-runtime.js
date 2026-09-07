@@ -39,7 +39,7 @@ function pureRecordTestPass({state,gateResults,verificationPlan,evidencePackage,
     gate_results_sha256:sha256(canonicalJson(gateResults))};}
 function recordTestPass({state,stateCapability,gateResults,verificationPlan,evidencePackage,evidenceSummary,
   compatibilityMode,receiptInvalidations,artifactRoot,governedAdmission,
-  governedProjectionSha256,governedRequired=false,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,
+  governedProjectionSha256,governedRequired=false,gateResultsSource,operationId,at,seam}={}){if(!stateCapability)return pureRecordTestPass({state,gateResults,
     verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot,at});
   require('./slice-runtime.js').assertNoPendingScopedWrite(stateCapability);
   if(governedRequired&&
@@ -49,8 +49,10 @@ function recordTestPass({state,stateCapability,gateResults,verificationPlan,evid
         !/^[0-9a-f]{64}$/.test(governedProjectionSha256||'')))
     fail('test-governed-admission');
   validateGateResults(gateResults,{verificationPlan,evidencePackage,evidenceSummary,compatibilityMode,receiptInvalidations,artifactRoot});
-  return transaction.journaledStateMutation({stateCapability,kind:'test-pass',
-    preconditions:{at,gateResultsSha256:sha256(canonicalJson(gateResults)),
+  if(verificationPlan?.schema_version===3&&(!gateResultsSource||!operationId))fail('test-owned-input');
+  return transaction.journaledStateMutation({stateCapability,kind:'test-pass',operationId,
+    prepareUnderLock:verificationPlan?.schema_version===3?(operation)=>require('./test-input-runtime.js').consumeOwnedTestInput(operation,gateResultsSource,gateResults):undefined,
+    preconditions:{...(verificationPlan?.schema_version===3?{gateResultsSource:{source_operation_id:gateResultsSource.source_operation_id,sha256:gateResultsSource.sha256}}:{}),at,gateResultsSha256:sha256(canonicalJson(gateResults)),
       verificationPlanSha256:verificationPlan?.plan_sha256||null,packageSha256:evidencePackage?.package_sha256||null,
       compatibilityMode:compatibilityMode||null,
       governedProjectionSha256:governedProjectionSha256||null,
@@ -58,12 +60,13 @@ function recordTestPass({state,stateCapability,gateResults,verificationPlan,evid
       governedAdmissionSha256:governedAdmission?
         sha256(canonicalJson(governedAdmission)):null,
       receiptInvalidationsSha256:sha256(canonicalJson(receiptInvalidations||[]))},seam,
-    reducer:(fields)=>{if(verificationPlan){let review;try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('gate-results-state');}
+    resultExtras:verificationPlan?.schema_version===3?(after)=>({test_input:{source_operation_id:gateResultsSource.source_operation_id,sha256:gateResultsSource.sha256,gate_results:gateResults},test_authority:{verification_plan_sha256:verificationPlan.plan_sha256,gate_results_sha256:sha256(canonicalJson(gateResults)),package_sha256:evidencePackage.package_sha256,recovery_generation:functionalReceipt.recoveryGenerationFromFields(after),test_completed_at:at}}):undefined,
+    reducer:(fields,operationContext)=>{if(verificationPlan){let review;try{review=JSON.parse(fields.review_execution_json||'{}');}catch{fail('gate-results-state');}
         if(fields.verification_plan_sha256!==verificationPlan.plan_sha256||review.evidence?.package_sha256!==evidencePackage?.package_sha256||
           canonicalJson(JSON.parse(fields.receipt_invalidations_json||'[]'))!==canonicalJson(receiptInvalidations||[]))fail('gate-results-state');}
       const next=pureRecordTestPass({state:fields,gateResults,verificationPlan,evidencePackage,evidenceSummary,
         compatibilityMode,receiptInvalidations,artifactRoot,at});return {test_passed:next.test_passed,
-      test_completed_at:next.test_completed_at,gate_results_sha256:next.gate_results_sha256};}});}
+      test_completed_at:next.test_completed_at,gate_results_sha256:next.gate_results_sha256,...(verificationPlan?.schema_version===3?{test_pass_operation_id:operationContext.operationId}: {})};}});}
 
 function failureTransition({state,plan,receipts,failedSlices,exhausted}){
   if(!Array.isArray(failedSlices)||!failedSlices.length||new Set(failedSlices).size!==failedSlices.length||
@@ -95,7 +98,7 @@ function failureTransition({state,plan,receipts,failedSlices,exhausted}){
     const receiptSha256=/^[0-9a-f]{64}$/.test(receipt?.receipt_sha256||'')?
       receipt.receipt_sha256:null;
     const completionOperationId=/^op-[0-9a-f]{64}$/.test(
-      receipt?.completion_operation_id||'')?receipt.completion_operation_id:null;
+      (receipt?.completion_operation_id||receipt?.producer_operation_id)||'')?(receipt.completion_operation_id||receipt.producer_operation_id):null;
     const completePair=receiptSha256!==null&&completionOperationId!==null;
     return{slice_id:id,receipt_sha256:completePair?receiptSha256:null,
       completion_operation_id:completePair?completionOperationId:null};
@@ -110,10 +113,10 @@ function failureTransition({state,plan,receipts,failedSlices,exhausted}){
       if(slice.slice_kind!=='functional'||!slice.checked||
           failedIds.has(slice.id)||!existing||existing.status==='invalidated'||
           !/^[0-9a-f]{64}$/.test(existing.receipt_sha256||'')||
-          !/^op-[0-9a-f]{64}$/.test(existing.completion_operation_id||''))
+          !/^op-[0-9a-f]{64}$/.test((existing.completion_operation_id||existing.producer_operation_id)||''))
         continue;
       bindings=functionalReceipt.setFunctionalReceiptBinding(bindings,slice.id,
-        functionalReceipt.receiptBindingFromReceipt(existing,currentGeneration));
+        functionalReceipt.receiptBindingFromReceipt({...existing,completion_operation_id:existing.completion_operation_id||existing.producer_operation_id},functionalReceipt.parseFunctionalReceiptBindings(bindings)[slice.id]?.recovery_generation??currentGeneration));
     }
     for(const id of functionalFailedIds)
       bindings=functionalReceipt.invalidateFunctionalReceiptBinding(

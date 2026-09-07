@@ -53,7 +53,7 @@ test('Windows verification control authenticates taskkill without entering the c
       ['LANG','LC_ALL','TZ']);
   });
 
-function fixture(t){
+function fixture(t,{portable=false,nested=false}={}){
   const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'dw-red-proof-')));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   execFileSync('git',['init','-q'],{cwd:root});
@@ -65,26 +65,39 @@ function fixture(t){
   fs.writeFileSync(path.join(root,'.gitignore'),'.claude/\n.deep-work/\n');
   execFileSync('git',['add','-A'],{cwd:root});
   execFileSync('git',['commit','-qm','base'],{cwd:root});
-  const failing=["'use strict';","const test=require('node:test');",
+  let failing=["'use strict';","const test=require('node:test');",
     "const assert=require('node:assert/strict');",
     "test('expected red',()=>assert.strictEqual(require('./a.js'),2));",''].join('\n');
+  if(portable)failing=["'use strict';","const {test,describe}=require('node:test');",
+    "const assert=require('node:assert/strict');",
+    ...(nested?["describe('group',()=>{"]:[]),
+    "test('existing',()=>assert.equal(1,1));",
+    "test('expected red',()=>assert.strictEqual(require('./a.js'),2));",
+    ...(nested?['});']:[]),''].join('\n');
   fs.writeFileSync(path.join(root,'runtime','a.test.js'),failing);
   fs.mkdirSync(path.join(root,'.tmp-probe'));
   const probe=spawnSync(process.execPath,
     ['--no-warnings','--permission',`--allow-fs-read=${root}`,
-      `--allow-fs-write=${path.join(root,'.tmp-probe')}`,'--test','--test-isolation=none',
+      `--allow-fs-write=${path.join(root,'.tmp-probe')}`,'--test',
+      portable&&process.versions.node.startsWith('22.')?'--experimental-test-isolation=none':'--test-isolation=none',
       '--test-reporter=tap','--','runtime/a.test.js'],
     {cwd:root,env:{LANG:'C',LC_ALL:'C',TZ:'UTC'},encoding:null});
   assert.equal(probe.status,1);
   assert.equal(probe.stderr.length,0,probe.stderr.toString('utf8'));
-  const event=bootstrap.parseNodeTapFailure(probe.stdout.toString('utf8'),{
-    root,testPath:'runtime/a.test.js'});
+  const policy=require('./node-tap-policy.js');
+  const event=portable?require('./node-tap-parser.js').parseNodeTapDocument(probe.stdout,{
+    policy:policy.resolveNodeTapPolicy({policySha256:policy.CURRENT_NODE_TAP_POLICY_SHA256,nodeVersion:process.versions.node}),
+    nodeVersion:process.versions.node,root,testPath:'runtime/a.test.js',expectedOutcome:'must-fail',
+    expectedSignal:{kind:'assertion',operator:'strictEqual',test_identity:{test_file:'runtime/a.test.js',test_name:'expected red',start_line:nested?6:5},
+    expected_digest:bootstrap.tapValueDigest(2),actual_digest:bootstrap.tapValueDigest(1),message_pattern:'Expected values to be strictly equal'}}).selectedEvent:
+    bootstrap.parseNodeTapFailure(probe.stdout.toString('utf8'),{root,testPath:'runtime/a.test.js'});
   const expectedSignal={kind:'assertion',operator:'strictEqual',
     test_identity:{test_file:event.test_file,test_name:event.test_name,start_line:event.start_line},
     expected_digest:event.expected_digest,actual_digest:event.actual_digest,
     message_pattern:'Expected values to be strictly equal'};
   const spec={schema_version:2,executable:{kind:'node-toolchain',name:'node',
-    supported_patches_sha256:bootstrap.BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256},
+    supported_patches_sha256:portable?policy.CURRENT_NODE_TAP_POLICY_SHA256:
+      bootstrap.BOOTSTRAP_SUPPORTED_NODE_PATCHES_SHA256},
   args:['--test','--test-reporter=tap','--','runtime/a.test.js'],cwd_role:'worktree',
   timeout_ms:120000,max_output_bytes:1048576,
   environment:{mode:'closed',values:{LANG:'C',LC_ALL:'C',TZ:'UTC'}},
@@ -135,8 +148,8 @@ function fixture(t){
     verificationPlanSha256};
 }
 
-async function ordinaryGreenFixture(t){
-  const f=fixture(t);
+async function ordinaryGreenFixture(t,options){
+  const f=fixture(t,options);
   const failingScope=deriveScopedWriteAuthority({plan:f.plan,
     sliceId:'SLICE-001',writeClass:'failing-test'});
   const failingWrite=await beginScopedWrite({stateCapability:f.stateCapability,
@@ -831,3 +844,52 @@ node26Test('accept-or-replan completes its child ledger after parent completion 
     assert.equal(frontmatter.parseFrontmatter(fs.readFileSync(f.statePath,'utf8')).fields
       .pending_scoped_write_json,null);
   });
+
+for(const nested of [false,true])test(`portable strict ordinary ${nested?'nested':'direct'} RED proof and production GREEN`,async(t)=>{
+ const policy=require('./node-tap-policy.js');
+ assert.equal(policy.resolveNodeTapPolicy({policySha256:policy.CURRENT_NODE_TAP_POLICY_SHA256,nodeVersion:process.versions.node}).supported,true,'run this conformance test on an exact supported patch');
+ const f=await ordinaryGreenFixture(t,{portable:true,nested});
+ assert.equal(f.green.disposition,'accepted');
+ const result=JSON.parse(fs.readFileSync(path.join(f.root,f.green.verification_result_path)));
+ assert.equal(bootstrap.validateVerificationResultForSpec(result,{spec:f.spec,expectedOutcome:'must-pass'}).result_sha256,result.result_sha256);
+ assert.equal(result.executable_identity.node_version,process.versions.node);
+ const fields=frontmatter.parseFrontmatter(fs.readFileSync(f.statePath,'utf8')).fields;
+ assert.equal(fields.red_proof_state,'complete');
+ const proof=JSON.parse(fs.readFileSync(path.join(f.root,fields.red_proof_ref)));
+ assert.equal(proof.proof_sha256,semanticDigest('red-proof-v1',proof,'proof_sha256'));
+ const malformed=structuredClone(result),bad=Buffer.from('not TAP\n');
+ malformed.raw_stdout={base64:bad.toString('base64'),byte_length:bad.length,sha256:journal.sha256(bad)};
+ malformed.result_sha256=semanticDigest('verification-result-v2',malformed,'result_sha256');
+ assert.throws(()=>bootstrap.validateVerificationResultForSpec(malformed,{spec:f.spec,expectedOutcome:'must-pass'}),/classification/);
+});
+node26Test('historical legacy proof keeps its digests under explicitly selected foreign Node readers',async(t)=>{
+ if(!process.env.DEEP_WORK_TEST_NODE_READERS){t.skip('recorded-unavailable: DEEP_WORK_TEST_NODE_READERS is required for cross-reader conformance');return;}
+ const readers=JSON.parse(process.env.DEEP_WORK_TEST_NODE_READERS);
+ assert.ok(Array.isArray(readers)&&readers.length>0);
+ const f=await ordinaryGreenFixture(t);
+ const green=JSON.parse(fs.readFileSync(path.join(f.root,f.green.verification_result_path)));
+ const before=fs.readFileSync(f.statePath);
+ const script=`const fs=require('node:fs'),path=require('node:path');
+ const runtime=process.argv[1],root=process.argv[2],op=process.argv[3],sha=process.argv[4];
+ const platform=require(path.join(runtime,'platform.js')),tx=require(path.join(runtime,'transaction-runtime.js'));
+ const state=platform.issueProjectStateCapability(root,path.join(root,'.claude','deep-work.s-aaaaaaaa.md'),{role:'session-state'});
+ const session=platform.issueProjectStateCapability(root,path.join(root,'.deep-work','s-aaaaaaaa'),{role:'session-work-dir',sessionStateCapability:state});
+ const planCap=tx.issueSessionFileCapability({sessionCapability:session,candidate:path.join(root,'.deep-work','s-aaaaaaaa','plan.json'),allowedBasenames:['plan.json'],role:'locked-plan'});
+ const plan=JSON.parse(fs.readFileSync(planCap.path));
+ require(path.join(runtime,'verification-v2-runtime.js')).authenticateVerificationV2({stateCapability:state,planCapability:planCap,plan,sliceId:'SLICE-001',operationId:op,resultSha256:sha,expectedOutcome:'must-pass'}).then(async v=>{
+ const fields=require(path.join(runtime,'frontmatter.js')).parseFrontmatter(fs.readFileSync(state.path,'utf8')).fields;
+ const proof=JSON.parse(fs.readFileSync(path.join(root,fields.red_proof_ref)));
+ const red=require(path.join(runtime,'red-proof-runtime.js'));
+ if(red.semanticDigest('red-proof-v1',proof,'proof_sha256')!==proof.proof_sha256)throw Error('proof digest changed');
+ const redResult=await require(path.join(runtime,'verification-v2-runtime.js')).authenticateVerificationV2({stateCapability:state,planCapability:planCap,plan,sliceId:'SLICE-001',operationId:proof.verification_operation_id,resultSha256:proof.verification_result_sha256});
+ if(red.semanticDigest('classification-v1',redResult.verification.classification)!==proof.classification_digest)throw Error('classification digest changed');
+ console.log(JSON.stringify({reader:process.versions.node,producer:v.verification.executable_identity.node_version,result_sha256:v.verification.result_sha256,proof_sha256:proof.proof_sha256}));
+ }).catch(e=>{console.error(e);process.exitCode=1;});`;
+ for(const reader of readers){
+  const observed=execFileSync(reader.path,['--version'],{encoding:'utf8'}).trim();assert.equal(observed,`v${reader.version}`);
+  const run=spawnSync(reader.path,['-e',script,__dirname,f.root,f.green.operation_id,f.green.verification_result_sha256],{encoding:'utf8',timeout:30000});
+  assert.equal(run.status,0,run.stderr);
+  const receipt=JSON.parse(run.stdout);assert.equal(receipt.reader,reader.version);assert.equal(receipt.producer,'26.0.0');assert.equal(receipt.result_sha256,green.result_sha256);t.diagnostic(JSON.stringify(receipt));
+ }
+ assert.deepEqual(fs.readFileSync(f.statePath),before,'historical authentication does not mutate state');
+});

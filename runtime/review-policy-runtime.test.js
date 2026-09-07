@@ -85,8 +85,8 @@ test('missing risk and shadow policy return default standard strength', () => {
 test('reviewModeOverride changes composition without overriding the codex provider catalog', () => {
   const lowered = compile('high', 'slice-diff', { reviewModeOverride: 'single', evaluatorModelOverride: 'opus' });
   assert.equal(lowered.mode, 'single');
-  assert.deepEqual(lowered.reviewers.map((reviewer) => reviewer.role), ['semantic']);
-  assert.ok(lowered.reviewers.every((reviewer) => reviewer.model === 'opus'));
+  assert.deepEqual(lowered.reviewers.map((reviewer) => reviewer.role), ['semantic','executability']);
+  assert.equal(lowered.reviewers[0].model,'opus');assert.equal(lowered.reviewers[1].model,'gpt-5.6-sol');
   const raised = compile('low', 'slice-diff', { reviewModeOverride: 'dual', evaluatorModelOverride: 'opus' });
   assert.equal(raised.mode, 'dual');
   assert.deepEqual(raised.reviewers.map((reviewer) => reviewer.role), ['semantic', 'executability']);
@@ -126,7 +126,7 @@ test('availableChannels matrix deterministically assigns executability fallback 
         const plan = compile(risk, artifactKind, { availableChannels });
         const executability = plan.reviewers.find((reviewer) => reviewer.role === 'executability');
         const expected = availableChannels.codex_cli ? 'codex-cli'
-          : artifactKind === 'document' && availableChannels.gemini_cli ? 'gemini-cli' : 'subagent';
+          : availableChannels.gemini_cli ? 'gemini-cli' : 'subagent';
         assert.equal(executability.channel, expected, `${risk}:${artifactKind}:${JSON.stringify(availableChannels)}`);
       }
     }
@@ -236,12 +236,12 @@ test('detectReviewChannels is deterministic with injected executable probe and i
   fs.mkdirSync(path.dirname(manifest), { recursive: true });
   fs.writeFileSync(manifest, '{}');
   const calls = [];
-  const result = detectReviewChannels({ runtime: 'claude', env: { HOME: home },
+  const result = detectReviewChannels({ runtime: 'claude', nativeCapability:{available:true,observed:true}, env: { HOME: home },
     probe: (binary) => { calls.push(binary); return binary === 'codex'; } });
-  assert.deepEqual(result, { subagent: true, codex_cli: true, gemini_cli: false, deep_review: true });
-  assert.deepEqual(calls, ['codex', 'gemini']);
+  assert.deepEqual(result, { subagent: true, codex_cli: true, claude_cli:false, gemini_cli: false, deep_review: true });
+  assert.deepEqual(calls, ['codex','claude', 'gemini']);
   assert.deepEqual(detectReviewChannels({ runtime: 'codex', env: {}, probe: () => false }),
-    { subagent: false, codex_cli: false, gemini_cli: false, deep_review: false });
+    { subagent: false, codex_cli: false, claude_cli:false, gemini_cli: false, deep_review: false });
 });
 
 test('B.3 Codex effort mapping is exact and max is model-gated', () => {

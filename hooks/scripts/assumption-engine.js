@@ -244,6 +244,16 @@ function wilsonScore(positive, total, z) {
  */
 function calculateConfidence(assumption, sessions, options) {
   const opts = options || {};
+  const seen = new Set();
+  sessions = sessions.filter((session) => {
+    const comparisons = (session.comparisons || []).filter(row => row && comparativeValue(row.signal,session) !== null);
+    const key = comparisons.length ? JSON.stringify(comparisons.map(row =>
+      [row.baseline.session_id,row.treatment.session_id,row.baseline.evidence_sha256,row.treatment.evidence_sha256]).sort())
+      : session.session_id;
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
   const minSessions = assumption.minimum_sessions_for_evaluation || 5;
 
   // Evaluate signals for all sessions
@@ -251,7 +261,7 @@ function calculateConfidence(assumption, sessions, options) {
 
   const overall = _computeConfidenceFromEvaluated(evaluated, minSessions);
 
-  const result = { overall, insufficient: overall.total < minSessions };
+  const result = { overall, insufficient: overall.informative < minSessions };
 
   // Model-aware split
   if (opts.splitByModel) {
@@ -283,9 +293,11 @@ function _computeConfidenceFromEvaluated(evaluated, minSessions) {
   let neutral = 0;
 
   for (const e of evaluated) {
-    supporting += e.supporting;
-    weakening += e.weakening;
-    neutral += e.neutral;
+    // Correlated labels from one session are one observation, not independent
+    // Bernoulli trials. Conflicting evidence remains neutral.
+    if (e.supporting > 0 && e.weakening === 0) supporting++;
+    else if (e.weakening > 0 && e.supporting === 0) weakening++;
+    else neutral++;
   }
 
   const total = evaluated.length;
@@ -293,7 +305,7 @@ function _computeConfidenceFromEvaluated(evaluated, minSessions) {
   const score = wilsonScore(supporting, signalTotal);
 
   let category;
-  if (total < minSessions) {
+  if (signalTotal < minSessions) {
     category = 'INSUFFICIENT';
   } else if (score >= CONFIDENCE_THRESHOLDS.HIGH) {
     category = 'HIGH';
@@ -303,7 +315,7 @@ function _computeConfidenceFromEvaluated(evaluated, minSessions) {
     category = 'LOW';
   }
 
-  return { score, category, supporting, weakening, neutral, total };
+  return { score, category, supporting, weakening, neutral, total, informative:signalTotal };
 }
 
 // ─── Staleness Detection ────────────────────────────────────
@@ -377,7 +389,7 @@ function detectNewModel(currentModel, sessions) {
  * - scope: 'session' — evaluate once against the session object
  * - scope: 'slice'   — evaluate per slice, aggregate with any-true
  * Each fn takes (data, session) and returns a boolean or null.
- * Unmapped signals are silently ignored.
+ * Unmapped signals are reported as unavailable.
  *
  * Legacy compatibility: bare functions are treated as { scope: 'session', fn }.
  */
@@ -403,7 +415,7 @@ const SIGNAL_EVALUATORS = {
     scope: 'session',
     fn: (session) => {
       if (session.tdd_overrides === undefined || session.tdd_overrides === 0) return null;
-      return (session.test_retry_count || 0) === 0;
+      return Number.isSafeInteger(session.test_retry_count) ? session.test_retry_count === 0 : null;
     },
   },
   'model_passes_all_tests_first_try': {
@@ -426,7 +438,7 @@ const SIGNAL_EVALUATORS = {
     fn: (session) => {
       // Can only evaluate if mode is strict and we have rework data
       if (session.tdd_mode !== 'strict') return null;
-      return (session.test_retry_count || 0) === 0;
+      return Number.isSafeInteger(session.test_retry_count) ? session.test_retry_count === 0 : null;
     },
   },
   'override_rate > 50%': {
@@ -439,7 +451,7 @@ const SIGNAL_EVALUATORS = {
   'zero_bugs_caught_in_red': {
     scope: 'slice',
     fn: (slice, _session) => {
-      return (slice.bugs_caught_in_red_phase || 0) === 0;
+      return typeof slice.bugs_caught_in_red_phase === 'number' ? slice.bugs_caught_in_red_phase === 0 : null;
     },
   },
   'relaxed_mode_same_quality': {
@@ -496,13 +508,13 @@ const SIGNAL_EVALUATORS = {
   'cross_model_agrees_with_claude_always': {
     scope: 'session',
     fn: (session) => {
-      return (session.cross_model_unique_findings || 0) === 0;
+      return typeof session.cross_model_unique_findings === 'number' ? session.cross_model_unique_findings === 0 : null;
     },
   },
   'zero_actionable_findings': {
     scope: 'session',
     fn: (session) => {
-      return (session.cross_model_unique_findings || 0) === 0;
+      return typeof session.cross_model_unique_findings === 'number' ? session.cross_model_unique_findings === 0 : null;
     },
   },
 
@@ -549,7 +561,7 @@ const SIGNAL_EVALUATORS = {
   'no_missed_issues_in_test_phase': {
     scope: 'session',
     fn: (session) => {
-      return (session.test_retry_count || 0) === 0;
+      return Number.isSafeInteger(session.test_retry_count) ? session.test_retry_count === 0 : null;
     },
   },
   'evaluator_zero_findings_consistently': {
@@ -583,6 +595,47 @@ function _resolveEvaluator(signal) {
   return entry;
 }
 
+// Comparisons are advisory measured pairs, never configuration authority.
+const COMPARISONS = {
+  'test_pass_rate_with_guard > test_pass_rate_without':['test_pass_rate','with-guard','without-guard','>'],
+  'rework_count_strict < rework_count_relaxed':['rework_count','strict','relaxed','<'],
+  'relaxed_mode_same_quality':['quality_score','relaxed','strict','>='],
+  'plan_review_score_with_research > plan_review_score_without':['plan_review_score','with-research','without-research','>'],
+};
+for (const [suffix,treatment,baseline] of [
+  ['with_guard','with-guard','without-guard'], ['strict','strict','relaxed'],
+  ['with_research','with-research','skip-research'], ['with_cross_review','with-cross-review','without-cross-review'],
+  ['with_receipts','with-receipts','without-receipts']]) {
+  const other = {with_guard:'without_guard',strict:'relaxed',with_research:'skip_research',
+    with_cross_review:'without_cross_review',with_receipts:'without_receipts'}[suffix];
+  COMPARISONS[`quality_score_${suffix} > quality_score_${other}`] = ['quality_score',treatment,baseline,'>'];
+  COMPARISONS[`quality_score_${other} >= quality_score_${suffix}`] = ['quality_score',baseline,treatment,'>='];
+}
+function comparativeValue(signal, session) {
+  const definition = COMPARISONS[signal];
+  if (!definition || !Array.isArray(session.comparisons)) return null;
+  const rows = session.comparisons.filter((row) => row && row.signal === signal);
+  if (rows.length !== 1) return null;
+  const {baseline:b,treatment:t} = rows[0], [metric,treatment,baseline,operator] = definition;
+  const valid = (row) => row && typeof row.session_id === 'string' && row.session_id &&
+    typeof row.model === 'string' && row.model && row.model !== 'unknown' &&
+    /^[a-f0-9]{64}$/.test(row.task_sha256) && /^[a-f0-9]{64}$/.test(row.environment_sha256) &&
+    /^[a-f0-9]{64}$/.test(row.evidence_sha256) && row.metric_version === 2 && row.metric === metric &&
+    typeof row.value === 'number' && Number.isFinite(row.value) && row.value >= 0;
+  if (!valid(b) || !valid(t) || b.session_id === t.session_id || b.evidence_sha256 === t.evidence_sha256 ||
+    b.model !== t.model || b.task_sha256 !== t.task_sha256 || b.environment_sha256 !== t.environment_sha256 ||
+    t.variant !== treatment || b.variant !== baseline) return null;
+  return operator === '<' ? t.value < b.value : operator === '>=' ? t.value >= b.value : t.value > b.value;
+}
+for (const signal of Object.keys(COMPARISONS)) {
+  SIGNAL_EVALUATORS[signal] = {scope:'session',comparative:true,fn:(session) => comparativeValue(signal,session)};
+}
+function hasComparativeEvidence(assumption, session) {
+  const signals = [...(assumption.evidence_signals?.supporting || []),
+    ...(assumption.evidence_signals?.weakening || [])];
+  return signals.some((signal) => COMPARISONS[signal] && comparativeValue(signal,session) !== null);
+}
+
 // ─── Quality Cohort Helpers (v5.3) ─────────────────────────
 
 /**
@@ -611,7 +664,13 @@ function partitionByAssumption(assumptionId, sessions) {
     }
   }
 
-  return { active, inactive };
+  const identity = (s) => typeof s.model_primary === 'string' && s.model_primary !== 'unknown' &&
+    /^[a-f0-9]{64}$/.test(s.task_sha256) && /^[a-f0-9]{64}$/.test(s.environment_sha256) && s.metric_version === 2
+    ? JSON.stringify([s.model_primary,s.task_sha256,s.environment_sha256,s.metric_version]) : null;
+  const activeKeys = new Set(active.map(identity).filter(Boolean));
+  const inactiveKeys = new Set(inactive.map(identity).filter(Boolean));
+  return {active:active.filter(s=>inactiveKeys.has(identity(s))),
+    inactive:inactive.filter(s=>activeKeys.has(identity(s)))};
 }
 
 function average(arr) {
@@ -651,7 +710,7 @@ function evaluateSignals(assumption, session) {
    */
   function evalSignal(signal, type) {
     const resolved = _resolveEvaluator(signal);
-    if (!resolved) return; // Unmapped signal — skip silently
+    if (!resolved) { details.push({signal,type,value:null,reason:'unmapped-signal'}); return; }
 
     if (resolved.scope === 'slice') {
       // Slice-scoped: evaluate per slice, any-true aggregation (count at most 1)
@@ -681,7 +740,7 @@ function evaluateSignals(assumption, session) {
       } else if (result === false) {
         details.push({ signal, type, value: false });
       }
-      // result === null means not applicable for this session
+      if (result === null) details.push({signal,type,value:null,reason:resolved.comparative ? 'matched-comparison-required' : 'observation-unavailable'});
     }
   }
 
@@ -742,7 +801,11 @@ function generateReport(assumptions, sessions, options) {
     };
 
     let verdict, reason;
-    if (confidence.insufficient) {
+    const comparativeCount = sessions.filter((session) => hasComparativeEvidence(assumption,session)).length;
+    if (comparativeCount < (assumption.minimum_sessions_for_evaluation || MIN_CONFIDENCE_SESSIONS)) {
+      verdict = 'INSUFFICIENT COMPARATIVE DATA';
+      reason = 'Matched task/model/metric evidence required; observational signals do not change enforcement';
+    } else if (confidence.insufficient) {
       verdict = 'INSUFFICIENT DATA';
       reason = `Need ${assumption.minimum_sessions_for_evaluation} sessions, have ${confidence.overall.total}`;
     } else if (staleness.stale) {
@@ -809,7 +872,7 @@ function generateReport(assumptions, sessions, options) {
       const inactiveAvg = average(cohorts.inactive.map(s => s.quality_score).filter(q => q != null));
       const delta = Math.round(activeAvg - inactiveAvg);
       const sign = delta >= 0 ? '+' : '';
-      lines.push(`   Quality Impact: ${sign}${delta}pts`);
+      lines.push(`   Matched quality difference: ${sign}${delta}pts`);
       lines.push(`   Active: ${cohorts.active.length} sessions (avg ${Math.round(activeAvg)}) vs Inactive: ${cohorts.inactive.length} sessions (avg ${Math.round(inactiveAvg)})`);
     } else {
       const totalNeeded = 3;
@@ -818,7 +881,7 @@ function generateReport(assumptions, sessions, options) {
       let gapMsg = 'collecting data';
       if (activeGap > 0) gapMsg += ` — need ${activeGap} more active sessions`;
       if (inactiveGap > 0) gapMsg += ` — need ${inactiveGap} more inactive sessions`;
-      lines.push(`   Quality Impact: ${gapMsg}`);
+      lines.push(`   Matched quality difference: ${gapMsg}`);
     }
 
     // Model-aware breakdown
@@ -838,8 +901,8 @@ function generateReport(assumptions, sessions, options) {
       lines.push(`  ${change.id}: ${change.from} -> ${change.to}`);
     }
     lines.push('');
-    lines.push('To apply: update enforcement in /deep-work session init or the session state file (.claude/deep-work.{SESSION_ID}.md)');
-    lines.push('(Auto-application is a Phase 2 feature — MVP is report-only)');
+    lines.push('To apply: choose the method explicitly at session initialization; never edit authoritative state directly');
+    lines.push('(Advisory comparison only; this report does not authorize an enforcement change)');
   } else {
     lines.push('No changes recommended at this time.');
   }
@@ -1180,17 +1243,19 @@ function autoAdjust(sessions, currentConfig, options) {
 
     const assumption = assumptions.find(a => a.id === assumptionId);
     if (!assumption) continue;
+    const comparativeSessions = sessions.filter((session) => hasComparativeEvidence(assumption, session));
+    if (comparativeSessions.length < minSessions) continue;
 
     let confidence;
     if (opts.splitByModel && opts.currentModel) {
-      const modelSessions = sessions.filter(s => s.model_primary === opts.currentModel);
+      const modelSessions = comparativeSessions.filter(s => s.model_primary === opts.currentModel);
       if (modelSessions.length < minSessions) {
-        confidence = calculateConfidence(assumption, sessions);
+        confidence = calculateConfidence(assumption, comparativeSessions);
       } else {
         confidence = calculateConfidence(assumption, modelSessions);
       }
     } else {
-      confidence = calculateConfidence(assumption, sessions);
+      confidence = calculateConfidence(assumption, comparativeSessions);
     }
 
     const score = confidence.overall.score;

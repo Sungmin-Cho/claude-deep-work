@@ -21,7 +21,7 @@ if (require.main === module) {
     try {
       let result = migrateProfile(profilePath);
       if (result.migrated === false && result.reason === 'not-found') {
-        const initialPreset = process.env.DEEP_WORK_INITIAL_PRESET || 'solo-strict';
+        const initialPreset = process.env.DEEP_WORK_INITIAL_PRESET || 'solo-adaptive';
         createV4Profile(profilePath, initialPreset);
         result = {migrated:false, reason:'not-found-created-v4',
           default_preset:initialPreset};

@@ -1,0 +1,24 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),j=require('./operation-journal.js');
+const NAME='.runtime-quiescent.json',SCOPES=new Set(['observed-identities-and-owned-groups','windows-taskkill-tree-and-known-pids','no-process-started','builtin-no-process']);
+function fail(){throw Object.assign(new Error('[outcome-view-termination-unconfirmed]'),{code:'outcome-view-termination-unconfirmed'});}
+function summary(value,{allowUnconfirmed=false}={}){if(typeof value?.confirmed!=='boolean'||!SCOPES.has(value.scope)||!allowUnconfirmed&&!value.confirmed)fail();const identities=[...(value.remaining_identities||[]),...(value.unattributed_processes||[])].map(({pid,start})=>({pid,start})),groups=value.remaining_group_anchors||[];
+ return{confirmed:value.confirmed,scope:value.scope,unobserved_descendants:value.unobserved_descendants||'unknown',...(!value.confirmed?{reasons:value.reasons||[],identities:identities.slice(0,128),group_anchors:groups.slice(0,64),omissions:(value.remaining_identity_omissions||0)+Math.max(0,identities.length-128)+Math.max(0,groups.length-64)}:{})};}
+function writeQuiescence({pair,owner,privateKey,started,observations}){
+ const termination=started?{positive:summary(observations?.positive?.process?.termination,{allowUnconfirmed:true}),control:summary(observations?.control?.process?.termination,{allowUnconfirmed:true})}:null;
+ const body={schema_version:1,operation_id:owner.operation_id,nonce:owner.nonce,worker_pid:process.pid,started,quiescent:!started||termination.positive.confirmed&&termination.control.confirmed,termination};
+ const signature=crypto.sign(null,Buffer.from(j.canonicalJson(body)),privateKey).toString('base64');const text=j.canonicalJson({body,signature});
+ const temporary=path.join(pair.base,`${NAME}.${owner.nonce}.tmp`),target=path.join(pair.base,NAME);fs.writeFileSync(temporary,text,{flag:'wx',mode:0o600});fs.renameSync(temporary,target);return body;
+}
+function authenticateQuiescence({base,owner,worker,allowUnconfirmed=false}){try{const primary=path.join(base,NAME),file=fs.existsSync(primary)?primary:path.join(base,`${NAME}.${owner.nonce}.tmp`),stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>65536)fail();const value=JSON.parse(fs.readFileSync(file,'utf8')),body=value.body;
+ if(body?.schema_version!==1||body.operation_id!==owner.operation_id||body.nonce!==owner.nonce||typeof body.quiescent!=='boolean'||typeof body.started!=='boolean'||!Number.isSafeInteger(body.worker_pid)||body.worker_pid<=0||worker&&body.worker_pid!==worker.pid||typeof value.signature!=='string'||!crypto.verify(null,Buffer.from(j.canonicalJson(body)),owner.quiescence_public_key,Buffer.from(value.signature,'base64')))fail();
+ if(body.started){for(const value of Object.values(body.termination||{})){if(typeof value?.confirmed!=='boolean'||!SCOPES.has(value.scope))fail();}if(typeof body.termination?.positive?.confirmed!=='boolean'||typeof body.termination?.control?.confirmed!=='boolean'||body.quiescent!==(body.termination.positive.confirmed&&body.termination.control.confirmed))fail();}else if(body.termination!==null||body.quiescent!==true)fail();
+ if(!allowUnconfirmed&&!body.quiescent)fail();return body;
+ }catch{fail();}}
+function recoverQuiescence({base,owner,worker,roots}){const body=authenticateQuiescence({base,owner,worker,allowUnconfirmed:true});if(body.quiescent){if(process.platform!=='win32'){const witness=require('./process-cwd-witness.js').inspectOwnedCwds({roots});if(witness.status!=='complete'||witness.witnesses.length)fail();}return body;}
+ const records=[body.termination.positive,body.termination.control].filter(r=>!r.confirmed),allowed=new Set(['termination-unconfirmed','unattributed-owned-view-process','signal-failed']);for(const record of records)if(record.omissions||!Array.isArray(record.identities)||!Array.isArray(record.group_anchors)||!Array.isArray(record.reasons)||record.reasons.some(reason=>!allowed.has(reason))||!record.identities.length&&!record.group_anchors.length)fail();
+ let rows;try{rows=require('./process-descendant-tracker.js').snapshot();}catch{fail();}const live=rows.filter(r=>!String(r.state||'').startsWith('Z'));
+ for(const record of records){for(const id of record.identities)if(!Number.isSafeInteger(id.pid)||typeof id.start!=='string'||live.some(r=>r.pid===id.pid&&r.start===id.start))fail();for(const group of record.group_anchors){const leader=live.find(r=>r.pid===group.pgid);if((!leader||leader.start===group.leader_start)&&live.some(r=>r.pgid===group.pgid))fail();}}
+ const witness=require('./process-cwd-witness.js').inspectOwnedCwds({roots});if(witness.status!=='complete'||witness.witnesses.length)fail();return{...body,recovery_observation:{confirmed:true,scope:'signed-known-identities-gone-and-owned-cwd-clear',unobserved_descendants:'unknown'}};
+}
+module.exports={writeQuiescence,authenticateQuiescence,recoverQuiescence,summary,NAME};

@@ -125,30 +125,69 @@ function mutateRegistry(projectCapability, context, transform) {
 
 function generateSessionId() { return `s-${crypto.randomBytes(4).toString('hex')}`; }
 
-function initializeSession({task,flags={},profile={}}={}) {
+function initializeSession({task,flags={},profile={},projectRoot=process.cwd()}={}) {
   if(typeof task!=='string'||!task.trim()||!flags||typeof flags!=='object'||Array.isArray(flags)||
       !profile||typeof profile!=='object'||Array.isArray(profile))fail('session-initialize-input');
-  const mode=flags.repositoryMode||profile.repositoryMode||'current-branch';
+  const defaults={...structuredClone(profile.defaults||{}),...((flags.tdd||flags.tdd_mode)?{tdd:flags.tdd||flags.tdd_mode}:{}),...(flags.model_routing?{model_routing:flags.model_routing}:{}),...(flags.continuation_mode?{continuation_preference:{schema_version:1,mode:flags.continuation_mode,task_sha256:sha256(Buffer.from(task.trim())),project_root:projectRoot,source:'user-explicit'}}:{})};
+  const tagged=Object.hasOwn(flags,'parser_origin');if(tagged&&(flags.parser_origin!=='deep-work-flags-v1'||!Array.isArray(flags.provided_options)||flags.provided_options.some(key=>typeof key!=='string'||!Object.hasOwn(flags,key))||new Set(flags.provided_options).size!==flags.provided_options.length))fail('session-flags-origin');
+  const explicitlyProvided=key=>!tagged||flags.provided_options.includes(key);
+  for(const [flag,key,allowed]of [['policy','methodology_policy',['adaptive','shadow']],['review','review_mode_override',['auto','single','dual']],['risk','requested_risk_class',require('./risk-runtime.js').CLASS_ORDER]])if(explicitlyProvided(flag)&&flags[flag]!==undefined&&flags[flag]!==null){if(!allowed.includes(flags[flag]))fail('session-policy-input');defaults[key]=flags[flag];}
+  const explicitExecution=flags.exec_mode??flags.execution??defaults.exec_mode??defaults.execution_override??defaults.execution??null;
+  const selectedTeam=flags.team===true?'team':typeof flags.team==='string'?flags.team:flags.team_mode??defaults.team_mode??'solo';
+  if(!['solo','team','auto'].includes(selectedTeam))fail('session-team-mode');
+  defaults.team_mode=selectedTeam==='auto'?'solo':selectedTeam;
+  // The existing execution resolver validates explicit intent; availability is
+  // checked at dispatch, never fabricated by initialization.
+  require('./model-capabilities.js').resolveExecutionMode({explicitMode:explicitExecution,teamMode:defaults.team_mode});
+  if(explicitExecution!==null)defaults.exec_mode=explicitExecution;
+  const gitChoice=defaults.git;
+  const readGitBoolean=(key)=>{const value=gitChoice?.[key];if(value===undefined)return false;
+    if(value===true||value==='true')return true;if(value===false||value==='false')return false;fail('session-repository-mode');};
+  const profileMode=profile.repositoryMode||(typeof gitChoice==='string'?gitChoice:
+    gitChoice&&typeof gitChoice==='object'&&!Array.isArray(gitChoice)?
+      readGitBoolean('use_worktree')?'worktree':readGitBoolean('use_branch')?'new-branch':'current-branch':null);
+  const mode=flags.repositoryMode||(flags.no_branch===true?'current-branch':profileMode)||'current-branch';
   if(!['worktree','new-branch','current-branch'].includes(mode))fail('session-repository-mode');
-  return {sessionId:generateSessionId(),task:task.trim(),mode,
-    defaults:structuredClone(profile.defaults||{}),flags:structuredClone(flags),profile:structuredClone(profile)};
+  defaults.git={use_worktree:mode==='worktree',use_branch:mode!=='current-branch'};
+  return {sessionId:generateSessionId(),task:task.trim(),mode,defaults,
+    flags:structuredClone(flags),profile:structuredClone(profile)};
 }
 
-function buildSessionState({sessionId,task,defaults={},profile={},repositoryContext}={}) {
+function buildSessionState({sessionId,task,defaults={},profile={},repositoryContext,sessionM3RunId,projectRoot}={}) {
   requireSessionId(sessionId);if(typeof task!=='string'||!task.trim()||!repositoryContext)fail('session-state-input');
   const workDir=`.deep-work/${sessionId}`;const repositoryMode=repositoryContext.repositoryMode;
   if(!['worktree','new-branch','current-branch','fork'].includes(repositoryMode))fail('session-repository-context');
   const worktreeEnabled=repositoryMode==='worktree'||repositoryMode==='fork';
   if(worktreeEnabled&&(typeof repositoryContext.worktreePath!=='string'||!path.isAbsolute(repositoryContext.worktreePath)))
     fail('session-worktree-context');
-  return {schema_version:2,session_id:sessionId,task_description:task.trim(),created_by_version:'7.0.0',
+  const method=defaults.tdd||defaults.tdd_mode||'adaptive';if(!['adaptive','strict','coaching','relaxed'].includes(method))fail('session-method');
+  const riskRuntime=require('./risk-runtime.js'),risk=riskRuntime.decideRiskProfile({stage:'provisional',taskText:task});
+  const requestedRisk=defaults.requested_risk_class??null;if(requestedRisk!==null&&!riskRuntime.CLASS_ORDER.includes(requestedRisk))fail('session-risk-request');
+  if(requestedRisk!==null&&riskRuntime.CLASS_ORDER.indexOf(requestedRisk)>riskRuntime.CLASS_ORDER.indexOf(risk.class)){risk.rationale=[...risk.rationale,`user minimum risk class: ${requestedRisk}`];risk.class=requestedRisk;}
+  const policyMode=defaults.methodology_policy==='auto'||defaults.methodology_policy===undefined?'adaptive':defaults.methodology_policy;if(!['adaptive','shadow'].includes(policyMode))fail('session-policy-mode');
+  const reviewMode=defaults.review_mode_override??'auto';if(!['auto','single','dual'].includes(reviewMode))fail('session-review-mode');
+  const methodology=require('./policy-runtime.js').compileMethodologyAuthority({riskProfile:risk,mode:policyMode,executionBasis:'per-slice-v1'});
+  let routes=defaults.model_routing||profile.model_routing||['brainstorm=main','research=main','spec=main','plan=main','implement=main','test=main'];
+  if(routes==='auto')routes=['brainstorm=main','research=main','spec=main','plan=main','implement=main','test=main'];
+  if(typeof routes==='string')routes=routes.split(',');else if(!Array.isArray(routes)&&routes&&typeof routes==='object')routes=Object.entries(routes).map(([key,value])=>key+'='+value);
+  if(!Array.isArray(routes)||routes.some(value=>typeof value!=='string'||!/^(brainstorm|research|spec|plan|implement|test)=[A-Za-z0-9._-]+$/.test(value))||new Set(routes.map(value=>value.split('=')[0])).size!==routes.length)fail('session-model-routing');
+  const teamMode=defaults.team_mode==='auto'?'solo':defaults.team_mode??'solo';if(!['solo','team'].includes(teamMode))fail('session-team-mode');
+  const executionOverride=defaults.exec_mode??defaults.execution_override??defaults.execution??null;
+  const execution=require('./model-capabilities.js').resolveExecutionMode({explicitMode:executionOverride,teamMode});
+  let continuation=null,approvalPolicy=null;const preferences=require('./continuation-policy-runtime.js');
+  if(defaults.continuation_preference){continuation=preferences.validateContinuationPreference(defaults.continuation_preference);if(continuation.task_sha256!==sha256(Buffer.from(task.trim()))||projectRoot&&continuation.project_root!==projectRoot)fail('session-continuation-binding');}
+  if(defaults.artifact_approval_policy){approvalPolicy=preferences.validateArtifactApprovalPolicy(defaults.artifact_approval_policy);if(approvalPolicy.task_sha256!==sha256(Buffer.from(task.trim()))||projectRoot&&approvalPolicy.project_root!==projectRoot)fail('session-approval-policy-binding');}
+  return {requested_risk_class:requestedRisk,review_mode_override:reviewMode,methodology_policy_mode:policyMode,model_routing:routes,continuation_preference_json:continuation?canonicalJson(continuation):null,artifact_approval_policy_json:approvalPolicy?canonicalJson(approvalPolicy):null,execution_method:method,risk_profile_json:canonicalJson(risk),risk_profile_sha256:sha256(canonicalJson(risk)),
+    methodology_policy_json:canonicalJson(methodology),methodology_policy_sha256:methodology.policy_sha256,
+    schema_version:2,session_id:sessionId,task_description:task.trim(),created_by_version:require('./workflow-runtime.js').currentVersion(),
+    plan_bound_once:false,session_m3_run_id:sessionM3RunId||require('./workflow-runtime.js').reserveM3RunId(),
     current_phase:'brainstorm',subphase:null,spec_policy_required:null,spec_completed_at:null,
     spec_approved_hash:null,spec_contract_json:null,spec_gate_result_json:null,
     verification_plan_json:null,verification_plan_sha256:null,plan_spec_gate_result_json:null,
     work_dir:workDir,repository_mode:repositoryMode,worktree_enabled:worktreeEnabled,
     worktree_path:worktreeEnabled?repositoryContext.worktreePath:null,
     branch:repositoryContext.branch||null,head_oid:repositoryContext.headOid||null,
-    execution_override:null,tdd_state:'PENDING',defaults_json:JSON.stringify(defaults),
+    execution_override:executionOverride,execution_mode:execution.mode,team_mode:teamMode,tdd_state:'PENDING',defaults_json:JSON.stringify(defaults),
     profile_json:JSON.stringify(profile)};
 }
 
@@ -511,16 +550,17 @@ function validateActiveFinishContext(finishContext,{sessionId,stateCapability,ou
   if(!binding||!binding.active||binding.sessionId!==sessionId||binding.statePath!==stateCapability?.path||binding.outcome!==outcome)
     fail('finish-context-invalid');return Object.freeze({...binding});}
 
-async function finalizeWithinFinishOperation({operation,sessionId,stateCapability,outcome,seam,locksHeld=false,caps}={}){
+async function finalizeWithinFinishOperation({operation,sessionId,stateCapability,outcome,seam,locksHeld=false,caps,finishedAt:requestedFinishedAt}={}){
   requireSessionId(sessionId);if(!operation||operation.sessionId!==sessionId||
       operation.kind!==`finish-${outcome}`||!['merge','publish-pr','keep','discard'].includes(outcome))fail('finish-operation');
   if(!locksHeld)return withFinishTransaction({sessionId,stateCapability,outcome},({caps:held})=>finalizeWithinFinishOperation({operation,
-    sessionId,stateCapability,outcome,seam,locksHeld:true,caps:held}));let fields=sessionFromState(stateCapability,sessionId);
+    sessionId,stateCapability,outcome,seam,locksHeld:true,caps:held,finishedAt:requestedFinishedAt}));let fields=sessionFromState(stateCapability,sessionId);
   const projectCapability=transaction.projectCapabilityFor(stateCapability);const registry=readRegistryUnlocked(caps.registry);
   const owned=fields.finish_operation_id===operation.operationId&&
     fields.finish_outcome===outcome&&fields.current_phase==='idle'&&typeof fields.finished_at==='string';
   if(!registry.sessions[sessionId]&&!owned)fail('registry-session-missing');
-  let finishedAt=owned?fields.finished_at:new Date().toISOString();
+  if(requestedFinishedAt!==undefined){const observed=await resumeOperation({projectCapability,operationId:operation.operationId,sessionId,kind:`finish-${outcome}`});const recorded=observed.stages?.find(row=>row.stage==='finalize-gate-checked')?.details?.owned?.finishedAt;if(!Number.isFinite(Date.parse(requestedFinishedAt))||recorded!==requestedFinishedAt||owned&&fields.finished_at!==requestedFinishedAt)fail('finish-finalization-time');}
+  let finishedAt=owned?fields.finished_at:requestedFinishedAt||new Date().toISOString();
   if(!owned){if(fields.current_phase==='idle')fail('finish-state-foreign');if(seam)seam('before-state-write',
       {operationId:operation.operationId,outcome});const text=fs.readFileSync(stateCapability.path,'utf8');
     atomicWriteFile(stateCapability,updateFrontmatterText(text,{current_phase:'idle',finished_at:finishedAt,
@@ -600,6 +640,7 @@ async function forkSession({projectCapability,parentStateCapability,parentSessio
     const created=await gitRuntime.createFork({projectCapability,parentSessionId,childSessionId,parentStateCapability,operation,inspection,
       seam:(name,context)=>call(name,context)});const task=parentFields.task_description||parentRow.task_description||'Forked session';
     const childState=buildSessionState({sessionId:childSessionId,task,defaults:parseStoredObject(parentFields.defaults_json),
+      sessionM3RunId:require('./workflow-runtime.js').reserveM3RunId(operation.operationId,pending.createdAt),
       profile:parseStoredObject(parentFields.profile_json),repositoryContext:{headOid:created.headOid,branch:created.branch,dirty:false,
         repositoryMode:'fork',worktreePurpose:'fork',worktreePath:created.path}});Object.assign(childState,{current_phase:fromPhase,fork_parent:parentSessionId,
       parent_branch:created.parentBranch,fork_generation:inspection.forkGeneration,
@@ -674,7 +715,7 @@ async function prepareSessionRepository({projectCapability,sessionId,mode,task,d
     const prepared=await gitRuntime.prepareInitialRepository({projectCapability,sessionId,mode,baseRef,operation,inspection,
       seam:(name,context)=>call(`repository-${name}`,context)});call('after-repository-call-before-stage',
       {operationId:operation.operationId,prepared});call('after-repository-stage',{operationId:operation.operationId,prepared});
-    const state=buildSessionState({sessionId,task,defaults,profile,repositoryContext:prepared.repositoryContext});
+    const state=buildSessionState({sessionId,task,defaults,profile,repositoryContext:prepared.repositoryContext,sessionM3RunId:require('./workflow-runtime.js').reserveM3RunId(operation.operationId,pending.createdAt),projectRoot:root});
     const stateText=updateFrontmatterText('',state);let currentState=null;try{currentState=fs.readFileSync(statePath,'utf8');}
     catch(error){if(error.code!=='ENOENT')throw error;}if(currentState!==null&&currentState!==stateText)fail('initial-state-foreign');
     if(currentState===null){call('before-state-write',{operationId:operation.operationId});atomicWriteFile(stateCapability,stateText);

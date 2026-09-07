@@ -1426,7 +1426,8 @@ node26Test('node-tap-subset-v1 binds exact topology, keys and typed tap-value-v1
 });
 
 async function preparePublicFirstRedCase(t,{spec=exactFirstRedSpec(),testSource=null,
-  planAuthorityOverride=null}={}){
+  planAuthorityOverride=null,portable=false}={}){
+  if(portable){spec=structuredClone(spec);spec.executable.supported_patches_sha256=require("./node-tap-policy.js").CURRENT_NODE_TAP_POLICY_SHA256;}
   const specBytes=Buffer.from(canonicalJson(spec));
   const specSha256=digest(specBytes);
   const fixture=bootstrapControlFixture({firstRedSpecSha256:specSha256,testSource});
@@ -1521,13 +1522,13 @@ function rebindPreparedPlan(prepared){
 test('public first-RED recomputes immutable Plan authority and authenticates verification carriers',
   async(t)=>{
     await t.test('caller-selected-plan-authority',async()=>{
-      const prepared=await preparePublicFirstRedCase(t,{planAuthorityOverride:'f'.repeat(64)});
+      const prepared=await preparePublicFirstRedCase(t,{planAuthorityOverride:'f'.repeat(64),portable:true});
       await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),
         /bootstrap-first-red-plan/);
     });
     const mutateVerificationPlan=async(name,mutate)=>{
       await t.test(name,async()=>{
-        const prepared=await preparePublicFirstRedCase(t);
+        const prepared=await preparePublicFirstRedCase(t,{portable:true});
         const changed=structuredClone(prepared.verificationPlan);
         mutate(changed);
         changed.slice_verification_specs_sha256=digest(Buffer.from(canonicalJson({
@@ -1564,7 +1565,7 @@ test('public first-RED requires the exact caller-bound current operation journal
     },/bootstrap-manifest-runtime-journal/],
   ]){
     await t.test(name,async()=>{
-      const prepared=await preparePublicFirstRedCase(t);
+      const prepared=await preparePublicFirstRedCase(t,{portable:true});
       const original=journalRuntime.recordOperationStage;
       let armed=true;
       journalRuntime.recordOperationStage=async(handle,stage,...rest)=>{
@@ -2135,7 +2136,9 @@ node26Test('public first-RED rejects every closed process, TAP, scope, environme
       const spec=exactFirstRedSpec({executable:{kind:'node-toolchain',name:'node',
         supported_patches_sha256:'f'.repeat(64)}});
       const prepared=await preparePublicFirstRedCase(t,{spec});
-      await expectRejected(prepared,'pre-spawn-rejected','pre-spawn');
+      const before=fs.readdirSync(path.join(prepared.fixture.root,'.claude')).sort();
+      await assert.rejects(()=>dispatch(prepared.argv,{cwd:prepared.fixture.root}),/unknown-policy/);
+      assert.deepEqual(fs.readdirSync(path.join(prepared.fixture.root,'.claude')).sort(),before);
     });
     await t.test('producer-substitution',async()=>{
       const first=await preparePublicFirstRedCase(t);
@@ -2146,3 +2149,39 @@ node26Test('public first-RED rejects every closed process, TAP, scope, environme
         /bootstrap-/);
     });
   });
+
+test('reporterLocation accepts Windows TAP YAML doubled backslashes',{
+  skip:process.platform!=='win32'?'native Windows TAP locations':false,
+},()=>{
+  const file=path.join(__dirname,'bootstrap-runtime.test.js');
+  const doubled=`${file.replaceAll('\\','\\\\')}:4:1`;
+  const loc=bootstrapRuntime.nodeTapPrimitives.reporterLocation(doubled,{
+    root:path.resolve(__dirname,'..'),testPath:'runtime/bootstrap-runtime.test.js'});
+  assert.equal(loc.line,4);
+  assert.equal(loc.column,1);
+});
+
+test('first-RED keeps closed child env and binds Windows supervisor control separately',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'bootstrap-runtime.js'),'utf8');
+  assert.match(source,/buildSupervisorControl\(\)/);
+  assert.match(source,/supervisorEnv:\s*structuredClone\(\s*supervisor\.values\s*\)/);
+  assert.match(source,/env:\s*structuredClone\(\s*spec\.environment\.values\s*\)/);
+});
+
+test('portable bootstrap direct siblings produce an authenticated RED proof',async(t)=>{
+ const policy=require('./node-tap-policy.js');
+ assert.equal(policy.resolveNodeTapPolicy({policySha256:policy.CURRENT_NODE_TAP_POLICY_SHA256,nodeVersion:process.versions.node}).supported,true);
+ const spec=exactFirstRedSpec({executable:{kind:'node-toolchain',name:'node',supported_patches_sha256:policy.CURRENT_NODE_TAP_POLICY_SHA256}});
+ spec.red_failure.expected_signal.test_identity.start_line=5;
+ const source=["'use strict';","const test=require('node:test');","const assert=require('node:assert/strict');",
+ "test('existing',()=>assert.equal(1,1));","test('fails first',()=>assert.strictEqual(1,2,'expected exact authority'));",''].join('\n');
+ const p=await preparePublicFirstRedCase(t,{spec,testSource:source});
+ const bridge=await dispatch(p.argv,{cwd:p.fixture.root});
+ assert.equal(bridge.disposition,'accepted',JSON.stringify(JSON.parse(fs.readFileSync(path.join(p.fixture.root,bridge.verification_result_path)))));
+ const adoption=await dispatch(['bootstrap','red-adopt','--state',p.fixture.statePath,'--plan',p.planPath,'--authorization',p.fixture.authorizationPath,'--receipt',path.join(p.fixture.control,'bootstrap-receipt.json'),'--marker',path.join(p.fixture.control,'marker.json'),'--slice','SLICE-001','--bridge-operation-id',bridge.operation_id],{cwd:p.fixture.root});
+ const proof=await dispatch(['bootstrap','proof-publish','--state',p.fixture.statePath,'--plan',p.planPath,'--slice','SLICE-001','--transition-operation-id',adoption.operation_id],{cwd:p.fixture.root});
+ assert.equal(proof.operation_receipt.stage,'completed-ledger');
+ const result=JSON.parse(fs.readFileSync(path.join(p.fixture.root,bridge.verification_result_path)));
+ assert.equal(bootstrapRuntime.validateVerificationResultForSpec(result,{spec}).result_sha256,result.result_sha256);
+ assert.equal(result.executable_identity.node_version,process.versions.node);
+});

@@ -265,11 +265,8 @@ test('pinned concrete(현재 런타임)는 그대로 통과', () => {
   assert.strictEqual(r.model_routing.implement, 'opus');
 });
 
-test('pinned concrete(런타임 불일치)는 거부+경고 후 자동값 (리뷰 Low-6)', () => {
-  const r = decideModelRouting({ signals: { tracked_files: 500 }, taskText: 't', runtime: 'codex',
-    pinned: { implement: 'opus' } });
-  assert.notStrictEqual(r.model_routing.implement, 'opus'); // codex 경로에 Claude명 유출 금지
-  assert.ok(r.warnings.some((w) => /opus/.test(w)));
+test('pinned concrete foreign runtime rejects explicitly',()=>{
+  assert.throws(()=>decideModelRouting({runtime:'codex',pinned:{implement:'opus'}}),/foreign-model/);
 });
 
 test('brainstorm/plan pinned는 거부+경고 (main 고정)', () => {

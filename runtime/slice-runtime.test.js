@@ -249,7 +249,7 @@ test('model and execution values use closed enums and auto is never stored', asy
     /execution-override/);
 });
 
-test('model routing migration preserves canonical meta state and still migrates legacy scalar state', async () => {
+test('model routing migration preserves canonical and legacy explicit main state', async () => {
   const canonical = setup();
   fs.writeFileSync(canonical.state,
     '---\nsession_id: s-aaaaaaaa\nmodel_routing_json: "{\\"research\\":\\"main\\"}"\nmodel_routing_meta_json: "{\\"runtime\\":\\"unknown\\"}"\n---\n');
@@ -262,7 +262,7 @@ test('model routing migration preserves canonical meta state and still migrates 
     '---\nsession_id: s-aaaaaaaa\nmodel_routing_json: "{\\"research\\":\\"main\\"}"\n---\n');
   await migrateModelRouting({ stateCapability: legacy.stateCapability });
   fields = parseFrontmatter(fs.readFileSync(legacy.state, 'utf8')).fields;
-  assert.equal(JSON.parse(fields.model_routing_json).research, 'sonnet');
+  assert.equal(JSON.parse(fields.model_routing_json).research, 'main');
 });
 
 test('model routing migration raw-guards legacy nested canonical meta before frontmatter parsing', async () => {

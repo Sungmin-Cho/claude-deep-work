@@ -57,7 +57,7 @@ async function withRankedLocks(requests,callback){if(typeof callback!=='function
     });};
   return acquire(0);}
 async function journaledStateMutation({stateCapability,kind,operationId,preconditions={},slice,reducer,seam,
-  prepareUnderLock,afterStateCommitUnderLock,retainCompletedJournal=false}={}){
+  prepareUnderLock,afterStateCommitUnderLock,retainCompletedJournal=false,resultExtras}={}){
   if(typeof reducer!=='function')fail('transaction-reducer');const sessionId=sessionIdFromState(stateCapability);
   if(typeof retainCompletedJournal!=='boolean')fail('transaction-retain-journal');
   const projectCapability=projectCapabilityFor(stateCapability);
@@ -101,7 +101,7 @@ async function journaledStateMutation({stateCapability,kind,operationId,precondi
     invokeSeam(seam,'after-state-stage',{operationId:operation.operationId,kind,patch});
     const after=readState(stateCapability);if(sha256(canonicalJson(after))!==prepared.afterStateSha256)fail('transaction-state-postcondition');
     const receipt=await completeOperation(operation,{status:'completed',statePath:stateCapability.path,
-      stateSha256:prepared.afterStateSha256,patchSha256:prepared.patchSha256},{retainJournal:retainCompletedJournal});
+      stateSha256:prepared.afterStateSha256,patchSha256:prepared.patchSha256,...(resultExtras?await resultExtras(after):{})},{retainJournal:retainCompletedJournal});
     return {...after,operationId:operation.operationId,operationReceipt:receipt};
   });
 }

@@ -23,6 +23,7 @@ function validateAcceptedScopedWriteReceipt(receipt,{operationId,sliceId}={}){
   const keys=['version','operationId','sliceId','writeClass','authority','preManifest',
     'planSha256','statePath','tddPreState','runtimeExclusions','status','postManifest',
     'changedPaths','receiptSha256'];
+  if(Object.hasOwn(receipt||{},'executionPlanAuthoritySha256')){keys.push('executionPlanAuthoritySha256');if(!/^[0-9a-f]{64}$/.test(receipt.executionPlanAuthoritySha256))fail('scoped-write-identity');}
   const authorityKeys=['schema_version','plan_sha256','delegation_operation_id',
     'delegation_sha256','cluster_id','slice_id','write_class','class_paths',
     'assigned_union','authorized_paths','sha256'];
@@ -145,9 +146,21 @@ function requireSlice(plan,sliceId,{unchecked=false}={}) {
   return slice;
 }
 
-function activateSlice({stateCapability,plan,sliceId}) {
-  requireSlice(plan,sliceId,{unchecked:true});
-  return mutateState(stateCapability,() => ({active_slice:sliceId,tdd_state:'PENDING'}));
+function activateSlice({stateCapability,plan,planCapability,sliceId}) {
+  const selected=requireSlice(plan,sliceId,{unchecked:true});
+  return mutateState(stateCapability,(fields) => {
+    if(plan.schema_version===3){
+      require('./workflow-runtime.js').loadExecutionContext({stateCapability,planCapability,sliceId});
+      assertNoPendingScopedWrite(stateCapability);
+      if(fields.current_phase!=='implement')fail('slice-activation-phase');
+      const prior=plan.slices.find(row=>row.id===fields.active_slice);
+      if(prior&&!prior.checked&&prior.id!==sliceId)fail('slice-active-conflict');
+      if(selected.execution_basis==='strict-tdd-v2')require('./node-tap-policy.js').assertNodeTapPolicyForSpec(selected.verification_spec,process.versions.node);
+      return {active_slice:sliceId,tdd_state:selected.execution_basis==='outcome-v1'?'NOT_APPLICABLE':'PENDING',
+        outcome_state:selected.execution_basis==='outcome-v1'?'READY':null};
+    }
+    return {active_slice:sliceId,tdd_state:'PENDING'};
+  });
 }
 
 function enterSliceSpike({stateCapability,plan,sliceId}) {
@@ -156,7 +169,8 @@ function enterSliceSpike({stateCapability,plan,sliceId}) {
 }
 
 function setSliceModel({stateCapability,sliceId,model}) {
-  if (!/^SLICE-\d{3}$/.test(sliceId || '') || !MODELS.has(model)) fail('slice-model');
+  if (!/^SLICE-\d{3}$/.test(sliceId || '') || typeof model!=='string') fail('slice-model');
+  if(!MODELS.has(model)){const capability=require('./model-capabilities.js').resolveModelCapability({runtime:/^gpt-/.test(model)?'codex':'claude',model});if(capability.status!=='recognized')fail('slice-model-unavailable');}
   return mutateState(stateCapability,(fields) => {
     let current = {};
     if (typeof fields.model_overrides_json === 'string' && fields.model_overrides_json) {
@@ -281,18 +295,9 @@ function setClusterTakeover(options){return mutateClusterTakeover(options);}
 function clearClusterTakeover(options){return mutateClusterTakeover({...options,clear:true});}
 
 function migrateModelRouting({stateCapability}) {
-  return mutateState(stateCapability,(fields) => {
-    if (typeof fields.model_routing_meta_json === 'string' || fields.model_routing_meta !== undefined) return {};
-    if (typeof fields.model_routing_json !== 'string') return {};
-    let routing;
-    try { routing=JSON.parse(fields.model_routing_json); } catch { return {}; }
-    if (!routing || typeof routing !== 'object' || Array.isArray(routing)) return {};
-    const replaced=[];
-    for (const key of ['research','implement','test']) if (routing[key] === 'main') {
-      routing[key]='sonnet'; replaced.push(key);
-    }
-    return replaced.length ? {model_routing_json:JSON.stringify(routing)} : {};
-  }, { rawGuard: (text) => /^(?:model_routing_meta|model_routing_meta_json):/m.test(text) });
+  // Existing main pins are current-session execution intent. The public route
+  // authenticates and locks the state, but never invents delegation authority.
+  return mutateState(stateCapability, () => ({}), {rawGuard: () => true});
 }
 
 async function setDelegationSnapshot({stateCapability,planCapability,plan,assignment,snapshot,seam,_locksHeld=false}={}){
@@ -455,15 +460,20 @@ async function beginScopedWrite({stateCapability,plan,planCapability,sliceId,wri
   if(!_locksHeld)return transaction.withRankedLocks(scopedWriteRankLocks(stateCapability),()=>beginScopedWrite({stateCapability,plan,
     planCapability,sliceId,writeClass,clusterId,expectedScopeSha256,seam,_locksHeld:true}));const lockedPlan=lockedScopedPlan(planCapability,plan);
   const fields=parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
-  const strictScoped=lockedPlan.contract_binding?.mode==='strict-spec';
+  const strictScoped=lockedPlan.contract_binding?.mode==='strict-spec'||lockedPlan.schema_version===3;
   const priorPending=strictScoped?pendingScopedWrite(fields):null;
   if(priorPending&&(priorPending.slice_id!==sliceId||
       priorPending.plan_authority_sha256!==lockedPlan.plan_authority_sha256))
     fail('pending-scoped-write');
   if(fields.current_phase!=='implement'||
       fields.active_slice!==sliceId)fail('scoped-write-state');const expectedTdd={'failing-test':'PENDING',production:'RED_VERIFIED',
-    refactor:'SENSOR_CLEAN'}[writeClass];if(!expectedTdd||fields.tdd_state!==expectedTdd)fail('scoped-write-tdd-state');
-  if(writeClass==='production'&&lockedPlan.contract_binding?.mode==='strict-spec')
+    refactor:'SENSOR_CLEAN'}[writeClass];
+  const selected=lockedPlan.slices.find(row=>row.id===sliceId),outcome=lockedPlan.schema_version===3&&selected?.execution_basis==='outcome-v1';
+  if(lockedPlan.schema_version===3)require('./workflow-runtime.js').loadExecutionContext({stateCapability,planCapability,sliceId});
+  if(outcome){if(fields.tdd_state!=='NOT_APPLICABLE'||!['production','refactor'].includes(writeClass))fail('scoped-write-outcome-state');}
+  else {if(!expectedTdd||fields.tdd_state!==expectedTdd)fail('scoped-write-tdd-state');
+    if(strictScoped&&selected?.verification_spec)require('./node-tap-policy.js').assertNodeTapPolicyForSpec(selected.verification_spec,process.versions.node);}
+  if(writeClass==='production'&&!outcome&&strictScoped)
     await enforceBootstrapProductionAdmission({stateCapability,plan:lockedPlan,sliceId,fields});
   if(writeClass==='refactor'&&fields.fresh_sensor_required)fail('scoped-write-fresh-sensor');const persisted=persistedScopedAssignment({
     stateCapability,planCapability,fields,clusterId});const authority=deriveScopedWriteAuthority({plan:lockedPlan,sliceId,writeClass,
@@ -482,7 +492,7 @@ async function beginScopedWrite({stateCapability,plan,planCapability,sliceId,wri
   if(!receipt){const caps=manifestCapabilities(stateCapability);seam?.('before-manifest',{sliceId,writeClass});const manifest=
       captureWorktreeManifest({...caps,runtimeExclusions:derivedExclusions});seam?.('after-manifest',{sliceId,writeClass,
         manifestSha256:manifest.sha256});receipt={version:1,operationId,sliceId,writeClass,authority,preManifest:manifest,
-        planSha256:authority.plan_sha256,statePath:stateCapability.path,tddPreState:fields.tdd_state,
+        planSha256:authority.plan_sha256,...(lockedPlan.schema_version===3?{executionPlanAuthoritySha256:lockedPlan.plan_authority_sha256}:{}),statePath:stateCapability.path,tddPreState:fields.tdd_state,
         runtimeExclusions:derivedExclusions.map((capability)=>capability.path),status:'begun'};seam?.('before-receipt-write',{operationId});
     atomicWriteFile(receiptCapability,canonicalJson(receipt));seam?.('after-receipt-write-before-stage',{operationId});}
   if(receipt.operationId!==operationId||receipt.sliceId!==sliceId||receipt.writeClass!==writeClass||receipt.status!=='begun'||
@@ -506,7 +516,7 @@ async function acceptScopedWrite({stateCapability,plan,planCapability,sliceId,op
   let pending=await resumeOperation({projectCapability,operationId,sessionId,kind:'delegation-scope-publish'});const receiptPath=path.join(
     stateCapability.projectRoot,'.claude',`deep-work.${sessionId}.scoped-write.${operationId}.json`);const cap=
     issueProjectStateCapability(stateCapability.projectRoot,receiptPath,{role:'state'});revalidatePathCapability(cap,'scoped-write-receipt');
-  if(lockedPlan.contract_binding?.mode==='strict-spec')
+  if(lockedPlan.contract_binding?.mode==='strict-spec'||lockedPlan.schema_version===3)
     assertNoPendingScopedWrite(stateCapability,{allowOperationId:operationId});
   let receipt;try{receipt=JSON.parse(fs.readFileSync(receiptPath,'utf8'));}catch{fail('scoped-write-receipt-json');}
   if(receipt.sliceId!==sliceId||receipt.preManifest.sha256!==preManifestSha256||receipt.planSha256!==
@@ -545,7 +555,7 @@ async function acceptScopedWrite({stateCapability,plan,planCapability,sliceId,op
     }
     validateAcceptedScopedWriteReceipt(receipt,{operationId,sliceId});
     await authenticateScopedWriteProducer({stateCapability,receipt});
-    if(lockedPlan.contract_binding?.mode==='strict-spec')
+    if(lockedPlan.contract_binding?.mode==='strict-spec'||lockedPlan.schema_version===3)
       clearPendingScopedWrite(stateCapability,operationId);
     return receipt;}
   if(pending.preconditions?.action!=='scoped-write'||pending.preconditions?.sliceId!==sliceId||
@@ -581,7 +591,8 @@ async function acceptScopedWrite({stateCapability,plan,planCapability,sliceId,op
   await recordOperationStage({projectCapability,operationId,sessionId,kind:'delegation-scope-publish'},'scoped-write-accepted',
     {owned:{receiptPath,receiptSha256:accepted.receiptSha256,postManifestSha256:accepted.postManifest.sha256}});const patch={
       accepted_write_operation_id:operationId,accepted_write_receipt_sha256:accepted.receiptSha256,
-      accepted_write_class:accepted.writeClass};if(accepted.writeClass==='refactor'){patch.tdd_state='REFACTOR_PENDING';
+      accepted_write_class:accepted.writeClass};if(lockedPlan.schema_version===3&&lockedPlan.slices.find(row=>row.id===sliceId)?.execution_basis==='outcome-v1')patch.outcome_state='READY';
+  else if(accepted.writeClass==='refactor'){patch.tdd_state='REFACTOR_PENDING';
     patch.fresh_sensor_required=true;patch.sensor_cycle_operation_id=null;patch.sensor_results_sha256=null;patch.refactor_cycle=JSON.stringify({
       schema_version:1,sliceId,planSha256:accepted.planSha256,writeOperationId:operationId,writeReceiptSha256:accepted.receiptSha256,
       verificationOperationId:null,verificationResultSha256:null,sensorCycleOperationId:null});}
@@ -597,7 +608,7 @@ async function acceptScopedWrite({stateCapability,plan,planCapability,sliceId,op
     {owned:{statePath:stateCapability.path,operationId,receiptSha256:accepted.receiptSha256}});const operationReceipt=
     await completeOperation({projectCapability,operationId,sessionId,kind:'delegation-scope-publish'},{status:'accepted',
       receiptSha256:accepted.receiptSha256,postManifestSha256:accepted.postManifest.sha256,sliceId,writeClass:accepted.writeClass});
-  if(lockedPlan.contract_binding?.mode==='strict-spec')
+  if(lockedPlan.contract_binding?.mode==='strict-spec'||lockedPlan.schema_version===3)
     clearPendingScopedWrite(stateCapability,operationId);
   return{...accepted,operationReceipt};
 }
@@ -1046,7 +1057,7 @@ function assertBootstrapProductionAdmission({sliceId,verificationSpecSha256,plan
   return true;
 }
 
-module.exports = {activateSlice,enterSliceSpike,setSliceModel,setExecutionOverride,
+module.exports = {pendingScopedWrite,activateSlice,enterSliceSpike,setSliceModel,setExecutionOverride,
   setClusterTakeover,clearClusterTakeover,migrateModelRouting,mutateState,setDelegationSnapshot,
   clearDelegationSnapshot,
   beginScopedWrite,acceptScopedWrite,resetSlice,completeSlice,assertProductionCompletionMode,

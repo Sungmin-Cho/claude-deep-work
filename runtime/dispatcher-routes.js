@@ -30,7 +30,7 @@ function stateCapability(f,cwd,key='state'){const root=projectRootFor(f,cwd);con
   return platform.issueProjectStateCapability(root,target,{role:'session-state'});}
 function stateFields(capability){platform.revalidatePathCapability(capability,'dispatcher-state');return frontmatter.parseFrontmatter(boundedFile(capability.path).toString('utf8')).fields;}
 function sessionId(capability){const match=path.basename(capability.path).match(/^deep-work\.(s-[0-9a-f]{8})\.md$/);if(!match)fail('session-state-identity');return match[1];}
-function usesGovernedProjection(plan){
+function usesGovernedProjection(plan){if(plan?.schema_version===3)return true;
   return plan?.contract_binding?.mode==='strict-spec'&&
     require('./verification-policy-runtime.js').isAtLeast614(
       plan.contract_binding.created_by_version);
@@ -88,6 +88,11 @@ function identifyOwnedInput(stateCap,file,expectedPurpose){const sessionCap=sess
   const relative=path.relative(sessionCap.path,target).split(path.sep).join('/');const match=relative.match(/^\.tmp\/(op-[0-9a-f]{32,64})\/([^/]+)\.tmp$/);
   if(!match||match[2]!==expectedPurpose)fail('owned-temp-purpose');const found=artifact.resolveOwnedTemp({sessionCapability:sessionCap,operationId:match[1]});
   if(found.purpose!==expectedPurpose||found.capability.path!==target)fail('owned-temp-purpose');return{sessionCapability:sessionCap,...found};}
+function runtimeReceiptsCapability(stateCap,plan,provided){
+ if(plan.schema_version!==3)return receiptsCapability(stateCap,provided);
+ const sessionCap=sessionCapability(stateCap),expected=path.join(sessionCap.path,'runtime-receipts');
+ if(provided&&path.resolve(provided)!==expected)fail('runtime-receipts-route');fs.mkdirSync(expected,{recursive:true});return Object.freeze({kind:'receipts-directory',role:'receipts-directory',path:expected,sessionCapability:sessionCap,projectRoot:stateCap.projectRoot});
+}
 function ownedInputIdentity(stateCap,file,expectedPurpose){const sessionCap=sessionCapability(stateCap);const target=resolveInput(file,
     stateCap.projectRoot);const relative=path.relative(sessionCap.path,target).split(path.sep).join('/');const match=relative.match(
     /^\.tmp\/(op-[0-9a-f]{32,64})\/([^/]+)\.tmp$/);if(!match||match[2]!==expectedPurpose)fail('owned-temp-purpose');
@@ -243,8 +248,9 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     const result=await artifact.createOwnedTemp({sessionCapability:sessionCapability(state),purpose:f.purpose});return{
       operationId:result.operationId,purpose:result.purpose,path:result.path};});
   on('temp write',({f,cwd,stdin})=>{const state=stateCapability(f,cwd);if(sessionId(state)!==f.session)fail('session-state-identity');const work=sessionCapability(state);
-    const resolved=artifact.resolveOwnedTemp({sessionCapability:work,operationId:f['temp-operation-id']});return artifact.writeOwnedTemp({sessionCapability:work,
-      operationId:resolved.operationId,purpose:resolved.purpose},f.stdin?stdin:boundedFile(resolveInput(f.stdin,cwd)));});
+    const resolved=artifact.resolveOwnedTemp({sessionCapability:work,operationId:f['temp-operation-id']});
+    const bytes=f.stdin?stdin:(()=>{try{const stat=fs.statSync(resolved.capability.path);if(stat.size>1_048_576)fail('stdin-too-large');return fs.readFileSync(resolved.capability.path);}catch(error){if(error.code==='ENOENT')fail('temp-not-written');throw error;}})();
+    return artifact.writeOwnedTemp({sessionCapability:work,operationId:resolved.operationId,purpose:resolved.purpose},bytes);});
   on('temp remove',({f,cwd})=>{const state=stateCapability(f,cwd);if(sessionId(state)!==f.session)fail('session-state-identity');const work=sessionCapability(state);
     const resolved=artifact.resolveOwnedTemp({sessionCapability:work,operationId:f['temp-operation-id']});return artifact.removeOwnedTemp({sessionCapability:work,
       operationId:resolved.operationId,purpose:resolved.purpose,expectedSha256:f['expected-sha256']});});
@@ -265,6 +271,11 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   for(const outcome of ['merge','publish-pr','keep','discard'])on(`session finish ${outcome}`,async({f,cwd})=>{
     const state=stateCapability(f,cwd);if(sessionId(state)!==f.session)fail('session-state-identity');
     return session.withFinishTransaction({sessionId:f.session,stateCapability:state,outcome},async({projectCapability:project,caps,finishContext})=>{
+      const currentFields=stateFields(state),currentPlanPath=path.join(sessionCapability(state).path,'plan.json');
+      const currentPlan=fs.existsSync(currentPlanPath)?JSON.parse(boundedFile(currentPlanPath)):null;
+      if(currentPlan?.schema_version===3){const identities=[ownedInputIdentity(state,f['receipt-payload'],'receipt-payload')];
+        if(outcome==='publish-pr')identities.push(ownedInputIdentity(state,f['title-file'],'pr-title'),ownedInputIdentity(state,f['body-file'],'pr-body'));
+        return require('./session-receipt-runtime.js').finishSessionV3({stateCapability:state,sessionId:f.session,outcome,projectCapability:project,caps,identities,dirtyResolution:f['dirty-resolution']||'abort',force:Boolean(f.force)});}
       const admission=finishAdmission(state,'finish-pre-action');if(!admission.allowed)fail('finish-gate-blocked',JSON.stringify(admission.blocking));
       const source=ownedInputIdentity(state,f['receipt-payload'],'receipt-payload');const identities=[source];
       if(outcome==='publish-pr')identities.push(ownedInputIdentity(state,f['title-file'],'pr-title'),
@@ -330,31 +341,61 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('session cache-clear',({f,cwd})=>{const project=projectCapability(f,cwd),target=path.join(project.path,'.deep-suite-cache',f.session);
     return transaction.withRankedLocks([routeLock(project,`session:${f.session}`,transaction.RANKS.session),
       routeLock(project,`cache:${target}`,transaction.RANKS.target)],()=>safeRemoveTree(project.path,target));});
-  on('session initialize',({f,cwd})=>session.initializeSession({task:boundedFile(resolveInput(f['task-file'],cwd)).toString('utf8'),
+  on('session initialize',({f,cwd})=>session.initializeSession({projectRoot:projectCapability(f,cwd).path,task:boundedFile(resolveInput(f['task-file'],cwd)).toString('utf8'),
     flags:jsonFile(resolveInput(f['flags-json'],cwd)),profile:jsonFile(resolveInput(f['profile-json'],cwd))}));
   on('session state migrate-schema',({f,cwd})=>session.migrateKnownSessionSchema({stateCapability:stateCapability(f,cwd),sessionId:f.session}));
   on('session execution set',({f,cwd})=>slice.setExecutionOverride({stateCapability:stateCapability(f,cwd),value:f.mode==='auto'?null:f.mode}));
   on('session state migrate-model-routing',({f,cwd})=>slice.migrateModelRouting({stateCapability:stateCapability(f,cwd)}));
   on('session recovery worktree',({f,cwd})=>session.recoverSessionWorktree({stateCapability:stateCapability(f,cwd),sessionId:f.session}));
   on('session finalize',({f,cwd})=>session.finalizeSession({stateCapability:stateCapability(f,cwd),sessionId:f.session,finishedAt:f['finished-at']}));
+  on('session environment explain',({f,cwd})=>require('./session-maintenance-runtime.js').explainEnvironment({stateCapability:stateCapability(f,cwd),manager:f.manager}));
+  on('session environment prepare',({f,cwd})=>require('./session-maintenance-runtime.js').prepareEnvironment({stateCapability:stateCapability(f,cwd),preparedDigest:f['prepared-digest']}));
+  on('session park',({f,cwd})=>require('./session-maintenance-runtime.js').parkSession({stateCapability:stateCapability(f,cwd),sessionId:f.session}));
+  on('session restore',({f,cwd})=>require('./session-maintenance-runtime.js').restoreSession({stateCapability:stateCapability(f,cwd),sessionId:f.session}));
+  on('session downgrade-check',({f,cwd})=>require('./session-maintenance-runtime.js').downgradeCheck({projectRoot:projectCapability(f,cwd).path,targetVersion:f['target-version']}));
+  on('artifact approval reopen',({f,cwd})=>require('./artifact-approval-runtime.js').reopen({stateCapability:stateCapability(f,cwd)}));
+  on('artifact approval preview',({f,cwd})=>require('./artifact-approval-runtime.js').preview({stateCapability:stateCapability(f,cwd),phases:f.phases}));
+  on('artifact approval packet-publish',({f,cwd})=>require('./artifact-approval-runtime.js').publishPacket({stateCapability:stateCapability(f,cwd),phases:f.phases}));
+  on('artifact approval review-run',({f,cwd})=>require('./artifact-approval-runtime.js').runApprovalReview({stateCapability:stateCapability(f,cwd),packetRef:jsonFile(resolveInput(f['packet-ref-json'],cwd)),reviewer:jsonFile(resolveInput(f['reviewer-json'],cwd)),timeoutMs:f['timeout-ms']===undefined?undefined:Number(f['timeout-ms'])}));
+  on('artifact approval publish',({f,cwd})=>require('./artifact-approval-runtime.js').publishApproval({stateCapability:stateCapability(f,cwd),packetRef:jsonFile(resolveInput(f['packet-ref-json'],cwd)),humanDeclaration:f['human-declaration-json']?jsonFile(resolveInput(f['human-declaration-json'],cwd)):undefined,reviewExecutionRefs:f['review-execution-refs-json']?jsonFile(resolveInput(f['review-execution-refs-json'],cwd)):undefined}));
+  on('phase continue',({f,cwd})=>require('./workflow-runtime.js').continuePhase({stateCapability:stateCapability(f,cwd),at:f.at}));
   on('phase begin',({f,cwd})=>phase.beginPhase({stateCapability:stateCapability(f,cwd),phase:f.phase,at:f.at}));
   on('phase complete',({f,cwd})=>phase.completePhase({stateCapability:stateCapability(f,cwd),phase:f.phase,
     result:jsonFile(resolveInput(f['result-json'],cwd)),at:f.at}));
-  on('phase approve',async({f,cwd})=>{const state=stateCapability(f,cwd);const artifact=resolveInput(f.artifact,cwd);
-    const artifactBytes=boundedFile(artifact);if(f.phase!=='plan')return phase.approvePhase({stateCapability:state,
-      phase:f.phase,artifactSha256:hash(artifactBytes),at:f.at});
-    if(path.basename(artifact)!=='plan.md')fail('plan-source-artifact');const fields=stateFields(state);
-    let specContract,sliceRiskState;try{specContract=JSON.parse(fields.spec_contract_json);sliceRiskState=JSON.parse(fields.slice_risk_shadow_json);}
-    catch{fail('plan-approval-state');}
-    const projection=planRuntime.compilePlanProjectionV1({planMarkdown:artifactBytes.toString('utf8'),specContract,sliceRiskState});
-    const output=sessionFile(state,path.join(sessionCapability(state).path,'plan.json'),{allowMissing:true,basenames:['plan.json'],role:'plan-projection'});
-    const published=planRuntime.publishPlanProjectionV1({planCapability:output,projection});const authority=
-      buildPlanApprovalAuthority(state,fields,projection,published.sha256);
-    return phase.approvePhase({stateCapability:state,phase:'plan',artifactSha256:hash(artifactBytes),
-      sourcePlanSha256:projection.contract_binding.source_plan_sha256,planProjectionSha256:published.sha256,
-      verificationCompilerInput:authority.verificationCompilerInput,planSpecGateResult:authority.planSpecGateResult,at:f.at});});
+  on('phase approve',async({f,cwd})=>{const state=stateCapability(f,cwd);const artifactPath=resolveInput(f.artifact,cwd);
+    const bytes=boundedFile(artifactPath);if(f.phase!=='plan')return phase.approvePhase({stateCapability:state,
+      phase:f.phase,artifactSha256:hash(bytes),at:f.at});
+    if(require('./artifact-approval-runtime.js').required(state)&&!/^## Execution Plan\s*$/m.test(bytes.toString()))fail('artifact-approval-execution-v3-required');
+    if(artifactPath!==path.join(sessionCapability(state).path,'plan.md'))fail('plan-source-artifact');
+    return transaction.journaledStateMutation({stateCapability:state,kind:'phase-approval',
+      preconditions:{phase:'plan',artifactSha256:hash(bytes),at:f.at,...(f['approval-ref-json']?{artifactApprovalRef:jsonFile(resolveInput(f['approval-ref-json'],cwd))}:{})},
+      resultExtras:fields=>({...((fields.artifact_approval_consumptions_json&&JSON.parse(fields.artifact_approval_consumptions_json).plan)?{artifact_approval:JSON.parse(fields.artifact_approval_consumptions_json).plan}:{}),approval_binding:{artifact_sha256:hash(bytes),plan_projection_sha256:fields.plan_projection_sha256,
+        source_plan_sha256:fields.plan_source_sha256,verification_plan_sha256:fields.verification_plan_sha256,
+        plan_authority_sha256:JSON.parse(fields.verification_plan_json).plan_authority_sha256}}),reducer:(fields,context)=>{
+        if(fields.current_phase!=='plan'||!boundedFile(artifactPath).equals(bytes))fail('plan-approval-source-drift');
+        const specContract=storedObject(fields,'spec_contract_json');
+        const sliceRiskState=fields.slice_risk_shadow_json?storedObject(fields,'slice_risk_shadow_json'):undefined;
+        const projection=planRuntime.compilePlanProjectionV1({planMarkdown:bytes.toString('utf8'),specContract,sliceRiskState,derivationContext:{fields,specBytes:boundedFile(path.join(sessionCapability(state).path,'spec.md'))}});
+        const approval=projection.schema_version===3?require('./artifact-approval-runtime.js').authenticateApproval({stateCapability:state,ref:f['approval-ref-json']?jsonFile(resolveInput(f['approval-ref-json'],cwd)):null,phase:'plan',atConsumption:true}):null;
+        if(approval&&approval.compiled_projection_sha256!==journal.sha256(journal.canonicalJson(projection)))fail('artifact-approval-projection-drift');
+        if(projection.schema_version===3&&projection.execution_policy.requested_method!==fields.execution_method)fail('plan-execution-method-drift');
+        const oracleSources=[];if(projection.schema_version===3)for(const row of projection.slices){
+          if(row.execution_basis!=='outcome-v1')continue;for(const command of row.verification_commands)if(!row.oracle_controls.some(o=>o.command_id===command.id))fail('outcome-command-unmapped');
+          for(const oracle of row.oracle_controls)if(oracle.source_kind==='pre-existing-immutable')for(const ref of oracle.source_refs){const refPath=path.join(state.projectRoot,ref.path);if(fs.realpathSync(refPath)!==refPath)fail('oracle-source-alias');const digest=hash(require('./workflow-runtime.js').readRegular(refPath));if(digest!==ref.sha256)fail('oracle-source-approval-drift');oracleSources.push({...ref,slice_id:row.id,oracle_id:oracle.id});}}
+        const output=sessionFile(state,path.join(sessionCapability(state).path,'plan.json'),{allowMissing:true,basenames:['plan.json'],role:'plan-projection'});
+        const projectionSha256=journal.sha256(journal.canonicalJson(projection));
+        const authority=buildPlanApprovalAuthority(state,fields,projection,projectionSha256);
+        const next=phase.approvePhase({state:fields,phase:'plan',artifactSha256:hash(bytes),
+          sourcePlanSha256:projection.contract_binding.source_plan_sha256,planProjectionSha256:projectionSha256,
+          verificationCompilerInput:authority.verificationCompilerInput,planSpecGateResult:authority.planSpecGateResult,
+          approvalOperationId:context.operationId,at:f.at});
+        planRuntime.publishPlanProjectionV1({planCapability:output,projection});
+        return {...next,...(approval?{...require('./artifact-approval-runtime.js').consumedPatch(fields,approval),source_approval_reopen_operation_id:null}:{}),plan_approved:journal.canonicalJson(next.plan_approved),
+          outcome_oracle_sources_json:journal.canonicalJson(oracleSources),
+          slice_risk_shadow_json:journal.canonicalJson(Object.fromEntries(projection.slices.map(row=>[row.id,row.contract.risk])))};
+      }});});
   on('phase spec enter',({f,cwd})=>phase.enterSpecSubphase({stateCapability:stateCapability(f,cwd),at:f.at}));
-  on('phase spec approve',({f,cwd})=>{const state=stateCapability(f,cwd);const artifactPath=resolveInput(f.artifact,cwd);
+  on('phase spec approve',({f,cwd})=>{const state=stateCapability(f,cwd);const artifactPath=resolveInput(f.artifact,cwd);if(require('./artifact-approval-runtime.js').required(state)&&artifactPath!==path.join(sessionCapability(state).path,'spec.md'))fail('spec-source-artifact');
     const bytes=boundedFile(artifactPath);const contractRuntime=require('./contract-runtime.js');const specContract=
       contractRuntime.parseSpecMarkdown(bytes.toString('utf8'),{path:artifactPath});const validation=contractRuntime.validateSpecContract(
         specContract,{riskClass:specContract.risk_class});const specGateResult={schema_version:1,pass:validation.pass,
@@ -362,8 +403,8 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
         errors:validation.errors,warnings:validation.warnings,requirement_coverage:validation.requirementCoverage,
         failure_matrix_coverage:validation.failureMatrixCoverage};return phase.approveSpecSubphase({stateCapability:state,
       specApprovedHash:hash(bytes),specContract,specGateResult,
-      specReviewRefSha256:f['spec-review-ref-sha256'],at:f.at});});
-  on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);let specCurrentSha256;
+      specReviewRefSha256:f['spec-review-ref-sha256'],artifactApprovalRef:f['approval-ref-json']?jsonFile(resolveInput(f['approval-ref-json'],cwd)):undefined,at:f.at});});
+  on('phase advance',({f,cwd})=>{const state=stateCapability(f,cwd);if(stateFields(state).execution_method!==undefined)return require('./workflow-runtime.js').continuePhase({stateCapability:state,at:f.at});let specCurrentSha256;
     if(['research','spec'].includes(f.from)){const candidate=path.join(sessionCapability(state).path,'spec.md');
       if(fs.existsSync(candidate))specCurrentSha256=hash(boundedFile(candidate));}
     return phase.advancePhase({stateCapability:state,from:f.from,to:f.to,at:f.at,specCurrentSha256});});
@@ -430,6 +471,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('implement delegation set',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.setDelegationSnapshot({stateCapability:bound.state,
     planCapability:bound.cap,plan:bound.value,assignment:jsonFile(resolveInput(f['assignment-json'],cwd)),snapshot:f.snapshot});});
   on('implement delegation clear',({f,cwd})=>slice.clearDelegationSnapshot({stateCapability:stateCapability(f,cwd),snapshot:f.snapshot}));
+  on('implement receipt-publish',({f,cwd})=>{const bound=readPlan(f,cwd);return require('./workflow-runtime.js').withWorkflowLock(bound.state,()=>require('./completion-receipt-runtime.js').publishSliceM3({stateCapability:bound.state,planCapability:bound.cap,plan:JSON.parse(transaction.readSessionFile(bound.cap)),sliceId:f.slice}));});
   on('implement write begin',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.beginScopedWrite({stateCapability:bound.state,planCapability:bound.cap,
     plan:bound.value,sliceId:f.slice,writeClass:f.class,clusterId:f.cluster,expectedScopeSha256:f['scope-sha256']});});
   on('implement write accept',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.acceptScopedWrite({stateCapability:bound.state,
@@ -478,18 +520,18 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     fail('strict-spec-capture-required');return verification.runVerification({stateCapability:bound.state,planCapability:bound.cap,
     plan:bound.value,sliceId:f.slice,gateId:f['gate-id'],spec:jsonFile(resolveInput(f['spec-json'],cwd)),expectedOutcome:f.expected,cwd:bound.state.projectRoot});});
   on('verification run-v2',({f,cwd})=>{const bound=readPlan(f,cwd);
-    return verificationV2.runVerificationV2({stateCapability:bound.state,
+    return require('./workflow-runtime.js').withWorkflowLock(bound.state,()=>verificationV2.runVerificationV2({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
-      expectedOutcome:f.expected||'must-fail'});});
+      expectedOutcome:f.expected||'must-fail'}));});
   on('verification red-transition',({f,cwd})=>{const bound=readPlan(f,cwd);
-    return redProof.transitionOrdinaryRed({stateCapability:bound.state,
+    return require('./workflow-runtime.js').withWorkflowLock(bound.state,()=>redProof.transitionOrdinaryRed({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
       verificationOperationId:f['verification-operation-id'],
-      verificationResultSha256:f['verification-result-sha256']});});
+      verificationResultSha256:f['verification-result-sha256']}));});
   on('verification proof-publish',({f,cwd})=>{const bound=readPlan(f,cwd);
-    return redProof.publishOrdinaryRedProof({stateCapability:bound.state,
+    return require('./workflow-runtime.js').withWorkflowLock(bound.state,()=>redProof.publishOrdinaryRedProof({stateCapability:bound.state,
       planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
-      transitionOperationId:f['transition-operation-id']});});
+      transitionOperationId:f['transition-operation-id']}));});
   on('bootstrap failure-publish',({f,cwd})=>bootstrap.publishBootstrapFailure({
     stateCapability:stateCapability(f,cwd),authorizationPath:resolveInput(f.authorization,cwd),
     failurePath:resolveInput(f.failure,cwd)}));
@@ -510,6 +552,10 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('bootstrap proof-publish',({f,cwd})=>{const bound=readPlan(f,cwd);return bootstrap.publishBootstrapRedProof({
     stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,sliceId:f.slice,
     transitionOperationId:f['transition-operation-id']});});
+  on('evidence review-run',({f,cwd})=>{const bound=readPlan(f,cwd);return require('./global-review-packet-runtime.js').runGlobalReview({stateCapability:bound.state,planCapability:bound.cap,reviewer:jsonFile(resolveInput(f['reviewer-json'],cwd)),timeoutMs:Number(f['timeout-ms']||300000)});});
+  on('evidence review-binding',({f,cwd})=>{const bound=readPlan(f,cwd),input={stateCapability:bound.state,planCapability:bound.cap};return require('./workflow-runtime.js').withWorkflowLock(bound.state,()=>f.format==='packet'?require('./global-review-packet-runtime.js').buildGlobalReviewPacket(input):require('./global-review-runtime.js').globalReviewBinding(input));});
+  on('evidence record review-executions',async({f,cwd})=>{const bound=readPlan(f,cwd);const record=await require('./workflow-runtime.js').withWorkflowLock(bound.state,()=>require('./global-review-runtime.js').captureGlobalReviewEvidence({stateCapability:bound.state,planCapability:bound.cap,gateId:f['gate-id'],evidenceId:f['evidence-id'],reviewExecutionRefs:jsonFile(resolveInput(f['review-execution-refs-json'],cwd))}));return require('./evidence-runtime.js').publishAuthenticatedRecord(record,{stateCapability:bound.state,verificationPlan:JSON.parse(stateFields(bound.state).verification_plan_json),plan:JSON.parse(transaction.readSessionFile(bound.cap)),scope:{kind:'session',id:sessionId(bound.state)}});});
+  on('evidence record completion',async({f,cwd})=>{const bound=readPlan(f,cwd);const record=await require('./completion-evidence-runtime.js').captureCompletionEvidence({stateCapability:bound.state,planCapability:bound.cap,gateId:f['gate-id'],evidenceId:f['evidence-id']});const fields=stateFields(bound.state);return require('./evidence-runtime.js').publishAuthenticatedRecord(record,{stateCapability:bound.state,verificationPlan:JSON.parse(fields.verification_plan_json),plan:JSON.parse(transaction.readSessionFile(bound.cap)),scope:{kind:'session',id:sessionId(bound.state)}});});
   on('evidence record contract',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
     try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
     const contractRuntime=require('./contract-runtime.js');const specContract=contractRuntime.parseSpecMarkdown(
@@ -517,7 +563,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
     const record=evidence.captureContractEvidence({evidence_id:f['evidence-id'],gate_id:f['gate-id'],verificationPlan,
       specContract,slices:bound.value.slices.map((row)=>row.contract)});return evidence.publishAuthenticatedRecord(record,
       {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
-  on('evidence record review',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);let verificationPlan;
+  on('evidence record review',async({f,cwd})=>{const bound=readPlan(f,cwd),fields=stateFields(bound.state);if(bound.value.schema_version===3)fail('global-review-execution-refs-required');let verificationPlan;
     try{verificationPlan=JSON.parse(fields.verification_plan_json);}catch{fail('verification-plan-state');}
     const evidence=require('./evidence-runtime.js');const record=evidence.captureReviewEvidence({evidence_id:f['evidence-id'],
       gate_id:f['gate-id'],verificationPlan,reviewPlan:jsonFile(resolveInput(f['review-plan-json'],cwd)),
@@ -529,7 +575,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       gate_id:f['gate-id'],verificationPlan,plan:bound.value,receipts:jsonFile(resolveInput(f['receipts-json'],cwd)),
       verificationResult:jsonFile(resolveInput(f['verification-result-json'],cwd))});return evidence.publishAuthenticatedRecord(record,
       {stateCapability:bound.state,verificationPlan,plan:bound.value,scope:{kind:'session',id:sessionId(bound.state)}});});
-  on('test pass',({f,cwd})=>{const bound=readPlan(f,cwd),context=loadTestPassContext(bound.state,bound.value);
+  on('test pass',async({f,cwd})=>{const bound=readPlan(f,cwd),context=loadTestPassContext(bound.state,bound.value);
     if(usesGovernedProjection(bound.value)){
       const governed=require('./governed-context-runtime.js').loadGovernedContext({
         stateCapability:bound.state});
@@ -540,12 +586,16 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
       context.governedAdmission=admission;context.governedProjectionSha256=governed.sha256;
       context.governedRequired=true;
     }
-    return testRuntime.recordTestPass({stateCapability:bound.state,gateResults:jsonFile(resolveInput(f['gate-results-json'],cwd)),
+    let gateResults,gateResultsSource,operationId;
+    if(bound.value.schema_version===3){const identity=ownedInputIdentity(bound.state,f['gate-results-json'],'gate-results');const loaded=await require('./test-input-runtime.js').loadOwnedTestInput({stateCapability:bound.state,sessionCapability:identity.sessionCapability,sourceOperationId:identity.operationId,at:f.at,verificationPlanSha256:context.verificationPlan.plan_sha256});gateResults=loaded.gateResults;gateResultsSource=loaded.source;operationId=loaded.operationId;
+      if(loaded.completed){const fields=stateFields(bound.state);if(fields.test_passed!==true||fields.test_pass_operation_id!==operationId||fields.gate_results_sha256!==journal.sha256(journal.canonicalJson(gateResults)))fail('test-pass-adoption');return{...fields,operationId,operationReceipt:loaded.completed,adopted:true};}}
+    else gateResults=jsonFile(resolveInput(f['gate-results-json'],cwd));
+    return testRuntime.recordTestPass({stateCapability:bound.state,gateResults,gateResultsSource,operationId,
       ...context,at:f.at});});
   on('test retry',({f,cwd})=>{const bound=readPlan(f,cwd);return testRuntime.recordTestRetry({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
-    receiptsDirCapability:receiptsCapability(bound.state,f['receipts-dir']),failedSlices:jsonFile(resolveInput(f['failed-slices-json'],cwd)),at:f.at});});
+    receiptsDirCapability:runtimeReceiptsCapability(bound.state,bound.value,f['receipts-dir']),failedSlices:jsonFile(resolveInput(f['failed-slices-json'],cwd)),at:f.at});});
   on('test exhaust',({f,cwd})=>{const bound=readPlan(f,cwd);return testRuntime.recordTestExhaustion({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
-    receiptsDirCapability:receiptsCapability(bound.state,f['receipts-dir']),failedSlices:jsonFile(resolveInput(f['failed-slices-json'],cwd)),at:f.at});});
+    receiptsDirCapability:runtimeReceiptsCapability(bound.state,bound.value,f['receipts-dir']),failedSlices:jsonFile(resolveInput(f['failed-slices-json'],cwd)),at:f.at});});
   on('mutation round begin',({f,cwd})=>testRuntime.beginMutationRound({stateCapability:stateCapability(f,cwd),round:Number(f.round),survived:jsonFile(resolveInput(f['survived-json'],cwd))}));
   on('mutation round end',({f,cwd})=>testRuntime.endMutationRound({stateCapability:stateCapability(f,cwd),round:Number(f.round),verification:jsonFile(resolveInput(f['verification-json'],cwd))}));
   on('mutation record',({f,cwd})=>testRuntime.recordMutationResult({stateCapability:stateCapability(f,cwd),result:jsonFile(resolveInput(f['result-json'],cwd))}));
@@ -569,7 +619,7 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('history list',({f,cwd})=>report.readSessionHistory(resolveInput(f['project-root'],cwd)));
   on('report generate',({f,cwd})=>report.generateReport({stateCapability:stateCapability(f,cwd)}));
   on('git report commit',({f,cwd})=>report.commitReport({stateCapability:stateCapability(f,cwd)}));
-  on('slice activate',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.activateSlice({stateCapability:bound.state,plan:bound.value,sliceId:f.slice});});
+  on('slice activate',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.activateSlice({stateCapability:bound.state,plan:bound.value,planCapability:bound.cap,sliceId:f.slice});});
   on('slice spike',({f,cwd})=>slice.enterSliceSpike({stateCapability:stateCapability(f,cwd),plan:{slices:[{id:f.slice,checked:false}]},sliceId:f.slice}));
   on('slice reset',({f,cwd})=>{const bound=readPlan(f,cwd);return slice.resetSlice({stateCapability:bound.state,planCapability:bound.cap,plan:bound.value,
     receiptsDirCapability:receiptsCapability(bound.state,f['receipts-dir']),sliceId:f.slice});});
@@ -581,6 +631,19 @@ function buildDispatcherHandlers(){const handlers=new Map();const on=(id,fn)=>{i
   on('git stash publish',({f,cwd})=>git.stashPublish({projectCapability:projectCapability(f,cwd),sessionId:f.session,purpose:f.purpose,includeUntracked:Boolean(f['include-untracked'])}));
   on('git stash apply',({f,cwd})=>git.stashApply({projectCapability:projectCapability(f,cwd),sessionId:f.session,operationId:f['operation-id']}));
   on('git stash drop',({f,cwd})=>git.stashDrop({projectCapability:projectCapability(f,cwd),sessionId:f.session,operationId:f['operation-id']}));
+  for(const [route,module,method] of [
+    ['verification outcome-explain','outcome-verification-runtime','prepareOutcomeCheck'],
+    ['verification outcome-run','outcome-verification-runtime','runOutcomeCheck'],
+    ['outcome source observe','outcome-verification-runtime','observeOutcomeSource'],
+    ['outcome review publish','outcome-review-runtime','publishOutcomeReview'],
+    ['implement outcome-complete','outcome-receipt-runtime','publishOutcomeReceipt']])on(route,({f,cwd})=>{
+      const bound=readPlan(f,cwd);const load=key=>f[key]?jsonFile(resolveInput(f[key],cwd)):undefined;
+      return require('./workflow-runtime.js').withWorkflowLock(bound.state,async()=>{const result=await require(`./${module}.js`)[method]({
+        stateCapability:bound.state,planCapability:bound.cap,sliceId:f.slice,oracleId:f.oracle,
+        preparedSha256:f['prepared-digest'],positiveRefs:load('positive-refs-json'),controlRefs:load('control-refs-json'),
+        reviewExecutionRefs:load('review-execution-refs-json'),reviewRef:load('review-ref-json'),sourceEvidence:load('source-evidence-json'),_locksHeld:true});
+        if(route==='implement outcome-complete')return {...result,publication:await require('./completion-receipt-runtime.js').publishSliceM3({stateCapability:bound.state,planCapability:bound.cap,plan:JSON.parse(transaction.readSessionFile(bound.cap)),sliceId:f.slice})};return result;});});
+  on('review execution run',({f,cwd})=>{const state=stateCapability(f,cwd);return require('./workflow-runtime.js').withWorkflowLock(state,()=>require('./review-execution-runtime.js').runReviewExecution({stateCapability:state,request:jsonFile(resolveInput(f['request-json'],cwd)),prompt:boundedFile(resolveInput(f['prompt-file'],cwd)),reviewer:jsonFile(resolveInput(f['reviewer-json'],cwd)),binding:jsonFile(resolveInput(f['binding-json'],cwd)),timeoutMs:Number(f['timeout-ms']||300000)}));});
   on('review run',async({f,cwd})=>{const source=stateForOwnedInput(cwd,f['prompt-file'],'review-prompt');
     const consumerOperationId=derivedOperationId('review-run',{session:sessionId(source.state),sourceOperationId:source.operationId,
       engine:f.engine,timeoutMs:Number(f['timeout-ms']),mode:f.mode,effort:f.effort||null,model:f.model||null});

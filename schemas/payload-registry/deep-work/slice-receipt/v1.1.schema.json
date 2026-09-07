@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-suite/main/schemas/payload-registry/deep-work/slice-receipt/v1.1.schema.json",
+  "title": "deep-work slice-receipt payload v1.1",
+  "description": "Runtime authenticated deep-work slice-receipt payload v1.1. M3 envelope remains 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": {
+      "description": "Forward-compat extension namespace."
+    }
+  },
+  "required": [
+    "schema_version",
+    "slice_id",
+    "status",
+    "tdd",
+    "publication_operation_id",
+    "goal_acceptance",
+    "completion_basis",
+    "runtime_receipt_ref",
+    "recovery_generation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1"
+    },
+    "slice_id": {
+      "type": "string",
+      "pattern": "^SLICE-[0-9]+$",
+      "description": "Slice identifier (SLICE-### with optional zero-padding)."
+    },
+    "cluster_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked",
+        "blocked-upstream",
+        "invalidated"
+      ],
+      "description": "Producer-documented slice statuses (per deep-work@6f23e79 implement-slice-worker.md): `complete` = success, `blocked` = 3-consecutive-failure terminal, `blocked-upstream` = placeholder for slices not started due to upstream block."
+    },
+    "tdd": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "state_transitions"
+      ],
+      "properties": {
+        "state_transitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "red_verification_output": {
+          "type": "string"
+        }
+      }
+    },
+    "git_before_slice": {
+      "type": "string"
+    },
+    "git_after_slice": {
+      "type": "string"
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "git_diff": {
+          "type": "string"
+        }
+      }
+    },
+    "sensor_results": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "lint": {
+          "type": "string"
+        },
+        "typecheck": {
+          "type": "string"
+        },
+        "reviewCheck": {
+          "type": "string"
+        }
+      }
+    },
+    "spec_compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "slice_review": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "stage1": {
+          "type": "string"
+        },
+        "stage2": {
+          "type": "string"
+        }
+      }
+    },
+    "harness_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "model_id": {
+          "type": "string"
+        },
+        "rework_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tests_passed_first_try": {
+          "type": "boolean"
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "description": "Optional compact test counts (legacy alternative to sensor_results).",
+      "additionalProperties": true,
+      "properties": {
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failing": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "debug": {
+      "type": "object",
+      "description": "Emitted on status=blocked path per deep-work@6f23e79 implement-slice-worker.md.",
+      "additionalProperties": true,
+      "properties": {
+        "root_cause_note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "publication_operation_id": {
+      "type": "string",
+      "pattern": "^op-[0-9a-f]{64}$"
+    },
+    "goal_acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_ids",
+        "accepted_ids",
+        "complete"
+      ],
+      "properties": {
+        "required_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "accepted_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "completion_basis": {
+      "enum": [
+        "strict-tdd-v2",
+        "outcome-v1",
+        "release-verification"
+      ]
+    },
+    "runtime_receipt_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "producer_operation_id"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "producer_operation_id": {
+          "type": "string",
+          "pattern": "^op-[0-9a-f]{64}$"
+        }
+      }
+    },
+    "recovery_generation": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "completion_basis": {
+            "enum": [
+              "outcome-v1",
+              "release-verification"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tdd": {
+            "required": [
+              "mode",
+              "state_transitions"
+            ],
+            "properties": {
+              "mode": {
+                "const": "not-applicable"
+              },
+              "state_transitions": {
+                "maxItems": 0,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
+}

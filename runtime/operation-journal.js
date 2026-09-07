@@ -36,6 +36,7 @@ const OPERATION_KINDS = new Set([
     'release-gate-result', 'release-verification-complete',
     'functional-slice-complete-v2',
     'refactor-no-change-decision',
+    'artifact-approval-reopen-v1','artifact-review-packet-v1','artifact-approval-publish-v1','review-execution-run-v1','outcome-source-observe-v1','outcome-check-run-v1','outcome-review-publish-v1','outcome-slice-complete-v1','environment-preparation-v1','session-park-v1','session-restore-v1','slice-m3-publish-v1','evidence-runtime-observation-v1',
 ]);
 
 const COMPLETED_LEDGER_LIMIT = 512;
@@ -51,11 +52,11 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
   'branch-create':['before-call','after-call-before-stage','after-stage'],
   'branch-delete':['before-call','after-call-before-stage','after-stage'],
   'delegated-rollback':['before-call','after-call-before-stage','after-stage','receipt-removal-prepared','receipts-removed'],
-  'finish-merge':['finish-inspected','before-call','after-call-before-stage','after-stage','merge-conflict','merge-aborted',
+  'finish-merge':['completion-prepared','effect-recorded','session-m3-published','finish-inspected','before-call','after-call-before-stage','after-stage','merge-conflict','merge-aborted',
     'merge-completed','worktree-removed','branch-deleted','gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
-  'finish-publish-pr':['before-call','after-call-before-stage','after-stage','gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','remote-body-written','remote-pushed','pull-request-created','result-published','state-written','registry-written','pointer-cleared'],
-  'finish-keep':['gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
-  'finish-discard':['finish-inspected','before-call','after-call-before-stage','after-stage','worktree-removed','branch-deleted',
+  'finish-publish-pr':['completion-prepared','effect-recorded','session-m3-published','before-call','after-call-before-stage','after-stage','gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','remote-body-written','remote-pushed','pull-request-created','result-published','state-written','registry-written','pointer-cleared'],
+  'finish-keep':['completion-prepared','effect-recorded','session-m3-published','gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
+  'finish-discard':['completion-prepared','effect-recorded','session-m3-published','finish-inspected','before-call','after-call-before-stage','after-stage','worktree-removed','branch-deleted',
     'gate-checked','finalize-gate-checked','post-action-evidence','temp-prepared','temp-consumed','result-published','state-written','registry-written','pointer-cleared'],
   'remote-push':['before-call','after-call-before-stage','after-stage'],
   'pull-request-create':['before-call','after-call-before-stage','after-stage'],
@@ -127,6 +128,19 @@ const WORKFLOW_STAGE_RULES = Object.freeze({
     'progress-committed'],
   'refactor-no-change-decision':['green-authenticated','decision-published',
     'decision-committed'],
+  'review-execution-run-v1':['prepared','process-completed','result-published'],
+  'outcome-source-observe-v1':['prepared','result-published'],
+  'artifact-approval-reopen-v1':['prepared','state-written'],
+  'artifact-review-packet-v1':['prepared','result-published'],
+  'artifact-approval-publish-v1':['prepared','result-published'],
+  'outcome-check-run-v1':['prepared','views-reserved','views-owned','views-prepared','worker-authorized','positive-completed','control-completed','result-published'],
+  'outcome-review-publish-v1':['prepared','result-published'],
+  'outcome-slice-complete-v1':['prepared','result-published'],
+  'environment-preparation-v1':['prepared','process-completed','result-published'],
+  'session-park-v1':['prepared','archive-written','state-written','registry-written'],
+  'session-restore-v1':['prepared','state-written','registry-written'],
+  'slice-m3-publish-v1':['publication-prepared','public-receipt-published','progress-committed'],
+  'evidence-runtime-observation-v1':['prepared','result-published'],
 });
 const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publish',
   'bootstrap-finalize','bootstrap-first-red','bootstrap-red-adoption','verification-run-v2',
@@ -139,7 +153,7 @@ const ORDERED_WORKFLOW_KINDS=new Set(['bootstrap-abort','bootstrap-failure-publi
   'release-source-graph-publish','release-gate-result',
   'release-verification-complete',
   'functional-slice-complete-v2',
-  'refactor-no-change-decision']);
+  'refactor-no-change-decision','review-execution-run-v1','slice-m3-publish-v1','outcome-source-observe-v1','outcome-check-run-v1','outcome-review-publish-v1','outcome-slice-complete-v1','evidence-runtime-observation-v1']);
 const LOCK_OPTIONS = Object.freeze({timeoutMs:10_000, staleMs:30_000, heartbeatMs:1_000,
   processIdentity:crypto.createHash('sha256').update(`operation-journal:${process.pid}`).digest('hex').slice(0,32)});
 
@@ -317,6 +331,9 @@ async function completeOperation(handle, result, {retainJournal=false}={}) {
       fail('operation-ledger-full', 'completed operation ledger is at its fail-closed retention limit');
     }
     const journal = validateJournal(readJson(filePaths.journal, () => fail('operation-journal-missing')));
+    if (handle.kind === 'review-execution-run-v1' && journal.stage !== 'result-published') {
+      fail('operation-incomplete', 'review output must be published before terminal completion');
+    }
     const receipt = {version:1, operationId:handle.operationId, sessionId:handle.sessionId,
       kind:handle.kind, stage:'completed-ledger', result, resultSha256:sha256(resultCanonical),
       completedAt:new Date().toISOString()};

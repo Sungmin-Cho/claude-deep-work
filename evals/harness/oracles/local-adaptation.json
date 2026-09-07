@@ -1,0 +1,5 @@
+{
+  "kind": "contains",
+  "file": "README.md",
+  "value": "config.json"
+}

@@ -84,9 +84,21 @@ const STRUCTURED_CONJUNCTIONS = Object.freeze({
   }),
 });
 
+// Remove only explicit task constraints; observed evidence is never filtered.
+function taskIntent(taskText) {
+  const excluded=[];
+  const clauses=String(taskText||'').split(/(?:[;\n]|\.(?:\s|$)|\bbut\b|\bhowever\b|\band\s+(?=(?:run|execute|publish|deploy|change)\b)|말고|않고)/iu);
+  const kept=clauses.filter(clause=>{
+    const negative=/\b(?:do not|don't|never|must not|without)\b|하지\s*(?:마|않)|금지|실행하지|배포하지/iu.test(clause);
+    const quotedExample=/\b(?:document|describe|example|README)\b|문서|예시/iu.test(clause)&&/[`"“][^`"”]+[`"”]/u.test(clause)&&! /\b(?:run|execute|then publish)\b|실행(?:해|하)/iu.test(clause);
+    if(negative||quotedExample){excluded.push(`excluded-constraint: ${clause.trim()}`);return false;}return true;
+  });
+  return {text:kept.join(' '),excluded};
+}
+
 function textCorpus({ taskText, evidence }) {
   const ev = evidence && typeof evidence === 'object' ? evidence : {};
-  const parts = [typeof taskText === 'string' ? taskText : ''];
+  const parts = [taskIntent(taskText).text];
   for (const key of ['keywords', 'side_effects']) {
     if (Array.isArray(ev[key])) parts.push(...ev[key].filter((v) => typeof v === 'string'));
   }
@@ -258,9 +270,9 @@ function decideRiskProfile({ stage, taskText, signals, evidence, priorProfile } 
   // 스펙 §4.3 — hard trigger가 발화하면 trigger ID와 매칭 근거 문자열을 rationale에도
   // 기록한다 (hard_triggers 필드는 구조화 데이터, rationale은 사람이 읽는 근거 로그 —
   // 둘 다 계약 대상). 순수성/결정론 유지: Date/random 미사용, 입력에서만 파생.
-  const rationale = [...scored.rationale,
+  const rationale = [...taskIntent(taskText).excluded,...scored.rationale,
     ...hardTriggers.map((t) => `trigger:${t.id} → min ${t.min_class} (matched: "${t.matched}")`)];
-  return { stage: effectiveStage, class: cls, score, confidence,
+  return { stage: effectiveStage, class: cls, score, confidence, confidence_kind: 'heuristic-not-empirical',
     dimensions: scored.dimensions, hard_triggers: hardTriggers,
     rationale, transition };
 }

@@ -1,92 +1,54 @@
-# Executable Spec: [Title]
+# Executable Spec: Documentation goal
+
+Use the observed risk class. This compact example is for a Low-risk documentation change. Add the actual invariants, failure matrix and negative tests required by the task/risk; validator coverage remains authoritative. Replace the example requirement with the real goal before approval. Do not create a fake test solely to fill a field.
 
 ## Scope
 
-- [Observable behavior included in this change]
+Document the retry setting.
 
 ## Non-goals
 
-- [Explicitly excluded behavior]
+Runtime behavior changes.
 
 ## Contract
 
 ```json spec-contract
 {
   "schema_version": 1,
-  "spec_id": "SPEC-EXAMPLE",
-  "risk_class": "medium",
-  "requirements": [
-    {
-      "id": "REQ-001",
-      "statement": "[One observable requirement]",
-      "acceptance": "[Exact pass condition]",
-      "priority": "must",
-      "negative_test_ids": ["NEG-001"],
-      "evidence_gate_ids": ["GATE-targeted-tests"]
-    }
-  ],
-  "invariants": [
-    {
-      "id": "INV-001",
-      "statement": "[State that must always hold]",
-      "requirement_ids": ["REQ-001"]
-    }
-  ],
-  "failure_matrix": [
-    {
-      "id": "FM-001",
-      "trigger": "[Concrete fault or invalid input]",
-      "affected_requirement_ids": ["REQ-001"],
-      "invariant_ids": ["INV-001"],
-      "expected_behavior": "[Fail-safe behavior]",
-      "detection": "[Observable signal]",
-      "negative_test_ids": ["NEG-001"],
-      "evidence_gate_ids": ["GATE-negative-tests"],
-      "recovery": "[Recovery verification or not-applicable with reason]",
-      "rollback": "[Rollback action or not-applicable with reason]"
-    }
-  ],
-  "negative_tests": [
-    {
-      "id": "NEG-001",
-      "statement": "[Exact negative test]",
-      "requirement_ids": ["REQ-001"],
-      "failure_mode_ids": ["FM-001"],
-      "expected_signal": "[Exact failure signal]",
-      "gate_id": "GATE-negative-tests"
-    }
-  ],
-  "compatibility": {
-    "legacy_inputs": "[accepted/rejected behavior]",
-    "migration": "[none or exact migration]"
-  },
+  "spec_id": "SPEC-DOCS",
+  "risk_class": "low",
+  "requirements": [{
+    "id": "REQ-001",
+    "statement": "README documents retry_count",
+    "acceptance": "README.md contains retry_count and its meaning",
+    "priority": "must",
+    "negative_test_ids": [],
+    "evidence_gate_ids": ["GATE-outcome-verification", "GATE-outcome-oracle-controls"]
+  }],
+  "invariants": [],
+  "failure_matrix": [],
+  "negative_tests": [],
+  "compatibility": {"legacy_inputs": "unchanged", "migration": "none"},
   "open_questions": []
 }
 ```
 
 ## Requirement Notes
 
-### REQ-001
-
-[Rationale and source evidence. Do not restate the normative JSON ambiguously.]
+The positive check and contrary document establish the observable documentation requirement.
 
 ## Failure and Recovery Notes
 
-### FM-001
-
-[Why the negative test and recovery evidence are sufficient.]
+Restore the prior document if the requested explanation is incorrect.
 
 ## Decisions and Trade-offs
 
-- [Decision, rejected alternative, reason]
+A built-in file-content oracle is proportionate to this example. Semantic explanation quality still receives the applicable independent review.
 
 ## Open Questions
 
-- None.
+None.
 
 ## Spec Gate Result
 
-- Status: PENDING
-- Spec digest: PENDING
-- Requirement coverage: PENDING
-- Failure matrix coverage: PENDING
+Validation and approval are published by the runtime for the final bytes.

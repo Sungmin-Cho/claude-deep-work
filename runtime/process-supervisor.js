@@ -121,7 +121,7 @@ function terminateWindowsTree(pid, {systemRoot, spawnImpl = childProcess.spawn, 
   });
 }
 
-function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = false}) {
+function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = false, preserveFailureOutput=false}) {
   return new Promise((resolve, reject) => {
     let stdout = Buffer.alloc(0);
     let stderr = Buffer.alloc(0);
@@ -153,7 +153,7 @@ function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = 
       if (terminationPromise) return terminationPromise;
       terminationPromise = Promise.resolve().then(terminate).catch((error) => {
         if (timer) clearTimeout(timer);
-        if (!settled) { settled = true; reject(error); }
+        if (!settled) {if(preserveFailureOutput)error.partialResult={ok:false,exitCode:child.exitCode??null,signal:child.signalCode??null,stdout:rawOutput?Buffer.from(stdout):stdout.toString('utf8'),stderr:rawOutput?Buffer.from(stderr):stderr.toString('utf8'),timedOut,outputOverflow,error:{code:error.code||'process-termination-failed'},durationMs:Date.now()-startedAt,...(error.termination?{termination:error.termination}:{})};settled = true; reject(error); }
       });
       return terminationPromise;
     }
@@ -164,7 +164,9 @@ function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = 
       if (timer) clearTimeout(timer);
       if (!settled) {
         settled = true;
-        reject(typedError('process-spawn-failed', cause.message, {cause}));
+        const error=typedError('process-spawn-failed',cause.message,{cause});
+        if(preserveFailureOutput&&!child.pid){error.termination={confirmed:true,scope:'no-process-started',unobserved_descendants:'not-applicable'};error.partialResult={ok:false,exitCode:null,signal:null,stdout:rawOutput?Buffer.from(stdout):stdout.toString('utf8'),stderr:rawOutput?Buffer.from(stderr):stderr.toString('utf8'),timedOut:false,outputOverflow,spawnError:{code:'process-spawn-failed'},error:{code:'process-spawn-failed'},durationMs:Date.now()-startedAt,termination:error.termination};}
+        reject(error);
       }
     });
     child.once('close', async (code, signal) => {
@@ -200,6 +202,7 @@ function collectChild(child, {timeoutMs, maxOutputBytes, terminate, rawOutput = 
 
 async function runPosix(spec, options) {
   const spawnImpl = options.spawnImpl || childProcess.spawn;
+  let beforeCwd;try{if(options.trackDescendants&&options.ownedCwdRoots)beforeCwd=require('./process-descendant-tracker.js').snapshot();}catch(cause){const termination={confirmed:true,scope:'no-process-started',unobserved_descendants:'not-applicable'};throw typedError('process-cwd-witness-unavailable','pre-launch process witness unavailable',{termination,partialResult:{ok:false,exitCode:null,signal:null,stdout:options.rawOutput?Buffer.alloc(0):'',stderr:options.rawOutput?Buffer.alloc(0):'',timedOut:false,outputOverflow:false,spawnError:{code:'process-cwd-witness-unavailable'},termination,durationMs:0}});}
   const child = spawnImpl(spec.executable, spec.args, {
     cwd:options.cwd,
     env:options.env,
@@ -209,14 +212,16 @@ async function runPosix(spec, options) {
     stdio:[options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   });
   if (options.input !== undefined) child.stdin.end(options.input);
-  return collectChild(child, {
-    timeoutMs:options.timeoutMs,
-    maxOutputBytes:options.maxOutputBytes,
-    rawOutput:options.rawOutput,
-    terminate:() => (options.terminationImpl
-      ? options.terminationImpl({platform:options.platform, pid:child.pid, child})
-      : terminatePosixGroup(child.pid)),
-  });
+  const tracker=options.trackDescendants?require('./process-descendant-tracker.js').createTracker():null;
+  let timer,termination;if(tracker&&child.pid){tracker.register(child.pid);timer=setInterval(()=>tracker.sample(),50);let lastOutputSample=0;const observeOutput=()=>{if(Date.now()-lastOutputSample>=10){lastOutputSample=Date.now();tracker.sample();}};child.stdout?.on('data',observeOutput);child.stderr?.on('data',observeOutput);}
+  try{const result=await collectChild(child, {
+    timeoutMs:options.timeoutMs,maxOutputBytes:options.maxOutputBytes,rawOutput:options.rawOutput,
+    preserveFailureOutput:Boolean(options.trackDescendants),
+    terminate:async()=>{if(tracker){termination=await tracker.terminate();if(options.ownedCwdRoots){const witness=require('./process-cwd-witness.js').inspectOwnedCwds({roots:options.ownedCwdRoots,before:beforeCwd,known:tracker.identities()});termination.cwd_witness_scan=witness.status;termination.unattributed_processes=witness.witnesses;if(witness.status!=='complete'||witness.witnesses.length){termination.confirmed=false;termination.reasons=[...new Set([...termination.reasons,witness.status==='complete'?'unattributed-owned-view-process':'cwd-witness-unavailable'])];}}if(!termination.confirmed)throw typedError('process-descendant-termination-unconfirmed','observed execution descendants did not confirm termination',{termination});}
+      else return options.terminationImpl?options.terminationImpl({platform:options.platform,pid:child.pid,child}):terminatePosixGroup(child.pid);},
+  });return tracker?{...result,termination}:result;
+  }finally{clearInterval(timer);if(tracker&&termination?.confirmed!==true){child.stdout?.destroy();child.stderr?.destroy();}}
+
 }
 
 async function runWindows(spec, options) {
@@ -229,7 +234,7 @@ async function runWindows(spec, options) {
     return collectChild(child, {
       timeoutMs:options.timeoutMs,
       maxOutputBytes:options.maxOutputBytes,
-      rawOutput:options.rawOutput,
+      rawOutput:options.rawOutput,preserveFailureOutput:Boolean(options.trackDescendants),
       terminate:() => options.terminationImpl
         ? options.terminationImpl({platform:'win32', pid:child.pid, child, knownPids:[child.pid]})
         : terminateWindowsTree(child.pid, {systemRoot:options.supervisorEnv.SystemRoot ||
@@ -324,6 +329,7 @@ async function runWindows(spec, options) {
         });
       } catch (error) {
         settled = true;
+        if(options.trackDescendants)error.partialResult={ok:false,exitCode:toolResult?.exitCode??null,signal:toolResult?.signal??null,stdout:options.rawOutput?Buffer.from(stdout):stdout.toString('utf8'),stderr:options.rawOutput?Buffer.from(stderr):stderr.toString('utf8'),timedOut:reason==='timeout',outputOverflow,error:{code:error.code||'process-termination-failed'},durationMs:Date.now()-startedAt};
         reject(attachSupervisionStages(error,
           supervisionStages(toolStarted, toolResultSeen, 'failed')));
       }
@@ -377,6 +383,15 @@ async function runWindows(spec, options) {
   });
 }
 
+function withWindowsSupervisor(values) {
+  if (process.platform !== 'win32') return values;
+  const root = process.env.SystemRoot || process.env.SYSTEMROOT;
+  if (typeof root === 'string' && root && !values.SystemRoot && !values.SYSTEMROOT) {
+    return {...values, SystemRoot: root};
+  }
+  return values;
+}
+
 async function runSupervisedProcess(spec, options = {}) {
   if (!spec || typeof spec.executable !== 'string' || !Array.isArray(spec.args)) {
     throw typedError('process-spec-invalid', 'executable and args are required');
@@ -389,9 +404,9 @@ async function runSupervisedProcess(spec, options = {}) {
     ...options,
     platform,
     env:Object.freeze(options.env === undefined ? {...process.env} : {...options.env}),
-    supervisorEnv:Object.freeze(options.supervisorEnv === undefined
+    supervisorEnv:Object.freeze(withWindowsSupervisor(options.supervisorEnv === undefined
       ? (options.env === undefined ? {...process.env} : {...options.env})
-      : {...options.supervisorEnv}),
+      : {...options.supervisorEnv})),
     timeoutMs:options.timeoutMs === undefined ? 30_000 : options.timeoutMs,
     maxOutputBytes:options.maxOutputBytes === undefined ? 16_777_216 : options.maxOutputBytes,
     input:options.input,
@@ -401,7 +416,10 @@ async function runSupervisedProcess(spec, options = {}) {
       normalized.maxOutputBytes > 67_108_864) {
     throw typedError('process-budget-invalid', 'process timeout/output budget is invalid');
   }
-  return platform === 'win32' ? runWindows(spec, normalized) : runPosix(spec, normalized);
+  if(options.trackDescendants!==undefined&&typeof options.trackDescendants!=='boolean')throw typedError('process-budget-invalid','trackDescendants must be boolean');
+  if(platform!=='win32')return runPosix(spec,normalized);
+  try{const result=await runWindows(spec,normalized);return options.trackDescendants?{...result,termination:{confirmed:true,scope:options.terminationImpl?'injected-termination-handler':'windows-taskkill-tree-and-known-pids',descendant_discovery:'native-tree-and-known-pids',unobserved_descendants:'unknown'}}:result;}
+  catch(error){if(options.trackDescendants){error.termination={confirmed:false,scope:'windows-taskkill-tree-and-known-pids',descendant_discovery:'native-tree-and-known-pids',unobserved_descendants:'unknown',reasons:[error.code||'process-termination-failed']};if(error.partialResult)error.partialResult.termination=error.termination;}throw error;}
 }
 
 if (process.argv[2] === '--windows-supervisor') {

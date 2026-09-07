@@ -61,6 +61,7 @@ const DISCOVERY_IDENTIFIER=Object.freeze({
   'failure-state':'failure_mode_id','external-side-effect':'failure_mode_id',
   'unplanned-mock':'invariant_id','persistent-state-transition':'invariant_id',
   'spike-promotion':'requirement_id',
+  'verification-policy-change':'requirement_id','oracle-change':'requirement_id','execution-basis-change':'requirement_id',
 });
 const RISK_CLASSES=Object.freeze(['low','medium','high','critical']);
 function riskClass(value){
@@ -414,6 +415,7 @@ function invalidationPatch(fields,{sliceId,trigger,invalidation,triggerOperation
     'plan_spec_gate_result_json','verification_plan_json','verification_plan_sha256',
     'evidence_pointer_json','evidence_summary_json','evidence_summary_sha256',
     'governed_finding_refs_json'])patch[key]=null;
+  for(const key of ['artifact_approval_consumptions_json','source_approval_reopen_operation_id'])if(fields[key]!==undefined)patch[key]=null;
   patch.verification_consumptions_json='{}';patch.test_passed=false;
   Object.assign(patch,statePatch);
   return patch;
@@ -460,8 +462,8 @@ async function publishEpoch({stateCapability,trigger,triggerReceipt,priorPlanAut
   return{...receipt.result,operation_id:id,operation_receipt:receipt,adopted:false};
 }
 function prepareReplanAuthority({stateCapability,plan,sliceId,reason,producerOperationId,
-  observationKind,observation,fromRisk,toRisk}={}){
-  const fields=frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
+  observationKind,observation,fromRisk,toRisk,authenticatedFields}={}){
+  const fields=authenticatedFields||frontmatter.parseFrontmatter(fs.readFileSync(stateCapability.path,'utf8')).fields;
   const risk=stateRiskClass(fields);
   const priorRisk=fromRisk||risk,nextRisk=toRisk||risk;
   let riskAuthorityMatches=priorRisk===risk;
@@ -665,8 +667,8 @@ async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,s
       terminal?.scope_disposition!=='test-side-effect')fail('replan-verification-replay');
   const resultRaw=readCanonical(path.join(stateCapability.projectRoot,
     ...terminal.result_path.split('/')),'replan-verification-replay');
-  const verification=require('./bootstrap-runtime.js').validateBootstrapVerificationResultV2(
-    resultRaw.value,{expectedSignal:spec.red_failure.expected_signal});
+  const verification=require('./bootstrap-runtime.js').validateVerificationResultForSpec(
+    resultRaw.value,{spec,expectedOutcome:resultRaw.value.expected_outcome||'must-fail'});
   if(verification.verification_operation_id!==trigger.producer_operation_id||
       verification.result_sha256!==terminal.result_sha256||
       verification.plan_authority_sha256!==plan.plan_authority_sha256||
@@ -718,7 +720,24 @@ async function adoptVerificationSideEffectReplay({stateCapability,plan,sliceId,s
     replan_operation_id:triggerReceipt.operationId,adopted:true};
 }
 
-module.exports={dispatchVerificationSideEffectReplan,adoptVerificationSideEffectReplay,
+async function prepareRestoreReplanAuthority({stateCapability,plan,restoreOperationId}={}){
+  const sid=sessionId(stateCapability),pending=await journal.resumeOperation({projectCapability:project(stateCapability),sessionId:sid,kind:'session-restore-v1',operationId:restoreOperationId});
+  const input=pending.preconditions;if(pending.stage==='completed-ledger'||input?.mode!=='source-drift'||!DIGEST.test(input.source_sha256||'')||!DIGEST.test(input.prior_source_sha256||'')||input.source_sha256===input.prior_source_sha256)fail('restore-replan-authority');
+  const ref=input.ref,expectedPath=`.deep-work/${sid}/parked-${ref?.producer_operation_id}.md`;if(ref?.path!==expectedPath)fail('restore-replan-archive');
+  const parking=journal.lookupCompletedOperation({projectCapability:project(stateCapability),sessionId:sid,kind:'session-park-v1',operationId:ref.producer_operation_id});
+  const archived=fs.readFileSync(path.join(stateCapability.projectRoot,ref.path));if(journal.sha256(archived)!==ref.sha256||canonical(parking?.result?.ref)!==canonical(ref)||parking.result.source_sha256!==input.prior_source_sha256)fail('restore-replan-archive');
+  const fields=frontmatter.parseFrontmatter(archived.toString()).fields;
+  if(plan.plan_authority_sha256!==input.plan_authority_sha256||plan.plan_authority_sha256!==parseStoredObject(fields.verification_plan_json,'restore-replan-plan').plan_authority_sha256)fail('restore-replan-plan');
+  const observation={schema_version:1,archive_ref:ref,restore_operation_id:restoreOperationId,prior_source_sha256:input.prior_source_sha256,current_source_sha256:input.source_sha256};
+  const prepared=prepareReplanAuthority({stateCapability,plan,sliceId:null,reason:'restored-source-drift',producerOperationId:restoreOperationId,observationKind:'restore-source-manifest',observation,authenticatedFields:fields});
+  prepared.statePatch={restore_operation_id:restoreOperationId,restore_state:'replan-required',archive_ref:canonical(ref),parked:false,plan_bound_once:true,
+    receipt_recovery_generation:require('./functional-receipt-runtime.js').recoveryGenerationFromFields(fields)+1,
+    outcome_receipt_refs_json:'{}',outcome_review_ref_json:null,outcome_source_observation_ref_json:null,outcome_state:null,
+    review_execution_json:'{}',test_pass_operation_id:null,test_authority_json:null,finished_at:null,finish_outcome:null};
+  return prepared;
+}
+
+module.exports={prepareRestoreReplanAuthority,dispatchVerificationSideEffectReplan,adoptVerificationSideEffectReplay,
   publishOwnedDiscovery,dispatchOwnedDiscoveryReplan,validateDiscoveryObservation,
   publishRiskObservation,dispatchRiskIncreaseReplan,validateRiskObservation,
   dispatchRepeatedRootCauseReplan,

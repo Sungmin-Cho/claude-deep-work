@@ -6,20 +6,9 @@
 [![license](https://img.shields.io/github/license/Sungmin-Cho/deep-work)](./LICENSE)
 [![part of deep-suite](https://img.shields.io/badge/part%20of-deep--suite-5b8def)](https://github.com/Sungmin-Cho/deep-suite)
 
-An **Evidence-Driven Development Protocol** for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and Codex. A single command drives a full Brainstorm → Research → Spec → Plan → Implement → Test → Integrate workflow with TDD enforcement, receipt-based evidence collection, and a hard separation between planning and coding.
+An evidence-driven workflow for Claude Code and Codex that keeps the goal, accepted changes, verification and completion durable across interruptions. The current model works inline by default; explicit model, effort and methodology choices are preserved.
 
-deep-work fights the common failure modes of AI coding on complex tasks: introducing new patterns that ignore the existing architecture, reimplementing utilities that already exist, jumping into code before understanding the codebase, adding unrequested "improvements" that cause bugs, and marking work done without verification.
-
-## Role in deep-suite
-
-deep-work is the **core harness engine** of the [deep-suite](https://github.com/Sungmin-Cho/deep-suite), implementing the [Harness Engineering](https://martinfowler.com/articles/harness-engineering.html) framework (Böckeler/Fowler, 2026). Across the Guide/Sensor × Computational/Inferential matrix it provides:
-
-- **Computational Guides** — Phase Guard hook (physically blocks edits), Worktree Guard (P0, hard-blocks writes outside the worktree), authenticated correct-RED → GREEN → REFACTOR authority with automatic stop-and-replan, and topology templates.
-- **Computational Sensors** — linter/typecheck/coverage/mutation pipeline, drift sensors, fitness rules, the review-check sensor, and the Phase Transition Injector (P1).
-- **Inferential Guides** — research / plan / brainstorm documents and the Sprint Contract.
-- **Self-Correction Loop** — SENSOR_RUN → SENSOR_FIX → SENSOR_CLEAN with a per-sensor 3-round limit.
-
-It emits producer-authenticated functional receipts, governed progress projections, and health reports that [deep-review](https://github.com/Sungmin-Cho/deep-review) and [deep-dashboard](https://github.com/Sungmin-Cho/deep-dashboard) consume.
+Fresh adaptive plans choose strict TDD or outcome verification per slice. Documentation/configuration and other suitable work can use positive checks plus meaningful counterexamples. Strict-required work retains genuine RED/proof/GREEN. The agent continues reasoning and can adapt local details within the approved contract; material changes trigger an evidence-bound replan.
 
 ## Install
 
@@ -43,10 +32,10 @@ deep-work runs in both the Claude Code and Codex plugin runtimes — each reads 
 
 ## Usage
 
-The entire workflow runs from one skill invocation; plan approval is the only required interaction.
+Start with one skill invocation. Existing authorization carries across internal phases; request `--interactive-gates` when you want phase conversations. `--autonomous` is an internal continuation preference, not permission for external actions.
 
 ```bash
-# Run the full auto-flow: Brainstorm → Research → Spec → Plan → [approve] → Implement → Test → Integrate → Report
+# Run the full auto-flow: Brainstorm → Research → Spec → Plan → Implement → Test → Integrate → Report
 $deep-work:deep-work "Implement JWT-based user authentication"
 
 # Unified status — flags route to the same implementations as the standalone skills
@@ -67,11 +56,11 @@ deep-work exposes 27 command-equivalent skills. The most-used are:
 
 | Skill | Description |
 |---|---|
-| `$deep-work:deep-work <task>` | Auto-flow orchestration — runs the entire pipeline; plan approval is the only required interaction |
+| `$deep-work:deep-work <task>` | Auto-flow orchestration — runs the entire pipeline; continues authorized internal work across phases |
 | `$deep-work:deep-research` | Phase 1 (Research) — deep codebase analysis |
 | `$deep-work:deep-spec` | Phase 2 (Spec) — executable requirements, failure modes, and evidence gates |
 | `$deep-work:deep-plan` | Phase 3 (Plan) — slice-based implementation planning |
-| `$deep-work:deep-implement` | Phase 4 (Implement) — TDD-enforced slice execution |
+| `$deep-work:deep-implement` | Phase 4 (Implement) — strict or outcome slice execution |
 | `$deep-work:deep-test` | Phase 5 (Test) — receipt + spec + quality gates; auto-runs drift-check, SOLID review, insight |
 | `$deep-work:deep-integrate` | Phase 6 (Integrate) — cross-plugin next-step recommendation loop |
 | `$deep-work:deep-status` | Unified view (`--report` / `--receipts` / `--history` / `--assumptions` / `--all` / `--compare`) |
@@ -87,16 +76,16 @@ Other skills cover quality gates (`drift-check`, `solid-review`, `deep-insight`)
 | **0 — Brainstorm** | Optional design exploration, "why before how" (skip with `--skip-brainstorm`) |
 | **1 — Research** | Deep codebase analysis across architecture, patterns, data, API, infra, and risks; output `research.md` |
 | **2 — Spec** | Executable requirements, invariants, failure modes, compatibility, and evidence gates; output `spec.md` |
-| **3 — Plan** | Slice-based plan with per-slice TDD fields, requiring user approval; output `plan.md` |
-| **4 — Implement** | TDD-enforced slice execution: failing test → production code → receipt |
+| **3 — Plan** | Slice-based plan with per-slice execution basis and acceptance contracts; output `plan.md` |
+| **4 — Implement** | strict or outcome slice execution: failing test → production code → receipt |
 | **5 — Test** | Receipt completeness, spec compliance, code quality, and verification evidence, with up to 3 implement→test retries |
 | **6 — Integrate** | Skippable loop that reads deep-suite plugin artifacts and proposes up to 3 next steps (skip with `--skip-integrate`) |
 
-Each pre-integration phase ends with an explicit Exit Gate (proceed / revise / pause). Code-file edits are physically blocked during Brainstorm, Research, Spec, Plan, and Test (including file-writing Bash commands like `echo >`, `sed -i`, `cp`); file changes and receipt data are collected automatically during Implement.
+The runtime owns phase transitions, approvals, scoped writes and receipts. Low-risk work can use a compact Spec without a separate approval conversation. Draft Spec and Plan together for one exact independent source review; the compiler derives mechanical bindings, and the same qualifying approval can be consumed by both phases. Required checks and reviews remain evidence-bound. Hook enforcement restricts writes to the active slice; one session has one active write window.
 
 ## Output Files
 
-All session artifacts live in `.deep-work/<task-folder>/`:
+All session artifacts live in `.deep-work/<session-id>/`:
 
 | File | Created | Description |
 |---|---|---|
@@ -114,7 +103,7 @@ All session artifacts live in `.deep-work/<task-folder>/`:
 | `debug-log/RC-NNN.md` | Phase 3 (debug) | Root-cause analysis notes |
 | `harness-history/harness-sessions.jsonl` | Session end | Per-session assumption-engine data |
 
-Session state is stored as YAML frontmatter in `.claude/deep-work.local.md` (current phase, work dir, TDD state, model routing, worktree info, quality gates, health report, and more).
+Session state is stored as YAML frontmatter in `.claude/deep-work.<session-id>.md` (current phase, work dir, TDD state, model routing, worktree info, quality gates, health report, and more).
 
 ## Hooks
 
@@ -124,33 +113,26 @@ Hooks manage the session lifecycle and computational enforcement.
 |---|---|---|
 | SessionStart (`update-check.sh`) | startup/resume | Git-based version update check |
 | PreToolUse (`phase-guard.sh`) | Write/Edit/MultiEdit/Bash | Phase-based edit blocking + P0 Worktree Path Guard + non-implement dangerous-command denylist |
-| PostToolUse (`file-tracker.sh`) | Write/Edit/MultiEdit/Bash | Tracks file modifications during Implement, updates receipts |
+| PostToolUse (`file-tracker.sh`) | Write/Edit/MultiEdit/Bash | Observational tracking; governed receipts remain runtime-owned |
 | PostToolUse (`sensor-trigger.js`) | Write/Edit/MultiEdit/Bash | Triggers the computational sensor pipeline (lint, typecheck, review-check) |
 | PostToolUse (`phase-transition.sh`) | Write/Edit/MultiEdit | P1 Phase Transition Injector — injects worktree/team/cross-model context on phase change |
 | Stop (`session-end.sh`) | CLI session end | Active-session reminder, worktree info, phase-cache cleanup |
 
-The Phase Guard denylist also blocks dangerous non-implement Bash (e.g. `curl | sh`, `rm -rf` on protected paths, `npm publish`, destructive `kubectl`/SQL, `dd`/`mkfs`), each with a per-family `CLAUDE_ALLOW_*` override env var.
+The denylist covers recursive rm, npm publish, selected destructive kubectl/SQL commands and curl/wget piped to sh/bash. Its documented omissions and per-family overrides are in [AGENTS.md](AGENTS.md). It is not a general shell sandbox.
 
-## Key features
+## Verification and compatibility
 
-- **TDD enforcement** — a hook-enforced state machine (PENDING → RED → RED_VERIFIED → GREEN_ELIGIBLE → GREEN → REFACTOR) blocks production-code edits until a failing test exists. Modes: `strict`, `relaxed`, `coaching`, `spike`, plus a slice-scoped TDD override.
-- **Worktree isolation** — sessions run in an isolated git worktree by default (`.worktrees/dw/<slug>/`); `/deep-finish` offers merge / PR / keep / discard. Opt out with `--no-branch`.
-- **Model routing** — per-phase and per-slice model assignment (S→haiku, M/L→sonnet, XL→opus) cuts token cost; override per slice or in the preset routing table.
-- **Receipts as M3 envelopes** — `session-receipt.json` and slice receipts ship as cross-plugin envelopes with identity-triplet guards and chained provenance, validated by `validate-receipt.sh` and a CI template.
-- **Health Engine + architecture fitness** — Phase 1 runs parallel drift sensors (dead-export, stale-config, dependency-vuln, coverage-trend) and validates declarative rules in `.deep-review/fitness.json`; Phase 4 adds Fitness Delta (advisory) and Health Required (required) gates.
-- **Quality measurement** — every session produces a Session Quality Score (test pass rate, rework cycles, plan fidelity, sensor clean rate, mutation score), trended across sessions.
-- **Self-evolving rules** — the Assumption Engine treats each enforcement rule as a falsifiable hypothesis and suggests relaxing or strengthening it based on session-quality evidence.
-- **Multi-model review** — phase documents are structurally reviewed, and plans get adversarial cross-model review from [codex](https://github.com/openai/codex) and/or [gemini-cli](https://github.com/google/gemini-cli) when installed (skip with `--skip-review`).
-- **Profiles & flags** — named presets (`--profile=X`, `--setup`) and per-session overrides (`--team`, `--zero-base`, `--skip-research`, `--skip-to-implement`, `--tdd=MODE`).
-- **Internationalization** — all messages follow the user's language automatically (Korean reference templates, translated on the fly).
+- Strict TAP policy supports exact Node patches 22.23.2, 24.20.0, 26.0.0 and 26.8.1. Historical policy identities remain unchanged. An unsupported runtime is explicit, never a fabricated pass.
+- Outcome program checks support a bounded registered Node/Python grammar and closed non-secret environment. Trusted verifier code is not a malware sandbox; arbitrary runners/lifecycle recipes remain unsupported.
+- New raw receipts live in `runtime-receipts/`; public M3 views in `receipts/`. New payload registry version1.1 uses envelope format1.0. Historical1.0/V2 records keep their compatibility path. A release aggregate has its own completion basis and authenticates every child.
+- Finish records effects and recovers missing verification/publication without repeating PR/merge/discard. Park/restore/downgrade-check preserves incompatible artifacts without calling a parked task complete.
+- Metric version2 measures test results and machine trace (35% each), sensors and mutation (15% each). Unknown applicable evidence yields null; goal acceptance is separate. Comparative claims require matched task/model/environment/metric evidence.
 
-## Plugin integration
+## Evaluation and integrations
 
-deep-work integrates with sibling plugins when they are installed, always with user confirmation before any action:
+The [harness evaluation bank](evals/harness/README.md) defines deterministic runtime cases and a frozen12-attempt live smoke protocol. Reliability tests and a small smoke pilot do not establish general efficacy or a model ranking.
 
-- **deep-review** — generates `.deep-review/contracts/` from approved slices, suggests slice and full reviews, and shares `fitness.json` + `health_report` for architecture-aware review.
-- **deep-wiki** — suggests `/wiki-ingest report.md` after a session to archive research and design decisions.
-- **deep-memory** — recalls a cross-project brief in Phase 1 and recommends `/deep-memory-harvest` in Phase 5 (opt-in, read-only).
+Sibling deep-review, deep-wiki and deep-memory capabilities may be used when relevant and authorized. Optional suggestions do not interrupt an already requested Finish chain or grant external/memory-write permission. Existing M3 identity guards and provenance apply to imported data.
 
 ## Links
 

@@ -49,7 +49,7 @@ function durableReplace(profilePath,text,label){const temporary=path.join(path.d
     catch(error){if(!['EINVAL','ENOTSUP','EPERM','EISDIR'].includes(error.code))throw error;}finally{if(dirfd!==undefined)fs.closeSync(dirfd);}}
   finally{if(!renamed)try{fs.unlinkSync(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}}}
 function createV3Profile(profilePath,defaultPreset='solo-strict'){if(!PRESET_RE.test(defaultPreset))throw new Error(`잘못된 프리셋 이름: ${defaultPreset} (영문/숫자/-/_만 허용, ≤31자)`);
-  fs.mkdirSync(path.dirname(profilePath),{recursive:true});const text=`version: 3\ndefault_preset: ${defaultPreset}\npresets:\n  ${defaultPreset}:\n    label: ${defaultPreset==='solo-strict'?'Solo + Strict TDD':defaultPreset}\n    description: 사용자 정의 프리셋\n    project_type: zero-base\n    cross_model_preference:\n      use_codex: false\n      use_gemini: false\n    auto_update: prompt\n    interactive_each_session:\n      - team_mode\n      - start_phase\n      - tdd_mode\n      - git\n    defaults:\n      team_mode: solo\n      start_phase: research\n      tdd_mode: strict\n      git:\n        use_worktree: false\n        use_branch: true\n      model_routing: auto\n`;
+  fs.mkdirSync(path.dirname(profilePath),{recursive:true});const text=`version: 3\ndefault_preset: ${defaultPreset}\npresets:\n  ${defaultPreset}:\n    label: ${defaultPreset==='solo-strict'?'Solo + Strict TDD':defaultPreset}\n    description: 사용자 정의 프리셋\n    project_type: zero-base\n    cross_model_preference:\n      use_codex: false\n      use_gemini: false\n    auto_update: prompt\n    interactive_each_session:\n      - team_mode\n      - start_phase\n      - tdd_mode\n      - git\n    defaults:\n      team_mode: solo\n      start_phase: research\n      tdd_mode: ${defaultPreset==='solo-adaptive'?'adaptive':'strict'}\n      git:\n        use_worktree: false\n        use_branch: true\n      model_routing: auto\n`;
   durableReplace(profilePath,text,'create');
   return{created:true,default_preset:defaultPreset};}
 const V4_POLICY_LINES=Object.freeze([
@@ -96,7 +96,7 @@ function v3TextToV4Text(text){
   lines[lines.findIndex((line)=>/^version:\s*3\s*(#.*)?$/.test(line))]='version: 4';
   return lines.join('\n')+'\n';
 }
-function createV4Profile(profilePath,defaultPreset='solo-strict'){
+function createV4Profile(profilePath,defaultPreset='solo-adaptive'){
   createV3Profile(profilePath,defaultPreset);
   durableReplace(profilePath,v3TextToV4Text(fs.readFileSync(profilePath,'utf8')),
     'create-v4');
@@ -190,7 +190,7 @@ function loadV3Profile(profilePath,opts={}){const text=fs.readFileSync(profilePa
     auto_update:presetLevel.auto_update||null,policy};}
 function inspect(file,allowMissing=false){try{const stat=fs.lstatSync(file);if(stat.isSymbolicLink()||!stat.isFile())fail('profile-unsafe');return stat;}
   catch(error){if(allowMissing&&error.code==='ENOENT')return null;throw error;}}
-function migrateProfile(profileCapability,initialPreset='solo-strict'){const file=typeof profileCapability==='string'?profileCapability:profileCapability.path;
+function migrateProfile(profileCapability,initialPreset='solo-adaptive'){const file=typeof profileCapability==='string'?profileCapability:profileCapability.path;
   if(!PRESET_RE.test(initialPreset))fail('profile-preset');return withProfileOwner(file,()=>{if(!inspect(file,true)){
     createV4Profile(file,initialPreset);return{created:true};}return migrateProfileCoreUnlocked(file,{initialPreset});});}
 function presetNames(text){return[...text.matchAll(/^ {2}([a-z0-9][a-z0-9_-]{0,30}):\s*$/gim)].map((match)=>match[1]);}

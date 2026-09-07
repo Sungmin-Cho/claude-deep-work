@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Sungmin-Cho/claude-deep-suite/main/schemas/payload-registry/deep-work/session-receipt/v1.0.schema.json",
+  "title": "deep-work session-receipt payload v1.0",
+  "description": "Authoritative payload schema for deep-work session-receipt envelope (artifact_kind=session-receipt, schema.version=1.0). Mirrors the session-receipt payload emitted by deep-work `deep-finish` at the pinned SHA; top-level fields are closed (additionalProperties:false) with an `x-` forward-compat namespace. parent_run_id chains to upstream deep-evolve evolve-insights when the session consumed evolve outputs in its research phase.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x-": { "description": "Forward-compat extension namespace." }
+  },
+  "required": [
+    "schema_version",
+    "session_id",
+    "started_at",
+    "outcome",
+    "slices"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Payload-internal schema version (independent from envelope schema_version)."
+    },
+    "canonical": {
+      "type": "boolean",
+      "description": "True when this receipt is the canonical session-level aggregate (not a slice or replay)."
+    },
+    "derived_from": {
+      "type": "string",
+      "description": "Glob or path describing what the receipt was synthesized from (e.g., 'receipts/SLICE-*.json')."
+    },
+    "session_id": { "type": "string", "minLength": 1 },
+    "task_description": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "worktree_branch": { "type": "string" },
+    "worktree_base_commit": { "type": "string" },
+    "phase": {
+      "type": "string",
+      "description": "Current/last phase reached (e.g., brainstorm, research, plan, implement, test, integrate)."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["merge", "pr", "keep", "discard", "in-progress"]
+    },
+    "outcome_ref": {
+      "description": "Optional reference (PR URL, commit SHA, branch) tied to the outcome.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string" }
+      ]
+    },
+    "slices": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["total"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "completed": { "type": "integer", "minimum": 0 },
+        "spike": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "tdd_compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "strict": { "type": "integer", "minimum": 0 },
+        "relaxed": { "type": "integer", "minimum": 0 },
+        "override": { "type": "integer", "minimum": 0 },
+        "spike": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "quality_score": { "type": "number" },
+    "quality_breakdown": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "model_usage": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Per-model turn/usage counts (e.g., haiku/sonnet/opus/main)."
+    },
+    "total_estimated_cost": {
+      "description": "Estimated session cost in USD; null when the runtime cannot estimate it.",
+      "oneOf": [{ "type": "number" }, { "type": "null" }]
+    },
+    "total_files_changed": { "type": "integer", "minimum": 0 },
+    "total_tests": { "type": "integer", "minimum": 0 },
+    "total_tests_passed": { "type": "integer", "minimum": 0 },
+    "quality_gates": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Named quality gates and their PASS/FAIL verdicts."
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Evaluator model + retry/adjustment bookkeeping."
+    },
+    "contract_compliance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Sprint-contract counts (total_contracts / contracts_met)."
+    },
+    "deep_work_version": { "type": "string" },
+    "quality_diagnostics": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Informational diagnostic metrics appended in deep-finish Step 2-1 (not part of the core quality score)."
+    }
+  }
+}
