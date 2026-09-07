@@ -3,7 +3,10 @@ const cp=require('node:child_process');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Sampled identity cleanup, not OS containment. Diagnostics never collect argv/environment.
 function snapshot(){
- const output=cp.execFileSync('/bin/ps',['-axo','pid=,ppid=,pgid=,stat=,lstart='],{encoding:'utf8',timeout:2000,maxBuffer:8*1024*1024,env:{...process.env,LC_ALL:'C',TZ:'UTC'}});
+ const args=process.platform==='linux'
+  ? ['-e','-o','pid=','-o','ppid=','-o','pgid=','-o','stat=','-o','lstart=']
+  : ['-axo','pid=,ppid=,pgid=,stat=,lstart='];
+ const output=cp.execFileSync('/bin/ps',args,{encoding:'utf8',timeout:2000,maxBuffer:8*1024*1024,env:{...process.env,LC_ALL:'C',TZ:'UTC'}});
  return output.trim().split('\n').filter(Boolean).map(line=>{const match=line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);if(!match)throw Error('eval-process-snapshot-invalid');return{pid:Number(match[1]),ppid:Number(match[2]),pgid:Number(match[3]),state:match[4],start:match[5]};});
 }
 function createTracker({readSnapshot=snapshot,signal=(pid,sig)=>process.kill(pid,sig),pause=sleep,graceMs=500,confirmMs=2000}={}){
