@@ -383,6 +383,15 @@ async function runWindows(spec, options) {
   });
 }
 
+function withWindowsSupervisor(values) {
+  if (process.platform !== 'win32') return values;
+  const root = process.env.SystemRoot || process.env.SYSTEMROOT;
+  if (typeof root === 'string' && root && !values.SystemRoot && !values.SYSTEMROOT) {
+    return {...values, SystemRoot: root};
+  }
+  return values;
+}
+
 async function runSupervisedProcess(spec, options = {}) {
   if (!spec || typeof spec.executable !== 'string' || !Array.isArray(spec.args)) {
     throw typedError('process-spec-invalid', 'executable and args are required');
@@ -395,9 +404,9 @@ async function runSupervisedProcess(spec, options = {}) {
     ...options,
     platform,
     env:Object.freeze(options.env === undefined ? {...process.env} : {...options.env}),
-    supervisorEnv:Object.freeze(options.supervisorEnv === undefined
+    supervisorEnv:Object.freeze(withWindowsSupervisor(options.supervisorEnv === undefined
       ? (options.env === undefined ? {...process.env} : {...options.env})
-      : {...options.supervisorEnv}),
+      : {...options.supervisorEnv})),
     timeoutMs:options.timeoutMs === undefined ? 30_000 : options.timeoutMs,
     maxOutputBytes:options.maxOutputBytes === undefined ? 16_777_216 : options.maxOutputBytes,
     input:options.input,
