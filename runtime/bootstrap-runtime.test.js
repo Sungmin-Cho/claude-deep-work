@@ -2150,6 +2150,13 @@ node26Test('public first-RED rejects every closed process, TAP, scope, environme
     });
   });
 
+test('first-RED keeps closed child env and binds Windows supervisor control separately',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'bootstrap-runtime.js'),'utf8');
+  assert.match(source,/buildSupervisorControl\(\)/);
+  assert.match(source,/supervisorEnv:\s*structuredClone\(\s*supervisor\.values\s*\)/);
+  assert.match(source,/env:\s*structuredClone\(\s*spec\.environment\.values\s*\)/);
+});
+
 test('portable bootstrap direct siblings produce an authenticated RED proof',async(t)=>{
  const policy=require('./node-tap-policy.js');
  assert.equal(policy.resolveNodeTapPolicy({policySha256:policy.CURRENT_NODE_TAP_POLICY_SHA256,nodeVersion:process.versions.node}).supported,true);

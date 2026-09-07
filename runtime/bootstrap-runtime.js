@@ -2306,7 +2306,7 @@ function bootstrapFirstRedExecutionContext(bound,spec){
     logical_argv_sha256:bootstrapCommandArgvSha256(logicalArgv),
     effective_argv_sha256:bootstrapCommandArgvSha256(normalizedArgv),
     denied_capabilities:['child-process','native-addon','wasi','worker']};
-  const supervisor={platform:process.platform==='win32'?'win32':'posix',values:{},identities:{}};
+  const supervisor=require('./verification-v2-runtime.js').buildSupervisorControl();
   return {logicalArgv,normalizedArgv,identity,environment,containment,supervisor};
 }
 async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId,authorizationPath,
@@ -2451,7 +2451,7 @@ async function runBootstrapFirstRed({stateCapability,planCapability,plan,sliceId
         ran=await require('./process-supervisor.js').runSupervisedProcess({
           executable:identity.path,args:normalizedArgv},{cwd:bound.root,timeoutMs:spec.timeout_ms,
           maxOutputBytes:spec.max_output_bytes,env:structuredClone(spec.environment.values),
-          rawOutput:true});
+          supervisorEnv:structuredClone(supervisor.values),rawOutput:true});
       }catch(error){
         ran={exitCode:null,signal:null,stdout:Buffer.alloc(0),stderr:Buffer.alloc(0),
           timedOut:false,outputOverflow:false,durationMs:0,

@@ -372,6 +372,8 @@ test('exact committed production release graph is scannable',
     const result=scanner.scanReleaseSources({committedFiles:files});
     assert.equal(result.required_tools.includes('python3'),false);
     assert.equal(result.optional_tools.includes('python3'),true);
+    assert.equal(result.graph.rows.some((row)=>row.path==='evals/harness/process.js'),true);
+    assert.equal(result.graph.rows.some((row)=>row.path==='evals/harness/cohort-seal.js'),true);
   });
 
 test('committed source loading binds an authenticated git and rejects worktree drift',
