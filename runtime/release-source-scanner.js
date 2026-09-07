@@ -101,10 +101,11 @@ function scanPackageScripts(files,document){
       const target=words[2];visit(target);outgoing.push({
         kind:'package-script',path:`package.json#scripts.${target}`});
     }else if(words[0]==='node'&&words[1]==='--test'){
-      const targetWords=words.slice(2).filter((word)=>
-        !word.startsWith('--test-concurrency='));
+      const allowedFlag=(word)=>word.startsWith('--test-concurrency=')||
+        word.startsWith('--test-timeout=');
+      const targetWords=words.slice(2).filter((word)=>!allowedFlag(word));
       if(targetWords.length===0||words.slice(2).some((word)=>
-        word.startsWith('-')&&!word.startsWith('--test-concurrency=')))
+        word.startsWith('-')&&!allowedFlag(word)))
         fail('release-package-script');
       for(const target of expandTargets(targetWords,files)){
         nodeTargets.add(target);outgoing.push({kind:'node-entry',path:target});

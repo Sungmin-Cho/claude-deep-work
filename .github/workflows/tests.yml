@@ -39,6 +39,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     name: tests (${{ matrix.os }})
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
